@@ -467,3 +467,41 @@ As the planning work matures, split large documents into dedicated files and lin
 - `docs/technology-decisions.md` — experiments, comparisons, chosen options and rationale.
 
 These are proposed future planning documents; this README update does not create those files or application code.
+
+
+## 12. Git branching strategy
+
+The initial repository workflow uses five long-lived branches. Additional short-lived branches may be created when a task requires isolation.
+
+| Branch | Role | Usage and merge policy |
+|---|---|---|
+| `main` | **Production** | Default branch containing stable, reviewed, release-ready work. Merge from `dev` only after required tests and acceptance checks pass. |
+| `dev` | **Developer integration** | Shared integration branch that combines completed work from `new`, `fix`, and validated changes from `test`. Keep it integration-ready. |
+| `fix` | **Debugging and bug fixes** | Investigate and correct defects in existing code. Keep fixes focused, document the cause and verification, then merge into `dev`. |
+| `test` | **Testing and audit evidence** | Validate changes and record test results, failures, reproducible issues, and relevant audit evidence. A passing test does not itself authorize a production release. |
+| `new` | **New feature development** | Develop new features and stages in isolation. Review and test the work before merging into `dev`. |
+
+### Standard flow
+
+```mermaid
+flowchart TD
+    NEW[new: feature work] --> REVIEW[Review and validate]
+    FIX[fix: bug fixes] --> REVIEW
+    REVIEW --> DEV[dev: integration]
+    DEV --> TEST[test: run tests and record issues]
+    TEST -->|pass; issues resolved| RELEASE[Review and acceptance gate]
+    TEST -->|failure| FIX
+    RELEASE -->|approved release| MAIN[main: production]
+    MAIN -.->|urgent production defect| FIX
+```
+
+### Working rules
+
+- Treat `main` as production and protect it from direct routine commits.
+- Use pull requests/reviews and automated checks where repository settings permit.
+- Record test outcomes and issue references so failures can be reproduced and traced.
+- Merge only validated changes into `dev`; merge `dev` into `main` only after release checks and explicit acceptance.
+- For urgent production fixes, create a narrowly scoped temporary hotfix branch from `main`, validate it, and merge the fix back into both `main` and `dev` as appropriate.
+- Create task-specific branches such as `feature/<short-name>`, `bugfix/<short-name>`, `hotfix/<short-name>`, or `experiment/<short-name>` when useful. These supplement, rather than replace, the five core branches.
+- Branch names describe workflow; they do not replace authorization, code review, test evidence, or the project's implementation approval gate.
+- This branch strategy is for repository workflow only. **It does not approve starting JARVIS application coding.** The separate explicit owner approval gate remains in force.
