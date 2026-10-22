@@ -9,6 +9,9 @@ import {
 import { CryptoUtil } from '../crypto/crypto.js';
 import { AuditLogger } from '../audit/audit.js';
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
 export interface EnrollmentChallenge {
   challengeToken: string;
   expiresAt: number;
@@ -21,9 +24,43 @@ export class DeviceIdentityManager {
   private sessions = new Map<SessionId, SessionRecord>();
   private challenges = new Map<string, EnrollmentChallenge>();
   private audit: AuditLogger;
+  private stateFilePath?: string;
 
-  constructor(audit: AuditLogger) {
+  constructor(audit: AuditLogger, stateFilePath?: string) {
     this.audit = audit;
+    this.stateFilePath = stateFilePath;
+    this.loadState();
+  }
+
+  private loadState(): void {
+    if (!this.stateFilePath || !existsSync(this.stateFilePath)) return;
+    try {
+      const data = JSON.parse(readFileSync(this.stateFilePath, 'utf-8'));
+      if (Array.isArray(data.devices)) {
+        for (const dev of data.devices) {
+          this.devices.set(dev.id, dev);
+        }
+      }
+    } catch {
+      // In case of corrupt state file, fail closed or report
+    }
+  }
+
+  private persistState(): void {
+    if (!this.stateFilePath) return;
+    try {
+      const dir = dirname(this.stateFilePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      const data = {
+        devices: Array.from(this.devices.values()),
+        persistedAt: Date.now(),
+      };
+      writeFileSync(this.stateFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch {
+      // Ignore write errors or log
+    }
   }
 
   /**
@@ -98,6 +135,7 @@ export class DeviceIdentityManager {
     };
 
     this.devices.set(deviceId, deviceRecord);
+    this.persistState();
 
     this.audit.record(
       'DEVICE_ENROLLED',
@@ -205,6 +243,7 @@ export class DeviceIdentityManager {
       }
     }
 
+    this.persistState();
     this.audit.record('DEVICE_REVOKED', { reason }, deviceId);
     return true;
   }

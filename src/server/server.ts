@@ -10,9 +10,13 @@ export class JarvisServer {
   private server: ReturnType<typeof createServer>;
   private port: number;
 
-  constructor(port: number = 3000, logPath: string = './data/audit.log') {
+  constructor(
+    port: number = 3000,
+    logPath: string = './data/audit.log',
+    statePath?: string
+  ) {
     this.port = port;
-    this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath);
+    this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath);
     this.server = createServer(this.handleRequest.bind(this));
   }
 

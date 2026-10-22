@@ -53,6 +53,22 @@ export class CryptoUtil {
   }
 
   /**
+   * Builds canonical payload string for request signing.
+   * Format: METHOD:PATH:SESSION_ID:TIMESTAMP:NONCE:BODY_SHA256
+   */
+  static buildCanonicalRequestString(
+    method: string,
+    path: string,
+    sessionId: string,
+    timestamp: number,
+    nonce: string,
+    body: unknown
+  ): string {
+    const bodyHash = body ? this.canonicalHash(body) : this.sha256('');
+    return `${method.toUpperCase()}:${path}:${sessionId}:${timestamp}:${nonce}:${bodyHash}`;
+  }
+
+  /**
    * Computes a SHA-256 hash in hex format.
    */
   static sha256(data: string): string {

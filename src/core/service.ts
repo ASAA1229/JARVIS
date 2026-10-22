@@ -43,9 +43,13 @@ export class JarvisCoreService {
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
   private activeExecutionTokens = new Map<TaskId, AbortController>();
 
-  constructor(planner: IAIPlannerProvider, logPath: string = './data/audit.log') {
+  constructor(
+    planner: IAIPlannerProvider,
+    logPath: string = './data/audit.log',
+    statePath?: string
+  ) {
     this.audit = new AuditLogger(logPath);
-    this.identity = new DeviceIdentityManager(this.audit);
+    this.identity = new DeviceIdentityManager(this.audit, statePath);
     this.policy = new PolicyGateway(this.audit);
     this.systemAdapter = new WindowsSystemAdapter();
     this.appAdapter = new WindowsAppLauncherAdapter();
@@ -180,6 +184,14 @@ export class JarvisCoreService {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'Device revoked or inactive before execution';
       this.audit.record('EXECUTION_BLOCKED_DEVICE_REVOKED', {}, taskRecord.deviceId, taskId);
+      return { taskId, state: taskRecord.state, message: taskRecord.error };
+    }
+
+    // Safety Invariant: Check audit chain integrity before any execution
+    const auditIntegrity = this.audit.verifyIntegrity();
+    if (!auditIntegrity.valid) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = `Execution blocked: Audit chain integrity violation (${auditIntegrity.reason})`;
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
