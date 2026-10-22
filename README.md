@@ -471,41 +471,92 @@ These are proposed future planning documents; this README update does not create
 
 ## 12. Git branching strategy
 
-The repository uses five long-lived branches. Additional task-specific branches may be created when useful.
+The initial repository workflow uses five long-lived branches. Additional short-lived branches may be created when a task requires isolation.
 
 | Branch | Role | Usage and merge policy |
 |---|---|---|
-| `main` | **Production** | Production-only, manually controlled by the owner. No routine development operations or automated PRs/merges into `main`. The only permitted PR source is `dev`; the owner manually creates, reviews, approves, and merges it. |
-| `dev` | **Developer integration** | Integration branch. Receives PRs from all non-`main` branches, including `fix`, `test`, `new`, and future task branches, subject to validation and conditions. |
-| `fix` | **Debugging and bug fixes** | Investigate and correct defects in existing code. Keep fixes focused, document the cause, and validate them before proposing a PR to `dev`. |
-| `test` | **Testing and audit evidence** | Run tests and record results, failures, reproducible issues, and relevant audit evidence. A passing test does not itself authorize production release. |
-| `new` | **New feature development** | Develop new features and stages in isolation. Review and test the work before proposing integration into `dev`. |
+| `main` | **Production** | Default branch containing stable, reviewed, release-ready work. Merge from `dev` only after required tests and acceptance checks pass. |
+| `dev` | **Developer integration** | Shared integration branch that combines completed work from `new`, `fix`, and validated changes from `test`. Keep it integration-ready. |
+| `fix` | **Debugging and bug fixes** | Investigate and correct defects in existing code. Keep fixes focused, document the cause and verification, then merge into `dev`. |
+| `test` | **Testing and audit evidence** | Validate changes and record test results, failures, reproducible issues, and relevant audit evidence. A passing test does not itself authorize a production release. |
+| `new` | **New feature development** | Develop new features and stages in isolation. Review and test the work before merging into `dev`. |
 
 ### Standard flow
 
 ```mermaid
 flowchart TD
-    NEW[new: feature work] --> CHECK[Review and validation]
-    FIX[fix: bug fixes] --> CHECK
-    TEST[test: test evidence and issues] --> CHECK
-    EXTRA[Future task branches] --> CHECK
-    CHECK -->|eligible changes only| PRDEV[PR to dev]
-    PRDEV --> DEV[dev: integration]
-    DEV -->|owner manually creates and reviews PR| PRMAIN[PR from dev to main]
-    PRMAIN -->|owner manually approves and merges| MAIN[main: production]
-    CHECK -->|fails or needs changes| WORK[Revise on working branch]
-    WORK --> CHECK
+    NEW[new: feature work] --> REVIEW[Review and validate]
+    FIX[fix: bug fixes] --> REVIEW
+    REVIEW --> DEV[dev: integration]
+    DEV --> TEST[test: run tests and record issues]
+    TEST -->|pass; issues resolved| RELEASE[Review and acceptance gate]
+    TEST -->|failure| FIX
+    RELEASE -->|approved release| MAIN[main: production]
+    MAIN -.->|urgent production defect| FIX
 ```
 
-### Git operations and pull-request rules
+### Working rules
 
-- **All routine work happens on branches other than `main`.** Use `add`, `commit`, `pull`, and `push` on working branches. Do not use `main` as a working branch or push development commits directly to it.
-- **PR target rule:** all PRs from other branches target `dev`. A PR targeting `main` is allowed only from `dev`.
-- **Manual production release:** only the owner manually creates, reviews, approves, and merges a `dev` → `main` PR. Do not automate creating, approving, or merging PRs into `main`, and do not automatically merge into `main`.
-- **Conditional automation into `dev`:** PR creation from other branches may be automated only when change classification, required tests, diff/scope checks, security checks, and any required review conditions pass. Automation must not bypass policy or required human review. If checks fail, changes are high-risk, scope is unclear, or evidence is missing, leave the branch unmerged and request review.
-- **Testing and evidence:** record test results, failures, and issue references so results are reproducible. Merging to `dev` does not mean production-ready.
-- **Urgent production fixes:** do not bypass the `dev` → `main` owner-controlled release gate. Use a temporary branch for the fix, validate it, and bring it through the defined review/release path.
-- **Future branches:** names such as `feature/<short-name>`, `bugfix/<short-name>`, `hotfix/<short-name>`, or `experiment/<short-name>` may be used. They supplement the five core branches and must follow the same PR target rules.
-- These rules document the intended workflow. Repository branch protection and GitHub Actions/automation settings must be configured separately to enforce them; documentation alone cannot prevent direct pushes or restrict PR targets.
+- Treat `main` as production and protect it from direct routine commits.
+- Use pull requests/reviews and automated checks where repository settings permit.
+- Record test outcomes and issue references so failures can be reproduced and traced.
+- Merge only validated changes into `dev`; merge `dev` into `main` only after release checks and explicit acceptance.
+- For urgent production fixes, create a narrowly scoped temporary hotfix branch from `main`, validate it, and merge the fix back into both `main` and `dev` as appropriate.
+- Create task-specific branches such as `feature/<short-name>`, `bugfix/<short-name>`, `hotfix/<short-name>`, or `experiment/<short-name>` when useful. These supplement, rather than replace, the five core branches.
+- Branch names describe workflow; they do not replace authorization, code review, test evidence, or the project's implementation approval gate.
+- This branch strategy is for repository workflow only. **It does not approve starting JARVIS application coding.** The separate explicit owner approval gate remains in force.
 
-This branch strategy is for repository workflow only. **It does not approve starting JARVIS application coding.** The separate explicit owner approval gate remains in force.
+## 13. Reusable free-resource directory
+
+These resources are an approved **optional shortlist for JARVIS and future projects**. Use them when they improve the task; they are not mandatory dependencies. Check current availability, terms, licenses, attribution requirements, security, compatibility, and free-tier limits before integrating anything. Prefer official source files and minimal dependencies.
+
+| Resource | Intended use | Integration guidance |
+|---|---|---|
+| [Iconify](https://icon-sets.iconify.design/) | Icons and technology logos | Verify the license of the specific icon set; prefer official brand assets where accuracy matters. |
+| [unDraw](https://undraw.co/illustrations) | SVG illustrations for onboarding, empty states, and help screens | Check the current license and customization rules before use. |
+| [ManyPixels design blog](https://www.manypixels.co/blog/social-media-design) | Visual inspiration and layout references | Treat as inspiration; do not assume all showcased assets are reusable. |
+| [21st.dev](https://21st.dev/) | UI component discovery and examples | Inspect source, dependencies, accessibility, license, and free-tier limits before adoption. |
+| [Haikei](https://haikei.app/) | Generated SVG backgrounds and decorative shapes | Prefer optimized static SVGs when animation is unnecessary. |
+| [Manus](https://manus.im/) | Optional research or agent-workflow experiments | Use only if current free access and data handling fit the task; never provide secrets or unrestricted repository access unnecessarily. |
+| [Motion Primitives](https://motion-primitives.com/) | Animation and interaction components | Check framework compatibility, accessibility/reduced-motion behavior, and added bundle cost. |
+| [WebsitePrompts.ai](https://websiteprompts.ai/) | Prompt ideas for website/UI exploration | Adapt prompts to project requirements; prompts do not replace requirements or security review. |
+| [CodeFronts](https://codefronts.com/) | Frontend code/resource discovery | Verify source quality, license, and maintenance before reuse. |
+| [3Dicons](https://3dicons.co/) | Optional 3D icons and visual assets | Check each asset's license and performance impact; avoid unnecessary 3D in the POC. |
+| [roadmap.sh](https://roadmap.sh/) | Learning paths and technical topic maps | Use as a learning reference, not as a substitute for project-specific architecture decisions. |
+| [Uiverse](https://uiverse.io/) | Community UI components and interaction ideas | Review copied code for safety, accessibility, dependencies, and license. |
+| [QuickRef](https://quickref.me/) | Syntax, command, and developer cheat sheets | Verify important commands against official documentation before running them. |
+| [readme.so](https://readme.so/) | README structure and drafting | GitHub remains the canonical repository and source of truth. |
+| [Resumake](https://resumake.io/) | Resume creation for non-core project tasks | Not a JARVIS runtime dependency. |
+| [CodePen](https://codepen.io/) | Small, isolated browser/UI experiments | Keep experiments separate from production code; inspect external scripts and dependencies. |
+| [Exercism](https://exercism.org/) | Optional programming practice | Use when a specific skill gap blocks implementation. |
+
+### Resource-selection rules
+
+1. Start with the simplest free option that satisfies the task; do not add a tool or dependency merely because it is listed here.
+2. Prefer small, accessible, responsive, maintainable UI components. Respect reduced-motion preferences and avoid animations that obscure task state or approval prompts.
+3. Never copy secrets, private project data, credentials, or sensitive user context into external services.
+4. Treat downloaded snippets, prompts, generated code, illustrations, and third-party content as untrusted until reviewed.
+5. Track third-party runtime dependencies and licenses. Prefer assets that can be bundled locally when practical; do not make core security or control flows depend on an external design website.
+6. Avoid paid plans, paid APIs, or credit-consuming features unless the owner explicitly approves them. Report when a connection, permission, paid feature, or account upgrade is required.
+7. Use design tools selectively: Figma for interaction precision when useful, Lovable for a quick prototype when more efficient, Canva for visual/brand assets, and GitHub for canonical requirements, decisions, source, tests, and history. Check available account permissions before planning around a feature.
+8. A resource being listed here does not imply that its current free tier, availability, or license has been verified. Recheck at the point of use.
+
+## 14. AI coding-agent operating instructions
+
+Antigravity or another coding agent may be used to implement the POC after the owner chooses to start implementation. Before editing application code, the agent must read this README and the relevant planning documents, inspect the repository, and summarize the current state, risks, unresolved decisions, and proposed first vertical slice.
+
+- Treat this README as the requirements baseline unless the owner explicitly approves a documented change.
+- Keep all work off `main`. Use a task branch and propose a PR to `dev`; never automate approval or merging into `main`. The owner manually controls the `dev` → `main` release.
+- Start with a short implementation plan and decision records. For unresolved choices, compare viable options against security, compatibility, maintainability, cost, and the laptop's resource limits; recommend a low-cost default and record assumptions rather than silently inventing requirements.
+- Implement in small, testable increments. Do not attempt to build every future assistant capability at once.
+- Maintain the security boundaries in this README: default-deny policy gateway, least privilege, independently authenticated devices, task-scoped approval, revocation, verification, privacy-conscious audit, and safe recovery.
+- Never add administrator elevation, unrestricted shell execution, arbitrary scripts, broad file modification, public unrestricted remote access, autonomous messaging/forms, or financial capabilities.
+- Treat model output and external content as untrusted. AI must never authorize itself or call execution adapters around the policy gateway.
+- Do not claim an operation succeeded without evidence. Test denial paths, expiry, revocation, interruption, reconnection, duplicate requests, and uncertain outcomes as well as the happy path.
+- Prefer free/open-source tools and existing project dependencies. Check current licenses, versions, maintenance, accessibility, and security before adopting third-party code or assets.
+- Never expose secrets in prompts, source, logs, screenshots, or commits. Do not transmit private repository data to external services without an owner-approved need.
+- Update documentation, tests, dependency inventory, setup instructions, and requirements-to-test traceability with each relevant change.
+- Run the available tests and report exactly what passed, failed, was skipped, or could not be run. Do not fabricate test results.
+- Stop and ask the owner before broadening scope, introducing a paid service, requiring a new account/connection, changing a security invariant, or making an irreversible repository change.
+
+**Implementation gate:** this section describes how an approved coding agent must work; it does not by itself record that implementation has started or override the separate owner approval requirement above.
