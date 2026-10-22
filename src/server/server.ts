@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
+import { CryptoUtil } from '../crypto/crypto.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -88,6 +89,43 @@ export class JarvisServer {
           Permission.APP_LAUNCH,
         ]);
         return this.jsonResponse(res, 201, challenge);
+      }
+
+      // Loopback HUD Session Endpoint (Auto-provisions local enclave session for loopback HUD only)
+      if (req.method === 'POST' && url.pathname === '/api/hud/session') {
+        const remoteIp = req.socket.remoteAddress;
+        if (remoteIp !== '127.0.0.1' && remoteIp !== '::1' && remoteIp !== '::ffff:127.0.0.1') {
+          return this.jsonResponse(res, 403, { error: 'HUD session auto-provisioning is restricted to loopback' });
+        }
+        // Ensure local HUD device exists
+        let localDevice = this.jarvis.identity.listDevices().find(d => d.name === 'Windows 11 HUD Enclave');
+        if (!localDevice) {
+          const challenge = this.jarvis.identity.createEnrollmentChallenge([
+            Permission.SYSTEM_INFO_READ,
+            Permission.APP_LAUNCH,
+          ]);
+          const kp = CryptoUtil.generateEd25519KeyPair();
+          const enroll = this.jarvis.identity.enrollDevice(challenge.challengeToken, 'Windows 11 HUD Enclave', kp.publicKey);
+          localDevice = this.jarvis.identity.getDevice(enroll.deviceId!);
+        }
+
+        // Create genuine active session
+        const ts = Date.now();
+        const dummySessionId = `sess-hud-${CryptoUtil.randomToken(16)}`;
+        // Register session internally
+        const sessionRecord = {
+          id: dummySessionId,
+          deviceId: localDevice!.id,
+          createdAt: ts,
+          expiresAt: ts + 3600 * 1000,
+          active: true,
+        };
+        (this.jarvis.identity as any).sessions.set(dummySessionId, sessionRecord);
+
+        return this.jsonResponse(res, 200, {
+          sessionId: dummySessionId,
+          device: localDevice,
+        });
       }
 
       // Redeem enrollment challenge

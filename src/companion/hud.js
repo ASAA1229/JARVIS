@@ -316,36 +316,17 @@ function addFeedItem(type, message, details) {
 
 async function ensureEnrolledDevice() {
   try {
-    const statusRes = await fetch('/api/status');
-    const statusData = await statusRes.json();
-
-    if (statusData.devices && statusData.devices.length > 0) {
-      currentDevice = statusData.devices[0];
-    } else {
-      // Auto-enroll local HUD companion
-      const challengeRes = await fetch('/api/enrollment/challenge', { method: 'POST' });
-      const challenge = await challengeRes.json();
-      const dummyKey = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA${Math.random().toString(36).substring(2, 18)}hudkey==\n-----END PUBLIC KEY-----`;
-
-      const redeemRes = await fetch('/api/enrollment/redeem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengeToken: challenge.challengeToken,
-          deviceName: 'Windows 11 HUD Enclave',
-          publicKey: dummyKey,
-        }),
-      });
-      const enrollData = await redeemRes.json();
-      currentDevice = { id: enrollData.deviceId, name: 'Windows 11 HUD Enclave' };
+    const res = await fetch('/api/hud/session', { method: 'POST' });
+    const data = await res.json();
+    if (data.sessionId && data.device) {
+      currentSession = data.sessionId;
+      currentDevice = data.device;
+      document.getElementById('hud-device-name').innerText = currentDevice.name;
+      document.getElementById('hud-device-id').innerText = currentDevice.id;
+      document.getElementById('enclave-tag').innerText = 'ENROLLED & ACTIVE';
     }
-
-    currentSession = 'sess-hud-local-' + Math.random().toString(36).substring(2, 8);
-    document.getElementById('hud-device-name').innerText = currentDevice.name;
-    document.getElementById('hud-device-id').innerText = currentDevice.id;
-    document.getElementById('enclave-tag').innerText = 'ENROLLED';
   } catch (err) {
-    console.error('Failed to initialize HUD device:', err);
+    console.error('Failed to initialize HUD enclave session:', err);
   }
 }
 
