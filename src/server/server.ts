@@ -47,7 +47,7 @@ export class JarvisServer {
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
-      // 1. Static UI routes
+      // 1. Static UI routes (Companion & HUD)
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         return this.serveStatic('index.html', 'text/html', res);
       }
@@ -56,6 +56,15 @@ export class JarvisServer {
       }
       if (req.method === 'GET' && url.pathname === '/app.js') {
         return this.serveStatic('app.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && (url.pathname === '/hud' || url.pathname === '/hud/index.html')) {
+        return this.serveStatic('hud.html', 'text/html', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/hud.css') {
+        return this.serveStatic('hud.css', 'text/css', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/hud.js') {
+        return this.serveStatic('hud.js', 'application/javascript', res);
       }
 
       // 2. API Routes

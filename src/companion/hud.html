@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS — Cinematic Autonomous HUD</title>
+  <link rel="stylesheet" href="/hud/hud.css">
+</head>
+<body class="hud-body">
+  <!-- Scanlines & Ambient Grid Overlay -->
+  <div class="hud-grid-overlay" aria-hidden="true"></div>
+  <div class="hud-scanlines" aria-hidden="true"></div>
+
+  <div class="hud-wrapper">
+    <!-- Top Bar: Telemetry & Security State -->
+    <header class="hud-header">
+      <div class="hud-brand">
+        <div class="hud-core-dot" id="core-status-dot"></div>
+        <span class="hud-title">J.A.R.V.I.S.</span>
+        <span class="hud-version">OS v0.7.0 // PROTOCOL: ZERO-TRUST</span>
+      </div>
+
+      <div class="hud-telemetry">
+        <div class="telemetry-item">
+          <span class="tel-label">SYSTEM:</span>
+          <span class="tel-val" id="tel-system">WINDOWS 11</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="tel-label">POLICY:</span>
+          <span class="tel-val success" id="tel-policy">DEFAULT-DENY</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="tel-label">AUDIT HASH:</span>
+          <span class="tel-val success" id="tel-audit">CHAIN OK</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="tel-label">HOST LINK:</span>
+          <span class="tel-val" id="tel-host">LOCAL 127.0.0.1</span>
+        </div>
+      </div>
+
+      <div class="hud-controls">
+        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation">REDUCED MOTION: OFF</button>
+        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control">MIC: ARMED</button>
+      </div>
+    </header>
+
+    <!-- Main Panoramic Workspace -->
+    <main class="hud-main">
+      <!-- Left Panel: Device Identity & Security Status -->
+      <aside class="hud-panel hud-panel-left glass">
+        <div class="panel-header">
+          <h3>AUTHENTICATED ENCLAVE</h3>
+          <span class="panel-tag" id="enclave-tag">STANDBY</span>
+        </div>
+        <div class="panel-content">
+          <div class="stat-card">
+            <span class="stat-title">COMPANION DEVICE</span>
+            <div class="stat-value" id="hud-device-name">Pixel Companion</div>
+            <div class="stat-sub" id="hud-device-id">dev-ed25519-bound</div>
+          </div>
+
+          <div class="stat-card">
+            <span class="stat-title">POLICY RISK MATRIX</span>
+            <div class="policy-meter">
+              <div class="meter-bar low">LOW (Read-Only)</div>
+              <div class="meter-bar med">MED (App Launch)</div>
+              <div class="meter-bar high blocked">HIGH (Denied)</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <span class="stat-title">AUDIT LEDGER STREAM</span>
+            <div class="audit-ticker" id="hud-audit-stream">
+              <div class="audit-line">[SYS] Core service initialized</div>
+              <div class="audit-line">[AUTH] Ed25519 enclave ready</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Stage: Arc Reactor Visualization & Push-To-Talk -->
+      <section class="hud-center-stage">
+        <!-- Visual Reactor Ring -->
+        <div class="reactor-container" id="reactor-container">
+          <div class="reactor-outer-ring"></div>
+          <div class="reactor-middle-ring"></div>
+          <div class="reactor-inner-core" id="reactor-core">
+            <div class="core-glow"></div>
+            <div class="core-symbol">⚡</div>
+          </div>
+          <!-- Waveform Canvas -->
+          <canvas id="waveform-canvas" width="320" height="80" class="waveform-canvas"></canvas>
+        </div>
+
+        <!-- Assistant Status Display -->
+        <div class="hud-status-banner">
+          <span class="hud-state-label" id="hud-state-label">IDLE — READY FOR DIRECTIVE</span>
+          <p class="hud-state-sub" id="hud-state-sub">Press Space, click the Arc Core, or push-to-talk.</p>
+        </div>
+
+        <!-- Transcript Review & Confirmation Box -->
+        <div class="transcript-box glass hidden" id="transcript-box">
+          <div class="transcript-header">
+            <span>VOICE TRANSCRIPTION (VERIFY BEFORE EXECUTION)</span>
+            <span class="transcript-badge">EDITABLE</span>
+          </div>
+          <div class="transcript-content">
+            <input type="text" id="transcript-input" class="transcript-input" placeholder="Verifying speech..." />
+          </div>
+          <div class="transcript-actions">
+            <button id="btn-transcript-submit" class="hud-btn hud-btn-cyan">EXECUTE DIRECTIVE</button>
+            <button id="btn-transcript-cancel" class="hud-btn hud-btn-danger">DISCARD</button>
+          </div>
+        </div>
+
+        <!-- Voice Interaction Bar -->
+        <div class="ptt-controls">
+          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation">
+            <span class="ptt-icon">🎙️</span>
+            <span class="ptt-text" id="ptt-text">HOLD TO TALK</span>
+          </button>
+          <div class="keyboard-hint">OR PRESS <code>SPACE</code> TO TALK | <code>ESC</code> TO CANCEL</div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Pending Approvals & Task Lifecycle Evidence -->
+      <aside class="hud-panel hud-panel-right glass">
+        <div class="panel-header">
+          <h3>TASK GOVERNANCE</h3>
+          <span class="panel-tag warning" id="hud-pending-badge">0 APPROVALS</span>
+        </div>
+        <div class="panel-content">
+          <!-- Pending Approval Card Slot -->
+          <div id="hud-approvals-slot" class="hud-approvals-slot">
+            <div class="no-tasks-hint" id="hud-no-approvals-hint">No actions awaiting human consent.</div>
+          </div>
+
+          <!-- Active / Completed Tasks Feed -->
+          <div class="tasks-timeline-header">
+            <span>EXECUTION EVIDENCE FEED</span>
+          </div>
+          <div class="hud-tasks-feed" id="hud-tasks-feed">
+            <div class="task-entry">
+              <span class="task-time">[READY]</span>
+              <span class="task-desc">Enclave listening for allowlisted operations</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom Command Deck: Quick Allowlisted Directives & Fallback Input -->
+    <footer class="hud-footer glass">
+      <div class="command-deck">
+        <div class="directive-chips">
+          <span class="chips-title">DIRECTIVES:</span>
+          <button class="hud-chip" data-cmd="What is the OS version?">OS FACTS</button>
+          <button class="hud-chip" data-cmd="Check system memory and RAM">SYSTEM RAM</button>
+          <button class="hud-chip" data-cmd="What is the battery status?">BATTERY</button>
+          <button class="hud-chip" data-cmd="Check C: drive disk space">DISK SPACE</button>
+          <button class="hud-chip warn" data-cmd="Please launch Notepad">LAUNCH NOTEPAD</button>
+          <button class="hud-chip warn" data-cmd="Launch Calculator">LAUNCH CALC</button>
+          <button class="hud-chip danger" data-cmd="Delete all files on drive C">ADVERSARIAL TEST</button>
+        </div>
+
+        <div class="command-input-row">
+          <div class="input-wrapper">
+            <span class="terminal-prefix">&gt;</span>
+            <input type="text" id="hud-text-input" class="hud-terminal-input" placeholder="Enter directive or use Push-To-Talk voice command..." autocomplete="off" />
+          </div>
+          <button id="btn-hud-send" class="hud-btn hud-btn-cyan">TRANSMIT</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/hud/hud.js"></script>
+</body>
+</html>

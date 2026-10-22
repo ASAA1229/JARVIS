@@ -22,6 +22,11 @@
 | **E2E-LIVE-01** | Full live HTTP runtime lifecycle against running server endpoint | `src/server/server.ts`, `src/core/service.ts` | `test/e2e_recovery.test.ts: E2E-LIVE-01` | **PASS (Verified)** |
 | **RECOVER-01** | Persistent device revocation across host server restart | `src/core/identity.ts`, `src/server/server.ts` | `test/e2e_recovery.test.ts: RECOVER-01` | **PASS (Verified)** |
 | **RECOVER-02** | Fail-closed execution block on compromised audit chain | `src/audit/audit.ts`, `src/core/service.ts` | `test/e2e_recovery.test.ts: RECOVER-02` | **PASS (Verified)** |
+| **VOICE-01** | Privacy guarantee: no continuous capture or wake-word listening by default | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-01` | **PASS (Verified)** |
+| **VOICE-02** | Push-to-talk activation and transcript lifecycle | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-02` | **PASS (Verified)** |
+| **VOICE-03** | Mute privacy control halts capture and refuses microphone start | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-03` | **PASS (Verified)** |
+| **VOICE-04** | Cancellation discards in-flight transcript immediately | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-04` | **PASS (Verified)** |
+| **HUD-01** | Server serves Cinematic HUD assets at /hud endpoint | `src/server/server.ts`, `src/companion/hud.html` | `test/voice_hud.test.ts: HUD-01` | **PASS (Verified)** |
 
 ---
 
@@ -32,35 +37,43 @@
 > node --test --import tsx test/**/*.test.ts
 
 ▶ JARVIS Core Security & Lifecycle Verification
-  ✔ SEC-01: Unknown, unauthenticated or revoked device is rejected (18.53ms)
-  ✔ FLOW-01: End-to-end happy path for allowlisted read-only system information (23.00ms)
-  ✔ FLOW-02: Policy Gateway enforces approval for state-changing app launch (996.23ms)
-  ✔ SEC-02: Scope expansion or altered parameters voids approval (12.78ms)
-  ✔ SEC-03: Prohibited and unmapped operations are denied by default (11.40ms)
-  ✔ SEC-04: Single-use enrollment challenge cannot be reused or redeemed after expiry (10.22ms)
-  ✔ AUD-01: Tamper-evident audit log maintains verifiable cryptographic hash chain (11.55ms)
-✔ JARVIS Core Security & Lifecycle Verification (1085.63ms)
+  ✔ SEC-01: Unknown, unauthenticated or revoked device is rejected (33.87ms)
+  ✔ FLOW-01: End-to-end happy path for allowlisted read-only system information (26.84ms)
+  ✔ FLOW-02: Policy Gateway enforces approval for state-changing app launch (1077.87ms)
+  ✔ SEC-02: Scope expansion or altered parameters voids approval (14.84ms)
+  ✔ SEC-03: Prohibited and unmapped operations are denied by default (13.13ms)
+  ✔ SEC-04: Single-use enrollment challenge cannot be reused or redeemed after expiry (13.64ms)
+  ✔ AUD-01: Tamper-evident audit log maintains verifiable cryptographic hash chain (26.80ms)
+✔ JARVIS Core Security & Lifecycle Verification (1211.55ms)
 
 ▶ JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification
-  ✔ E2E-LIVE-01: Full HTTP Lifecycle (Status -> Challenge -> Enroll -> Auth -> Request -> Approve -> Launch -> Revoke) (1149.19ms)
-  ✔ RECOVER-01: Persistent device revocation remains enforced after server restart (28.52ms)
-  ✔ RECOVER-02: Compromised audit chain causes fail-closed execution block (19.70ms)
-✔ JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification (1199.69ms)
+  ✔ E2E-LIVE-01: Full HTTP Lifecycle (Status -> Challenge -> Enroll -> Auth -> Request -> Approve -> Launch -> Revoke) (1262.11ms)
+  ✔ RECOVER-01: Persistent device revocation remains enforced after server restart (24.86ms)
+  ✔ RECOVER-02: Compromised audit chain causes fail-closed execution block (21.68ms)
+✔ JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification (1310.83ms)
 
 ▶ JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verification
-  ✔ SEC-HARD-01: Malformed and invalid public keys are rejected during enrollment (21.39ms)
-  ✔ SEC-HARD-02: Single-use approval consumption prevents approval reuse/replay attack (1012.41ms)
-  ✔ SEC-HARD-03: Multi-device independence — revoking Phone A leaves Phone B active (2063.83ms)
-  ✔ SEC-HARD-04: Approver verification — unauthorized or revoked phone cannot approve tasks (28.91ms)
-  ✔ SEC-HARD-05: AI Planner schema validator rejects invalid operations and adversarial injections (42.54ms)
-  ✔ SEC-HARD-06: Tamper detection — detecting file modification and broken hash chain (31.03ms)
-  ✔ SEC-HARD-07: HTTP Server enforces session authentication on approval and revocation routes (251.30ms)
-  ✔ SEC-HARD-08: Stale and replay session requests are rejected (29.38ms)
-✔ JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verification (3484.08ms)
+  ✔ SEC-HARD-01: Malformed and invalid public keys are rejected during enrollment (34.58ms)
+  ✔ SEC-HARD-02: Single-use approval consumption prevents approval reuse/replay attack (1039.29ms)
+  ✔ SEC-HARD-03: Multi-device independence — revoking Phone A leaves Phone B active (3611.30ms)
+  ✔ SEC-HARD-04: Approver verification — unauthorized or revoked phone cannot approve tasks (53.10ms)
+  ✔ SEC-HARD-05: AI Planner schema validator rejects invalid operations and adversarial injections (39.19ms)
+  ✔ SEC-HARD-06: Tamper detection — detecting file modification and broken hash chain (26.13ms)
+  ✔ SEC-HARD-07: HTTP Server enforces session authentication on approval and revocation routes (187.21ms)
+  ✔ SEC-HARD-08: Stale and replay session requests are rejected (25.67ms)
+✔ JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verification (5021.13ms)
 
-ℹ tests 18
-ℹ suites 3
-ℹ pass 18
+▶ JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routing
+  ✔ VOICE-01: Privacy guarantee — no continuous capture or wake-word by default (50.89ms)
+  ✔ VOICE-02: Push-to-talk activation and transcript lifecycle (6.29ms)
+  ✔ VOICE-03: Mute privacy control halts capture and refuses start (7.07ms)
+  ✔ VOICE-04: Cancellation discards in-flight transcript immediately (3.47ms)
+  ✔ HUD-01: Server serves Cinematic HUD assets at /hud endpoint (96.40ms)
+✔ JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routing (168.05ms)
+
+ℹ tests 23
+ℹ suites 4
+ℹ pass 23
 ℹ fail 0
-ℹ duration_ms 4064.89ms
+ℹ duration_ms 5806.59ms
 ```
