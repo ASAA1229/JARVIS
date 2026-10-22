@@ -1,0 +1,324 @@
+import {
+  TaskId,
+  TaskState,
+  OperationRequest,
+  DeviceId,
+  ExecutionResult,
+  VerificationOutcome,
+  RiskTier,
+} from '../core/types.js';
+import { DeviceIdentityManager } from '../core/identity.js';
+import { PolicyGateway } from '../policy/gateway.js';
+import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
+import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
+import { OutcomeVerifier } from '../verification/verifier.js';
+import { AuditLogger } from '../audit/audit.js';
+import { IAIPlannerProvider, MinimizedContext } from '../planner/planner.js';
+import { CryptoUtil } from '../crypto/crypto.js';
+
+export interface TaskLifecycleRecord {
+  id: TaskId;
+  deviceId: DeviceId;
+  requestText: string;
+  state: TaskState;
+  createdAt: number;
+  updatedAt: number;
+  operation?: string;
+  parameters?: Record<string, unknown>;
+  approvalId?: string;
+  result?: ExecutionResult;
+  error?: string;
+  interrupted?: boolean;
+}
+
+export class JarvisCoreService {
+  public readonly audit: AuditLogger;
+  public readonly identity: DeviceIdentityManager;
+  public readonly policy: PolicyGateway;
+  public readonly systemAdapter: WindowsSystemAdapter;
+  public readonly appAdapter: WindowsAppLauncherAdapter;
+  public readonly verifier: OutcomeVerifier;
+  public planner: IAIPlannerProvider;
+
+  private tasks = new Map<TaskId, TaskLifecycleRecord>();
+  private activeExecutionTokens = new Map<TaskId, AbortController>();
+
+  constructor(planner: IAIPlannerProvider, logPath: string = './data/audit.log') {
+    this.audit = new AuditLogger(logPath);
+    this.identity = new DeviceIdentityManager(this.audit);
+    this.policy = new PolicyGateway(this.audit);
+    this.systemAdapter = new WindowsSystemAdapter();
+    this.appAdapter = new WindowsAppLauncherAdapter();
+    this.verifier = new OutcomeVerifier();
+    this.planner = planner;
+  }
+
+  /**
+   * Primary entry point: Authenticate -> Understand -> Plan -> Evaluate Policy -> Approve -> Execute -> Verify -> Audit
+   */
+  public async submitRequest(
+    sessionId: string,
+    requestText: string
+  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown; approvalId?: string }> {
+    // Step 1: Authenticate device & session
+    const auth = this.identity.validateDeviceSession(sessionId);
+    if (!auth.valid || !auth.device) {
+      this.audit.record('REQUEST_AUTH_FAILED', { reason: auth.error });
+      throw new Error(`Authentication failed: ${auth.error}`);
+    }
+
+    const device = auth.device;
+    const taskId = `task-${CryptoUtil.randomToken(12)}`;
+    const taskRecord: TaskLifecycleRecord = {
+      id: taskId,
+      deviceId: device.id,
+      requestText,
+      state: TaskState.CREATED,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    this.tasks.set(taskId, taskRecord);
+
+    this.audit.record('REQUEST_RECEIVED', { taskId, requestText }, device.id, taskId);
+
+    // Step 2: Understand request & build bounded plan via Planner (AI Advisory)
+    const context: MinimizedContext = {
+      requesterName: device.name,
+      timestamp: Date.now(),
+    };
+    const plan = await this.planner.generatePlan(requestText, context);
+
+    if (!plan.operations || plan.operations.length === 0) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = plan.explanation;
+      this.audit.record('PLANNING_UNABLE_TO_MAP', { plan }, device.id, taskId);
+      return { taskId, state: taskRecord.state, message: plan.explanation };
+    }
+
+    // Single bounded operation per task in POC slice
+    const proposedOp = plan.operations[0];
+    taskRecord.operation = proposedOp.operation;
+    taskRecord.parameters = proposedOp.parameters;
+
+    const opRequest: OperationRequest = {
+      operation: proposedOp.operation,
+      parameters: proposedOp.parameters,
+    };
+
+    // Step 3: Evaluate Policy
+    return this.evaluateAndProceed(taskId, opRequest, device.id);
+  }
+
+  /**
+   * Evaluates policy for a task and proceeds to execute or requests approval.
+   */
+  public async evaluateAndProceed(
+    taskId: TaskId,
+    opRequest: OperationRequest,
+    deviceId: DeviceId,
+    approvalId?: string
+  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown; approvalId?: string }> {
+    const taskRecord = this.tasks.get(taskId);
+    if (!taskRecord) throw new Error('Task not found');
+
+    const device = this.identity.getDevice(deviceId);
+    if (!device) throw new Error('Device not found');
+
+    const policyResult = this.policy.evaluate(opRequest, device, taskId, approvalId);
+
+    if (!policyResult.allowed) {
+      if (policyResult.requiresApproval) {
+        taskRecord.state = TaskState.AWAITING_APPROVAL;
+        const approval = this.policy.createApprovalRequest(
+          taskId,
+          deviceId,
+          opRequest.operation,
+          opRequest.parameters,
+          policyResult.riskTier
+        );
+        taskRecord.approvalId = approval.id;
+        return {
+          taskId,
+          state: taskRecord.state,
+          approvalId: approval.id,
+          message: `Operation '${opRequest.operation}' requires explicit approval (Risk: ${policyResult.riskTier})`,
+        };
+      } else {
+        taskRecord.state = TaskState.FAILED;
+        taskRecord.error = policyResult.reason;
+        this.audit.record('TASK_DENIED', { reason: policyResult.reason }, deviceId, taskId);
+        return { taskId, state: taskRecord.state, message: policyResult.reason || 'Policy denied execution' };
+      }
+    }
+
+    // Policy permitted: proceed to execute
+    return this.executeTask(taskId, opRequest);
+  }
+
+  /**
+   * Executes permitted operation via allowlisted execution adapters with cancellation tracking.
+   */
+  public async executeTask(
+    taskId: TaskId,
+    opRequest: OperationRequest
+  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown }> {
+    const taskRecord = this.tasks.get(taskId);
+    if (!taskRecord) throw new Error('Task not found');
+
+    // Precondition re-check: verify device is not revoked
+    const device = this.identity.getDevice(taskRecord.deviceId);
+    if (!device || device.status !== 'ACTIVE') {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Device revoked or inactive before execution';
+      this.audit.record('EXECUTION_BLOCKED_DEVICE_REVOKED', {}, taskRecord.deviceId, taskId);
+      return { taskId, state: taskRecord.state, message: taskRecord.error };
+    }
+
+    taskRecord.state = TaskState.EXECUTING;
+    const abortController = new AbortController();
+    this.activeExecutionTokens.set(taskId, abortController);
+
+    this.audit.record('EXECUTION_STARTED', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
+
+    let rawResult: ExecutionResult;
+
+    try {
+      if (abortController.signal.aborted) {
+        throw new Error('Task was aborted before execution');
+      }
+
+      // Dispatch ONLY to allowlisted adapters
+      switch (opRequest.operation) {
+        case 'system:get_os_info':
+          rawResult = await this.systemAdapter.getOsInfo();
+          break;
+        case 'system:get_memory_info':
+          rawResult = await this.systemAdapter.getMemoryInfo();
+          break;
+        case 'system:get_battery_status':
+          rawResult = await this.systemAdapter.getBatteryStatus();
+          break;
+        case 'system:get_disk_space':
+          rawResult = await this.systemAdapter.getDiskSpace((opRequest.parameters.drive as string) || 'C:');
+          break;
+        case 'app:launch':
+          rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string);
+          break;
+        default:
+          throw new Error(`Execution adapter not found for ${opRequest.operation}`);
+      }
+    } catch (err: unknown) {
+      rawResult = {
+        success: false,
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        error: String(err),
+        evidence: { error: String(err) },
+      };
+    } finally {
+      this.activeExecutionTokens.delete(taskId);
+    }
+
+    // Step 4: Verification of outcome
+    const verification = this.verifier.verify(opRequest.operation, rawResult);
+    taskRecord.result = rawResult;
+
+    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS) {
+      taskRecord.state = TaskState.COMPLETED;
+    } else if (verification.honestOutcome === VerificationOutcome.PARTIAL_SUCCESS) {
+      taskRecord.state = TaskState.COMPLETED; // partial reported honestly
+    } else {
+      taskRecord.state = TaskState.FAILED;
+    }
+
+    this.audit.record(
+      'EXECUTION_COMPLETED',
+      {
+        operation: opRequest.operation,
+        honestOutcome: verification.honestOutcome,
+        verified: verification.verified,
+      },
+      taskRecord.deviceId,
+      taskId
+    );
+
+    return {
+      taskId,
+      state: taskRecord.state,
+      message: verification.message,
+      data: rawResult.data,
+    };
+  }
+
+  /**
+   * Approves a pending task and triggers execution.
+   */
+  public async approveTask(
+    approvalId: string,
+    approverDeviceId: DeviceId
+  ): Promise<{ success: boolean; state: TaskState; message: string; data?: unknown }> {
+    const approval = this.policy.getApproval(approvalId);
+    if (!approval) throw new Error('Approval not found');
+
+    const resolveRes = this.policy.resolveApproval(approvalId, true, approverDeviceId);
+    if (!resolveRes.success) {
+      throw new Error(resolveRes.error);
+    }
+
+    const task = this.tasks.get(approval.taskId);
+    if (!task) throw new Error('Associated task not found');
+
+    const opRequest: OperationRequest = {
+      operation: approval.operation,
+      parameters: task.parameters || {},
+    };
+
+    const res = await this.evaluateAndProceed(task.id, opRequest, task.deviceId, approvalId);
+    return {
+      success: res.state === TaskState.COMPLETED,
+      state: res.state,
+      message: res.message,
+      data: res.data,
+    };
+  }
+
+  /**
+   * Rejects a pending task.
+   */
+  public rejectTask(approvalId: string, approverDeviceId: DeviceId): { success: boolean; message: string } {
+    const approval = this.policy.getApproval(approvalId);
+    if (!approval) throw new Error('Approval not found');
+
+    this.policy.resolveApproval(approvalId, false, approverDeviceId);
+    const task = this.tasks.get(approval.taskId);
+    if (task) {
+      task.state = TaskState.REJECTED;
+    }
+    return { success: true, message: 'Task rejected' };
+  }
+
+  /**
+   * Safe interruption: stops in-flight task and reconciles state.
+   */
+  public interruptTask(taskId: TaskId): boolean {
+    const controller = this.activeExecutionTokens.get(taskId);
+    if (controller) {
+      controller.abort();
+      const task = this.tasks.get(taskId);
+      if (task) {
+        task.state = TaskState.INTERRUPTED;
+        task.interrupted = true;
+      }
+      this.audit.record('TASK_INTERRUPTED', { taskId }, task?.deviceId, taskId);
+      return true;
+    }
+    return false;
+  }
+
+  public getTask(taskId: TaskId): TaskLifecycleRecord | undefined {
+    return this.tasks.get(taskId);
+  }
+
+  public listTasks(): TaskLifecycleRecord[] {
+    return Array.from(this.tasks.values());
+  }
+}

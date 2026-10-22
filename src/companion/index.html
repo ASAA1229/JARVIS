@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>JARVIS Companion & Control Center</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="pulse-indicator online" id="status-dot"></div>
+        <h1>JARVIS</h1>
+        <span class="badge">SECURE POC</span>
+      </div>
+      <div class="header-actions">
+        <button id="btn-device-status" class="icon-btn" title="Device Connection Status">
+          <span class="icon">📱</span>
+          <span id="header-device-name">No Device</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Section 1: Device State & Enrollment -->
+      <section class="card glass" id="card-enrollment">
+        <div class="card-header">
+          <h2>Device Enrollment & Keys</h2>
+          <span class="status-pill" id="device-pill">Unenrolled</span>
+        </div>
+        <div class="card-body">
+          <div id="enrollment-unregistered">
+            <p class="muted">No enrolled companion. Create a single-use cryptographic challenge to enroll an Android phone.</p>
+            <div class="action-row">
+              <button id="btn-create-challenge" class="btn btn-primary">Generate Enrollment Challenge</button>
+              <button id="btn-simulate-phone" class="btn btn-secondary">Simulate Android Enrollment</button>
+            </div>
+            <div id="challenge-box" class="challenge-box hidden">
+              <div class="token-title">Single-Use Enrollment Token (120s TTL)</div>
+              <code id="challenge-token" class="code-token">--</code>
+              <div class="countdown" id="challenge-timer">Expires in: 120s</div>
+            </div>
+          </div>
+          <div id="enrollment-registered" class="hidden">
+            <div class="device-info-grid">
+              <div><span class="label">Device ID:</span> <span id="info-device-id" class="val">--</span></div>
+              <div><span class="label">Device Name:</span> <span id="info-device-name" class="val">--</span></div>
+              <div><span class="label">Session:</span> <span id="info-session-id" class="val">--</span></div>
+              <div><span class="label">Audit Chain:</span> <span id="info-audit-integrity" class="val success">VALID</span></div>
+            </div>
+            <div class="action-row mt-12">
+              <button id="btn-revoke-device" class="btn btn-danger">Revoke Device Immediately</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Request & AI Planner Interface -->
+      <section class="card glass" id="card-requests">
+        <div class="card-header">
+          <h2>Companion Request Intake</h2>
+          <span class="status-pill">Local Heuristic Planner</span>
+        </div>
+        <div class="card-body">
+          <div class="quick-prompts">
+            <button class="chip" data-prompt="What is the OS version?">OS Specs</button>
+            <button class="chip" data-prompt="Check system memory and RAM">Memory/RAM</button>
+            <button class="chip" data-prompt="What is the battery status?">Battery</button>
+            <button class="chip" data-prompt="Check C: drive disk space">C: Disk Space</button>
+            <button class="chip chip-warn" data-prompt="Please launch Notepad">Launch Notepad</button>
+            <button class="chip chip-warn" data-prompt="Launch Calculator">Launch Calc</button>
+            <button class="chip chip-danger" data-prompt="Format C: drive and delete files">Adversarial Test</button>
+          </div>
+          <div class="input-group mt-12">
+            <input type="text" id="input-request" placeholder="Ask JARVIS (e.g., 'What is the OS version?')..." autocomplete="off">
+            <button id="btn-send-request" class="btn btn-primary">Send Request</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Pending Approvals & Task Scope -->
+      <section class="card glass" id="card-approvals">
+        <div class="card-header">
+          <h2>Task-Scoped Approvals</h2>
+          <span class="badge badge-accent" id="approval-count">0 Pending</span>
+        </div>
+        <div class="card-body" id="approvals-container">
+          <p class="muted" id="no-approvals-msg">No actions currently require owner approval.</p>
+        </div>
+      </section>
+
+      <!-- Section 4: Task Execution & Outcome Evidence -->
+      <section class="card glass" id="card-tasks">
+        <div class="card-header">
+          <h2>Task Execution & Verified Outcomes</h2>
+        </div>
+        <div class="card-body">
+          <div id="tasks-feed" class="tasks-feed">
+            <p class="muted">Requests and verified host outcomes will appear here.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 5: Real-time Audit Trail -->
+      <section class="card glass" id="card-audit">
+        <div class="card-header">
+          <h2>Tamper-Evident Audit Log</h2>
+          <button id="btn-refresh-audit" class="icon-btn small">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="audit-log-stream" class="audit-stream"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div>Host: <strong>Windows 11 Home</strong> | Architecture: <strong>Modular Monolith</strong> | Auth: <strong>Ed25519</strong></div>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
