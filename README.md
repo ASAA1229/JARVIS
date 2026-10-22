@@ -471,37 +471,41 @@ These are proposed future planning documents; this README update does not create
 
 ## 12. Git branching strategy
 
-The initial repository workflow uses five long-lived branches. Additional short-lived branches may be created when a task requires isolation.
+The repository uses five long-lived branches. Additional task-specific branches may be created when useful.
 
 | Branch | Role | Usage and merge policy |
 |---|---|---|
-| `main` | **Production** | Default branch containing stable, reviewed, release-ready work. Merge from `dev` only after required tests and acceptance checks pass. |
-| `dev` | **Developer integration** | Shared integration branch that combines completed work from `new`, `fix`, and validated changes from `test`. Keep it integration-ready. |
-| `fix` | **Debugging and bug fixes** | Investigate and correct defects in existing code. Keep fixes focused, document the cause and verification, then merge into `dev`. |
-| `test` | **Testing and audit evidence** | Validate changes and record test results, failures, reproducible issues, and relevant audit evidence. A passing test does not itself authorize a production release. |
-| `new` | **New feature development** | Develop new features and stages in isolation. Review and test the work before merging into `dev`. |
+| `main` | **Production** | Production-only, manually controlled by the owner. No routine development operations or automated PRs/merges into `main`. The only permitted PR source is `dev`; the owner manually creates, reviews, approves, and merges it. |
+| `dev` | **Developer integration** | Integration branch. Receives PRs from all non-`main` branches, including `fix`, `test`, `new`, and future task branches, subject to validation and conditions. |
+| `fix` | **Debugging and bug fixes** | Investigate and correct defects in existing code. Keep fixes focused, document the cause, and validate them before proposing a PR to `dev`. |
+| `test` | **Testing and audit evidence** | Run tests and record results, failures, reproducible issues, and relevant audit evidence. A passing test does not itself authorize production release. |
+| `new` | **New feature development** | Develop new features and stages in isolation. Review and test the work before proposing integration into `dev`. |
 
 ### Standard flow
 
 ```mermaid
 flowchart TD
-    NEW[new: feature work] --> REVIEW[Review and validate]
-    FIX[fix: bug fixes] --> REVIEW
-    REVIEW --> DEV[dev: integration]
-    DEV --> TEST[test: run tests and record issues]
-    TEST -->|pass; issues resolved| RELEASE[Review and acceptance gate]
-    TEST -->|failure| FIX
-    RELEASE -->|approved release| MAIN[main: production]
-    MAIN -.->|urgent production defect| FIX
+    NEW[new: feature work] --> CHECK[Review and validation]
+    FIX[fix: bug fixes] --> CHECK
+    TEST[test: test evidence and issues] --> CHECK
+    EXTRA[Future task branches] --> CHECK
+    CHECK -->|eligible changes only| PRDEV[PR to dev]
+    PRDEV --> DEV[dev: integration]
+    DEV -->|owner manually creates and reviews PR| PRMAIN[PR from dev to main]
+    PRMAIN -->|owner manually approves and merges| MAIN[main: production]
+    CHECK -->|fails or needs changes| WORK[Revise on working branch]
+    WORK --> CHECK
 ```
 
-### Working rules
+### Git operations and pull-request rules
 
-- Treat `main` as production and protect it from direct routine commits.
-- Use pull requests/reviews and automated checks where repository settings permit.
-- Record test outcomes and issue references so failures can be reproduced and traced.
-- Merge only validated changes into `dev`; merge `dev` into `main` only after release checks and explicit acceptance.
-- For urgent production fixes, create a narrowly scoped temporary hotfix branch from `main`, validate it, and merge the fix back into both `main` and `dev` as appropriate.
-- Create task-specific branches such as `feature/<short-name>`, `bugfix/<short-name>`, `hotfix/<short-name>`, or `experiment/<short-name>` when useful. These supplement, rather than replace, the five core branches.
-- Branch names describe workflow; they do not replace authorization, code review, test evidence, or the project's implementation approval gate.
-- This branch strategy is for repository workflow only. **It does not approve starting JARVIS application coding.** The separate explicit owner approval gate remains in force.
+- **All routine work happens on branches other than `main`.** Use `add`, `commit`, `pull`, and `push` on working branches. Do not use `main` as a working branch or push development commits directly to it.
+- **PR target rule:** all PRs from other branches target `dev`. A PR targeting `main` is allowed only from `dev`.
+- **Manual production release:** only the owner manually creates, reviews, approves, and merges a `dev` → `main` PR. Do not automate creating, approving, or merging PRs into `main`, and do not automatically merge into `main`.
+- **Conditional automation into `dev`:** PR creation from other branches may be automated only when change classification, required tests, diff/scope checks, security checks, and any required review conditions pass. Automation must not bypass policy or required human review. If checks fail, changes are high-risk, scope is unclear, or evidence is missing, leave the branch unmerged and request review.
+- **Testing and evidence:** record test results, failures, and issue references so results are reproducible. Merging to `dev` does not mean production-ready.
+- **Urgent production fixes:** do not bypass the `dev` → `main` owner-controlled release gate. Use a temporary branch for the fix, validate it, and bring it through the defined review/release path.
+- **Future branches:** names such as `feature/<short-name>`, `bugfix/<short-name>`, `hotfix/<short-name>`, or `experiment/<short-name>` may be used. They supplement the five core branches and must follow the same PR target rules.
+- These rules document the intended workflow. Repository branch protection and GitHub Actions/automation settings must be configured separately to enforce them; documentation alone cannot prevent direct pushes or restrict PR targets.
+
+This branch strategy is for repository workflow only. **It does not approve starting JARVIS application coding.** The separate explicit owner approval gate remains in force.
