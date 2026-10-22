@@ -88,6 +88,15 @@ export class JarvisCoreService {
     };
     const plan = await this.planner.generatePlan(requestText, context);
 
+    // Validate plan against strict schema
+    const validation = this.planner.validatePlanSchema(plan);
+    if (!validation.valid) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = `Invalid AI plan proposal: ${(validation.errors || []).join('; ')}`;
+      this.audit.record('PLANNING_SCHEMA_VIOLATION', { errors: validation.errors }, device.id, taskId);
+      return { taskId, state: taskRecord.state, message: taskRecord.error };
+    }
+
     if (!plan.operations || plan.operations.length === 0) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = plan.explanation;
@@ -256,6 +265,12 @@ export class JarvisCoreService {
     approvalId: string,
     approverDeviceId: DeviceId
   ): Promise<{ success: boolean; state: TaskState; message: string; data?: unknown }> {
+    const approver = this.identity.getDevice(approverDeviceId);
+    if (!approver || approver.status !== 'ACTIVE') {
+      this.audit.record('APPROVAL_FAILED_INVALID_APPROVER', { approverDeviceId, approvalId });
+      throw new Error('Approver device not registered or revoked');
+    }
+
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
@@ -285,6 +300,12 @@ export class JarvisCoreService {
    * Rejects a pending task.
    */
   public rejectTask(approvalId: string, approverDeviceId: DeviceId): { success: boolean; message: string } {
+    const approver = this.identity.getDevice(approverDeviceId);
+    if (!approver || approver.status !== 'ACTIVE') {
+      this.audit.record('REJECTION_FAILED_INVALID_APPROVER', { approverDeviceId, approvalId });
+      throw new Error('Approver device not registered or revoked');
+    }
+
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 

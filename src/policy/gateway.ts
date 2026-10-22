@@ -164,6 +164,15 @@ export class PolicyGateway {
         };
       }
 
+      if (approval.consumed) {
+        return {
+          allowed: false,
+          requiresApproval: true,
+          riskTier: rule.riskTier,
+          reason: 'Approval token has already been consumed (single-use)',
+        };
+      }
+
       if (approval.rejected) {
         return {
           allowed: false,
@@ -200,6 +209,9 @@ export class PolicyGateway {
       }
 
       if (approval.approved) {
+        // Mark approval as consumed for single-use execution
+        approval.consumed = true;
+        approval.consumedAt = Date.now();
         return {
           allowed: true,
           requiresApproval: false,

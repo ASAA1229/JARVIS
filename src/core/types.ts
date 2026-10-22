@@ -83,6 +83,8 @@ export interface ApprovalRecord {
   expiresAt: number;
   approved: boolean;
   rejected?: boolean;
+  consumed?: boolean;
+  consumedAt?: number;
 }
 
 export interface PolicyEvaluation {

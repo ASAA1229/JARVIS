@@ -20,10 +20,57 @@ export interface MinimizedContext {
 export interface IAIPlannerProvider {
   name: string;
   generatePlan(requestText: string, context: MinimizedContext): Promise<PlanProposal>;
+  validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] };
 }
 
 export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public readonly name = 'local-heuristic-v1';
+
+  private static readonly ALLOWED_OPERATIONS = new Set([
+    'system:get_os_info',
+    'system:get_memory_info',
+    'system:get_battery_status',
+    'system:get_disk_space',
+    'app:launch',
+  ]);
+
+  public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
+    const errors: string[] = [];
+    if (!plan || typeof plan !== 'object') {
+      return { valid: false, errors: ['Plan must be a valid non-null object'] };
+    }
+
+    const p = plan as Record<string, unknown>;
+    if (typeof p.intent !== 'string' || !p.intent.trim()) {
+      errors.push('Missing or invalid "intent" string');
+    }
+    if (typeof p.confidence !== 'number' || p.confidence < 0 || p.confidence > 1) {
+      errors.push('Invalid "confidence" value (must be float between 0.0 and 1.0)');
+    }
+    if (typeof p.explanation !== 'string') {
+      errors.push('Missing or invalid "explanation" string');
+    }
+    if (!Array.isArray(p.operations)) {
+      errors.push('"operations" must be an array');
+    } else {
+      for (let i = 0; i < p.operations.length; i++) {
+        const op = p.operations[i];
+        if (!op || typeof op !== 'object') {
+          errors.push(`Operation at index ${i} is not an object`);
+          continue;
+        }
+        const opObj = op as Record<string, unknown>;
+        if (typeof opObj.operation !== 'string' || !LocalHeuristicPlanner.ALLOWED_OPERATIONS.has(opObj.operation)) {
+          errors.push(`Operation '${String(opObj.operation)}' at index ${i} is not allowlisted`);
+        }
+        if (!opObj.parameters || typeof opObj.parameters !== 'object' || Array.isArray(opObj.parameters)) {
+          errors.push(`Parameters for operation at index ${i} must be an object`);
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
 
   public async generatePlan(requestText: string, _context: MinimizedContext): Promise<PlanProposal> {
     const text = requestText.toLowerCase().trim();

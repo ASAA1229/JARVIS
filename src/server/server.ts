@@ -121,22 +121,49 @@ export class JarvisServer {
 
       // Approve task
       if (req.method === 'POST' && url.pathname === '/api/approval/approve') {
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) {
+          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        }
+        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
+        }
+
         const body = await this.readJsonBody(req);
-        const { approvalId, deviceId } = body as { approvalId: string; deviceId: string };
-        const result = await this.jarvis.approveTask(approvalId, deviceId);
+        const { approvalId } = body as { approvalId: string };
+        const result = await this.jarvis.approveTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
       }
 
       // Reject task
       if (req.method === 'POST' && url.pathname === '/api/approval/reject') {
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) {
+          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        }
+        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
+        }
+
         const body = await this.readJsonBody(req);
-        const { approvalId, deviceId } = body as { approvalId: string; deviceId: string };
-        const result = this.jarvis.rejectTask(approvalId, deviceId);
+        const { approvalId } = body as { approvalId: string };
+        const result = this.jarvis.rejectTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
       }
 
       // Revoke device
       if (req.method === 'POST' && url.pathname === '/api/device/revoke') {
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) {
+          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        }
+        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
+        }
+
         const body = await this.readJsonBody(req);
         const { deviceId, reason } = body as { deviceId: string; reason?: string };
         const success = this.jarvis.identity.revokeDevice(deviceId, reason);

@@ -76,6 +76,11 @@ export class DeviceIdentityManager {
       return { success: false, error: 'Challenge has expired' };
     }
 
+    if (!CryptoUtil.isValidEd25519PublicKey(publicKeyPem)) {
+      this.audit.record('ENROLLMENT_FAILED', { reason: 'INVALID_PUBLIC_KEY_FORMAT' });
+      return { success: false, error: 'Invalid or malformed public key' };
+    }
+
     // Mark challenge as consumed immediately
     challenge.redeemed = true;
 

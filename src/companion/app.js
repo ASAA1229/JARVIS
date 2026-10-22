@@ -123,7 +123,10 @@ async function handleRevokeDevice() {
   try {
     await fetch('/api/device/revoke', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-session-id': currentSession || '',
+      },
       body: JSON.stringify({ deviceId: currentDevice.id, reason: 'Manual owner revocation' }),
     });
 
@@ -222,10 +225,12 @@ async function resolveApproval(approvalId, approved) {
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-session-id': currentSession || '',
+      },
       body: JSON.stringify({
         approvalId,
-        deviceId: currentDevice ? currentDevice.id : 'dev-pixel-demo-01',
       }),
     });
     const result = await res.json();
