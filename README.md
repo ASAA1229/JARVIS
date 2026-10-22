@@ -291,29 +291,39 @@ flowchart LR
 
 ## 5. Device enrollment, session, and revocation workflow
 
+The diagram below uses a standard Mermaid flowchart for broad renderer compatibility.
+
 ```mermaid
-sequenceDiagram
-    actor Owner
-    participant Control as Authorized control point
-    participant Enroll as Enrollment service
-    participant Phone as Android device
-    participant Store as Device/session registry
-    Owner->>Control: Start enrollment with step-up verification
-    Control->>Enroll: Create short-lived one-time enrollment challenge
-    Enroll-->>Control: QR / one-time challenge
-    Control-->>Phone: Present challenge for scan
-    Phone->>Enroll: Redeem challenge and prove authenticator step
-    Enroll->>Store: Register independent device identity and scoped permissions
-    Store-->>Phone: Establish device-bound session
-    Store-->>Control: Enrollment result and audit event
-    Note over Owner,Store: Exact QR, authenticator, and key protocol remains a design decision.
-    Owner->>Control: Revoke selected device
-    Control->>Store: Revoke device/session and invalidate credentials
-    Store-->>Control: Confirm revocation state
-    Store-->>Phone: Future requests rejected; active work safely interrupted
+flowchart TD
+    A[Owner starts enrollment] --> B[Step-up verification at authorized control point]
+    B --> C[Create short-lived one-time enrollment challenge]
+    C --> D[Show QR code or one-time challenge]
+    D --> E[Android device scans challenge]
+    E --> F[Verify authenticator step and redeem challenge]
+    F --> G{Challenge valid and unused?}
+    G -- No --> H[Reject enrollment and record security event]
+    G -- Yes --> I[Register independent device identity]
+    I --> J[Assign only approved device permissions]
+    J --> K[Create device-bound session]
+    K --> L[Record enrollment result in audit]
+    L --> M[Device can submit authenticated requests]
+
+    N[Owner or authorized control point requests revocation] --> O[Step-up verification]
+    O --> P[Invalidate selected device session and credentials]
+    P --> Q[Block new requests from that device]
+    Q --> R[Safely interrupt active work]
+    R --> S[Reconcile task outcome and record audit event]
 ```
 
-**Enrollment constraints:** one-time challenge expires and cannot be reused; reinstallation requires re-enrollment; TOTP is one factor, not sufficient authorization by itself. Passkeys/security keys and authenticator options require a technology decision. Each enrolled phone has independent permissions and revocation.
+**Enrollment constraints**
+
+- Each phone has its own identity, keys, session, permissions, and revocation state.
+- The enrollment challenge is short-lived, single-use, and rejected if expired or already redeemed.
+- Reinstalling the companion app requires re-enrollment.
+- TOTP authenticator verification is not authorization by itself. Passkeys/security keys and authenticator options remain technology decisions.
+- Enrollment and revocation are available only through the owner laptop or an authorized phone with step-up verification.
+- Revocation must prevent new actions immediately. Any in-flight action is safely interrupted and reconciled; irreversible side effects are not assumed to be reversible.
+- The exact QR payload, cryptographic key exchange, session expiry, and recovery protocol are not finalized.
 
 ## 6. Approval lifecycle and revocation semantics
 
