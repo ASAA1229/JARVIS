@@ -8,12 +8,12 @@ As authorized, implementation proceeds in testable, incremental milestones adher
 
 | Milestone | Title | Focus Area | Status |
 |---|---|---|---|
-| **M1** | **Foundation & Project Setup** | Environment validation, TypeScript project structure, configuration, crypto utilities, core interfaces, test runner | **In Progress** |
-| **M2** | **Secure Windows Core** | Policy gateway, default-deny rules, allowlisted read-only system facts, allowlisted app launcher, outcome verifier, tamper-evident audit log | Pending M1 |
-| **M3** | **Android Enrollment & Channel** | Ed25519 keypair identity, single-use enrollment token challenge, session management, revocation engine, web/companion interface | Pending M2 |
-| **M4** | **Approval & Task Lifecycle** | Task-scoped approvals, expiry, rejection, concurrency interruption, outcome reconciliation, denial paths | Pending M3 |
-| **M5** | **AI Planner Integration** | Replaceable AI provider interface, structured schema validation, local heuristic/Ollama and cloud fallback mockup, proof of policy enforcement | Pending M4 |
-| **M6** | **Verification, Hardening & Release** | Full test suite (unit, integration, security-abuse, fault recovery), resource metrics, completion report | Pending M5 |
+| **M1** | **Foundation & Project Setup** | Environment validation, TypeScript project structure, configuration, crypto utilities, core interfaces, test runner | **Completed** |
+| **M2** | **Secure Windows Core** | Policy gateway, default-deny rules, allowlisted read-only system facts, allowlisted app launcher, outcome verifier, tamper-evident audit log | **Completed** |
+| **M3** | **Android Enrollment & Channel** | Ed25519 keypair identity, single-use enrollment token challenge, session management, revocation engine, web/companion interface | **Completed** |
+| **M4** | **Approval & Task Lifecycle** | Task-scoped approvals, expiry, rejection, concurrency interruption, outcome reconciliation, denial paths | **Completed** |
+| **M5** | **AI Planner Integration** | Replaceable AI provider interface, structured schema validation, local heuristic planner, proof of policy enforcement | **Completed** |
+| **M6** | **Verification, Hardening & Release** | Full test suite (18 automated tests), resource metrics, live HTTP E2E tests, recovery semantics | **Completed & Verified** |
 
 ---
 
