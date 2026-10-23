@@ -23,6 +23,7 @@ export class DeviceIdentityManager {
   private devices = new Map<DeviceId, DeviceRecord>();
   private sessions = new Map<SessionId, SessionRecord>();
   private challenges = new Map<string, EnrollmentChallenge>();
+  private usedSessionNonces = new Map<string, number>();
   private audit: AuditLogger;
   private stateFilePath?: string;
   private stateHealthy = true;
@@ -50,6 +51,14 @@ export class DeviceIdentityManager {
         }
         this.devices.set(dev.id, dev);
       }
+      const savedNonces = (data as { usedSessionNonces?: unknown }).usedSessionNonces;
+      if (Array.isArray(savedNonces)) {
+        for (const entry of savedNonces) {
+          if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number') {
+            if (entry[1] > Date.now()) this.usedSessionNonces.set(entry[0], entry[1]);
+          }
+        }
+      }
     } catch {
       this.stateHealthy = false;
       this.stateError = 'PERSISTED_DEVICE_STATE_INVALID';
@@ -67,6 +76,7 @@ export class DeviceIdentityManager {
       }
       const data = {
         devices: Array.from(this.devices.values()),
+        usedSessionNonces: Array.from(this.usedSessionNonces.entries()).filter(([, expiresAt]) => expiresAt > Date.now()),
         persistedAt: Date.now(),
       };
       writeFileSync(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
@@ -196,6 +206,7 @@ export class DeviceIdentityManager {
     deviceId: DeviceId,
     signature: string,
     timestamp: number,
+    nonce: string,
     ttlSeconds: number = 3600
   ): { success: boolean; sessionId?: SessionId; expiresAt?: number; error?: string } {
     if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; session creation is blocked' };
@@ -210,17 +221,37 @@ export class DeviceIdentityManager {
       return { success: false, error: 'Device is revoked' };
     }
 
-    // Verify freshness (within 60 seconds)
-    if (Math.abs(Date.now() - timestamp) > 60000) {
+    // Verify freshness and require a signed, high-entropy, one-time nonce.
+    if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 60000) {
       this.audit.record('SESSION_CREATION_FAILED', { reason: 'TIMESTAMP_STALE', deviceId });
       return { success: false, error: 'Timestamp is stale or invalid' };
     }
 
-    // Verify cryptographic signature
-    const isValid = CryptoUtil.verifySignature(`SESSION_REQUEST:${timestamp}`, signature, device.publicKey);
+    if (typeof nonce !== 'string' || !/^[a-f0-9]{32,128}$/i.test(nonce)) {
+      this.audit.record('SESSION_CREATION_FAILED', { reason: 'INVALID_NONCE', deviceId });
+      return { success: false, error: 'A 16-byte-or-stronger hexadecimal nonce is required' };
+    }
+
+    // Verify cryptographic signature over both timestamp and nonce.
+    const isValid = CryptoUtil.verifySignature(`SESSION_REQUEST:${timestamp}:${nonce}`, signature, device.publicKey);
     if (!isValid) {
       this.audit.record('SESSION_CREATION_FAILED', { reason: 'INVALID_SIGNATURE', deviceId });
       return { success: false, error: 'Signature verification failed' };
+    }
+
+    const nonceKey = `${deviceId}:${nonce}`;
+    const nonceExpiry = this.usedSessionNonces.get(nonceKey);
+    if (nonceExpiry && nonceExpiry > Date.now()) {
+      this.audit.record('SESSION_CREATION_FAILED', { reason: 'SESSION_NONCE_REPLAY', deviceId });
+      return { success: false, error: 'Session nonce has already been used' };
+    }
+    this.usedSessionNonces.set(nonceKey, Date.now() + 120000);
+    for (const [key, expiry] of this.usedSessionNonces.entries()) {
+      if (expiry <= Date.now()) this.usedSessionNonces.delete(key);
+    }
+    if (!this.persistState()) {
+      this.usedSessionNonces.delete(nonceKey);
+      return { success: false, error: 'Could not persist session replay protection state' };
     }
 
     const sessionId = `sess-${CryptoUtil.randomToken(16)}`;
