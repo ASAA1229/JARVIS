@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
+import { CryptoUtil } from '../crypto/crypto.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -112,13 +113,20 @@ export class JarvisServer {
       // Redeem enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/redeem') {
         const body = await this.readJsonBody(req);
-        const { challengeToken, deviceName, publicKey } = body as {
+        const { challengeToken, deviceName, publicKey, proofSignature } = body as {
           challengeToken: string;
           deviceName: string;
           publicKey: string;
+          proofSignature: string;
         };
-        if (typeof challengeToken !== 'string' || typeof deviceName !== 'string' || typeof publicKey !== 'string') {
-          return this.jsonResponse(res, 400, { error: 'challengeToken, deviceName, and publicKey are required strings' });
+        if (typeof challengeToken !== 'string' || typeof deviceName !== 'string' ||
+            typeof publicKey !== 'string' || typeof proofSignature !== 'string') {
+          return this.jsonResponse(res, 400, { error: 'challengeToken, deviceName, publicKey, and proofSignature are required strings' });
+        }
+        const proofPayload = `ENROLLMENT_PROOF:${challengeToken}:${deviceName}:${CryptoUtil.sha256(publicKey)}`;
+        if (!CryptoUtil.isValidEd25519PublicKey(publicKey) ||
+            !CryptoUtil.verifySignature(proofPayload, proofSignature, publicKey)) {
+          return this.jsonResponse(res, 401, { error: 'Enrollment proof-of-possession verification failed' });
         }
         const result = this.jarvis.identity.enrollDevice(challengeToken, deviceName, publicKey);
         if (!result.success) {
