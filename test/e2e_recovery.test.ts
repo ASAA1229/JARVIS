@@ -5,7 +5,7 @@ import { JarvisCoreService } from '../src/core/service.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 import { CryptoUtil } from '../src/crypto/crypto.js';
 import { TaskState, Permission } from '../src/core/types.js';
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, writeFileSync } from 'node:fs';
 
 process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token';
 
@@ -255,6 +255,22 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     } finally {
       await restartedServer.stop();
     }
+  });
+
+  test('RECOVER-03: Corrupt persisted device state blocks enrollment and session creation', async () => {
+    await server.stop();
+    writeFileSync(TEST_STATE_FILE, '{ invalid-json', 'utf-8');
+    server = new JarvisServer(TEST_PORT + 2, TEST_AUDIT_LOG, TEST_STATE_FILE);
+    await server.start();
+
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const enroll = server.getService().identity.enrollDevice(
+      challenge.challengeToken,
+      'Must Not Enroll',
+      companionKeypair.publicKey,
+    );
+    assert.strictEqual(enroll.success, false);
+    assert.match(enroll.error || '', /state is unhealthy/i);
   });
 
   test('RECOVER-02: Compromised audit chain causes fail-closed execution block', async () => {
