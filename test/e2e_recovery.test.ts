@@ -33,7 +33,7 @@ function signedHeaders(
   };
 }
 
-describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification', () => {
+describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification', { concurrency: false }, () => {
   let server: JarvisServer;
   let companionKeypair: { publicKey: string; privateKey: string };
   let companionDeviceId: string;
