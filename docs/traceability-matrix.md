@@ -1,12 +1,16 @@
-> **Current status (2026-10-23): Milestone 7 remains INCOMPLETE.** The PASS labels and test output below are historical baseline evidence from before the current remediation. They are not a sign-off for the latest `fix` branch. The current audit is [docs/security-api-feature-audit-2026-10-23.md](security-api-feature-audit-2026-10-23.md) on `test`; the latest `fix` commit must have a successful CI run and browser/Windows acceptance evidence before this matrix can be considered current.
+> **Current status (2026-10-23): Milestone 7 is BLOCKED — NOT COMPLETE.** The historical log below is superseded by the current local run recorded in Section 4. That run passed on the uncommitted working tree based on `fix` SHA `21c02aee19471a048d3391d1515746d25a87247b`; it is not hosted-CI or platform acceptance evidence. The current audit is [docs/security-api-feature-audit-2026-10-23.md](security-api-feature-audit-2026-10-23.md). Native Android/two-phone, physical microphone/vendor behavior, owner Windows 11 acceptance, and CI on an exact remediation commit remain unverified.
 
 # Requirements Traceability Matrix — Historical Baseline and Current Remediation
+
+The authoritative Milestones 1–7 status-by-criterion matrix is in the [current acceptance audit](milestones-1-to-7-acceptance-audit.md). This document retains historical requirement IDs and adds current regression links; historical pass claims below are not a substitute for the current matrix.
 
 ## 1. Traceability Mapping
 
 | Requirement ID | Requirement Area | Implementation Module | Automated Test Family | Verification Status |
 |---|---|---|---|---|
 | **SEC-01** | Unknown, unauthenticated or revoked device rejected | `src/core/identity.ts`, `src/core/service.ts` | `test/core.test.ts: SEC-01` | **PASS (Verified)** |
+| **SEC-05** | Public service API cannot expose an adapter dispatcher that bypasses policy | `src/core/service.ts` | `test/core.test.ts: SEC-05` | **PASS (current regression run)** |
+| **SEC-06** | Expired sessions are rejected before request processing | `src/core/identity.ts`, `src/core/service.ts` | `test/core.test.ts: SEC-06` | **PASS (current regression run)** |
 | **SEC-02** | Task-scoped approvals cannot be reused or expanded | `src/policy/gateway.ts` | `test/core.test.ts: SEC-02` | **PASS (Verified)** |
 | **SEC-03** | Prohibited and unmapped operations denied by default | `src/policy/gateway.ts`, `src/planner/planner.ts` | `test/core.test.ts: SEC-03` | **PASS (Verified)** |
 | **SEC-04** | Single-use enrollment challenge cannot be reused/expired | `src/core/identity.ts` | `test/core.test.ts: SEC-04` | **PASS (Verified)** |
@@ -16,7 +20,7 @@
 | **SEC-HARD-01** | Rejection of malformed / invalid Ed25519 public keys | `src/crypto/crypto.ts`, `src/core/identity.ts` | `test/hardening.test.ts: SEC-HARD-01` | **PASS (Verified)** |
 | **SEC-HARD-02** | Single-use approval consumption prevents approval replay | `src/policy/gateway.ts` | `test/hardening.test.ts: SEC-HARD-02` | **PASS (Verified)** |
 | **SEC-HARD-03** | Multi-device independence (2 phones, independent identities & revocation) | `src/core/identity.ts`, `src/core/service.ts` | `test/hardening.test.ts: SEC-HARD-03` | **PASS (Verified)** |
-| **SEC-HARD-04** | Approver device identity verification & rejection of revoked approvers | `src/core/service.ts` | `test/hardening.test.ts: SEC-HARD-04` | **PASS (Verified)** |
+| **SEC-HARD-04** | Approval/rejection service methods require an authenticated active session; revoked approvers are denied | `src/core/service.ts` | `test/hardening.test.ts: SEC-HARD-04` | **PASS (current regression run)** |
 | **SEC-HARD-05** | AI Planner schema validation & rejection of adversarial command injection | `src/planner/planner.ts`, `src/core/service.ts` | `test/hardening.test.ts: SEC-HARD-05` | **PASS (Verified)** |
 | **SEC-HARD-06** | Tamper detection: detecting modified records and broken hash chains | `src/audit/audit.ts` | `test/hardening.test.ts: SEC-HARD-06` | **PASS (Verified)** |
 | **SEC-HARD-07** | Server route session authentication on approval & revocation endpoints | `src/server/server.ts` | `test/hardening.test.ts: SEC-HARD-07` | **PASS (Verified)** |
@@ -29,6 +33,26 @@
 | **VOICE-03** | Mute privacy control halts capture and refuses microphone start | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-03` | **PASS (Verified)** |
 | **VOICE-04** | Cancellation discards in-flight transcript immediately | `src/voice/voiceManager.ts` | `test/voice_hud.test.ts: VOICE-04` | **PASS (Verified)** |
 | **HUD-01** | Server serves Cinematic HUD assets at /hud endpoint | `src/server/server.ts`, `src/companion/hud.html` | `test/voice_hud.test.ts: HUD-01` | **PASS (Verified)** |
+| **FLOW-03** | Partial adapter evidence is not reported as complete/verified | `src/core/service.ts`, `src/core/types.ts` | `test/core.test.ts: FLOW-03` | **PASS (current automated run)** |
+| **FLOW-04** | Interrupted execution reports an uncertain outcome | `src/core/service.ts`, `src/adapters/windowsAppLauncher.ts`, `src/adapters/windowsSystem.ts` | `test/core.test.ts: FLOW-04` | **PASS (current automated run)** |
+| **FLOW-05** | Completion audit persistence failure reports recovery-required | `src/core/service.ts` | `test/core.test.ts: FLOW-05` | **PASS (current automated run)** |
+| **AUD-02** | Nested, text, and legacy audit data is redacted | `src/audit/audit.ts` | `test/audit.test.ts: AUD-02` | **PASS (current automated run)** |
+| **AUD-03** | Truncated audit data fails closed | `src/audit/audit.ts` | `test/audit.test.ts: AUD-03` | **PASS (current automated run)** |
+| **AUD-04** | Unavailable audit storage blocks further records | `src/audit/audit.ts` | `test/audit.test.ts: AUD-04` | **PASS (current automated run)** |
+| **AUD-05** | Runtime audit-file tampering is detected before append | `src/audit/audit.ts` | `test/audit.test.ts: AUD-05` | **PASS (current automated run)** |
+| **SEC-API-00/10** | Enrollment requires owner authorization and proof of private-key possession | `src/server/server.ts`, `src/core/identity.ts` | `test/e2e_recovery.test.ts: SEC-API-00, SEC-API-10` | **PASS (current automated run)** |
+| **SEC-API-01** | Legacy HUD session bootstrap cannot bypass device-bound authentication | `src/server/server.ts` | `test/e2e_recovery.test.ts: SEC-API-01` | **PASS (current automated run)** |
+| **SEC-API-02/03/06/13** | Status is minimal; audit is authenticated, permission-gated, redacted | `src/server/server.ts`, `src/audit/audit.ts` | `test/e2e_recovery.test.ts: SEC-API-02/03/06/13` | **PASS (current automated run)** |
+| **SEC-API-04/05** | JSON media type, payload shape, and request size are validated | `src/server/server.ts` | `test/e2e_recovery.test.ts: SEC-API-04/05` | **PASS (current automated run)** |
+| **SEC-API-07/08/09** | Signed session/request freshness, body binding, and nonce replay are enforced | `src/server/server.ts`, `src/core/identity.ts` | `test/e2e_recovery.test.ts: SEC-API-07/08/09` | **PASS (current automated run)** |
+| **SEC-API-11/12** | Unknown approvals and cross-device revocation are safely rejected | `src/server/server.ts`, `src/core/service.ts` | `test/e2e_recovery.test.ts: SEC-API-11/12` | **PASS (current automated run)** |
+| **SEC-API-14** | Expired approval is rejected over HTTP without execution | `src/server/server.ts`, `src/policy/gateway.ts` | `test/e2e_recovery.test.ts: SEC-API-14` | **PASS (current regression run)** |
+| **RECOVER-03** | Corrupt persisted device state blocks sensitive onboarding | `src/core/identity.ts` | `test/e2e_recovery.test.ts: RECOVER-03` | **PASS (current automated run)** |
+| **SERVER-01** | Listener startup failures reject rather than hang | `src/server/server.ts` | `test/server_lifecycle.test.ts: SERVER-01` | **PASS (current regression run)** |
+| **SERVER-02** | Stop is safe before startup and after the server has stopped | `src/server/server.ts` | `test/server_lifecycle.test.ts: SERVER-02` | **PASS (current regression run)** |
+| **BROWSER-01** | Browser enrollment, signed actions, XSS, CSP/runtime errors, reduced motion | `src/companion/hud.html`, `hud.js`, `hud.css`, `src/server/server.ts` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; speech recognition simulated** |
+| **BROWSER-02** | Uncertain approval outcome is never rendered as verified success | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; approval response intercepted** |
+| **BROWSER-03** | Recognizer permission error is surfaced and leaves text fallback available | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; recognizer error simulated** |
 
 ---
 
@@ -95,4 +119,18 @@ The current remediation branch adds regression coverage for:
 - Corrupt persisted device state blocks enrollment/session creation and reports degraded health.
 - HUD/companion static checks: CSP, unsafe HTML sink/inline-handler regressions, shared WebCrypto client, and voice timeout/privacy disclosure.
 
-**Latest automated verification:** [Windows CI run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/39915715819) on `fix` commit `867747b780a5b1470cf9dcb12f9894bdb09b4639` passed build, TypeScript check, and **38 tests (0 failed, 0 skipped)**. This list describes automated test coverage, not a claim that interactive browser E2E, native Android, or the owner's Windows 11 MSI has been fully validated. Milestone 7 remains **INCOMPLETE / BLOCKED** until those acceptance gaps are closed.
+**Historical hosted verification:** [Windows CI run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/39915715819) on `fix` commit `867747b780a5b1470cf9dcb12f9894bdb09b4639` passed build, TypeScript check, and **38 tests (0 failed, 0 skipped)**. This does not validate the current dirty working tree, interactive physical microphone, native Android/two-phone, or owner-device acceptance. Milestone 7 remains **BLOCKED — NOT COMPLETE**.
+
+## 4. Current Local Verification Evidence — 2026-10-23
+
+The following checks were rerun on the current dirty working tree, whose `HEAD` and `origin/fix` are both `21c02aee19471a048d3391d1515746d25a87247b`. Because the remediation is uncommitted, this SHA identifies the base revision, not an immutable copy of the tested source.
+
+| Command | Result |
+|---|---|
+| `npm run build` | PASS |
+| `npm run lint` | PASS (`tsc --noEmit`) |
+| `npm test` | PASS — 51 tests, 0 failures, 0 skipped |
+| `npm run test:browser` | PASS — real Microsoft Edge against the local server; Web Speech recognition is mocked |
+| `npm audit --audit-level=low` | PASS — 0 vulnerabilities |
+
+Environment: Windows 11 Home (build 26300), Node `v24.16.0`, npm `11.13.0`, PowerShell `7.6.7`, Microsoft Edge `155.0.4283.62`. `gh run list --branch fix --limit 10` stopped because `gh` is not authenticated. Ubuntu WSL 2 is installed but has no Linux `node` executable; no WSL test ran. Physical microphone/vendor recognition, native Android, two-phone, and owner-device acceptance are not represented by these results. The exact tested source tree remains uncommitted; `21c02aee19471a048d3391d1515746d25a87247b` is its base commit only.

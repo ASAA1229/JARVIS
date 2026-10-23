@@ -3,6 +3,7 @@ import {
   TaskState,
   OperationRequest,
   DeviceId,
+  SessionId,
   ExecutionResult,
   VerificationOutcome,
   RiskTier,
@@ -30,6 +31,16 @@ export interface TaskLifecycleRecord {
   result?: ExecutionResult;
   error?: string;
   interrupted?: boolean;
+}
+
+export interface TaskResult {
+  taskId: TaskId;
+  state: TaskState;
+  message: string;
+  data?: unknown;
+  approvalId?: string;
+  outcome?: VerificationOutcome;
+  verified?: boolean;
 }
 
 export class JarvisCoreService {
@@ -64,7 +75,7 @@ export class JarvisCoreService {
   public async submitRequest(
     sessionId: string,
     requestText: string
-  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown; approvalId?: string }> {
+  ): Promise<TaskResult> {
     // Step 1: Authenticate device & session
     const auth = this.identity.validateDeviceSession(sessionId);
     if (!auth.valid || !auth.device) {
@@ -74,6 +85,16 @@ export class JarvisCoreService {
 
     const device = auth.device;
     const taskId = `task-${CryptoUtil.randomToken(12)}`;
+    const auditIntegrity = this.audit.verifyIntegrity();
+    if (!auditIntegrity.valid) {
+      return {
+        taskId,
+        state: TaskState.FAILED,
+        message: `Audit chain integrity violation: ${auditIntegrity.reason || 'unknown integrity failure'}`,
+        verified: false,
+      };
+    }
+
     const taskRecord: TaskLifecycleRecord = {
       id: taskId,
       deviceId: device.id,
@@ -84,7 +105,7 @@ export class JarvisCoreService {
     };
     this.tasks.set(taskId, taskRecord);
 
-    this.audit.record('REQUEST_RECEIVED', { taskId, requestText }, device.id, taskId);
+    this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length }, device.id, taskId);
 
     // Step 2: Understand request & build bounded plan via Planner (AI Advisory)
     const context: MinimizedContext = {
@@ -98,14 +119,17 @@ export class JarvisCoreService {
     if (!validation.valid) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = `Invalid AI plan proposal: ${(validation.errors || []).join('; ')}`;
-      this.audit.record('PLANNING_SCHEMA_VIOLATION', { errors: validation.errors }, device.id, taskId);
+      this.audit.record('PLANNING_SCHEMA_VIOLATION', { errorCount: validation.errors?.length || 0 }, device.id, taskId);
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
     if (!plan.operations || plan.operations.length === 0) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = plan.explanation;
-      this.audit.record('PLANNING_UNABLE_TO_MAP', { plan }, device.id, taskId);
+      this.audit.record('PLANNING_UNABLE_TO_MAP', {
+        operationCount: plan.operations.length,
+        confidence: plan.confidence,
+      }, device.id, taskId);
       return { taskId, state: taskRecord.state, message: plan.explanation };
     }
 
@@ -120,18 +144,18 @@ export class JarvisCoreService {
     };
 
     // Step 3: Evaluate Policy
-    return this.evaluateAndProceed(taskId, opRequest, device.id);
+    return this.#evaluateAndProceed(taskId, opRequest, device.id);
   }
 
   /**
    * Evaluates policy for a task and proceeds to execute or requests approval.
    */
-  public async evaluateAndProceed(
+  async #evaluateAndProceed(
     taskId: TaskId,
     opRequest: OperationRequest,
     deviceId: DeviceId,
     approvalId?: string
-  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown; approvalId?: string }> {
+  ): Promise<TaskResult> {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
 
@@ -166,16 +190,16 @@ export class JarvisCoreService {
     }
 
     // Policy permitted: proceed to execute
-    return this.executeTask(taskId, opRequest);
+    return this.#executeTask(taskId, opRequest);
   }
 
   /**
    * Executes permitted operation via allowlisted execution adapters with cancellation tracking.
    */
-  public async executeTask(
+  async #executeTask(
     taskId: TaskId,
     opRequest: OperationRequest
-  ): Promise<{ taskId: TaskId; state: TaskState; message: string; data?: unknown }> {
+  ): Promise<TaskResult> {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
 
@@ -209,7 +233,20 @@ export class JarvisCoreService {
     const abortController = new AbortController();
     this.activeExecutionTokens.set(taskId, abortController);
 
-    this.audit.record('EXECUTION_STARTED', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
+    try {
+      this.audit.record('EXECUTION_STARTED', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
+    } catch {
+      this.activeExecutionTokens.delete(taskId);
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Execution blocked because the audit record could not be persisted';
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error,
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        verified: true,
+      };
+    }
 
     let rawResult: ExecutionResult;
 
@@ -227,13 +264,16 @@ export class JarvisCoreService {
           rawResult = await this.systemAdapter.getMemoryInfo();
           break;
         case 'system:get_battery_status':
-          rawResult = await this.systemAdapter.getBatteryStatus();
+          rawResult = await this.systemAdapter.getBatteryStatus(abortController.signal);
           break;
         case 'system:get_disk_space':
-          rawResult = await this.systemAdapter.getDiskSpace((opRequest.parameters.drive as string) || 'C:');
+          rawResult = await this.systemAdapter.getDiskSpace(
+            (opRequest.parameters.drive as string) || 'C:',
+            abortController.signal
+          );
           break;
         case 'app:launch':
-          rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string);
+          rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
           break;
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
@@ -249,6 +289,16 @@ export class JarvisCoreService {
       this.activeExecutionTokens.delete(taskId);
     }
 
+    if (abortController.signal.aborted || taskRecord.interrupted) {
+      rawResult = {
+        ...rawResult,
+        success: false,
+        outcome: VerificationOutcome.UNCERTAIN,
+        error: 'Task was interrupted; its final side-effect state requires reconciliation',
+        interrupted: true,
+      };
+    }
+
     // Step 4: Verification of outcome
     const verification = this.verifier.verify(opRequest.operation, rawResult);
     taskRecord.result = rawResult;
@@ -256,27 +306,43 @@ export class JarvisCoreService {
     if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS) {
       taskRecord.state = TaskState.COMPLETED;
     } else if (verification.honestOutcome === VerificationOutcome.PARTIAL_SUCCESS) {
-      taskRecord.state = TaskState.COMPLETED; // partial reported honestly
+      taskRecord.state = TaskState.PARTIAL;
+    } else if (rawResult.interrupted) {
+      taskRecord.state = TaskState.INTERRUPTED;
     } else {
       taskRecord.state = TaskState.FAILED;
     }
 
-    this.audit.record(
-      'EXECUTION_COMPLETED',
-      {
-        operation: opRequest.operation,
-        honestOutcome: verification.honestOutcome,
-        verified: verification.verified,
-      },
-      taskRecord.deviceId,
-      taskId
-    );
+    try {
+      this.audit.record(
+        'EXECUTION_COMPLETED',
+        {
+          operation: opRequest.operation,
+          honestOutcome: verification.honestOutcome,
+          verified: verification.verified,
+        },
+        taskRecord.deviceId,
+        taskId
+      );
+    } catch {
+      taskRecord.state = TaskState.AWAITING_RECOVERY;
+      taskRecord.error = 'Execution outcome could not be durably audited and must be reconciled';
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error,
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
 
     return {
       taskId,
       state: taskRecord.state,
       message: verification.message,
       data: rawResult.data,
+      outcome: verification.honestOutcome,
+      verified: verification.verified,
     };
   }
 
@@ -285,23 +351,24 @@ export class JarvisCoreService {
    */
   public async approveTask(
     approvalId: string,
-    approverDeviceId: DeviceId
-  ): Promise<{ success: boolean; state: TaskState; message: string; data?: unknown }> {
-    const approver = this.identity.getDevice(approverDeviceId);
-    if (!approver || approver.status !== 'ACTIVE') {
-      this.audit.record('APPROVAL_FAILED_INVALID_APPROVER', { approverDeviceId, approvalId });
-      throw new Error('Approver device not registered or revoked');
+    approverSessionId: SessionId
+  ): Promise<TaskResult & { success: boolean }> {
+    const approverAuth = this.identity.validateDeviceSession(approverSessionId);
+    const approver = approverAuth.device;
+    if (!approverAuth.valid || !approver) {
+      this.audit.record('APPROVAL_FAILED_INVALID_APPROVER', { approvalId, reason: approverAuth.error });
+      throw new Error('Approver session is not authenticated');
     }
 
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
     if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
-      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approverDeviceId, approval.taskId);
+      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error('Approver lacks permission for this action');
     }
 
-    const resolveRes = this.policy.resolveApproval(approvalId, true, approverDeviceId);
+    const resolveRes = this.policy.resolveApproval(approvalId, true, approver.id);
     if (!resolveRes.success) {
       throw new Error(resolveRes.error);
     }
@@ -314,34 +381,38 @@ export class JarvisCoreService {
       parameters: task.parameters || {},
     };
 
-    const res = await this.evaluateAndProceed(task.id, opRequest, task.deviceId, approvalId);
+    const res = await this.#evaluateAndProceed(task.id, opRequest, task.deviceId, approvalId);
     return {
+      taskId: res.taskId,
       success: res.state === TaskState.COMPLETED,
       state: res.state,
       message: res.message,
       data: res.data,
+      outcome: res.outcome,
+      verified: res.verified,
     };
   }
 
   /**
    * Rejects a pending task.
    */
-  public rejectTask(approvalId: string, approverDeviceId: DeviceId): { success: boolean; message: string } {
-    const approver = this.identity.getDevice(approverDeviceId);
-    if (!approver || approver.status !== 'ACTIVE') {
-      this.audit.record('REJECTION_FAILED_INVALID_APPROVER', { approverDeviceId, approvalId });
-      throw new Error('Approver device not registered or revoked');
+  public rejectTask(approvalId: string, approverSessionId: SessionId): { success: boolean; message: string } {
+    const approverAuth = this.identity.validateDeviceSession(approverSessionId);
+    const approver = approverAuth.device;
+    if (!approverAuth.valid || !approver) {
+      this.audit.record('REJECTION_FAILED_INVALID_APPROVER', { approvalId, reason: approverAuth.error });
+      throw new Error('Approver session is not authenticated');
     }
 
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
     if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
-      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approverDeviceId, approval.taskId);
+      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error('Approver lacks permission for this action');
     }
 
-    const resolveRes = this.policy.resolveApproval(approvalId, false, approverDeviceId);
+    const resolveRes = this.policy.resolveApproval(approvalId, false, approver.id);
     if (!resolveRes.success) {
       throw new Error(resolveRes.error || 'Approval could not be rejected');
     }
@@ -351,7 +422,7 @@ export class JarvisCoreService {
       task.state = TaskState.REJECTED;
       task.updatedAt = Date.now();
     }
-    this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId }, approverDeviceId, approval.taskId);
+    this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
     return { success: true, message: 'Task rejected' };
   }
 

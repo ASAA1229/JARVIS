@@ -40,8 +40,8 @@
       </div>
 
       <div class="hud-controls">
-        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation">REDUCED MOTION: OFF</button>
-        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control">MIC: ARMED</button>
+        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation" aria-pressed="false">REDUCED MOTION: OFF</button>
+        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false">MIC: ARMED</button>
         <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
       </div>
     </header>
@@ -96,8 +96,8 @@
 
         <!-- Assistant Status Display -->
         <div class="hud-status-banner">
-          <span class="hud-state-label" id="hud-state-label">IDLE — READY FOR DIRECTIVE</span>
-          <p class="hud-state-sub" id="hud-state-sub">Press Space, click the Arc Core, or push-to-talk.</p>
+          <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
+          <p class="hud-state-sub" id="hud-state-sub">Hold Space or Ctrl+M, click the Arc Core, or push-to-talk.</p>
         </div>
 
         <!-- Transcript Review & Confirmation Box -->
@@ -107,6 +107,7 @@
             <span class="transcript-badge">EDITABLE</span>
           </div>
           <div class="transcript-content">
+            <label class="sr-only" for="transcript-input">Review or edit the voice transcription</label>
             <input type="text" id="transcript-input" class="transcript-input" placeholder="Verifying speech..." />
           </div>
           <div class="transcript-actions">
@@ -117,11 +118,11 @@
 
         <!-- Voice Interaction Bar -->
         <div class="ptt-controls">
-          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation">
+          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation" aria-pressed="false">
             <span class="ptt-icon">🎙️</span>
             <span class="ptt-text" id="ptt-text">HOLD TO TALK</span>
           </button>
-          <div class="keyboard-hint">OR PRESS <code>SPACE</code> TO TALK | <code>ESC</code> TO CANCEL</div>
+          <div class="keyboard-hint">HOLD <code>SPACE</code> OR TOGGLE <code>CTRL+M</code> | <code>ESC</code> TO CANCEL</div>
         </div>
       </section>
 
@@ -168,6 +169,7 @@
         <div class="command-input-row">
           <div class="input-wrapper">
             <span class="terminal-prefix">&gt;</span>
+            <label class="sr-only" for="hud-text-input">Directive to send to JARVIS</label>
             <input type="text" id="hud-text-input" class="hud-terminal-input" placeholder="Enter directive or use Push-To-Talk voice command..." autocomplete="off" />
           </div>
           <button id="btn-hud-send" class="hud-btn hud-btn-cyan">TRANSMIT</button>

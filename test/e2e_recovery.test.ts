@@ -103,6 +103,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     });
     const sessionData = await sessionRes.json();
     assert.strictEqual(sessionData.success, true);
+    assert.deepStrictEqual(sessionData.permissions, [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH]);
     companionSessionId = sessionData.sessionId;
 
     // 5. Submit Read-Only Request (OS Facts)
@@ -113,7 +114,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       body: JSON.stringify(req1Body),
     });
     const req1Data = await req1Res.json();
-    assert.strictEqual(req1Data.state, 'COMPLETED');
+    assert.strictEqual(req1Data.state, 'COMPLETED', `Read-only request failed: ${JSON.stringify(req1Data)}`);
     assert.ok(req1Data.data.platform);
 
     // 6. Submit State-Changing Request (Launch Notepad)
@@ -135,8 +136,15 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       body: JSON.stringify(approveBody),
     });
     const approveData = await approveRes.json();
-    assert.strictEqual(approveData.success, true);
-    assert.strictEqual(approveData.state, 'COMPLETED');
+    assert.strictEqual(approveData.success, approveData.state === 'COMPLETED');
+    assert.ok(['COMPLETED', 'PARTIAL'].includes(approveData.state));
+    if (approveData.state === 'PARTIAL') {
+      assert.strictEqual(approveData.outcome, 'PARTIAL_SUCCESS');
+      assert.strictEqual(approveData.verified, false);
+    } else {
+      assert.strictEqual(approveData.outcome, 'VERIFIED_SUCCESS');
+      assert.strictEqual(approveData.verified, true);
+    }
 
     // 8. Revoke Device
     const revokeBody = { deviceId: companionDeviceId };
@@ -315,6 +323,55 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(response.status, 413);
   });
 
+  test('SEC-API-14: Expired approval is rejected over HTTP without execution', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const enrollment = server.getService().identity.enrollDevice(
+      challenge.challengeToken,
+      'Expired Approval Test',
+      companionKeypair.publicKey,
+    );
+    assert.strictEqual(enrollment.success, true);
+
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(
+      `SESSION_REQUEST:${timestamp}:${nonce}`,
+      companionKeypair.privateKey,
+    );
+    const session = server.getService().identity.createSession(
+      enrollment.deviceId!,
+      signature,
+      timestamp,
+      nonce,
+    );
+    assert.strictEqual(session.success, true);
+
+    const requestBody = { text: 'Please launch Notepad' };
+    const taskResponse = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
+      method: 'POST',
+      headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'POST', '/api/request', requestBody),
+      body: JSON.stringify(requestBody),
+    });
+    assert.strictEqual(taskResponse.status, 200);
+    const task = await taskResponse.json();
+    assert.strictEqual(task.state, 'AWAITING_APPROVAL');
+
+    const approval = server.getService().policy.getApproval(task.approvalId);
+    assert.ok(approval);
+    approval.expiresAt = Date.now() - 1;
+
+    const approvalBody = { approvalId: task.approvalId };
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/approval/approve`, {
+      method: 'POST',
+      headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'POST', '/api/approval/approve', approvalBody),
+      body: JSON.stringify(approvalBody),
+    });
+    assert.strictEqual(response.status, 409);
+    assert.match((await response.json()).error, /expired/i);
+    assert.strictEqual(approval.approved, false);
+    assert.strictEqual(server.getService().getTask(task.taskId)?.state, TaskState.AWAITING_APPROVAL);
+  });
+
   test('SEC-API-06: Authenticated ordinary device cannot read privileged audit records', async () => {
     const challenge = server.getService().identity.createEnrollmentChallenge();
     const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Audit Access Test', companionKeypair.publicKey);
@@ -329,6 +386,36 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'GET', '/api/audit'),
     });
     assert.strictEqual(response.status, 403);
+  });
+
+  test('SEC-API-13: Privileged audit responses redact sensitive fields and omit chain internals', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge([
+      Permission.SYSTEM_INFO_READ,
+      Permission.DEVICE_MANAGE,
+    ]);
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Privileged Audit Test', kp.publicKey);
+    assert.strictEqual(enroll.success, true);
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
+    assert.strictEqual(session.success, true);
+
+    server.getService().audit.record('API_REDACTION_TEST', {
+      requestText: 'private request body',
+      nested: [{ signature: 'private signature' }],
+    });
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`, {
+      headers: signedHeaders(session.sessionId!, kp.privateKey, 'GET', '/api/audit'),
+    });
+    assert.strictEqual(response.status, 200);
+    const body = await response.json();
+    const serialized = JSON.stringify(body);
+    assert.strictEqual(serialized.includes('private request body'), false);
+    assert.strictEqual(serialized.includes('private signature'), false);
+    assert.strictEqual(serialized.includes('"hash"'), false);
+    assert.strictEqual(serialized.includes('"prevHash"'), false);
   });
 
   test('SEC-API-11: Reject endpoint returns a stable not-found response for unknown approvals', async () => {

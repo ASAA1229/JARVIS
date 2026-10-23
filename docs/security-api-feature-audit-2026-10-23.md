@@ -1,15 +1,33 @@
 # JARVIS Security, API, Endpoint and Feature Audit
 
 - **Audit date:** 2026-10-23
-- **Audited source ref:** `new` at `a125e1be891edd1c6198be76e0d534366c728cb3`
-- **Audit branch:** `test`
+- **Baseline audited source ref:** `new` at `a125e1be891edd1c6198be76e0d534366c728cb3`
+- **Current remediation branch:** `fix`, based on `21c02aee19471a048d3391d1515746d25a87247b`
+- **Current remediation state:** uncommitted working-tree changes; the exact tested tree has no commit SHA yet.
+- **Audit branch ownership:** `origin/test` exists but no local `test` branch is checked out; this working-tree update remains uncommitted and must be placed on the evidence branch under repository policy.
 - **Scope:** source-level review of API routes, cryptographic identity/session flow, policy/approval lifecycle, execution adapters, verification, audit logging, HUD, voice lifecycle, persistence and automated-test coverage.
-- **Execution status:** **STATIC REVIEW ONLY — runtime tests were not executed during this audit session.** The existing traceability matrix contains a historical report of 23 passing tests, but that output was not independently reproduced here. No finding below should be treated as runtime-verified.
-- **Release recommendation:** **BLOCKED.** Do not advance Milestone 7 or merge to `main`.
+- **Current local verification:** clean install, build, type-check/lint, 51 automated tests, real Microsoft Edge smoke, Windows system-adapter probes, and `npm audit` passed on the current working tree. SpeechRecognition and the uncertain approval response are simulated; physical microphone behavior, Android devices, owner-device acceptance, and current hosted CI are not verified.
+- **Release recommendation:** **BLOCKED — NOT COMPLETE.** External acceptance and exact-commit CI evidence remain outstanding. Do not advance Milestone 8 or merge to `main`.
 
 ## 1. Executive result
 
-The repository has meaningful baseline tests for device enrollment, Ed25519 signatures, session freshness, policy allowlisting, approval replay, multi-device revocation, audit-chain tampering, HTTP request lifecycle and HUD asset routing. However, coverage is not yet sufficient to claim that every API, endpoint, key-handling path, browser interaction and failure state has been tested.
+This document began as a static baseline audit of `a125e1b`. The critical/high findings below describe that baseline, not the current remediation working tree. The remediation state and its verification evidence are recorded immediately below; remaining acceptance gaps continue to block Milestone 7 completion.
+
+### Current remediation and verification (working tree based on `21c02aee19471a048d3391d1515746d25a87247b`)
+
+| Baseline finding area | Current implementation / regression evidence | Status |
+|---|---|---|
+| HUD session bootstrap bypass and device authentication | Owner-authorized enrollment proof-of-possession and signed session flow; API and browser enrollment checks | Fixed and automated-tested |
+| Unsafe HUD approval/request rendering | DOM text rendering without inline event handlers; browser XSS regression | Fixed and real-browser-tested |
+| Public status/audit exposure and endpoint validation | Minimal status, privileged audit authorization/redaction, malformed payload/method/content-type coverage | Fixed and automated-tested |
+| Task-scoped approval/replay and rejection | Scope binding, single-use consumption, approver checks, rejection and cross-device authorization tests | Fixed and automated-tested |
+| Execution outcome and interruption reporting | Partial/uncertain outcomes and audit-persistence failure are not reported as verified success; cancellation reaches adapters | Fixed and automated-tested |
+| Direct service execution bypass | Public adapter dispatcher removed using ECMAScript private methods; regression confirms it is not exposed | Fixed and regression-tested |
+| Audit redaction, tampering, truncation, and unavailable persistence | Nested/legacy redaction, on-disk integrity checks, fail-closed behavior and recovery tests | Fixed and automated-tested |
+| Browser voice lifecycle, transcript disposal, CSP, and keyboard behavior | Edge smoke covers simulated recognition cancel/late result/discard/timeout, text fallback, keyboard shortcut, reduced motion, and runtime console/page errors | Fixed and simulated-browser-tested; physical microphone/vendor behavior unverified |
+| Current hosted CI and platform/device acceptance | `gh run list` could not authenticate; no new CI run was verified. Native Android/two-phone and owner Windows 11 acceptance were not run. | Outstanding; blocks completion |
+
+**Local verification evidence (2026-10-23, Windows 11 Home build 26300, Node v24.16.0, npm 11.13.0, Microsoft Edge 155.0.4283.62):** `npm ci` PASS; `npm run build` PASS; `npm run lint` PASS; `npm test` PASS (51 tests, 0 failures, 0 skipped); `npm run test:browser` PASS; `npm audit --audit-level=low` PASS (0 vulnerabilities). Read-only Windows OS, memory, battery, and C: drive probes returned verified results. These commands ran against a dirty working tree based on the SHA above; they do not establish a commit-specific hosted CI result.
 
 The most urgent findings are:
 1. **Critical — HUD session authentication bypass:** `POST /api/hud/session` directly inserts a session into the identity manager's private session map and returns it without proof-of-possession of the device private key.
@@ -40,9 +58,9 @@ The most urgent findings are:
 - `test/core.test.ts`, `test/hardening.test.ts`, `test/e2e_recovery.test.ts`, `test/voice_hud.test.ts`
 - `package.json`, `tsconfig.json`, `docs/traceability-matrix.md`, `docs/poc-completion-report.md`
 
-### Limitations
-- No local checkout/runtime was available in this execution context, so no Node test suite, TypeScript build, browser automation, OS-specific process launch, fuzz test, or live HTTP probe was run.
-- Existing test logs copied into documentation are historical repository evidence, not independent results from this audit.
+### Baseline-audit limitations
+- At the time of the initial source audit, no local checkout/runtime was available, so that audit did not run the Node suite, TypeScript build, browser automation, OS-specific process launch, fuzz test, or live HTTP probe.
+- Historical test logs copied later in this document are baseline evidence; current local results are separately recorded in the remediation section above and the traceability matrix.
 - Windows-specific adapter behavior cannot be confirmed on the target MSI without running on Windows 11.
 - Browser speech recognition behavior varies by browser/vendor; no claim of local/offline speech processing is justified by source inspection alone.
 
@@ -183,6 +201,24 @@ Test tokens, PEM/private keys, passwords, auth headers, query strings, multiline
 ### F-14 — Medium: keyboard/touch/accessibility and reduced motion
 Test pointer-up outside button, touch cancellation, repeated key events, Spacebar in every editable control, Escape during processing, focus visibility, labels/announcements, reduced-motion preference, and stopping canvas animation rather than only toggling a CSS class.
 
+### F-15 — High (fixed): service-level adapter dispatcher bypassed policy
+**Location:** `src/core/service.ts`, former public `executeTask` and `evaluateAndProceed` methods.
+
+The public `executeTask(taskId, opRequest)` method performed adapter dispatch after checking device/audit health but did not itself evaluate the policy gateway or require an approval. In addition, public approval/rejection methods accepted a device ID rather than proving an active session. An in-process caller holding the service could invoke the dispatcher or pass a known device ID to resolve an approval. Regression tests reproduced the exposed dispatcher without invoking an adapter and reject unauthenticated approval/rejection calls.
+
+**Fix:** both dispatch methods are now ECMAScript-private (`#executeTask`, `#evaluateAndProceed`) and are only called from the authenticated/policy-gated service flow. `approveTask` and `rejectTask` require an active session ID, which the HTTP layer passes only after signed-request validation. `SEC-05` and `SEC-HARD-04` verify the boundaries; existing authorized request and approval tests verify supported flows remain functional.
+
+### Current dispositions on the remediation working tree
+- **F-01, F-02:** fixed and regression-tested by API/browser checks.
+- **F-03, F-05, F-08, F-15:** implementation and corresponding automated negative-path/regression tests are present; see the current traceability matrix.
+- **F-04:** owner-control challenge authorization and enrollment proof-of-possession are tested. Rate limiting and owner-approved permission assignment are not implemented.
+- **F-06:** recognizer lifecycle, timeout, mute/cancel, stale-result rejection, transcript discard, keyboard handling, fallback, and a simulated `not-allowed` error are tested in Edge. Real microphone permission, browser-vendor behavior, and physical-device execution remain unverified.
+- **F-07:** the HUD discloses that local-only speech processing is not guaranteed. No claim of local/offline audio processing is made; vendor-specific data handling remains unverified.
+- **F-09:** persisted-state corruption is tested and sensitive state operations fail closed; persistence write-failure injection is still missing.
+- **F-10:** malformed JSON, null bodies, content type, size, signatures, authentication, and selected status contracts are tested; route-wide error-contract coverage remains incomplete.
+- **F-11:** local checks pass, but no hosted CI result is verified for the uncommitted remediation tree. `gh run list --branch fix --limit 10` could not authenticate.
+- **F-12 through F-14:** meaningful coverage was added, but every route contract, pointer/touch/accessibility condition, fuzz case, and platform scenario is not covered.
+
 ## 7. Required test plan before declaring Milestone 7 complete
 
 ### A. Build and static checks
@@ -216,22 +252,23 @@ On the MSI: run read-only system info, RAM, battery and C: disk queries; launch 
 ## 8. Acceptance gates
 
 Milestone 7 stays **INCOMPLETE / BLOCKED** until all conditions hold:
-- [ ] F-01 and F-02 fixed and regression-tested.
-- [ ] F-03 through F-10 fixed or explicitly dispositioned with owner approval and compensating controls; no critical/high unaccepted findings.
-- [ ] Full automated suite rerun from the exact fix commit; no failures/skips without explanation.
-- [ ] TypeScript build and lint pass.
-- [ ] All HTTP endpoints have contract tests and security-negative tests.
-- [ ] Browser E2E confirms voice lifecycle, CSP/XSS safety and truthful task status.
+- [x] F-01 and F-02 fixed and regression-tested in the current working tree.
+- [ ] F-03 through F-10 fully verified/dispositioned; F-06/F-07 still require physical/vendor acceptance evidence.
+- [ ] Full automated suite rerun from an exact committed `fix` SHA; current successful run used an uncommitted tree based on `21c02aee19471a048d3391d1515746d25a87247b`.
+- [x] TypeScript build and lint pass locally.
+- [ ] Every HTTP endpoint has exhaustive contract and security-negative test coverage; current route coverage is broad but not exhaustive.
+- [x] Edge browser smoke covers CSP/XSS, truthful task outcomes and simulated voice lifecycle.
 - [ ] Windows 11 runtime checks recorded separately from generic CI.
-- [ ] Traceability matrix updated to distinguish implemented, automated-tested, runtime-tested and not tested.
-- [ ] Audit evidence references exact commit SHA, environment, commands and outputs.
-- [ ] Fixes are committed/pushed to `fix`; audit remains on `test`; PRs target `dev` only when checks pass.
-- [ ] `main` remains untouched; no automated merge.
+- [x] Traceability matrix distinguishes current automated results from unverified platform/device checks.
+- [ ] Audit evidence references an exact commit SHA for the tested remediation tree; only its base SHA is currently available.
+- [ ] Implementation and evidence are committed on their owning branches; no commit or push was requested/performed. `origin/test` exists but no local `test` branch is checked out.
+- [x] `main` remains untouched; no automated merge occurred.
 
 ## 9. Next actions
 
-1. Use this report as the baseline audit record on `test`.
-2. Switch to `fix` and remediate in order: F-01 session bypass, F-02 XSS, F-03/04 endpoint authorization, F-05 approval state machine, F-06/07 voice lifecycle/privacy, F-08 outcome reporting, F-09 persistence fail-closed behavior, F-10 HTTP validation.
+1. Preserve this report as the dated baseline plus current remediation evidence; move its evidence update to `test` under the repository branch policy.
+2. Commit the verified implementation and regression tests on `fix` when explicitly authorized, then rerun hosted CI against that exact SHA.
+3. Complete owner Windows 11, native Android/two-phone, physical microphone/vendor privacy, and remaining route/accessibility acceptance checks before closing Milestone 7.
 3. Add tests alongside each fix; do not mark unexecuted tests as passing.
 4. Run the complete suite in an actual Node/Windows-compatible environment and attach raw evidence.
 5. Push the fixes to `fix`; stop before merging to `dev` or `main` unless the required review/acceptance gate is met.

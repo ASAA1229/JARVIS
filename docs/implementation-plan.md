@@ -8,12 +8,13 @@ As authorized, implementation proceeds in testable, incremental milestones adher
 
 | Milestone | Title | Focus Area | Status |
 |---|---|---|---|
-| **M1** | **Foundation & Project Setup** | Environment validation, TypeScript project structure, configuration, crypto utilities, core interfaces, test runner | **Completed** |
-| **M2** | **Secure Windows Core** | Policy gateway, default-deny rules, allowlisted read-only system facts, allowlisted app launcher, outcome verifier, tamper-evident audit log | **Completed** |
-| **M3** | **Android Enrollment & Channel** | Ed25519 keypair identity, single-use enrollment token challenge, session management, revocation engine, web/companion interface | **Completed** |
-| **M4** | **Approval & Task Lifecycle** | Task-scoped approvals, expiry, rejection, concurrency interruption, outcome reconciliation, denial paths | **Completed** |
-| **M5** | **AI Planner Integration** | Replaceable AI provider interface, structured schema validation, local heuristic planner, proof of policy enforcement | **Completed** |
-| **M6** | **Verification, Hardening & Release** | Full test suite (18 automated tests), resource metrics, live HTTP E2E tests, recovery semantics | **Completed & Verified** |
+| **M1** | **Foundation & Project Setup** | Environment validation, TypeScript project structure, configuration, crypto utilities, core interfaces, test runner | **PASS — VERIFIED (local Windows environment)** |
+| **M2** | **Secure Windows Core** | Policy gateway, default-deny rules, allowlisted read-only system facts, allowlisted app launcher, outcome verifier, tamper-evident audit log | **PARTIAL — local system facts and Notepad path tested; all apps/target acceptance not verified** |
+| **M3** | **Android Enrollment & Channel** | Ed25519 keypair identity, single-use enrollment token challenge, session management, revocation engine, web/companion interface | **BLOCKED — browser companion tested; native Android/two-phone acceptance outstanding** |
+| **M4** | **Approval & Task Lifecycle** | Task-scoped approvals, expiry, rejection, concurrency interruption, outcome reconciliation, denial paths | **PARTIAL — core paths tested; real adapter concurrency/reconciliation remains unverified** |
+| **M5** | **AI Planner Integration** | Replaceable AI provider interface, structured schema validation, local heuristic planner, proof of policy enforcement | **PARTIAL — local planner and adversarial boundary tested; broad intent coverage is incomplete** |
+| **M6** | **Verification, Hardening & Release** | Automated security suite, live HTTP E2E tests, recovery semantics | **PARTIAL — local suites pass; performance evidence and WSL/Linux runtime verification are incomplete** |
+| **M7** | **Security Remediation & Completion** | Close security findings, regression coverage, browser validation, accurate audit/traceability evidence | **BLOCKED — local checks pass; external acceptance and exact-commit CI remain** |
 
 ---
 
@@ -75,3 +76,9 @@ As authorized, implementation proceeds in testable, incremental milestones adher
 - Requirements traceability matrix update.
 - Performance and resource usage measurement.
 - POC completion summary.
+
+### Milestone 7: Security Remediation & Completion
+
+The current `fix` working tree contains security fixes and regression tests for authenticated enrollment/session creation, least-privilege audit access, audit redaction/integrity failures, authenticated service-level approvals, private policy-gated dispatch, truthful execution outcomes, interruption handling, CSP/XSS-safe HUD rendering, and push-to-talk cancellation/discard/timeout behavior. The 2026-10-23 local audit ran a clean `npm ci`, build, type-check, 51 automated tests, and a real Microsoft Edge smoke test with simulated Web Speech recognition; `npm audit` reported zero vulnerabilities. The tested changes are uncommitted on top of `21c02aee19471a048d3391d1515746d25a87247b`; that commit is the base revision, not an immutable identifier for the tested working tree.
+
+Milestone 7 remains **BLOCKED — NOT COMPLETE** pending hosted CI on an exact remediation commit, owner-device acceptance, native Android/two-phone validation, and physical microphone/browser-vendor privacy verification. WSL Ubuntu is available but has no Linux Node.js runtime, so no Linux test run was possible. Do not begin Milestone 8 until these gates and the remaining audit findings are explicitly dispositioned. See the [Milestones 1–7 acceptance audit](milestones-1-to-7-acceptance-audit.md), [test results](milestones-1-to-7-test-results.md), [findings register](milestones-1-to-7-findings-register.md), [security audit](security-api-feature-audit-2026-10-23.md), and [traceability matrix](traceability-matrix.md) for current evidence and limitations.

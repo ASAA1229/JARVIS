@@ -85,7 +85,7 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     const approvalId = res.approvalId!;
 
     // Phone A approves the task -> succeeds
-    const approveRes = await jarvis.approveTask(approvalId, phoneADeviceId);
+    const approveRes = await jarvis.approveTask(approvalId, phoneASessionId);
     assert.strictEqual(approveRes.success, true);
 
     // Attacker or duplicate message tries to reuse the same approval ID
@@ -118,21 +118,25 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     assert.strictEqual(resB2.state, TaskState.COMPLETED);
   });
 
-  test('SEC-HARD-04: Approver verification — unauthorized or revoked phone cannot approve tasks', async () => {
+  test('SEC-HARD-04: Approval service requires an authenticated active approver session', async () => {
     const res = await jarvis.submitRequest(phoneASessionId, 'Launch Calculator');
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);
     const approvalId = res.approvalId!;
 
-    // 1. Fake/unknown device ID attempting approval
+    // Direct service calls must not accept an unverified device identifier.
     await assert.rejects(async () => {
       await jarvis.approveTask(approvalId, 'dev-unknown-attacker');
-    }, /Approver device not registered or revoked/);
+    }, /Approver session is not authenticated/);
+    assert.throws(() => {
+      jarvis.rejectTask(approvalId, 'dev-unknown-attacker');
+    }, /Approver session is not authenticated/);
+    assert.strictEqual(jarvis.getTask(res.taskId)?.state, TaskState.AWAITING_APPROVAL);
 
     // 2. Revoked device attempting approval
     jarvis.identity.revokeDevice(phoneBDeviceId, 'Phone B compromised');
     await assert.rejects(async () => {
-      await jarvis.approveTask(approvalId, phoneBDeviceId);
-    }, /Approver device not registered or revoked/);
+      await jarvis.approveTask(approvalId, phoneBSessionId);
+    }, /Approver session is not authenticated/);
   });
 
   test('SEC-HARD-05: AI Planner schema validator rejects invalid operations and adversarial injections', async () => {

@@ -4,10 +4,12 @@ let currentSession = null;
 let isMicMuted = false;
 let isListening = false;
 let speechRecognizer = null;
+let speechRecognitionConstructor = null;
 let audioContext = null;
 let animationFrameId = null;
 let voiceTimeoutId = null;
 let discardVoiceResult = false;
+let voiceCaptureGeneration = 0;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initSpeechRecognition();
@@ -28,10 +30,25 @@ function setupEventListeners() {
   const reactorCore = document.getElementById('reactor-core');
 
   // Push to talk buttons
-  btnPtt.addEventListener('mousedown', startVoiceCapture);
-  btnPtt.addEventListener('mouseup', stopVoiceCapture);
-  btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); startVoiceCapture(); });
-  btnPtt.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceCapture(); });
+  btnPtt.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    btnPtt.setPointerCapture(event.pointerId);
+    startVoiceCapture();
+  });
+  btnPtt.addEventListener('pointerup', (event) => {
+    event.preventDefault();
+    stopVoiceCapture();
+  });
+  btnPtt.addEventListener('pointercancel', cancelVoiceCapture);
+  btnPtt.addEventListener('lostpointercapture', () => {
+    if (isListening) cancelVoiceCapture();
+  });
+  btnPtt.addEventListener('click', (event) => {
+    if (event.detail !== 0) return;
+    if (isListening) stopVoiceCapture();
+    else startVoiceCapture();
+  });
 
   reactorCore.addEventListener('click', () => {
     if (isListening) stopVoiceCapture();
@@ -41,10 +58,19 @@ function setupEventListeners() {
   // Keyboard shortcut: Spacebar hold for push-to-talk
   let spacePressed = false;
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && !spacePressed && document.activeElement !== textInput && document.activeElement !== document.getElementById('transcript-input')) {
+    const activeElement = document.activeElement;
+    const isEditable = activeElement instanceof HTMLElement &&
+      (activeElement.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName));
+    const isOtherButton = activeElement instanceof HTMLButtonElement && activeElement !== btnPtt;
+    if (e.code === 'Space' && !spacePressed && !isEditable && !isOtherButton) {
       spacePressed = true;
       e.preventDefault();
       startVoiceCapture();
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === 'm' && !e.repeat && !isEditable && !isOtherButton) {
+      e.preventDefault();
+      if (isListening) stopVoiceCapture();
+      else startVoiceCapture();
     }
     if (e.code === 'Escape') {
       cancelVoiceCapture();
@@ -67,19 +93,21 @@ function setupEventListeners() {
 
   // Transcript confirmation actions
   document.getElementById('btn-transcript-submit').addEventListener('click', () => {
-    const val = document.getElementById('transcript-input').value.trim();
+    const transcriptInput = document.getElementById('transcript-input');
+    const val = transcriptInput.value.trim();
+    transcriptInput.value = '';
     document.getElementById('transcript-box').classList.add('hidden');
     if (val) submitDirective(val);
   });
 
   document.getElementById('btn-transcript-cancel').addEventListener('click', () => {
-    document.getElementById('transcript-box').classList.add('hidden');
-    setAssistantState('IDLE — DIRECTIVE DISCARDED', 'Ready for new instruction.');
+    cancelVoiceCapture();
   });
 
   // Privacy Mute Toggle
   btnMute.addEventListener('click', () => {
     isMicMuted = !isMicMuted;
+    btnMute.setAttribute('aria-pressed', String(isMicMuted));
     if (isMicMuted) {
       cancelVoiceCapture();
       btnMute.innerText = 'MIC: MUTED';
@@ -97,6 +125,8 @@ function setupEventListeners() {
     document.body.classList.toggle('reduced-motion');
     const isReduced = document.body.classList.contains('reduced-motion');
     btnMotion.innerText = `REDUCED MOTION: ${isReduced ? 'ON' : 'OFF'}`;
+    btnMotion.setAttribute('aria-pressed', String(isReduced));
+    if (!isReduced) initWaveformCanvas();
   });
 
   // Quick Directive Chips
@@ -110,25 +140,27 @@ function setupEventListeners() {
 }
 
 function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
+  speechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  if (!speechRecognitionConstructor) {
     console.warn('SpeechRecognition API not available in browser. Push-to-talk will use text input fallback.');
-    return;
   }
+}
 
-  speechRecognizer = new SpeechRecognition();
-  speechRecognizer.continuous = false;
-  speechRecognizer.interimResults = true;
-  speechRecognizer.lang = 'en-US';
+function createSpeechRecognizer(captureGeneration) {
+  const recognizer = new speechRecognitionConstructor();
+  recognizer.continuous = false;
+  recognizer.interimResults = true;
+  recognizer.lang = 'en-US';
 
-  speechRecognizer.onstart = () => {
+  recognizer.onstart = () => {
+    if (captureGeneration !== voiceCaptureGeneration || !isListening) return;
     setAssistantState('LISTENING...', 'Capturing voice command...');
     document.getElementById('reactor-container').classList.add('listening');
     document.getElementById('btn-ptt').classList.add('active');
   };
 
-  speechRecognizer.onresult = (event) => {
-    if (discardVoiceResult || isMicMuted) return;
+  recognizer.onresult = (event) => {
+    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted) return;
     let transcript = '';
     for (let i = 0; i < event.results.length; i++) {
       transcript += event.results[i][0].transcript;
@@ -137,14 +169,17 @@ function initSpeechRecognition() {
     document.getElementById('transcript-box').classList.remove('hidden');
   };
 
-  speechRecognizer.onerror = (event) => {
+  recognizer.onerror = (event) => {
+    if (captureGeneration !== voiceCaptureGeneration) return;
     console.error('Speech recognition error:', event.error);
-    setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
     cancelVoiceCapture();
+    setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
   };
 
-  speechRecognizer.onend = () => {
+  recognizer.onend = () => {
+    if (captureGeneration !== voiceCaptureGeneration) return;
     isListening = false;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
       clearTimeout(voiceTimeoutId);
       voiceTimeoutId = null;
@@ -157,6 +192,8 @@ function initSpeechRecognition() {
       discardVoiceResult = false;
     }
   };
+
+  return recognizer;
 }
 
 function startVoiceCapture() {
@@ -165,31 +202,41 @@ function startVoiceCapture() {
     return;
   }
   if (isListening) return;
-  if (!speechRecognizer) {
+  if (!speechRecognitionConstructor) {
     setAssistantState('SPEECH API UNAVAILABLE', 'Use the text input field; no audio capture was started.');
     return;
   }
 
   discardVoiceResult = false;
+  document.getElementById('transcript-input').value = '';
+  document.getElementById('transcript-box').classList.add('hidden');
   isListening = true;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
+  const captureGeneration = ++voiceCaptureGeneration;
   try {
+    speechRecognizer = createSpeechRecognizer(captureGeneration);
     speechRecognizer.start();
     voiceTimeoutId = setTimeout(() => {
-      if (!isListening) return;
-      setAssistantState('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
-      stopVoiceCapture();
+      if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
+      stopVoiceCapture('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
     }, 15000);
   } catch (e) {
     isListening = false;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    voiceCaptureGeneration++;
     if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
+    speechRecognizer = null;
     setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
   }
 }
 
-function stopVoiceCapture() {
+function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit the transcript before dispatch.') {
   if (!isListening) return;
   isListening = false;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+  document.getElementById('reactor-container').classList.remove('listening');
+  document.getElementById('btn-ptt').classList.remove('active');
   if (voiceTimeoutId) {
     clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
@@ -201,12 +248,14 @@ function stopVoiceCapture() {
       setAssistantState('VOICE STOP UNCERTAIN', 'Check microphone indicator and use Cancel if capture continues.');
     }
   }
-  setAssistantState('CONFIRM DIRECTIVE', 'Verify or edit the transcript before dispatch.');
+  setAssistantState(label, detail);
 }
 
 function cancelVoiceCapture() {
   isListening = false;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
   discardVoiceResult = true;
+  voiceCaptureGeneration++;
   if (voiceTimeoutId) {
     clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
@@ -220,6 +269,7 @@ function cancelVoiceCapture() {
   }
   document.getElementById('reactor-container').classList.remove('listening');
   document.getElementById('btn-ptt').classList.remove('active');
+  document.getElementById('transcript-input').value = '';
   document.getElementById('transcript-box').classList.add('hidden');
   setAssistantState('IDLE — READY', 'Ready for directive.');
 }
@@ -254,9 +304,14 @@ async function submitDirective(text) {
       setAssistantState('AWAITING CONSENT', data.message);
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
-    } else if (data.state === 'COMPLETED') {
+    } else if (data.state === 'COMPLETED' &&
+        data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       setAssistantState('DIRECTIVE EXECUTED', data.message);
       addFeedItem('success', `Verified Result: ${data.message}`, data.data);
+    } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
+        data.outcome === 'UNCERTAIN' || data.verified === false) {
+      setAssistantState('OUTCOME NOT VERIFIED', data.message);
+      addFeedItem('pending', `Outcome not fully verified: ${data.message}`, data.data);
     } else {
       setAssistantState('EXECUTION DENIED / FAILED', data.message || data.error);
       addFeedItem('failed', `Denied: ${data.message || data.error}`);
@@ -276,20 +331,15 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
   card.id = 'hud-appr-' + approvalId;
 
   const directive = document.createElement('div');
-  directive.style.fontWeight = '700';
-  directive.style.color = '#fff';
+  directive.className = 'hud-approval-directive';
   directive.textContent = 'DIRECTIVE: ' + String(requestText);
 
   const description = document.createElement('div');
-  description.style.color = 'var(--hud-warn)';
-  description.style.fontSize = '11px';
-  description.style.margin = '4px 0';
+  description.className = 'hud-approval-description';
   description.textContent = String(message || '');
 
   const actions = document.createElement('div');
-  actions.style.display = 'flex';
-  actions.style.gap = '6px';
-  actions.style.marginTop = '8px';
+  actions.className = 'hud-approval-actions';
 
   const approve = document.createElement('button');
   approve.className = 'hud-btn hud-btn-cyan';
@@ -338,13 +388,14 @@ async function resolveHudApproval(approvalId, approved) {
       return;
     }
 
-    if (result.state === 'COMPLETED' && result.success === true) {
+    if (result.state === 'COMPLETED' && result.success === true &&
+        result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
       const card = document.getElementById('hud-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
-    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED'].includes(result.state)) {
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('hud-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCountBadge();
@@ -389,9 +440,7 @@ function addFeedItem(type, message, details) {
 
   if (details !== undefined && details !== null) {
     const pre = document.createElement('pre');
-    pre.style.fontSize = '10px';
-    pre.style.color = 'var(--text-muted)';
-    pre.style.marginTop = '4px';
+    pre.className = 'hud-task-details';
     pre.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
     item.appendChild(pre);
   }
@@ -402,7 +451,7 @@ async function ensureEnrolledDevice() {
   try {
     const session = await window.JarvisDeviceCrypto.restoreSession();
     currentSession = session.sessionId;
-    currentDevice = { id: session.deviceId, name: session.deviceName };
+    currentDevice = { id: session.deviceId, name: session.deviceName, permissions: session.permissions };
     document.getElementById('hud-device-name').textContent = currentDevice.name;
     document.getElementById('hud-device-id').textContent = currentDevice.id;
     document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
@@ -423,14 +472,14 @@ async function pollStatus() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error('Status request failed');
     if (data.status === 'ONLINE') {
-      document.getElementById('core-status-dot').style.background = 'var(--cyan-glow)';
+      document.getElementById('core-status-dot').classList.remove('degraded');
       document.getElementById('tel-audit').innerText = 'AUTH REQUIRED';
     } else if (data.status === 'DEGRADED') {
-      document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
+      document.getElementById('core-status-dot').classList.add('degraded');
       setAssistantState('CORE DEGRADED', 'Security state needs attention. State-changing tasks must remain blocked.');
     }
   } catch {
-    document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
+    document.getElementById('core-status-dot').classList.add('degraded');
     document.getElementById('tel-host').innerText = 'OFFLINE';
     setAssistantState('HOST OFFLINE / UNREACHABLE', 'Reconnection in progress...');
   }
@@ -439,10 +488,18 @@ async function pollStatus() {
 async function pollAudit() {
   try {
     if (!currentSession) return;
-    const res = await fetch('/api/audit', { headers: { 'x-session-id': currentSession } });
+    const stream = document.getElementById('hud-audit-stream');
+    if (!currentDevice?.permissions?.includes('device:manage:execute')) {
+      stream.replaceChildren();
+      const line = document.createElement('div');
+      line.className = 'audit-line';
+      line.textContent = '[AUTH] DEVICE_MANAGE permission required';
+      stream.appendChild(line);
+      return;
+    }
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/audit');
     if (!res.ok) return;
     const data = await res.json();
-    const stream = document.getElementById('hud-audit-stream');
     stream.replaceChildren();
     (data.records || []).slice(-6).reverse().forEach((r) => {
       const line = document.createElement('div');
@@ -458,12 +515,14 @@ async function pollAudit() {
 function initWaveformCanvas() {
   const canvas = document.getElementById('waveform-canvas');
   if (!canvas) return;
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
   const ctx = canvas.getContext('2d');
   let step = 0;
 
   function draw() {
     if (document.body.classList.contains('reduced-motion')) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      animationFrameId = null;
       return;
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);

@@ -64,8 +64,12 @@ try {
   const context = await browser.newContext();
   const pageErrors = [];
   const consoleErrors = [];
+  const auditRequests = [];
   const page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/audit') auditRequests.push(request.url());
+  });
   page.on('console', (message) => {
     if (message.type() === 'error' && !message.text().toLowerCase().includes('favicon.ico')) consoleErrors.push(message.text());
   });
@@ -78,7 +82,11 @@ try {
 
   // Owner-authorized challenge -> Ed25519 proof-of-possession enrollment -> signed session.
   await page.locator('#btn-simulate-phone').click();
-  await page.locator('#enrollment-registered').waitFor({ state: 'visible', timeout: 15000 });
+  try {
+    await page.locator('#enrollment-registered').waitFor({ state: 'visible', timeout: 15000 });
+  } catch {
+    throw new Error(`Browser enrollment failed: ${await page.locator('#tasks-feed').innerText()}`);
+  }
   if (!(await page.locator('#header-device-name').innerText()).includes('JARVIS Browser Companion')) {
     throw new Error('Browser enrollment did not update the device identity UI');
   }
@@ -101,8 +109,34 @@ try {
 
   // Open the HUD in a second tab: it must establish its own signed session from
   // the stored non-extractable device key, then accept text fallback directives.
+  // The speech API mock exercises browser event handling only, not microphone hardware.
+  await context.addInitScript(() => {
+    window.__mockRecognizers = [];
+    class MockSpeechRecognition {
+      constructor() {
+        window.__mockRecognizers.push(this);
+      }
+      start() {
+        this.onstart?.();
+      }
+      stop() {
+        this.onend?.();
+      }
+      abort() {
+        this.onend?.();
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: MockSpeechRecognition });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: MockSpeechRecognition });
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, milliseconds, ...args) =>
+      nativeSetTimeout(callback, milliseconds === 15000 ? 200 : milliseconds, ...args);
+  });
   const hud = await context.newPage();
   hud.on('pageerror', (error) => pageErrors.push(error.message));
+  hud.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/audit') auditRequests.push(request.url());
+  });
   hud.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
@@ -112,11 +146,116 @@ try {
   await hud.locator('#btn-hud-send').click();
   await hud.locator('#hud-tasks-feed .success').first().waitFor({ state: 'visible', timeout: 10000 });
 
-  if (pageErrors.length || consoleErrors.length) {
-    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nConsole errors: ${consoleErrors.join(' | ')}`);
+  // An ambiguous approval result must never be presented as verified success.
+  await hud.locator('#hud-text-input').fill('Please launch Notepad');
+  await hud.locator('#btn-hud-send').click();
+  const hudApproval = hud.locator('#hud-approvals-slot .hud-approval-card').first();
+  await hudApproval.waitFor({ state: 'visible', timeout: 10000 });
+  await hud.route('**/api/approval/approve', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      success: false,
+      state: 'COMPLETED',
+      outcome: 'UNCERTAIN',
+      verified: false,
+      message: 'Execution evidence is unavailable',
+    }),
+  }));
+  await hudApproval.getByRole('button', { name: 'CONFIRM & EXECUTE' }).click();
+  await hud.getByText('APPROVAL PROCESSED — NOT COMPLETE').waitFor({ state: 'visible' });
+  if (await hud.locator('#hud-tasks-feed .success').count() !== 1) {
+    throw new Error('An uncertain approval result was presented as verified success');
+  }
+  await hud.unroute('**/api/approval/approve');
+
+  // Cancel must discard both the transcript and any late result from that capture.
+  const ptt = hud.locator('#btn-ptt');
+  const pttBounds = await ptt.boundingBox();
+  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
+  await hud.mouse.down();
+  await hud.waitForTimeout(100);
+  const voiceDebug = await hud.evaluate(() => ({
+    recognizers: window.__mockRecognizers.length,
+    speechRecognition: typeof window.SpeechRecognition,
+    webkitSpeechRecognition: typeof window.webkitSpeechRecognition,
+    state: document.getElementById('hud-state-label').textContent,
+    hitTarget: document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.id,
+  }));
+  if (voiceDebug.recognizers !== 1) throw new Error(`Push-to-talk pointer did not start recognition: ${JSON.stringify(voiceDebug)}`);
+  const listeningState = await hud.locator('#hud-state-label').innerText();
+  if (listeningState !== 'LISTENING...') throw new Error(`Push-to-talk did not enter LISTENING state: ${listeningState}`);
+  await hud.evaluate(() => window.__mockRecognizers[0].onresult({
+    results: [[{ transcript: 'cancel this directive' }]],
+  }));
+  await hud.locator('#transcript-box').waitFor({ state: 'visible' });
+  await hud.keyboard.press('Escape');
+  await hud.evaluate(() => window.__mockRecognizers[0].onresult({
+    results: [[{ transcript: 'late canceled directive' }]],
+  }));
+  if (await hud.locator('#transcript-input').inputValue() !== '' ||
+      await hud.locator('#transcript-box').isVisible()) {
+    throw new Error('A canceled voice capture exposed a stale transcript');
+  }
+  await hud.mouse.up();
+
+  // The explicit Discard action also clears the editable transcript.
+  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
+  await hud.mouse.down();
+  await hud.waitForFunction(() => window.__mockRecognizers.length === 2, null, { timeout: 3000 });
+  await hud.evaluate(() => window.__mockRecognizers[1].onresult({
+    results: [[{ transcript: 'discard this directive' }]],
+  }));
+  await hud.locator('#transcript-box').waitFor({ state: 'visible' });
+  await hud.mouse.up();
+  await hud.locator('#btn-transcript-cancel').click();
+  if (await hud.locator('#transcript-input').inputValue() !== '' ||
+      await hud.locator('#transcript-box').isVisible()) {
+    throw new Error('The transcript Discard action retained captured text');
   }
 
-  console.log('BROWSER_E2E_PASS: owner challenge, Ed25519 enrollment, signed request, XSS regression, approval rejection, HUD session restore, text fallback.');
+  // Ctrl+M toggles push-to-talk without intercepting space in an editable field.
+  await hud.evaluate(() => document.activeElement?.blur());
+  await hud.keyboard.press('Control+m');
+  await hud.waitForFunction(() => window.__mockRecognizers.length === 3, null, { timeout: 3000 });
+  await hud.keyboard.press('Control+m');
+  await hud.locator('#hud-text-input').focus();
+  await hud.keyboard.press('Space');
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 3) {
+    throw new Error('Space in the text field unexpectedly started voice capture');
+  }
+
+  // The 15-second capture bound stops recognition and remains visible to the user.
+  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
+  await hud.mouse.down();
+  await hud.getByText('VOICE TIME LIMIT').waitFor({ state: 'visible', timeout: 3000 });
+  await hud.mouse.up();
+
+  // Browser permission and recognizer failures must be explicit and leave text available.
+  const recognizerCount = await hud.evaluate(() => window.__mockRecognizers.length);
+  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
+  await hud.mouse.down();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, recognizerCount, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'not-allowed' }), recognizerCount);
+  await hud.getByText('SPEECH ENGINE ERROR').waitFor({ state: 'visible' });
+  await hud.getByText('Recognition failed: not-allowed').waitFor({ state: 'visible' });
+  await hud.mouse.up();
+
+  await hud.locator('#btn-toggle-motion').click();
+  if (await hud.locator('body').getAttribute('class').then((value) => !value.includes('reduced-motion'))) {
+    throw new Error('Reduced-motion control did not activate');
+  }
+  await hud.locator('#btn-toggle-motion').click();
+
+  await hud.waitForTimeout(4200);
+  if (auditRequests.length) throw new Error('A device without DEVICE_MANAGE permission polled privileged audit data');
+  const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
+  const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
+  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length !== 1) {
+    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nExpected permission error count: ${expectedRecognitionErrors.length}`);
+  }
+
+  console.log('BROWSER_E2E_PASS: owner challenge, Ed25519 enrollment, signed requests, XSS regression, approval rejection, uncertain-outcome UI, HUD session restore, text fallback, voice cancel/discard/late-result/timeout/permission-error/keyboard UI lifecycle, reduced motion, least-privilege audit polling.');
 } catch (error) {
   console.error('BROWSER_E2E_FAIL', error);
   console.error(stdout);

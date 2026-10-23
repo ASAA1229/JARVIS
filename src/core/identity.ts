@@ -189,7 +189,6 @@ export class DeviceIdentityManager {
       'DEVICE_ENROLLED',
       {
         deviceId,
-        name: deviceName,
         permissions: deviceRecord.permissions,
       },
       deviceId
@@ -366,7 +365,7 @@ export class DeviceIdentityManager {
     }
 
     const persisted = this.persistState();
-    this.audit.record('DEVICE_REVOKED', { reason, persisted }, deviceId);
+    this.audit.record('DEVICE_REVOKED', { reasonProvided: Boolean(reason), persisted }, deviceId);
     return persisted;
   }
 

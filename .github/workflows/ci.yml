@@ -29,3 +29,5 @@ jobs:
         run: npm run lint
       - name: Automated test suite
         run: npm test
+      - name: Browser security smoke test
+        run: npm run test:browser

@@ -91,6 +91,8 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const csp = hudRes.headers.get('content-security-policy') || '';
     assert.match(csp, /script-src 'self'/);
     assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
+    assert.match(csp, /style-src 'self'/);
+    assert.doesNotMatch(csp, /style-src[^;]*unsafe-inline/);
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
     assert.match(hudHtml, /local-only processing is not guaranteed/i);

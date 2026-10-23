@@ -67,7 +67,7 @@ async function handleBrowserDeviceEnrollment() {
       activeChallenge.challengeToken,
       'JARVIS Browser Companion',
     );
-    currentDevice = { id: enrolled.deviceId, name: enrolled.deviceName };
+    currentDevice = { id: enrolled.deviceId, name: enrolled.deviceName, permissions: enrolled.permissions };
     currentSession = enrolled.sessionId;
     activeChallenge = null;
     document.getElementById('challenge-box').classList.add('hidden');
@@ -85,7 +85,7 @@ async function restoreExistingDevice() {
     const existing = await window.JarvisDeviceCrypto.currentDevice();
     if (!existing) return;
     const session = await window.JarvisDeviceCrypto.restoreSession();
-    currentDevice = { id: session.deviceId, name: session.deviceName };
+    currentDevice = { id: session.deviceId, name: session.deviceName, permissions: session.permissions };
     currentSession = session.sessionId;
     updateUIWithDevice();
   } catch (err) {
@@ -170,8 +170,12 @@ async function handleSendRequest() {
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       addApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('system-pending', `Requires approval: ${data.message}`, data);
-    } else if (data.state === 'COMPLETED') {
+    } else if (data.state === 'COMPLETED' &&
+        data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       addFeedItem('system-success', `Outcome verified: ${data.message}`, data.data);
+    } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
+        data.outcome === 'UNCERTAIN' || data.verified === false) {
+      addFeedItem('system-pending', `Outcome not fully verified: ${data.message}`, data.data);
     } else {
       addFeedItem('system-failed', `Request denied or failed: ${data.message || data.error}`, data);
     }
@@ -266,12 +270,13 @@ async function resolveApproval(approvalId, approved) {
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'The server confirmed the action was rejected.');
-    } else if (result.state === 'COMPLETED' && result.success === true) {
+    } else if (result.state === 'COMPLETED' && result.success === true &&
+        result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
-    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED'].includes(result.state)) {
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
@@ -308,10 +313,18 @@ async function pollStatus() {
 async function fetchAuditLogs() {
   try {
     if (!currentSession) return;
+    const stream = document.getElementById('audit-log-stream');
+    if (!currentDevice?.permissions?.includes('device:manage:execute')) {
+      stream.replaceChildren();
+      const notice = document.createElement('div');
+      notice.className = 'audit-entry';
+      notice.textContent = 'Audit access requires DEVICE_MANAGE permission.';
+      stream.appendChild(notice);
+      return;
+    }
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/audit');
     if (!res.ok) return;
     const data = await res.json();
-    const stream = document.getElementById('audit-log-stream');
     stream.replaceChildren();
 
     (data.records || []).slice(-15).reverse().forEach((r) => {

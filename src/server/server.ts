@@ -24,16 +24,36 @@ export class JarvisServer {
   }
 
   public start(): Promise<number> {
-    return new Promise((resolve) => {
-      this.server.listen(this.port, '127.0.0.1', () => {
+    return new Promise((resolve, reject) => {
+      const onListening = () => {
+        this.server.off('error', onError);
         resolve(this.port);
-      });
+      };
+      const onError = (error: Error) => {
+        this.server.off('listening', onListening);
+        reject(error);
+      };
+
+      this.server.once('error', onError);
+      this.server.once('listening', onListening);
+      try {
+        this.server.listen(this.port, '127.0.0.1');
+      } catch (error) {
+        this.server.off('error', onError);
+        this.server.off('listening', onListening);
+        reject(error);
+      }
     });
   }
 
   public stop(): Promise<void> {
-    return new Promise((resolve) => {
-      this.server.close(() => resolve());
+    if (!this.server.listening) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+      this.server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
   }
 
@@ -46,7 +66,7 @@ export class JarvisServer {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
@@ -63,6 +83,11 @@ export class JarvisServer {
       }
       if (req.method === 'GET' && url.pathname === '/deviceCrypto.js') {
         return this.serveStatic('deviceCrypto.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/favicon.ico') {
+        res.writeHead(204);
+        res.end();
+        return;
       }
       if (req.method === 'GET' && (url.pathname === '/hud' || url.pathname === '/hud/index.html')) {
         return this.serveStatic('hud.html', 'text/html', res);
@@ -158,7 +183,14 @@ export class JarvisServer {
         if (!sessionRes.success) {
           return this.jsonResponse(res, 401, { error: sessionRes.error });
         }
-        return this.jsonResponse(res, 200, sessionRes);
+        const device = this.jarvis.identity.getDevice(deviceId);
+        if (!device) {
+          return this.jsonResponse(res, 401, { error: 'Device is no longer available' });
+        }
+        return this.jsonResponse(res, 200, {
+          ...sessionRes,
+          permissions: [...device.permissions],
+        });
       }
 
       // Submit user request
@@ -201,7 +233,7 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
-        const result = await this.jarvis.approveTask(approvalId, auth.device.id);
+        const result = await this.jarvis.approveTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 
@@ -223,7 +255,7 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
-        const result = this.jarvis.rejectTask(approvalId, auth.device.id);
+        const result = this.jarvis.rejectTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 
@@ -268,7 +300,10 @@ export class JarvisServer {
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
           return this.jsonResponse(res, 403, { error: 'Insufficient permission to view audit records' });
         }
-        const records = this.jarvis.audit.getRecords();
+        if (!this.jarvis.audit.verifyIntegrity().valid) {
+          return this.jsonResponse(res, 503, { error: 'Audit records are unavailable because integrity could not be verified' });
+        }
+        const records = this.jarvis.audit.getPublicRecords();
         return this.jsonResponse(res, 200, { records: records.slice(-50) });
       }
 
@@ -351,7 +386,8 @@ export class JarvisServer {
   private readJsonBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const contentType = req.headers['content-type'] || '';
-      if (!contentType.toLowerCase().includes('application/json')) {
+      const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+      if (mediaType !== 'application/json') {
         reject(new Error('Content-Type must be application/json'));
         return;
       }

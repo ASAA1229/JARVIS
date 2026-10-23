@@ -107,7 +107,7 @@
     }
     sessionStorage.setItem('jarvis.sessionId', result.sessionId);
     sessionStorage.setItem('jarvis.deviceId', record.deviceId);
-    return result.sessionId;
+    return { sessionId: result.sessionId, permissions: result.permissions };
   }
 
   async function enrollDevice(challengeToken, deviceName) {
@@ -135,8 +135,8 @@
 
     const record = { id: CURRENT_KEY, deviceId: enrollment.deviceId, deviceName, privateKey, createdAt: Date.now() };
     await saveDevice(record);
-    const sessionId = await establishSession(record);
-    return { deviceId: record.deviceId, deviceName: record.deviceName, sessionId };
+    const session = await establishSession(record);
+    return { deviceId: record.deviceId, deviceName: record.deviceName, ...session };
   }
 
   async function restoreSession() {
@@ -144,8 +144,8 @@
     if (!record || !record.deviceId || !record.privateKey) {
       throw new Error('No enrolled device key exists in this browser');
     }
-    const sessionId = await establishSession(record);
-    return { deviceId: record.deviceId, deviceName: record.deviceName, sessionId };
+    const session = await establishSession(record);
+    return { deviceId: record.deviceId, deviceName: record.deviceName, ...session };
   }
 
   async function signedFetch(path, options = {}) {
