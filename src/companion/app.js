@@ -6,6 +6,7 @@ let pendingApprovals = new Map();
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  restoreExistingDevice();
   pollStatus();
   setInterval(pollStatus, 3000);
   setInterval(fetchAuditLogs, 4000);
@@ -13,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupEventListeners() {
   document.getElementById('btn-create-challenge').addEventListener('click', handleCreateChallenge);
-  document.getElementById('btn-simulate-phone').addEventListener('click', handleSimulatePhoneEnrollment);
+  document.getElementById('btn-simulate-phone').addEventListener('click', handleBrowserDeviceEnrollment);
   document.getElementById('btn-revoke-device').addEventListener('click', handleRevokeDevice);
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
@@ -56,12 +57,42 @@ async function handleCreateChallenge() {
   }
 }
 
-async function handleSimulatePhoneEnrollment() {
-  // The previous demo fabricated a public key and fell back to a fake session ID.
-  // Never represent a simulated identity as authenticated.
-  currentDevice = null;
-  currentSession = null;
-  setEnrollmentUnavailable('Real device key generation and signed session establishment are not configured yet.');
+async function handleBrowserDeviceEnrollment() {
+  try {
+    if (!activeChallenge) await handleCreateChallenge();
+    if (!activeChallenge || !activeChallenge.challengeToken) {
+      throw new Error('Create an owner-authorized enrollment challenge first.');
+    }
+    const enrolled = await window.JarvisDeviceCrypto.enrollDevice(
+      activeChallenge.challengeToken,
+      'JARVIS Browser Companion',
+    );
+    currentDevice = { id: enrolled.deviceId, name: enrolled.deviceName };
+    currentSession = enrolled.sessionId;
+    activeChallenge = null;
+    document.getElementById('challenge-box').classList.add('hidden');
+    updateUIWithDevice();
+    addFeedItem('system-success', 'This browser is enrolled with a non-extractable private key and a signed session.');
+  } catch (err) {
+    currentDevice = null;
+    currentSession = null;
+    setEnrollmentUnavailable(err instanceof Error ? err.message : 'Secure enrollment failed.');
+  }
+}
+
+async function restoreExistingDevice() {
+  try {
+    const existing = await window.JarvisDeviceCrypto.currentDevice();
+    if (!existing) return;
+    const session = await window.JarvisDeviceCrypto.restoreSession();
+    currentDevice = { id: session.deviceId, name: session.deviceName };
+    currentSession = session.sessionId;
+    updateUIWithDevice();
+  } catch (err) {
+    currentDevice = null;
+    currentSession = null;
+    setEnrollmentUnavailable(err instanceof Error ? err.message : 'Could not restore the device session.');
+  }
 }
 
 function setEnrollmentUnavailable(message) {
@@ -88,14 +119,14 @@ async function handleRevokeDevice() {
   if (!confirm(`Are you sure you want to revoke ${currentDevice.name}? Immediate revocation is enforced.`)) return;
 
   try {
-    await fetch('/api/device/revoke', {
+    const revokeResponse = await window.JarvisDeviceCrypto.signedFetch('/api/device/revoke', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession || '',
-      },
-      body: JSON.stringify({ deviceId: currentDevice.id, reason: 'Manual owner revocation' }),
+      body: { deviceId: currentDevice.id, reason: 'Manual self-revocation' },
     });
+    const revokeResult = await revokeResponse.json().catch(() => ({}));
+    if (!revokeResponse.ok || revokeResult.success !== true) {
+      throw new Error(revokeResult.error || 'Device revocation was not confirmed');
+    }
 
     currentDevice = null;
     currentSession = null;
@@ -128,13 +159,9 @@ async function handleSendRequest() {
   addFeedItem('user', text);
 
   try {
-    const res = await fetch('/api/request', {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ text }),
+      body: { text },
     });
 
     const data = await res.json().catch(() => ({}));
@@ -222,13 +249,9 @@ async function resolveApproval(approvalId, approved) {
     return;
   }
   try {
-    const res = await fetch(endpoint, {
+    const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ approvalId }),
+      body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok || !result.success) {
@@ -277,7 +300,7 @@ async function pollStatus() {
 async function fetchAuditLogs() {
   try {
     if (!currentSession) return;
-    const res = await fetch('/api/audit', { headers: { 'x-session-id': currentSession } });
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/audit');
     if (!res.ok) return;
     const data = await res.json();
     const stream = document.getElementById('audit-log-stream');
