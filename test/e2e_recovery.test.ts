@@ -63,7 +63,8 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
     // 4. Authenticate & Create Session
     const timestamp = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}`, companionKeypair.privateKey);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, companionKeypair.privateKey);
     const sessionRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,6 +72,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
         deviceId: companionDeviceId,
         signature: sig,
         timestamp,
+        nonce,
       }),
     });
     const sessionData = await sessionRes.json();
@@ -209,8 +211,9 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Audit Access Test', companionKeypair.publicKey);
     assert.strictEqual(enroll.success, true);
     const timestamp = Date.now();
-    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}`, companionKeypair.privateKey);
-    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp);
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, companionKeypair.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
     assert.strictEqual(session.success, true);
 
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`, {
@@ -227,8 +230,9 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(enroll.success, true);
 
     const ts = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}`, kp.privateKey);
-    const sess = server.getService().identity.createSession(enroll.deviceId!, sig, ts);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}:${nonce}`, kp.privateKey);
+    const sess = server.getService().identity.createSession(enroll.deviceId!, sig, ts, nonce);
     assert.strictEqual(sess.success, true);
 
     // Revoke device
@@ -248,8 +252,9 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
       // Attempting session creation on restarted server must be rejected
       const ts2 = Date.now();
-      const sig2 = CryptoUtil.signData(`SESSION_REQUEST:${ts2}`, kp.privateKey);
-      const sessAfterRestart = restartedServer.getService().identity.createSession(enroll.deviceId!, sig2, ts2);
+      const nonce2 = CryptoUtil.randomToken(16);
+      const sig2 = CryptoUtil.signData(`SESSION_REQUEST:${ts2}:${nonce2}`, kp.privateKey);
+      const sessAfterRestart = restartedServer.getService().identity.createSession(enroll.deviceId!, sig2, ts2, nonce2);
       assert.strictEqual(sessAfterRestart.success, false);
       assert.match(sessAfterRestart.error || '', /Device is revoked/);
     } finally {
