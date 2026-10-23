@@ -9,7 +9,7 @@ import {
 import { CryptoUtil } from '../crypto/crypto.js';
 import { AuditLogger } from '../audit/audit.js';
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export interface EnrollmentChallenge {
@@ -25,6 +25,8 @@ export class DeviceIdentityManager {
   private challenges = new Map<string, EnrollmentChallenge>();
   private audit: AuditLogger;
   private stateFilePath?: string;
+  private stateHealthy = true;
+  private stateError?: string;
 
   constructor(audit: AuditLogger, stateFilePath?: string) {
     this.audit = audit;
@@ -35,19 +37,29 @@ export class DeviceIdentityManager {
   private loadState(): void {
     if (!this.stateFilePath || !existsSync(this.stateFilePath)) return;
     try {
-      const data = JSON.parse(readFileSync(this.stateFilePath, 'utf-8'));
-      if (Array.isArray(data.devices)) {
-        for (const dev of data.devices) {
-          this.devices.set(dev.id, dev);
+      const data: unknown = JSON.parse(readFileSync(this.stateFilePath, 'utf-8'));
+      if (!data || typeof data !== 'object' || !Array.isArray((data as { devices?: unknown }).devices)) {
+        throw new Error('Invalid persisted device state shape');
+      }
+      for (const raw of (data as { devices: unknown[] }).devices) {
+        if (!raw || typeof raw !== 'object') throw new Error('Invalid persisted device record');
+        const dev = raw as DeviceRecord;
+        if (typeof dev.id !== 'string' || typeof dev.publicKey !== 'string' ||
+            !Array.isArray(dev.permissions) || !Object.values(DeviceStatus).includes(dev.status)) {
+          throw new Error('Invalid persisted device record');
         }
+        this.devices.set(dev.id, dev);
       }
     } catch {
-      // In case of corrupt state file, fail closed or report
+      this.stateHealthy = false;
+      this.stateError = 'PERSISTED_DEVICE_STATE_INVALID';
+      this.audit.record('DEVICE_STATE_LOAD_FAILED', { reason: this.stateError });
     }
   }
 
-  private persistState(): void {
-    if (!this.stateFilePath) return;
+  private persistState(): boolean {
+    if (!this.stateFilePath) return true;
+    const temporaryPath = `${this.stateFilePath}.tmp-${CryptoUtil.randomToken(4)}`;
     try {
       const dir = dirname(this.stateFilePath);
       if (!existsSync(dir)) {
@@ -57,10 +69,25 @@ export class DeviceIdentityManager {
         devices: Array.from(this.devices.values()),
         persistedAt: Date.now(),
       };
-      writeFileSync(this.stateFilePath, JSON.stringify(data, null, 2), 'utf-8');
+      writeFileSync(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      renameSync(temporaryPath, this.stateFilePath);
+      this.stateHealthy = true;
+      this.stateError = undefined;
+      return true;
     } catch {
-      // Ignore write errors or log
+      this.stateHealthy = false;
+      this.stateError = 'PERSISTED_DEVICE_STATE_WRITE_FAILED';
+      this.audit.record('DEVICE_STATE_PERSIST_FAILED', { reason: this.stateError });
+      return false;
     }
+  }
+
+  public isStateHealthy(): boolean {
+    return this.stateHealthy;
+  }
+
+  public getStateError(): string | undefined {
+    return this.stateError;
   }
 
   /**
@@ -96,6 +123,10 @@ export class DeviceIdentityManager {
     deviceName: string,
     publicKeyPem: string
   ): { success: boolean; deviceId?: DeviceId; error?: string } {
+    if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; enrollment is blocked' };
+    if (typeof deviceName !== 'string' || !deviceName.trim() || deviceName.length > 80) {
+      return { success: false, error: 'Device name must be 1-80 characters' };
+    }
     const challenge = this.challenges.get(challengeToken);
 
     if (!challenge) {
@@ -122,6 +153,11 @@ export class DeviceIdentityManager {
     challenge.redeemed = true;
 
     const deviceId = `dev-${CryptoUtil.sha256(publicKeyPem).substring(0, 16)}`;
+    const existingDevice = this.devices.get(deviceId);
+    if (existingDevice) {
+      this.audit.record('ENROLLMENT_FAILED', { reason: 'DUPLICATE_PUBLIC_KEY', deviceId });
+      return { success: false, error: 'This public key is already enrolled' };
+    }
     const now = Date.now();
 
     const deviceRecord: DeviceRecord = {
@@ -135,7 +171,10 @@ export class DeviceIdentityManager {
     };
 
     this.devices.set(deviceId, deviceRecord);
-    this.persistState();
+    if (!this.persistState()) {
+      this.devices.delete(deviceId);
+      return { success: false, error: 'Could not persist device enrollment; enrollment was not completed' };
+    }
 
     this.audit.record(
       'DEVICE_ENROLLED',
@@ -159,6 +198,7 @@ export class DeviceIdentityManager {
     timestamp: number,
     ttlSeconds: number = 3600
   ): { success: boolean; sessionId?: SessionId; expiresAt?: number; error?: string } {
+    if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; session creation is blocked' };
     const device = this.devices.get(deviceId);
     if (!device) {
       this.audit.record('SESSION_CREATION_FAILED', { reason: 'DEVICE_NOT_FOUND', deviceId });
@@ -243,9 +283,9 @@ export class DeviceIdentityManager {
       }
     }
 
-    this.persistState();
-    this.audit.record('DEVICE_REVOKED', { reason }, deviceId);
-    return true;
+    const persisted = this.persistState();
+    this.audit.record('DEVICE_REVOKED', { reason, persisted }, deviceId);
+    return persisted;
   }
 
   public getDevice(deviceId: DeviceId): DeviceRecord | undefined {
