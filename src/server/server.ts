@@ -60,6 +60,9 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/app.js') {
         return this.serveStatic('app.js', 'application/javascript', res);
       }
+      if (req.method === 'GET' && url.pathname === '/deviceCrypto.js') {
+        return this.serveStatic('deviceCrypto.js', 'application/javascript', res);
+      }
       if (req.method === 'GET' && (url.pathname === '/hud' || url.pathname === '/hud/index.html')) {
         return this.serveStatic('hud.html', 'text/html', res);
       }
