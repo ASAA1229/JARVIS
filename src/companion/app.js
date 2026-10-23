@@ -33,16 +33,26 @@ function setupEventListeners() {
 }
 
 async function handleCreateChallenge() {
+  const ownerToken = window.prompt('Enter the configured owner control token to authorize enrollment:');
+  if (!ownerToken) return;
+
   try {
-    const res = await fetch('/api/enrollment/challenge', { method: 'POST' });
-    const data = await res.json();
+    const res = await fetch('/api/enrollment/challenge', {
+      method: 'POST',
+      headers: { 'x-owner-control-token': ownerToken },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.challengeToken) {
+      throw new Error(data.error || 'Enrollment challenge failed with HTTP ' + res.status);
+    }
     activeChallenge = data;
 
     const box = document.getElementById('challenge-box');
     box.classList.remove('hidden');
-    document.getElementById('challenge-token').innerText = data.challengeToken;
+    document.getElementById('challenge-token').textContent = data.challengeToken;
   } catch (err) {
-    alert('Failed to generate challenge: ' + err.message);
+    activeChallenge = null;
+    alert('Failed to generate challenge: ' + (err instanceof Error ? err.message : 'Unknown error'));
   }
 }
 
