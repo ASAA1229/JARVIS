@@ -175,6 +175,24 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     }
   });
 
+  test('SEC-API-10: Enrollment rejects a public key without proof of private-key possession', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeToken: challenge.challengeToken,
+        deviceName: 'Invalid Proof Device',
+        publicKey: kp.publicKey,
+        proofSignature: 'invalid-signature',
+      }),
+    });
+    assert.strictEqual(response.status, 401);
+    const deviceId = `dev-${CryptoUtil.sha256(kp.publicKey).substring(0, 16)}`;
+    assert.strictEqual(server.getService().identity.getDevice(deviceId), undefined);
+  });
+
   test('SEC-API-01: HUD cannot provision a session without device-bound proof', async () => {
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/hud/session`, { method: 'POST' });
     assert.strictEqual(response.status, 503);
