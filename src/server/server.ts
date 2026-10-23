@@ -240,21 +240,33 @@ export class JarvisServer {
   private readJsonBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
       let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 1024 * 64) {
-          // Reject oversized payloads (>64KB)
-          reject(new Error('Payload too large'));
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      req.on('data', (chunk: Buffer | string) => {
+        if (settled) return;
+        body += chunk.toString();
+        if (Buffer.byteLength(body, 'utf8') > 1024 * 64) {
+          fail(new Error('Payload too large'));
+          // Drain the rest without buffering it so the connection can finish cleanly.
+          req.resume();
         }
       });
       req.on('end', () => {
+        if (settled) return;
         try {
-          resolve(body ? JSON.parse(body) : {});
+          const parsed: unknown = body ? JSON.parse(body) : {};
+          settled = true;
+          resolve(parsed);
         } catch {
-          reject(new Error('Invalid JSON payload'));
+          fail(new Error('Invalid JSON payload'));
         }
       });
-      req.on('error', reject);
+      req.on('error', (error) => fail(error instanceof Error ? error : new Error('Request stream failed')));
     });
   }
 }
