@@ -179,6 +179,15 @@ export class JarvisCoreService {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
 
+    // Persisted identity state is security-critical. If its integrity or write
+    // status is unknown, fail closed before any execution.
+    if (!this.identity.isStateHealthy()) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Execution blocked: persisted device state is unhealthy';
+      this.audit.record('EXECUTION_BLOCKED_DEVICE_STATE_UNHEALTHY', { reason: this.identity.getStateError() }, taskRecord.deviceId, taskId);
+      return { taskId, state: taskRecord.state, message: taskRecord.error };
+    }
+
     // Precondition re-check: verify device is not revoked
     const device = this.identity.getDevice(taskRecord.deviceId);
     if (!device || device.status !== 'ACTIVE') {
