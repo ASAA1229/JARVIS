@@ -6,6 +6,7 @@ import {
   ExecutionResult,
   VerificationOutcome,
   RiskTier,
+  Permission,
 } from '../core/types.js';
 import { DeviceIdentityManager } from '../core/identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
@@ -286,6 +287,11 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
+    if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
+      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approverDeviceId, approval.taskId);
+      throw new Error('Approver lacks permission for this action');
+    }
+
     const resolveRes = this.policy.resolveApproval(approvalId, true, approverDeviceId);
     if (!resolveRes.success) {
       throw new Error(resolveRes.error);
@@ -321,11 +327,22 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
-    this.policy.resolveApproval(approvalId, false, approverDeviceId);
+    if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
+      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approverDeviceId, approval.taskId);
+      throw new Error('Approver lacks permission for this action');
+    }
+
+    const resolveRes = this.policy.resolveApproval(approvalId, false, approverDeviceId);
+    if (!resolveRes.success) {
+      throw new Error(resolveRes.error || 'Approval could not be rejected');
+    }
+
     const task = this.tasks.get(approval.taskId);
     if (task) {
       task.state = TaskState.REJECTED;
+      task.updatedAt = Date.now();
     }
+    this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId }, approverDeviceId, approval.taskId);
     return { success: true, message: 'Task rejected' };
   }
 
