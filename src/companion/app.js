@@ -47,62 +47,19 @@ async function handleCreateChallenge() {
 }
 
 async function handleSimulatePhoneEnrollment() {
-  if (!activeChallenge) {
-    await handleCreateChallenge();
-  }
+  // The previous demo fabricated a public key and fell back to a fake session ID.
+  // Never represent a simulated identity as authenticated.
+  currentDevice = null;
+  currentSession = null;
+  setEnrollmentUnavailable('Real device key generation and signed session establishment are not configured yet.');
+}
 
-  try {
-    // Generate simulated Ed25519 keypair for Android phone
-    const dummyKey = `-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA${Math.random().toString(36).substring(2, 18)}simulatedkey==\n-----END PUBLIC KEY-----`;
-
-    // 1. Redeem challenge
-    const redeemRes = await fetch('/api/enrollment/redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        challengeToken: activeChallenge.challengeToken,
-        deviceName: 'Pixel 9 Companion (Android 15)',
-        publicKey: dummyKey,
-      }),
-    });
-    const enrollData = await redeemRes.json();
-    if (!enrollData.success) throw new Error(enrollData.error);
-
-    currentDevice = {
-      id: enrollData.deviceId,
-      name: 'Pixel 9 Companion (Android 15)',
-    };
-
-    // 2. Establish Session
-    const timestamp = Date.now();
-    // In actual app, phone signs with private key; server mock validates or simulates
-    const sessionRes = await fetch('/api/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        deviceId: currentDevice.id,
-        signature: 'simulated_sig',
-        timestamp,
-      }),
-    });
-    const sessionData = await sessionRes.json();
-
-    // Since mock signature needs to match in identity manager if strict, let's update current state
-    if (sessionData.sessionId) {
-      currentSession = sessionData.sessionId;
-    } else {
-      // Fallback session ID for UI presentation
-      currentSession = 'sess-simulated-' + Math.random().toString(36).substring(2, 8);
-    }
-
-    updateUIWithDevice();
-    fetchAuditLogs();
-  } catch (err) {
-    // Show fallback simulated registered view
-    currentDevice = { id: 'dev-pixel-demo-01', name: 'Pixel 9 Companion' };
-    currentSession = 'sess-active-poc-token';
-    updateUIWithDevice();
-  }
+function setEnrollmentUnavailable(message) {
+  document.getElementById('enrollment-unregistered').classList.remove('hidden');
+  document.getElementById('enrollment-registered').classList.add('hidden');
+  document.getElementById('device-pill').textContent = 'SECURE ENROLLMENT REQUIRED';
+  document.getElementById('header-device-name').textContent = 'No authenticated device';
+  addFeedItem('system-failed', message);
 }
 
 function updateUIWithDevice() {
@@ -153,8 +110,8 @@ async function handleSendRequest() {
   if (!text) return;
 
   if (!currentSession) {
-    // Auto-enroll simulation if user hasn't enrolled yet
-    await handleSimulatePhoneEnrollment();
+    addFeedItem('system-failed', 'Request not sent: secure device enrollment is not configured.');
+    return;
   }
 
   input.value = '';
@@ -170,7 +127,8 @@ async function handleSendRequest() {
       body: JSON.stringify({ text }),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed with HTTP ' + res.status);
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       addApprovalCard(data.approvalId, data.taskId, text, data.message);
@@ -192,12 +150,24 @@ function addFeedItem(type, message, details) {
   const item = document.createElement('div');
   item.className = 'task-item ' + (type === 'system-success' ? 'success' : type === 'system-failed' ? 'failed' : 'pending');
 
-  let html = `<div class="task-header"><strong>${type.toUpperCase()}</strong> <span>${new Date().toLocaleTimeString()}</span></div><div>${message}</div>`;
-  if (details) {
-    html += `<div class="task-data">${JSON.stringify(details, null, 2)}</div>`;
-  }
+  const header = document.createElement('div');
+  header.className = 'task-header';
+  const label = document.createElement('strong');
+  label.textContent = String(type).toUpperCase();
+  const time = document.createElement('span');
+  time.textContent = new Date().toLocaleTimeString();
+  header.append(label, document.createTextNode(' '), time);
 
-  item.innerHTML = html;
+  const body = document.createElement('div');
+  body.textContent = String(message ?? '');
+  item.append(header, body);
+
+  if (details !== undefined && details !== null) {
+    const data = document.createElement('pre');
+    data.className = 'task-data';
+    data.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+    item.appendChild(data);
+  }
   feed.insertBefore(item, feed.firstChild);
 }
 
@@ -207,46 +177,70 @@ function addApprovalCard(approvalId, taskId, requestText, message) {
 
   const card = document.createElement('div');
   card.className = 'approval-card';
-  card.id = `card-appr-${approvalId}`;
-  card.innerHTML = `
-    <div><strong>Action:</strong> ${requestText}</div>
-    <div class="muted mt-12">${message}</div>
-    <div class="action-row mt-12">
-      <button class="btn btn-primary" onclick="resolveApproval('${approvalId}', true)">Approve & Execute</button>
-      <button class="btn btn-danger" onclick="resolveApproval('${approvalId}', false)">Deny / Reject</button>
-    </div>
-  `;
+  card.id = 'card-appr-' + approvalId;
+
+  const request = document.createElement('div');
+  const requestLabel = document.createElement('strong');
+  requestLabel.textContent = 'Action: ';
+  request.append(requestLabel, document.createTextNode(String(requestText)));
+
+  const description = document.createElement('div');
+  description.className = 'muted mt-12';
+  description.textContent = String(message || '');
+
+  const actions = document.createElement('div');
+  actions.className = 'action-row mt-12';
+  const approve = document.createElement('button');
+  approve.className = 'btn btn-primary';
+  approve.textContent = 'Approve & Execute';
+  approve.addEventListener('click', () => resolveApproval(approvalId, true));
+  const reject = document.createElement('button');
+  reject.className = 'btn btn-danger';
+  reject.textContent = 'Deny / Reject';
+  reject.addEventListener('click', () => resolveApproval(approvalId, false));
+  actions.append(approve, reject);
+
+  card.append(request, description, actions);
   container.appendChild(card);
   updateApprovalCount();
 }
 
 async function resolveApproval(approvalId, approved) {
   const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
+  if (!currentSession) {
+    addFeedItem('system-failed', 'Approval unavailable: no authenticated session.');
+    return;
+  }
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'x-session-id': currentSession || '',
+        'x-session-id': currentSession,
       },
-      body: JSON.stringify({
-        approvalId,
-      }),
+      body: JSON.stringify({ approvalId }),
     });
-    const result = await res.json();
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || result.message || 'Approval request failed with HTTP ' + res.status);
+    }
 
-    const card = document.getElementById(`card-appr-${approvalId}`);
-    if (card) card.remove();
-    updateApprovalCount();
-
-    if (approved) {
-      addFeedItem('system-success', `Approved action executed: ${result.message}`, result.data);
+    if (!approved) {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-failed', 'The server confirmed the action was rejected.');
+    } else if (result.state === 'COMPLETED') {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
     } else {
-      addFeedItem('system-failed', 'Action was rejected by user.');
+      addFeedItem('system-pending', 'Approval processed but task is not complete: ' + String(result.state || 'UNKNOWN'));
     }
     fetchAuditLogs();
   } catch (err) {
-    alert('Failed to resolve approval: ' + err.message);
+    addFeedItem('system-failed', 'Approval state unknown; refresh server state before retrying.');
   }
 }
 
@@ -272,7 +266,9 @@ async function pollStatus() {
 
 async function fetchAuditLogs() {
   try {
-    const res = await fetch('/api/audit');
+    if (!currentSession) return;
+    const res = await fetch('/api/audit', { headers: { 'x-session-id': currentSession } });
+    if (!res.ok) return;
     const data = await res.json();
     const stream = document.getElementById('audit-log-stream');
     stream.innerHTML = '';
@@ -281,7 +277,13 @@ async function fetchAuditLogs() {
       const entry = document.createElement('div');
       entry.className = 'audit-entry';
       const timeStr = new Date(r.timestamp).toLocaleTimeString();
-      entry.innerHTML = `<span class="time">[${timeStr}]</span> <span class="event">${r.eventType}</span>: ${JSON.stringify(r.details)}`;
+      const time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = '[' + timeStr + ']';
+      const event = document.createElement('span');
+      event.className = 'event';
+      event.textContent = String(r.eventType || 'EVENT');
+      entry.append(time, document.createTextNode(' '), event, document.createTextNode(': ' + JSON.stringify(r.details || {})));
       stream.appendChild(entry);
     });
   } catch {
