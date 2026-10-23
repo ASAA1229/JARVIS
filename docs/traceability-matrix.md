@@ -1,8 +1,8 @@
-> **Current status (2026-10-23): integrated release is BLOCKED — NOT READY.** Milestones 1–7 evidence is summarized in the [acceptance audit](milestones-1-to-7-acceptance-audit.md). M9 prototype source is isolated on `new` and not integrated into `fix`; M8 approval artifacts are absent. Current local checks passed on the dirty `fix` tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`; this is not hosted-CI or immutable source evidence. See [final integration acceptance](final-integration-acceptance-2026-10-23.md).
+> **Current status (2026-10-23): integrated release is BLOCKED — NOT READY.** Milestones 1–7 evidence below is a historical audit of the `fix` baseline. M12 gesture foundation is committed on `new` at `542692b515b12fa2a2a536c0a34a3d8e4b02123a`; M8, M10, and M11 approved specifications were not found. See the [current registry](milestones/README.md), [M12 evidence](m12-gesture-spatial-interaction.md), and [repository baseline](repository-baseline-2026-10-23.md).
 
 # Requirements Traceability Matrix — Historical Baseline and Current Remediation
 
-The authoritative Milestones 1–7 status-by-criterion matrix is in the [current acceptance audit](milestones-1-to-7-acceptance-audit.md). This document retains historical requirement IDs and adds current regression links; historical pass claims below are not a substitute for the current matrix.
+The authoritative Milestones 1–7 status-by-criterion matrix is in the [M1–7 acceptance audit](milestones-1-to-7-acceptance-audit.md). This document retains historical requirement IDs and adds current regression links; historical pass claims below are not a substitute for current-source verification.
 
 ## 1. Traceability Mapping
 
@@ -53,6 +53,18 @@ The authoritative Milestones 1–7 status-by-criterion matrix is in the [current
 | **BROWSER-01** | Browser enrollment, signed actions, XSS, CSP/runtime errors, reduced motion | `src/companion/hud.html`, `hud.js`, `hud.css`, `src/server/server.ts` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; speech recognition simulated** |
 | **BROWSER-02** | Uncertain approval outcome is never rendered as verified success | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; approval response intercepted** |
 | **BROWSER-03** | Recognizer permission error is surfaced and leaves text fallback available | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; recognizer error simulated** |
+
+## 3. M12 Gesture Foundation (current `new` branch)
+
+| Requirement | Implementation | Test / evidence status |
+|---|---|---|
+| Camera off by default; explicit activation; video-only capture | `src/companion/gesture.js`, `hud.html` | PASS — browser smoke with fake camera; physical webcam pending |
+| Stop/release on explicit stop, loss/error | `src/companion/gesture.js` | PASS — fake-camera stop, simulated ended event and permission denial; physical removal/visibility acceptance pending |
+| Same-origin local model/WASM, no external request | `src/server/server.ts`, `gesture-worker.js`, CSP | PASS — browser smoke confirms local CPU inference and no external request |
+| Typed versioned intent; confidence, timestamp, ID, target validation | `src/companion/gesture-intent.js` | PASS — `test/gesture.test.ts` (7/7) |
+| Landmark smoothing, confidence floor, dwell, cooldown, neutral rearm, duplicate suppression | `src/companion/gesture-recognition.js` | PASS — synthetic landmark tests only; physical accuracy and false activation not established |
+| Reticle/target preview, not direct action | `src/companion/gesture.js` | PASS — static source guard; hand-driven highlight awaits physical webcam acceptance |
+| Voice arbitration and policy-routed task execution | Not implemented | Future M12 stage; no gesture action is enabled |
 
 ---
 
@@ -121,9 +133,9 @@ The current remediation branch adds regression coverage for:
 
 **Historical hosted verification:** [Windows CI run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/39915715819) on `fix` commit `867747b780a5b1470cf9dcb12f9894bdb09b4639` passed build, TypeScript check, and **38 tests (0 failed, 0 skipped)**. This does not validate the current dirty working tree, interactive physical microphone, native Android/two-phone, or owner-device acceptance. Milestone 7 remains **BLOCKED — NOT COMPLETE**.
 
-## 4. Current Local Verification Evidence — 2026-10-23
+## 4. Historical Local Verification Evidence — `fix` baseline, 2026-10-23
 
-The following checks were rerun on the current dirty working tree, whose `HEAD` and `origin/fix` are `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`. Because the remediation is uncommitted, this SHA identifies the base revision, not an immutable copy of the tested source.
+The following checks were rerun on the then-current dirty working tree, whose `HEAD` and `origin/fix` were `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`. These results describe that historical source and do not represent the current `new` checkout.
 
 | Command | Result |
 |---|---|
@@ -133,4 +145,8 @@ The following checks were rerun on the current dirty working tree, whose `HEAD` 
 | `npm run test:browser` | PASS — Edge against local server; harness timeout clock corrected from 200 ms to 5 seconds; Web Speech mocked |
 | `npm audit --audit-level=low` | PASS — 0 vulnerabilities; approved retry after sandbox registry access failure |
 
-Environment: Windows 11 Home (build 26300), Node `v24.16.0`, npm `11.13.0`, PowerShell `7.6.7`, Microsoft Edge `155.0.4283.62`. `gh run list --branch fix --limit 10` stopped because `gh` is not authenticated. Ubuntu WSL 2 is installed but has no Linux `node` executable; no WSL test ran. Physical microphone/vendor recognition, Android build, two-phone, and owner-device acceptance are not represented by these results. The exact tested source tree remains uncommitted; `9ead85cdacb7e9dedf855605a6d0942760ea3a6f` is its base commit only. M9 source is isolated in the `new` worktree and has not been merged or built.
+Environment: Windows 11 Home (build 26300), Node `v24.16.0`, npm `11.13.0`, PowerShell `7.6.7`, Microsoft Edge `155.0.4283.62`. `gh run list --branch fix --limit 10` stopped because `gh` was not authenticated. Ubuntu WSL 2 was installed but had no Linux `node` executable; no WSL test ran. Physical microphone/vendor recognition, Android build, two-phone, and owner-device acceptance were not represented by these results. The exact tested source tree was uncommitted; `9ead85cdacb7e9dedf855605a6d0942760ea3a6f` was its base commit only. The former M9 checkout is no longer present; the gitlink deletion is preserved in the current working tree.
+
+## 5. Current M12 source evidence — `new`
+
+At commit `542692b515b12fa2a2a536c0a34a3d8e4b02123a`, build, lint, dependency resolution, and 7/7 gesture unit tests passed. Browser smoke passed in Microsoft Edge with simulated camera frames, exercising opt-in video-only capture, local model/WASM loading and inference, stop/release, simulated permission denial/loss, and no external gesture-asset requests. Full `npm test` had 67/69 passing; two host system-facts tests failed. The sandbox required an OS `userInfo()` shim to load Node tests, and the final npm advisory query was unavailable. Physical camera precision/latency and action integration remain unverified; gestures only preview HUD interactions. See the [baseline report](repository-baseline-2026-10-23.md) for exact limitations.

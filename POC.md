@@ -28,6 +28,14 @@ On the reported dirty `fix` tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3
 
 These results were reported against a dirty tree and are not exact-commit hosted-CI evidence.
 
+## M12 local preview foundation — `new` branch
+
+- An opt-in, video-only camera and same-origin MediaPipe Hand Landmarker/WASM run in a worker. Camera defaults off, the active state is visible, and stop releases tracks and inference resources.
+- Automated gesture tests passed **7/7** using synthetic landmark fixtures. They cover schema/version/target/staleness bounds, confidence floor, dwell/rearm/duplicate suppression, point/pinch/swipe, tracking loss, and absence of gesture-to-backend/shell/adapter execution paths.
+- `npm run test:browser` passed in Microsoft Edge with a fake-camera device. The fake stream loaded the same-origin model/WASM and ran CPU inference; the test checked video-only capture, stop/release, simulated camera loss/permission denial, and no external request. This is not physical webcam or gesture-accuracy acceptance.
+- On this branch, `npm run build`, `npm run lint`, and `npm ls --depth=0` passed. The full `npm test` run has existing environment/timing failures and is not green; see `master_repo_test` for exact counts. The final `npm audit` endpoint was unreachable.
+- M12 is **PARTIAL**. Gesture proposals are previews only. Policy/approval/adapter integration, voice arbitration, deletion confirmation, physical precision/false-activation/latency, sustained resource use, and target laptop acceptance remain open.
+
 ## Implemented does not mean externally accepted
 
 - Windows application-launch implementation exists, but real visible Notepad acceptance on the target MSI must be separately recorded. A mocked test does not count.

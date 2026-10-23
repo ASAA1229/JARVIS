@@ -17,6 +17,7 @@
 - [ ] **M9 — Android prototype integration:** Review the separate prototype, implement the required backend security capabilities and task APIs only after design/security review, build/install, and verify on physical devices. Keep remote access disabled until secure transport and authorization are proven.
 - [ ] **M10 — Specification:** Find the authoritative scope in history/branches or request owner approval; do not infer it.
 - [ ] **M11 — Specification:** Find the authoritative scope in history/branches or request owner approval; do not infer it.
+- [ ] **M12 — Gesture & spatial interaction:** Current `new` branch has a local-only preview foundation. Before completion, pass target Windows webcam/lifecycle acceptance, measured precision/false-activation/latency/performance thresholds, voice arbitration and stale-target tests, and any policy-routed action integration tests. Keep deletion, approval, and system actions disabled until each passes review; see [M12 acceptance plan](docs/m12-gesture-spatial-interaction.md).
 - [ ] **Two-phone acceptance:** Enroll both devices, verify separate keys/sessions/permissions, revoke one, and prove the other remains independently usable.
 - [ ] **Hosted CI:** Verify workflow result for the exact accepted commit; local green tests alone are insufficient.
 - [ ] **Dependency reproducibility:** Re-run clean lockfile installation, build, typecheck/lint, tests, and security audit on the final reviewed commit.

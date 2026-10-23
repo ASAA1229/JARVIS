@@ -1,6 +1,7 @@
 import { ExecutionResult, VerificationOutcome } from '../core/types.js';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
+import { statfs } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -103,17 +104,46 @@ export class WindowsSystemAdapter {
       };
     }
 
-    try {
-      const { stdout } = await execFileAsync('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='${drive}'" | Select-Object -Property Size, FreeSpace | ConvertTo-Json`,
-      ], { signal });
+    if (process.platform !== 'win32') {
+      return {
+        success: false,
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        error: 'Windows disk information is unavailable on this host platform',
+        evidence: { platform: process.platform },
+      };
+    }
 
-      const parsed = JSON.parse(stdout.trim());
-      const totalBytes = Number(parsed.Size);
-      const freeBytes = Number(parsed.FreeSpace);
+    if (signal?.aborted) {
+      return {
+        success: false,
+        outcome: VerificationOutcome.UNCERTAIN,
+        error: 'Disk query was interrupted',
+        evidence: { interrupted: true },
+        interrupted: true,
+      };
+    }
+
+    try {
+      const stats = await statfs(`${drive.toUpperCase()}\\`);
+      if (signal?.aborted) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'Disk query was interrupted',
+          evidence: { interrupted: true },
+          interrupted: true,
+        };
+      }
+      const totalBytes = stats.blocks * stats.bsize;
+      const freeBytes = stats.bavail * stats.bsize;
+      if (!Number.isFinite(totalBytes) || !Number.isFinite(freeBytes) || totalBytes <= 0 || freeBytes < 0) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'Disk query returned invalid filesystem statistics',
+          evidence: { drive: drive.toUpperCase() },
+        };
+      }
       const usedBytes = totalBytes - freeBytes;
 
       return {
@@ -126,7 +156,7 @@ export class WindowsSystemAdapter {
           usedBytes,
           freePercent: Number(((freeBytes / totalBytes) * 100).toFixed(2)),
         },
-        evidence: { query: 'Win32_LogicalDisk', timestamp: Date.now() },
+        evidence: { query: 'node:fs.statfs', timestamp: Date.now() },
       };
     } catch (err: unknown) {
       return {

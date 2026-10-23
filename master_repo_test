@@ -32,6 +32,14 @@ Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942
 - Voice privacy defaults, push-to-talk, mute, cancellation, and transcript disposal (automated/simulated as applicable).
 - HUD route/assets and browser keyboard/reduced-motion/error smoke checks.
 
+## M12 local-only gesture foundation
+
+The `new` branch adds `test/gesture.test.ts` for strict schema/version/allowlist/staleness checks, confidence bounds, synthetic landmark pose rules, dwell/rearm/duplicate suppression, tracking loss, and a source boundary check that gesture modules cannot call backend routes, shells, or adapters. All **7/7** passed. The Edge browser smoke passed with a fake camera: default-off state, local model/WASM initialization and CPU inference, video-only stream, explicit stop/release, simulated camera loss/permission denial, and cross-origin request monitoring. These are mocked/synthetic checks, not physical webcam acceptance.
+
+The most recent full `npm test` attempt (69 total) reported **67 passed, 2 failed** under default test-file concurrency: `FLOW-SYSTEM-FACTS` expected a completed memory query but received `FAILED`; `SEC-HARD-03` expected a completed battery query but received `PARTIAL`. A serial retry (`npm test -- --test-concurrency=1`) reported **66 passed, 3 failed**: the same two plus `RECOVER-02`, whose setup session was inactive when the request ran. The full regression suite is not green; these existing system-fact/environment and timing/setup failures are outside gesture code and remain unresolved.
+
+The test launcher required a temporary process-only shim for Node's `os.userInfo()` (`uv_os_get_passwd … ENOMEM`); no application source was changed for it. A final `npm audit --audit-level=low` could not reach the npm registry advisory endpoint. The install command that added the reviewed MediaPipe package reported zero vulnerabilities, which is not a replacement for a successful final audit query.
+
 ## Required real-runtime acceptance
 
 ### Windows commands / Notepad
