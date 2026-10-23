@@ -172,6 +172,53 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(response.status, 401);
   });
 
+  test('SEC-API-04: API rejects malformed JSON, wrong content type, and invalid session payloads', async () => {
+    const malformed = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{',
+    });
+    assert.strictEqual(malformed.status, 400);
+
+    const wrongType = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'not-json',
+    });
+    assert.strictEqual(wrongType.status, 415);
+
+    const missingFields = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.strictEqual(missingFields.status, 400);
+  });
+
+  test('SEC-API-05: API rejects oversized JSON payloads', async () => {
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oversized: 'x'.repeat(70 * 1024) }),
+    });
+    assert.strictEqual(response.status, 413);
+  });
+
+  test('SEC-API-06: Authenticated ordinary device cannot read privileged audit records', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Audit Access Test', companionKeypair.publicKey);
+    assert.strictEqual(enroll.success, true);
+    const timestamp = Date.now();
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}`, companionKeypair.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp);
+    assert.strictEqual(session.success, true);
+
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`, {
+      headers: { 'x-session-id': session.sessionId! },
+    });
+    assert.strictEqual(response.status, 403);
+  });
+
   test('RECOVER-01: Persistent device revocation remains enforced after server restart', async () => {
     // 1. Enroll and then revoke a device
     const challenge = server.getService().identity.createEnrollmentChallenge();
