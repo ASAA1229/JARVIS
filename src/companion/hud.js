@@ -242,13 +242,9 @@ async function submitDirective(text) {
   addFeedItem('directive', text);
 
   try {
-    const res = await fetch('/api/request', {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ text }),
+      body: { text },
     });
 
     const data = await res.json().catch(() => ({}));
@@ -321,13 +317,9 @@ async function resolveHudApproval(approvalId, approved) {
   }
 
   try {
-    const res = await fetch(endpoint, {
+    const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ approvalId }),
+      body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -401,14 +393,22 @@ function addFeedItem(type, message, details) {
 }
 
 async function ensureEnrolledDevice() {
-  // Fail closed: the former endpoint created sessions without private-key proof.
-  // Do not present the HUD as enrolled until secure device-bound enrollment exists.
-  currentSession = null;
-  currentDevice = null;
-  document.getElementById('hud-device-name').textContent = 'Enrollment required';
-  document.getElementById('hud-device-id').textContent = '--';
-  document.getElementById('enclave-tag').textContent = 'SECURE ENROLLMENT REQUIRED';
-  setAssistantState('SESSION UNAVAILABLE', 'HUD actions are disabled until secure device-bound enrollment is configured.');
+  try {
+    const session = await window.JarvisDeviceCrypto.restoreSession();
+    currentSession = session.sessionId;
+    currentDevice = { id: session.deviceId, name: session.deviceName };
+    document.getElementById('hud-device-name').textContent = currentDevice.name;
+    document.getElementById('hud-device-id').textContent = currentDevice.id;
+    document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
+    setAssistantState('STANDBY', 'Device-bound session established. Confirm all transcribed directives before execution.');
+  } catch (err) {
+    currentSession = null;
+    currentDevice = null;
+    document.getElementById('hud-device-name').textContent = 'Enrollment required';
+    document.getElementById('hud-device-id').textContent = '--';
+    document.getElementById('enclave-tag').textContent = 'SECURE ENROLLMENT REQUIRED';
+    setAssistantState('SESSION UNAVAILABLE', err instanceof Error ? err.message : 'Enroll this browser through the companion UI first.');
+  }
 }
 
 async function pollStatus() {
