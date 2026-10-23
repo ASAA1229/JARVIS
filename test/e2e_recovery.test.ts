@@ -197,6 +197,23 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(missingFields.status, 400);
   });
 
+  test('SEC-API-07: Fresh session signature cannot be replayed with the same nonce', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Session Replay Test', kp.publicKey);
+    assert.strictEqual(enroll.success, true);
+
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
+    const first = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
+    assert.strictEqual(first.success, true);
+
+    const replay = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
+    assert.strictEqual(replay.success, false);
+    assert.match(replay.error || '', /nonce has already been used/i);
+  });
+
   test('SEC-API-05: API rejects oversized JSON payloads', async () => {
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
       method: 'POST',
@@ -284,8 +301,9 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const kp = CryptoUtil.generateEd25519KeyPair();
     const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Audit Compromise Device', kp.publicKey);
     const ts = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}`, kp.privateKey);
-    const sess = server.getService().identity.createSession(enroll.deviceId!, sig, ts);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}:${nonce}`, kp.privateKey);
+    const sess = server.getService().identity.createSession(enroll.deviceId!, sig, ts, nonce);
 
     // Initial query succeeds
     const initialRes = await server.getService().submitRequest(sess.sessionId!, 'Check memory');
