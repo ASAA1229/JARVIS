@@ -38,7 +38,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const statusRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
     const statusData = await statusRes.json();
     assert.strictEqual(statusData.status, 'ONLINE');
-    assert.strictEqual(statusData.auditIntegrity.valid, true);
+    assert.deepStrictEqual(Object.keys(statusData).sort(), ['status']);
 
     // 2. Generate Enrollment Challenge
     const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
@@ -135,7 +135,29 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       },
       body: JSON.stringify({ text: 'What is the OS version?' }),
     });
-    assert.strictEqual(reqAfterRevoke.status, 500); // Throws auth rejection
+    assert.strictEqual(reqAfterRevoke.status, 401); // Authentication failures use the correct HTTP status
+  });
+
+
+  test('SEC-API-01: HUD cannot provision a session without device-bound proof', async () => {
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/hud/session`, { method: 'POST' });
+    assert.strictEqual(response.status, 503);
+    const body = await response.json();
+    assert.strictEqual(body.code, 'SECURE_HUD_ENROLLMENT_REQUIRED');
+    assert.strictEqual('sessionId' in body, false);
+  });
+
+  test('SEC-API-02: Public status endpoint exposes only minimal health state', async () => {
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
+    assert.strictEqual(response.status, 200);
+    const body = await response.json();
+    assert.deepStrictEqual(Object.keys(body), ['status']);
+    assert.strictEqual(body.status, 'ONLINE');
+  });
+
+  test('SEC-API-03: Audit endpoint denies unauthenticated access', async () => {
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`);
+    assert.strictEqual(response.status, 401);
   });
 
   test('RECOVER-01: Persistent device revocation remains enforced after server restart', async () => {
