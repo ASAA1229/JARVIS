@@ -113,6 +113,9 @@ export class JarvisServer {
       // Redeem enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/redeem') {
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { challengeToken, deviceName, publicKey, proofSignature } = body as {
           challengeToken: string;
           deviceName: string;
@@ -138,6 +141,9 @@ export class JarvisServer {
       // Establish session
       if (req.method === 'POST' && url.pathname === '/api/session') {
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { deviceId, signature, timestamp, nonce } = body as {
           deviceId: string;
           signature: string;
@@ -162,6 +168,9 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { text } = body as { text: string };
         if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
           return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
@@ -181,6 +190,9 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { approvalId } = body as { approvalId: string };
         if (typeof approvalId !== 'string' || !approvalId) {
           return this.jsonResponse(res, 400, { error: 'approvalId is required' });
@@ -200,6 +212,9 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { approvalId } = body as { approvalId: string };
         if (typeof approvalId !== 'string' || !approvalId) {
           return this.jsonResponse(res, 400, { error: 'approvalId is required' });
@@ -219,6 +234,9 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { deviceId, reason } = body as { deviceId: string; reason?: string };
         if (typeof deviceId !== 'string' || !deviceId) {
           return this.jsonResponse(res, 400, { error: 'deviceId is required' });
@@ -281,6 +299,10 @@ export class JarvisServer {
       // Keep internal exception details in server-side diagnostics only.
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
+  }
+
+  private isJsonObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
   private authorizeSignedRequest(req: IncomingMessage, sessionId: string, path: string, body: unknown) {
