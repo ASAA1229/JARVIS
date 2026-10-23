@@ -35,8 +35,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     phoneADeviceId = enrollA.deviceId!;
 
     const tsA = Date.now();
-    const sigA = CryptoUtil.signData(`SESSION_REQUEST:${tsA}`, phoneAKeypair.privateKey);
-    const sessA = jarvis.identity.createSession(phoneADeviceId, sigA, tsA);
+    const nonceA = CryptoUtil.randomToken(16);
+    const sigA = CryptoUtil.signData(`SESSION_REQUEST:${tsA}:${nonceA}`, phoneAKeypair.privateKey);
+    const sessA = jarvis.identity.createSession(phoneADeviceId, sigA, tsA, nonceA);
     assert.strictEqual(sessA.success, true);
     phoneASessionId = sessA.sessionId!;
 
@@ -51,8 +52,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     phoneBDeviceId = enrollB.deviceId!;
 
     const tsB = Date.now();
-    const sigB = CryptoUtil.signData(`SESSION_REQUEST:${tsB}`, phoneBKeypair.privateKey);
-    const sessB = jarvis.identity.createSession(phoneBDeviceId, sigB, tsB);
+    const nonceB = CryptoUtil.randomToken(16);
+    const sigB = CryptoUtil.signData(`SESSION_REQUEST:${tsB}:${nonceB}`, phoneBKeypair.privateKey);
+    const sessB = jarvis.identity.createSession(phoneBDeviceId, sigB, tsB, nonceB);
     assert.strictEqual(sessB.success, true);
     phoneBSessionId = sessB.sessionId!;
   });
@@ -161,8 +163,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     const kp = CryptoUtil.generateEd25519KeyPair();
     const enroll = hostileJarvis.identity.enrollDevice(challenge.challengeToken, 'Test Device', kp.publicKey);
     const ts = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}`, kp.privateKey);
-    const sess = hostileJarvis.identity.createSession(enroll.deviceId!, sig, ts);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}:${nonce}`, kp.privateKey);
+    const sess = hostileJarvis.identity.createSession(enroll.deviceId!, sig, ts, nonce);
 
     // Request through hostile planner must fail validation before policy evaluation
     const res = await hostileJarvis.submitRequest(sess.sessionId!, 'Do something malicious');
@@ -224,8 +227,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
 
   test('SEC-HARD-08: Stale and replay session requests are rejected', () => {
     const staleTimestamp = Date.now() - 120000; // 2 minutes in the past (> 60s limit)
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${staleTimestamp}`, phoneAKeypair.privateKey);
-    const sessionRes = jarvis.identity.createSession(phoneADeviceId, sig, staleTimestamp);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${staleTimestamp}:${nonce}`, phoneAKeypair.privateKey);
+    const sessionRes = jarvis.identity.createSession(phoneADeviceId, sig, staleTimestamp, nonce);
 
     assert.strictEqual(sessionRes.success, false);
     assert.match(sessionRes.error || '', /Timestamp is stale/);
