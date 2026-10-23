@@ -67,6 +67,7 @@ export class DeviceIdentityManager {
   }
 
   private persistState(): boolean {
+    if (!this.stateHealthy) return false;
     if (!this.stateFilePath) return true;
     const temporaryPath = `${this.stateFilePath}.tmp-${CryptoUtil.randomToken(4)}`;
     try {
@@ -81,8 +82,6 @@ export class DeviceIdentityManager {
       };
       writeFileSync(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
       renameSync(temporaryPath, this.stateFilePath);
-      this.stateHealthy = true;
-      this.stateError = undefined;
       return true;
     } catch {
       this.stateHealthy = false;
@@ -352,6 +351,7 @@ export class DeviceIdentityManager {
    * Immediately revokes a device and terminates its active sessions.
    */
   public revokeDevice(deviceId: DeviceId, reason: string = 'Owner initiated'): boolean {
+    if (!this.stateHealthy) return false;
     const device = this.devices.get(deviceId);
     if (!device) return false;
 
