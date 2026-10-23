@@ -33,10 +33,10 @@
         </div>
         <div class="card-body">
           <div id="enrollment-unregistered">
-            <p class="muted">No enrolled companion. Owner authorization is required to create a one-time challenge. Real device key enrollment must complete before a session is trusted.</p>
+            <p class="muted">No enrolled browser companion. Authorize a one-time challenge, then enroll this browser with a device-bound Ed25519 key. Android network enrollment remains a separate integration step.</p>
             <div class="action-row">
               <button id="btn-create-challenge" class="btn btn-primary">Generate Enrollment Challenge</button>
-              <button id="btn-simulate-phone" class="btn btn-secondary">Real Device Enrollment (Not Yet Configured)</button>
+              <button id="btn-simulate-phone" class="btn btn-secondary">Enroll This Browser (POC)</button>
             </div>
             <div id="challenge-box" class="challenge-box hidden">
               <div class="token-title">Single-Use Enrollment Token (120s TTL)</div>
