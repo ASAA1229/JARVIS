@@ -68,13 +68,19 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.ok(challengeData.challengeToken);
 
     // 3. Redeem Challenge
+    const enrollmentName = 'Android Companion (E2E Test Device)';
+    const enrollmentProof = CryptoUtil.signData(
+      `ENROLLMENT_PROOF:${challengeData.challengeToken}:${enrollmentName}:${CryptoUtil.sha256(companionKeypair.publicKey)}`,
+      companionKeypair.privateKey,
+    );
     const redeemRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         challengeToken: challengeData.challengeToken,
-        deviceName: 'Android Companion (E2E Test Device)',
+        deviceName: enrollmentName,
         publicKey: companionKeypair.publicKey,
+        proofSignature: enrollmentProof,
       }),
     });
     const redeemData = await redeemRes.json();
