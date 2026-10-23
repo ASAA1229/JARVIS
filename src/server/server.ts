@@ -123,15 +123,17 @@ export class JarvisServer {
       // Establish session
       if (req.method === 'POST' && url.pathname === '/api/session') {
         const body = await this.readJsonBody(req);
-        const { deviceId, signature, timestamp } = body as {
+        const { deviceId, signature, timestamp, nonce } = body as {
           deviceId: string;
           signature: string;
           timestamp: number;
+          nonce: string;
         };
-        if (typeof deviceId !== 'string' || typeof signature !== 'string' || !Number.isFinite(timestamp)) {
-          return this.jsonResponse(res, 400, { error: 'deviceId, signature, and numeric timestamp are required' });
+        if (typeof deviceId !== 'string' || typeof signature !== 'string' || !Number.isFinite(timestamp) ||
+            typeof nonce !== 'string' || !/^[a-f0-9]{32,128}$/i.test(nonce)) {
+          return this.jsonResponse(res, 400, { error: 'deviceId, signature, numeric timestamp, and a 16-byte-or-stronger hexadecimal nonce are required' });
         }
-        const sessionRes = this.jarvis.identity.createSession(deviceId, signature, timestamp);
+        const sessionRes = this.jarvis.identity.createSession(deviceId, signature, timestamp, nonce);
         if (!sessionRes.success) {
           return this.jsonResponse(res, 401, { error: sessionRes.error });
         }
