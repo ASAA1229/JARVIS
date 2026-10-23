@@ -37,8 +37,9 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
 
     // Create session
     const timestamp = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}`, companionKeypair.privateKey);
-    const sessionRes = jarvis.identity.createSession(companionDeviceId, sig, timestamp);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, companionKeypair.privateKey);
+    const sessionRes = jarvis.identity.createSession(companionDeviceId, sig, timestamp, nonce);
     assert.strictEqual(sessionRes.success, true);
     companionSessionId = sessionRes.sessionId!;
   });
