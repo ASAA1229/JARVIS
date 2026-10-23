@@ -324,6 +324,44 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(response.status, 403);
   });
 
+  test('SEC-API-11: Reject endpoint returns a stable not-found response for unknown approvals', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Reject Route Test', kp.publicKey);
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
+    assert.strictEqual(session.success, true);
+
+    const body = { approvalId: 'appr-does-not-exist' };
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/approval/reject`, {
+      method: 'POST',
+      headers: signedHeaders(session.sessionId!, kp.privateKey, 'POST', '/api/approval/reject', body),
+      body: JSON.stringify(body),
+    });
+    assert.strictEqual(response.status, 404);
+  });
+
+  test('SEC-API-12: Ordinary device cannot revoke a different device', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Revocation Permission Test', kp.publicKey);
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
+    assert.strictEqual(session.success, true);
+
+    const body = { deviceId: 'dev-another-device', reason: 'unauthorized cross-device revoke attempt' };
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/device/revoke`, {
+      method: 'POST',
+      headers: signedHeaders(session.sessionId!, kp.privateKey, 'POST', '/api/device/revoke', body),
+      body: JSON.stringify(body),
+    });
+    assert.strictEqual(response.status, 403);
+  });
+
   test('RECOVER-01: Persistent device revocation remains enforced after server restart', async () => {
     // 1. Enroll and then revoke a device
     const challenge = server.getService().identity.createEnrollmentChallenge();
