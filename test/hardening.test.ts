@@ -225,6 +225,14 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     }
   });
 
+  test('SEC-HARD-09: Canonical parameter hashing includes nested values and ignores key order', () => {
+    const first = CryptoUtil.canonicalHash({ b: 2, a: { x: 1, y: 2 } });
+    const reordered = CryptoUtil.canonicalHash({ a: { y: 2, x: 1 }, b: 2 });
+    const changedNestedValue = CryptoUtil.canonicalHash({ a: { y: 2, x: 9 }, b: 2 });
+    assert.strictEqual(first, reordered);
+    assert.notStrictEqual(first, changedNestedValue);
+  });
+
   test('SEC-HARD-08: Stale and replay session requests are rejected', () => {
     const staleTimestamp = Date.now() - 120000; // 2 minutes in the past (> 60s limit)
     const nonce = CryptoUtil.randomToken(16);
