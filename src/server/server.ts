@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { JarvisCoreService } from '../core/service.js';
@@ -9,6 +10,7 @@ export class JarvisServer {
   private jarvis: JarvisCoreService;
   private server: ReturnType<typeof createServer>;
   private port: number;
+  private readonly ownerControlToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;
 
   constructor(
     port: number = 3000,
@@ -76,6 +78,12 @@ export class JarvisServer {
 
       // Create enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/challenge') {
+        if (!this.ownerControlToken) {
+          return this.jsonResponse(res, 503, { error: 'Owner enrollment control is not configured', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
+        }
+        if (!this.isOwnerControlAuthorized(req)) {
+          return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
+        }
         const challenge = this.jarvis.identity.createEnrollmentChallenge([
           Permission.SYSTEM_INFO_READ,
           Permission.APP_LAUNCH,
@@ -182,8 +190,17 @@ export class JarvisServer {
 
         const body = await this.readJsonBody(req);
         const { deviceId, reason } = body as { deviceId: string; reason?: string };
+        if (typeof deviceId !== 'string' || !deviceId) {
+          return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+        }
+        if (deviceId !== auth.device.id && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Insufficient permission to revoke another device' });
+        }
         const success = this.jarvis.identity.revokeDevice(deviceId, reason);
-        return this.jsonResponse(res, 200, { success });
+        if (!success) {
+          return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
+        }
+        return this.jsonResponse(res, 200, { success: true });
       }
 
       // Audit logs (for dashboard monitoring)
@@ -218,6 +235,14 @@ export class JarvisServer {
       // Keep internal exception details in server-side diagnostics only.
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
+  }
+
+  private isOwnerControlAuthorized(req: IncomingMessage): boolean {
+    const supplied = req.headers['x-owner-control-token'];
+    if (!this.ownerControlToken || typeof supplied !== 'string') return false;
+    const expectedBytes = Buffer.from(this.ownerControlToken, 'utf8');
+    const suppliedBytes = Buffer.from(supplied, 'utf8');
+    return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes);
   }
 
   private serveStatic(filename: string, contentType: string, res: ServerResponse): void {
