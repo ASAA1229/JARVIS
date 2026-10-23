@@ -235,6 +235,13 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       body: JSON.stringify({}),
     });
     assert.strictEqual(missingFields.status, 400);
+
+    const nullBody = await fetch(`http://127.0.0.1:${TEST_PORT}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'null',
+    });
+    assert.strictEqual(nullBody.status, 400);
   });
 
   test('SEC-API-08: Protected requests require a valid signature over the exact body', async () => {
