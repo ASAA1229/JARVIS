@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { JarvisCoreService } from '../src/core/service.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 import { CryptoUtil } from '../src/crypto/crypto.js';
-import { TaskState, Permission } from '../src/core/types.js';
+import { TaskState, Permission, VerificationOutcome } from '../src/core/types.js';
 import { rmSync, existsSync } from 'node:fs';
 
 const TEST_AUDIT_LOG = './data/test_audit.log';
@@ -37,8 +37,9 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
 
     // Create session
     const timestamp = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}`, companionKeypair.privateKey);
-    const sessionRes = jarvis.identity.createSession(companionDeviceId, sig, timestamp);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, companionKeypair.privateKey);
+    const sessionRes = jarvis.identity.createSession(companionDeviceId, sig, timestamp, nonce);
     assert.strictEqual(sessionRes.success, true);
     companionSessionId = sessionRes.sessionId!;
   });
@@ -71,13 +72,82 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
     );
   });
 
+  test('SEC-06: Expired sessions are rejected before request processing', async () => {
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const signature = CryptoUtil.signData(
+      `SESSION_REQUEST:${timestamp}:${nonce}`,
+      companionKeypair.privateKey,
+    );
+    const expiredSession = jarvis.identity.createSession(
+      companionDeviceId,
+      signature,
+      timestamp,
+      nonce,
+      -1,
+    );
+    assert.strictEqual(expiredSession.success, true);
+
+    await assert.rejects(
+      () => jarvis.submitRequest(expiredSession.sessionId!, 'What is the OS version?'),
+      /Authentication failed: Session expired/,
+    );
+  });
+
   test('FLOW-01: End-to-end happy path for allowlisted read-only system information', async () => {
     const res = await jarvis.submitRequest(companionSessionId, 'What is the OS version?');
     assert.strictEqual(res.state, TaskState.COMPLETED);
+    assert.strictEqual(res.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.strictEqual(res.verified, true);
     assert.ok(res.data);
     const osData = res.data as { platform: string; arch: string };
     assert.ok(osData.platform);
     assert.ok(osData.arch);
+  });
+
+  test('FLOW-PLANNER-FAIL: Planner exception returns a truthful failed result without executing an adapter', async () => {
+    let adapterCalls = 0;
+    jarvis.planner.generatePlan = async () => { throw new Error('private diagnostic detail'); };
+    jarvis.systemAdapter.getOsInfo = async () => {
+      adapterCalls++;
+      throw new Error('must not execute');
+    };
+
+    const result = await jarvis.submitRequest(companionSessionId, 'What is the OS version?');
+    assert.strictEqual(result.state, TaskState.FAILED);
+    assert.strictEqual(result.outcome, VerificationOutcome.VERIFIED_FAILURE);
+    assert.strictEqual(result.verified, false);
+    assert.match(result.message, /planner failed/i);
+    assert.doesNotMatch(result.message, /private diagnostic detail/);
+    assert.strictEqual(adapterCalls, 0);
+    assert.ok(jarvis.audit.getPublicRecords().some((record) => record.eventType === 'PLANNING_FAILED'));
+    assert.ok(!JSON.stringify(jarvis.audit.getPublicRecords()).includes('private diagnostic detail'));
+  });
+
+  test('FLOW-SYSTEM-FACTS: Memory, battery, and disk prompts select their matching read-only adapters', async () => {
+    const memory = await jarvis.submitRequest(companionSessionId, 'Check system memory and RAM');
+    assert.strictEqual(memory.state, TaskState.COMPLETED);
+    assert.strictEqual(memory.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.ok((memory.data as { totalBytes?: number })?.totalBytes);
+
+    const battery = await jarvis.submitRequest(companionSessionId, 'What is the battery status?');
+    assert.ok([TaskState.COMPLETED, TaskState.PARTIAL].includes(battery.state));
+    assert.ok(battery.data);
+
+    const disk = await jarvis.submitRequest(companionSessionId, 'Check C: drive disk space');
+    assert.strictEqual(disk.state, TaskState.COMPLETED);
+    assert.strictEqual(disk.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.ok((disk.data as { totalBytes?: number })?.totalBytes);
+  });
+
+  test('FLOW-UNSUPPORTED: Unsupported and destructive requests explain denial without running adapters', async () => {
+    const unsupported = await jarvis.submitRequest(companionSessionId, 'Tell me a joke');
+    assert.strictEqual(unsupported.state, TaskState.FAILED);
+    assert.match(unsupported.message, /Could not map request/i);
+
+    const destructive = await jarvis.submitRequest(companionSessionId, 'Delete system files');
+    assert.strictEqual(destructive.state, TaskState.FAILED);
+    assert.match(destructive.message, /prohibited/i);
   });
 
   test('FLOW-02: Policy Gateway enforces approval for state-changing app launch', async () => {
@@ -91,10 +161,92 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
     assert.strictEqual(approval.approved, false);
 
     // Approve the task
-    const approveRes = await jarvis.approveTask(res.approvalId!, companionDeviceId);
-    assert.strictEqual(approveRes.success, true);
-    assert.strictEqual(approveRes.state, TaskState.COMPLETED);
+    const approveRes = await jarvis.approveTask(res.approvalId!, companionSessionId);
+    assert.strictEqual(approveRes.success, approveRes.state === TaskState.COMPLETED);
+    assert.ok([TaskState.COMPLETED, TaskState.PARTIAL].includes(approveRes.state));
+    if (approveRes.state === TaskState.PARTIAL) {
+      assert.strictEqual(approveRes.outcome, VerificationOutcome.PARTIAL_SUCCESS);
+      assert.strictEqual(approveRes.verified, false);
+    } else {
+      assert.strictEqual(approveRes.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+      assert.strictEqual(approveRes.verified, true);
+    }
     assert.ok(approveRes.data);
+  });
+
+  test('FLOW-03: Partial adapter evidence is not represented as completed or verified', async () => {
+    jarvis.systemAdapter.getOsInfo = async () => ({
+      success: true,
+      outcome: VerificationOutcome.PARTIAL_SUCCESS,
+      data: { platform: 'win32' },
+      evidence: { verified: false },
+    });
+
+    const result = await jarvis.submitRequest(companionSessionId, 'What is the OS version?');
+    assert.strictEqual(result.state, TaskState.PARTIAL);
+    assert.strictEqual(result.outcome, VerificationOutcome.PARTIAL_SUCCESS);
+    assert.strictEqual(result.verified, false);
+  });
+
+  test('FLOW-04: Interrupting in-flight app execution reports an uncertain interrupted outcome', async () => {
+    let startedExecution!: () => void;
+    const executionStarted = new Promise<void>((resolve) => { startedExecution = resolve; });
+    jarvis.appAdapter.launchApp = async (_appId, signal) => {
+      startedExecution();
+      return new Promise((resolve) => {
+        signal?.addEventListener('abort', () => resolve({
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          interrupted: true,
+          error: 'Interrupted in test',
+          evidence: { interrupted: true },
+        }), { once: true });
+      });
+    };
+
+    const pending = await jarvis.submitRequest(companionSessionId, 'Please launch Notepad');
+    const approval = jarvis.approveTask(pending.approvalId!, companionSessionId);
+    const taskId = pending.taskId;
+    await executionStarted;
+    assert.strictEqual(jarvis.interruptTask(taskId), true);
+
+    const result = await approval;
+    assert.strictEqual(result.state, TaskState.INTERRUPTED);
+    assert.strictEqual(result.outcome, VerificationOutcome.UNCERTAIN);
+    assert.strictEqual(result.verified, false);
+    assert.strictEqual(result.success, false);
+  });
+
+  test('FLOW-05: An unpersisted completion audit is reported as awaiting recovery', async () => {
+    const recordAuditEvent = jarvis.audit.record.bind(jarvis.audit);
+    jarvis.audit.record = (eventType, details, deviceId, taskId) => {
+      if (eventType === 'EXECUTION_COMPLETED') throw new Error('Simulated audit persistence failure');
+      return recordAuditEvent(eventType, details, deviceId, taskId);
+    };
+
+    const result = await jarvis.submitRequest(companionSessionId, 'What is the OS version?');
+    assert.strictEqual(result.state, TaskState.AWAITING_RECOVERY);
+    assert.strictEqual(result.outcome, VerificationOutcome.UNCERTAIN);
+    assert.strictEqual(result.verified, false);
+    assert.match(result.message, /could not be durably audited/i);
+  });
+
+  test('SEC-05: Execution dispatcher is not exposed as a policy bypass', async () => {
+    const pending = await jarvis.submitRequest(companionSessionId, 'Please launch Notepad');
+    assert.strictEqual(pending.state, TaskState.AWAITING_APPROVAL);
+
+    let launchCount = 0;
+    jarvis.appAdapter.launchApp = async () => {
+      launchCount++;
+      return {
+        success: true,
+        outcome: VerificationOutcome.VERIFIED_SUCCESS,
+        evidence: { test: true },
+      };
+    };
+
+    assert.strictEqual(Reflect.get(jarvis, 'executeTask'), undefined);
+    assert.strictEqual(launchCount, 0);
   });
 
   test('SEC-02: Scope expansion or altered parameters voids approval', async () => {
@@ -147,5 +299,6 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
     // Verify secrets are redacted in audit entries
     const str = JSON.stringify(records);
     assert.strictEqual(str.includes('privateKey'), false);
+    assert.strictEqual(str.includes('Query OS info'), false);
   });
 });

@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, sign, verify, randomBytes } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPairSync, sign, verify, randomBytes } from 'node:crypto';
 
 export class CryptoUtil {
   /**
@@ -35,20 +35,12 @@ export class CryptoUtil {
    * Validates whether a given PEM string is a valid Ed25519 public key.
    */
   static isValidEd25519PublicKey(publicKeyPem: string): boolean {
-    if (!publicKeyPem || typeof publicKeyPem !== 'string') return false;
-    if (!publicKeyPem.includes('BEGIN PUBLIC KEY') || !publicKeyPem.includes('END PUBLIC KEY')) return false;
+    if (typeof publicKeyPem !== 'string' || publicKeyPem.length > 4096) return false;
     try {
-      // Attempt a dry verification to confirm Node crypto can load the key object
-      verify(null, Buffer.from('test', 'utf-8'), publicKeyPem, Buffer.alloc(64));
-      return true;
-    } catch (err: unknown) {
-      // If error is about invalid key format/curve, it is not a valid key
-      const msg = String(err);
-      if (msg.includes('bad end line') || msg.includes('unsupported') || msg.includes('no start line') || msg.includes('error:')) {
-        return false;
-      }
-      // If error is just signature verification failure, the key itself was loaded and parsed successfully!
-      return true;
+      const key = createPublicKey(publicKeyPem);
+      return key.type === 'public' && key.asymmetricKeyType === 'ed25519';
+    } catch {
+      return false;
     }
   }
 
@@ -79,8 +71,20 @@ export class CryptoUtil {
    * Computes a deterministic canonical hash of an object.
    */
   static canonicalHash(obj: unknown): string {
-    const str = JSON.stringify(obj, Object.keys(obj as object).sort());
-    return this.sha256(str);
+    const stableStringify = (value: unknown): string => {
+      if (value === null) return 'null';
+      if (Array.isArray(value)) {
+        return '[' + value.map((item) => stableStringify(item)).join(',') + ']';
+      }
+      if (typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        const keys = Object.keys(record).sort();
+        return '{' + keys.map((key) => JSON.stringify(key) + ':' + stableStringify(record[key])).join(',') + '}';
+      }
+      const encoded = JSON.stringify(value);
+      return encoded === undefined ? 'null' : encoded;
+    };
+    return this.sha256(stableStringify(obj));
   }
 
   /**

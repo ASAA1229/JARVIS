@@ -16,6 +16,7 @@
         <span class="badge">SECURE POC</span>
       </div>
       <div class="header-actions">
+        <a class="btn btn-secondary" href="/" aria-label="Open the JARVIS voice HUD">Open Voice HUD</a>
         <button id="btn-device-status" class="icon-btn" title="Device Connection Status">
           <span class="icon">📱</span>
           <span id="header-device-name">No Device</span>
@@ -33,10 +34,10 @@
         </div>
         <div class="card-body">
           <div id="enrollment-unregistered">
-            <p class="muted">No enrolled companion. Create a single-use cryptographic challenge to enroll an Android phone.</p>
+            <p class="muted">No enrolled browser companion. Authorize a one-time challenge, then enroll this browser with a device-bound Ed25519 key. Android network enrollment remains a separate integration step.</p>
             <div class="action-row">
               <button id="btn-create-challenge" class="btn btn-primary">Generate Enrollment Challenge</button>
-              <button id="btn-simulate-phone" class="btn btn-secondary">Simulate Android Enrollment</button>
+              <button id="btn-enroll-browser" class="btn btn-secondary">Enroll This Browser (WebCrypto)</button>
             </div>
             <div id="challenge-box" class="challenge-box hidden">
               <div class="token-title">Single-Use Enrollment Token (120s TTL)</div>
@@ -122,6 +123,7 @@
     </footer>
   </div>
 
+  <script src="/deviceCrypto.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

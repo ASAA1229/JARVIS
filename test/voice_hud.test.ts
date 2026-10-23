@@ -67,12 +67,43 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
   });
 
   test('HUD-01: Server serves Cinematic HUD assets at /hud endpoint', async () => {
+    const rootRes = await fetch(`http://127.0.0.1:${TEST_PORT}/`);
+    assert.strictEqual(rootRes.status, 200);
+    const rootHtml = await rootRes.text();
+    assert.match(rootHtml, /btn-ptt/);
+    assert.match(rootHtml, /btn-toggle-mic-mute/);
+    assert.doesNotMatch(rootHtml, /Pixel Companion|dev-ed25519-bound|CHAIN OK/);
+
+    const companionRes = await fetch(`http://127.0.0.1:${TEST_PORT}/companion`);
+    assert.strictEqual(companionRes.status, 200);
+    assert.match(await companionRes.text(), /btn-enroll-browser/);
+
+    const cssResRoot = await fetch(`http://127.0.0.1:${TEST_PORT}/style.css`);
+    assert.strictEqual(cssResRoot.status, 200);
+    assert.ok((await cssResRoot.text()).length > 0);
+
+    const challengeWithoutOwnerConfig = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
+    assert.strictEqual(challengeWithoutOwnerConfig.status, 503);
+    assert.strictEqual((await challengeWithoutOwnerConfig.json()).code, 'OWNER_CONTROL_NOT_CONFIGURED');
+
+    const unknownRoute = await fetch(`http://127.0.0.1:${TEST_PORT}/no-such-route`);
+    assert.strictEqual(unknownRoute.status, 404);
+    const wrongMethod = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`);
+    assert.strictEqual(wrongMethod.status, 404);
+
     // 1. Fetch HUD HTML
     const hudRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud`);
     assert.strictEqual(hudRes.status, 200);
     const hudHtml = await hudRes.text();
+    const csp = hudRes.headers.get('content-security-policy') || '';
+    assert.match(csp, /script-src 'self'/);
+    assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
+    assert.match(csp, /style-src 'self'/);
+    assert.doesNotMatch(csp, /style-src[^;]*unsafe-inline/);
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
+    assert.match(hudHtml, /local-only processing is not guaranteed/i);
+    assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
 
     // 2. Fetch HUD CSS
@@ -86,5 +117,25 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.strictEqual(jsRes.status, 200);
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
+    assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
+    assert.match(jsText, /15000/);
+    assert.match(jsText, /discardVoiceResult/);
+    assert.doesNotMatch(jsText, /(?:card|item|entry)\.innerHTML\s*=/i);
+    assert.doesNotMatch(jsText, /onclick=/i);
+    const appRes = await fetch(`http://127.0.0.1:${TEST_PORT}/app.js`);
+    assert.strictEqual(appRes.status, 200);
+    const appJs = await appRes.text();
+    assert.match(appJs, /JarvisDeviceCrypto\.signedFetch/);
+    assert.doesNotMatch(appJs, /sess-simulated|simulated_sig|onclick=/i);
+    assert.doesNotMatch(appJs, /(?:card|item|entry)\.innerHTML\s*=/i);
+    assert.match(appJs, /task did not complete/i);
+
+    const cryptoRes = await fetch(`http://127.0.0.1:${TEST_PORT}/deviceCrypto.js`);
+    assert.strictEqual(cryptoRes.status, 200);
+    const cryptoClient = await cryptoRes.text();
+    assert.match(cryptoClient, /Ed25519/);
+    assert.match(cryptoClient, /indexedDB/);
+    assert.match(cryptoClient, /signedFetch/);
+    assert.match(cryptoClient, /false, \['sign'\]/);
   });
 });

@@ -1,15 +1,18 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
+import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
   private server: ReturnType<typeof createServer>;
   private port: number;
+  private readonly ownerControlToken: string | undefined;
 
   constructor(
     port: number = 3000,
@@ -17,21 +20,42 @@ export class JarvisServer {
     statePath?: string
   ) {
     this.port = port;
+    this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath);
     this.server = createServer(this.handleRequest.bind(this));
   }
 
   public start(): Promise<number> {
-    return new Promise((resolve) => {
-      this.server.listen(this.port, '127.0.0.1', () => {
+    return new Promise((resolve, reject) => {
+      const onListening = () => {
+        this.server.off('error', onError);
         resolve(this.port);
-      });
+      };
+      const onError = (error: Error) => {
+        this.server.off('listening', onListening);
+        reject(error);
+      };
+
+      this.server.once('error', onError);
+      this.server.once('listening', onListening);
+      try {
+        this.server.listen(this.port, '127.0.0.1');
+      } catch (error) {
+        this.server.off('error', onError);
+        this.server.off('listening', onListening);
+        reject(error);
+      }
     });
   }
 
   public stop(): Promise<void> {
-    return new Promise((resolve) => {
-      this.server.close(() => resolve());
+    if (!this.server.listening) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+      this.server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
   }
 
@@ -43,13 +67,17 @@ export class JarvisServer {
     // Set secure security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
       // 1. Static UI routes (Companion & HUD)
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/hud')) {
+        return this.serveStatic('hud.html', 'text/html', res);
+      }
+      if (req.method === 'GET' && (url.pathname === '/companion' || url.pathname === '/companion/index.html')) {
         return this.serveStatic('index.html', 'text/html', res);
       }
       if (req.method === 'GET' && url.pathname === '/style.css') {
@@ -58,7 +86,15 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/app.js') {
         return this.serveStatic('app.js', 'application/javascript', res);
       }
-      if (req.method === 'GET' && (url.pathname === '/hud' || url.pathname === '/hud/index.html')) {
+      if (req.method === 'GET' && url.pathname === '/deviceCrypto.js') {
+        return this.serveStatic('deviceCrypto.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/favicon.ico') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/index.html') {
         return this.serveStatic('hud.html', 'text/html', res);
       }
       if (req.method === 'GET' && url.pathname === '/hud/hud.css') {
@@ -70,20 +106,23 @@ export class JarvisServer {
 
       // 2. API Routes
       if (req.method === 'GET' && url.pathname === '/api/status') {
-        const devices = this.jarvis.identity.listDevices();
-        const tasks = this.jarvis.listTasks();
-        const auditIntegrity = this.jarvis.audit.verifyIntegrity();
+        // Public health response only; never disclose device records, public-key
+        // material, task content, or audit internals without an authorized session.
+        const integrityHealthy = this.jarvis.audit.verifyIntegrity().valid;
+        const stateHealthy = this.jarvis.identity.isStateHealthy();
         return this.jsonResponse(res, 200, {
-          status: 'ONLINE',
-          devicesCount: devices.length,
-          tasksCount: tasks.length,
-          auditIntegrity,
-          devices,
+          status: integrityHealthy && stateHealthy ? 'ONLINE' : 'DEGRADED',
         });
       }
 
       // Create enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/challenge') {
+        if (!this.ownerControlToken) {
+          return this.jsonResponse(res, 503, { error: 'Owner enrollment control is not configured', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
+        }
+        if (!this.isOwnerControlAuthorized(req)) {
+          return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
+        }
         const challenge = this.jarvis.identity.createEnrollmentChallenge([
           Permission.SYSTEM_INFO_READ,
           Permission.APP_LAUNCH,
@@ -91,51 +130,37 @@ export class JarvisServer {
         return this.jsonResponse(res, 201, challenge);
       }
 
-      // Loopback HUD Session Endpoint (Auto-provisions local enclave session for loopback HUD only)
+      // HUD sessions must use the same device-bound cryptographic enrollment and
+      // signed session flow as every other client. Never mint sessions from loopback
+      // status alone or mutate DeviceIdentityManager internals.
       if (req.method === 'POST' && url.pathname === '/api/hud/session') {
-        const remoteIp = req.socket.remoteAddress;
-        if (remoteIp !== '127.0.0.1' && remoteIp !== '::1' && remoteIp !== '::ffff:127.0.0.1') {
-          return this.jsonResponse(res, 403, { error: 'HUD session auto-provisioning is restricted to loopback' });
-        }
-        // Ensure local HUD device exists
-        let localDevice = this.jarvis.identity.listDevices().find(d => d.name === 'Windows 11 HUD Enclave');
-        if (!localDevice) {
-          const challenge = this.jarvis.identity.createEnrollmentChallenge([
-            Permission.SYSTEM_INFO_READ,
-            Permission.APP_LAUNCH,
-          ]);
-          const kp = CryptoUtil.generateEd25519KeyPair();
-          const enroll = this.jarvis.identity.enrollDevice(challenge.challengeToken, 'Windows 11 HUD Enclave', kp.publicKey);
-          localDevice = this.jarvis.identity.getDevice(enroll.deviceId!);
-        }
-
-        // Create genuine active session
-        const ts = Date.now();
-        const dummySessionId = `sess-hud-${CryptoUtil.randomToken(16)}`;
-        // Register session internally
-        const sessionRecord = {
-          id: dummySessionId,
-          deviceId: localDevice!.id,
-          createdAt: ts,
-          expiresAt: ts + 3600 * 1000,
-          active: true,
-        };
-        (this.jarvis.identity as any).sessions.set(dummySessionId, sessionRecord);
-
-        return this.jsonResponse(res, 200, {
-          sessionId: dummySessionId,
-          device: localDevice,
+        return this.jsonResponse(res, 503, {
+          error: 'HUD session bootstrap is disabled until device-bound key enrollment is configured.',
+          code: 'SECURE_HUD_ENROLLMENT_REQUIRED',
         });
       }
 
       // Redeem enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/redeem') {
         const body = await this.readJsonBody(req);
-        const { challengeToken, deviceName, publicKey } = body as {
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
+        const { challengeToken, deviceName, publicKey, proofSignature } = body as {
           challengeToken: string;
           deviceName: string;
           publicKey: string;
+          proofSignature: string;
         };
+        if (typeof challengeToken !== 'string' || typeof deviceName !== 'string' ||
+            typeof publicKey !== 'string' || typeof proofSignature !== 'string') {
+          return this.jsonResponse(res, 400, { error: 'challengeToken, deviceName, publicKey, and proofSignature are required strings' });
+        }
+        const proofPayload = `ENROLLMENT_PROOF:${challengeToken}:${deviceName}:${CryptoUtil.sha256(publicKey)}`;
+        if (!CryptoUtil.isValidEd25519PublicKey(publicKey) ||
+            !CryptoUtil.verifySignature(proofPayload, proofSignature, publicKey)) {
+          return this.jsonResponse(res, 401, { error: 'Enrollment proof-of-possession verification failed' });
+        }
         const result = this.jarvis.identity.enrollDevice(challengeToken, deviceName, publicKey);
         if (!result.success) {
           return this.jsonResponse(res, 400, { error: result.error });
@@ -146,16 +171,31 @@ export class JarvisServer {
       // Establish session
       if (req.method === 'POST' && url.pathname === '/api/session') {
         const body = await this.readJsonBody(req);
-        const { deviceId, signature, timestamp } = body as {
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
+        const { deviceId, signature, timestamp, nonce } = body as {
           deviceId: string;
           signature: string;
           timestamp: number;
+          nonce: string;
         };
-        const sessionRes = this.jarvis.identity.createSession(deviceId, signature, timestamp);
+        if (typeof deviceId !== 'string' || typeof signature !== 'string' || !Number.isFinite(timestamp) ||
+            typeof nonce !== 'string' || !/^[a-f0-9]{32,128}$/i.test(nonce)) {
+          return this.jsonResponse(res, 400, { error: 'deviceId, signature, numeric timestamp, and a 16-byte-or-stronger hexadecimal nonce are required' });
+        }
+        const sessionRes = this.jarvis.identity.createSession(deviceId, signature, timestamp, nonce);
         if (!sessionRes.success) {
           return this.jsonResponse(res, 401, { error: sessionRes.error });
         }
-        return this.jsonResponse(res, 200, sessionRes);
+        const device = this.jarvis.identity.getDevice(deviceId);
+        if (!device) {
+          return this.jsonResponse(res, 401, { error: 'Device is no longer available' });
+        }
+        return this.jsonResponse(res, 200, {
+          ...sessionRes,
+          permissions: [...device.permissions],
+        });
       }
 
       // Submit user request
@@ -165,8 +205,18 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { text } = body as { text: string };
-        const result = await this.jarvis.submitRequest(sessionId, text);
+        if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
+          return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        const result = await this.jarvis.submitRequest(sessionId, text.trim());
         return this.jsonResponse(res, 200, result);
       }
 
@@ -176,14 +226,19 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { approvalId } = body as { approvalId: string };
-        const result = await this.jarvis.approveTask(approvalId, auth.device.id);
+        if (typeof approvalId !== 'string' || !approvalId) {
+          return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        const result = await this.jarvis.approveTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 
@@ -193,14 +248,19 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { approvalId } = body as { approvalId: string };
-        const result = this.jarvis.rejectTask(approvalId, auth.device.id);
+        if (typeof approvalId !== 'string' || !approvalId) {
+          return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        const result = this.jarvis.rejectTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 
@@ -210,27 +270,105 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) {
+          return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        }
         const { deviceId, reason } = body as { deviceId: string; reason?: string };
+        if (typeof deviceId !== 'string' || !deviceId) {
+          return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        if (deviceId !== auth.device.id && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Insufficient permission to revoke another device' });
+        }
         const success = this.jarvis.identity.revokeDevice(deviceId, reason);
-        return this.jsonResponse(res, 200, { success });
+        if (!success) {
+          return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
+        }
+        return this.jsonResponse(res, 200, { success: true });
       }
 
       // Audit logs (for dashboard monitoring)
       if (req.method === 'GET' && url.pathname === '/api/audit') {
-        const records = this.jarvis.audit.getRecords();
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) {
+          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Insufficient permission to view audit records' });
+        }
+        if (!this.jarvis.audit.verifyIntegrity().valid) {
+          return this.jsonResponse(res, 503, { error: 'Audit records are unavailable because integrity could not be verified' });
+        }
+        const records = this.jarvis.audit.getPublicRecords();
         return this.jsonResponse(res, 200, { records: records.slice(-50) });
       }
 
       return this.jsonResponse(res, 404, { error: 'Not found' });
     } catch (err: unknown) {
-      return this.jsonResponse(res, 500, { error: String(err) });
+      const message = err instanceof Error ? err.message : 'Request failed';
+      if (message === 'Invalid JSON payload') {
+        return this.jsonResponse(res, 400, { error: 'Invalid JSON payload' });
+      }
+      if (message === 'Payload too large') {
+        return this.jsonResponse(res, 413, { error: 'Payload too large' });
+      }
+      if (message === 'Content-Type must be application/json') {
+        return this.jsonResponse(res, 415, { error: message });
+      }
+      if (message === 'Approval not found' || message === 'Associated task not found') {
+        return this.jsonResponse(res, 404, { error: message });
+      }
+      if (/expired|no longer pending|already been consumed|scope was modified|could not be rejected/i.test(message)) {
+        return this.jsonResponse(res, 409, { error: message });
+      }
+      if (/not registered or revoked|lacks permission/i.test(message)) {
+        return this.jsonResponse(res, 403, { error: message });
+      }
+      if (message.startsWith('Authentication failed')) {
+        return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
+      }
+      // Keep internal exception details in server-side diagnostics only.
+      return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
+  }
+
+  private isJsonObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private authorizeSignedRequest(req: IncomingMessage, sessionId: string, path: string, body: unknown) {
+    const timestampHeader = req.headers['x-request-timestamp'];
+    const nonce = req.headers['x-request-nonce'];
+    const signature = req.headers['x-request-signature'];
+    if (typeof timestampHeader !== 'string' || typeof nonce !== 'string' || typeof signature !== 'string') {
+      return { valid: false as const, error: 'Missing signed request headers' };
+    }
+    return this.jarvis.identity.validateSignedRequest(
+      sessionId,
+      req.method || 'GET',
+      path,
+      Number(timestampHeader),
+      nonce,
+      body,
+      signature,
+    );
+  }
+
+  private isOwnerControlAuthorized(req: IncomingMessage): boolean {
+    const supplied = req.headers['x-owner-control-token'];
+    if (!this.ownerControlToken || typeof supplied !== 'string') return false;
+    const expectedBytes = Buffer.from(this.ownerControlToken, 'utf8');
+    const suppliedBytes = Buffer.from(supplied, 'utf8');
+    return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes);
   }
 
   private serveStatic(filename: string, contentType: string, res: ServerResponse): void {
@@ -252,22 +390,40 @@ export class JarvisServer {
 
   private readJsonBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
+      const contentType = req.headers['content-type'] || '';
+      const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+      if (mediaType !== 'application/json') {
+        reject(new Error('Content-Type must be application/json'));
+        return;
+      }
       let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 1024 * 64) {
-          // Reject oversized payloads (>64KB)
-          reject(new Error('Payload too large'));
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      req.on('data', (chunk: Buffer | string) => {
+        if (settled) return;
+        body += chunk.toString();
+        if (Buffer.byteLength(body, 'utf8') > 1024 * 64) {
+          fail(new Error('Payload too large'));
+          // Drain the rest without buffering it so the connection can finish cleanly.
+          req.resume();
         }
       });
       req.on('end', () => {
+        if (settled) return;
         try {
-          resolve(body ? JSON.parse(body) : {});
+          const parsed: unknown = body ? JSON.parse(body) : {};
+          settled = true;
+          resolve(parsed);
         } catch {
-          reject(new Error('Invalid JSON payload'));
+          fail(new Error('Invalid JSON payload'));
         }
       });
-      req.on('error', reject);
+      req.on('error', (error) => fail(error instanceof Error ? error : new Error('Request stream failed')));
     });
   }
 }

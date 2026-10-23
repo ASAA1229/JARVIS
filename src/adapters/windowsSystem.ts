@@ -52,7 +52,7 @@ export class WindowsSystemAdapter {
   /**
    * Retrieves battery status via WMIC or PowerShell (read-only query).
    */
-  public async getBatteryStatus(): Promise<ExecutionResult> {
+  public async getBatteryStatus(signal?: AbortSignal): Promise<ExecutionResult> {
     try {
       // Execute powershell read-only query without shell interpolation
       const { stdout } = await execFileAsync('powershell.exe', [
@@ -60,7 +60,7 @@ export class WindowsSystemAdapter {
         '-NonInteractive',
         '-Command',
         'Get-CimInstance -ClassName Win32_Battery | Select-Object -Property EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json',
-      ]);
+      ], { signal });
 
       const parsed = stdout.trim() ? JSON.parse(stdout.trim()) : null;
       return {
@@ -70,6 +70,15 @@ export class WindowsSystemAdapter {
         evidence: { query: 'Win32_Battery', raw: parsed, timestamp: Date.now() },
       };
     } catch (err: unknown) {
+      if (signal?.aborted) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'Battery query was interrupted',
+          evidence: { interrupted: true },
+          interrupted: true,
+        };
+      }
       // Graceful fallback if battery query is unavailable
       return {
         success: true,
@@ -83,7 +92,7 @@ export class WindowsSystemAdapter {
   /**
    * Retrieves disk space for the specified drive (defaults to C:).
    */
-  public async getDiskSpace(drive: string = 'C:'): Promise<ExecutionResult> {
+  public async getDiskSpace(drive: string = 'C:', signal?: AbortSignal): Promise<ExecutionResult> {
     // Sanitize drive input: only letters followed by colon
     if (!/^[a-zA-Z]:$/.test(drive)) {
       return {
@@ -100,7 +109,7 @@ export class WindowsSystemAdapter {
         '-NonInteractive',
         '-Command',
         `Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='${drive}'" | Select-Object -Property Size, FreeSpace | ConvertTo-Json`,
-      ]);
+      ], { signal });
 
       const parsed = JSON.parse(stdout.trim());
       const totalBytes = Number(parsed.Size);
@@ -123,8 +132,9 @@ export class WindowsSystemAdapter {
       return {
         success: false,
         outcome: VerificationOutcome.UNCERTAIN,
-        error: `Failed to query disk space: ${String(err)}`,
-        evidence: { error: String(err) },
+        error: signal?.aborted ? 'Disk query was interrupted' : `Failed to query disk space: ${String(err)}`,
+        evidence: signal?.aborted ? { interrupted: true } : { error: String(err) },
+        interrupted: signal?.aborted,
       };
     }
   }

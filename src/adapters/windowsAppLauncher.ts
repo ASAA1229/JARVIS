@@ -1,6 +1,7 @@
 import { ExecutionResult, VerificationOutcome } from '../core/types.js';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,7 +54,7 @@ export class WindowsAppLauncherAdapter {
   /**
    * Launches an allowlisted Windows application and captures evidence.
    */
-  public async launchApp(appId: string): Promise<ExecutionResult> {
+  public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {
     const app = this.allowlist.get(appId.toLowerCase());
 
     if (!app) {
@@ -66,13 +67,27 @@ export class WindowsAppLauncherAdapter {
     }
 
     try {
+      if (signal?.aborted) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'Application launch was interrupted before process creation',
+          evidence: { app: app.id },
+          interrupted: true,
+        };
+      }
       // Spawn process detached, WITHOUT shell: true (preventing shell injection attacks)
       const child = spawn(app.executable, [], {
         detached: true,
         stdio: 'ignore',
         shell: false,
+        signal,
       });
 
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
       child.unref();
 
       const pid = child.pid;
@@ -86,8 +101,8 @@ export class WindowsAppLauncherAdapter {
       }
 
       // Verification step: verify running state via tasklist
-      await new Promise((resolve) => setTimeout(resolve, 600)); // allow OS window initialization
-      const isRunning = await this.verifyProcessRunning(app.processName, pid);
+      await delay(600, undefined, { signal });
+      const isRunning = await this.verifyProcessRunning(app.processName, pid, signal);
 
       if (isRunning) {
         return {
@@ -119,6 +134,15 @@ export class WindowsAppLauncherAdapter {
         };
       }
     } catch (err: unknown) {
+      if (signal?.aborted) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'Application launch was interrupted; its final state requires reconciliation',
+          evidence: { app: app.id },
+          interrupted: true,
+        };
+      }
       return {
         success: false,
         outcome: VerificationOutcome.VERIFIED_FAILURE,
@@ -128,7 +152,7 @@ export class WindowsAppLauncherAdapter {
     }
   }
 
-  private async verifyProcessRunning(processName: string, pid?: number): Promise<boolean> {
+  private async verifyProcessRunning(processName: string, pid?: number, signal?: AbortSignal): Promise<boolean> {
     try {
       const { stdout } = await execFileAsync('tasklist.exe', [
         '/FO',
@@ -136,7 +160,7 @@ export class WindowsAppLauncherAdapter {
         '/NH',
         '/FI',
         `PID eq ${pid}`,
-      ]);
+      ], { signal });
       return stdout.includes(String(pid));
     } catch {
       return false;

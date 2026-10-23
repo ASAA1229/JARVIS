@@ -3,10 +3,13 @@ import { AuditRecord, DeviceId, TaskId } from '../core/types.js';
 import { existsSync, mkdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+export type PublicAuditRecord = Omit<AuditRecord, 'prevHash' | 'hash'>;
+
 export class AuditLogger {
   private logFilePath: string;
   private lastHash: string = '0000000000000000000000000000000000000000000000000000000000000000';
   private records: AuditRecord[] = [];
+  private failureReason?: string;
 
   constructor(logFilePath: string = './data/audit.log') {
     this.logFilePath = logFilePath;
@@ -19,19 +22,43 @@ export class AuditLogger {
       mkdirSync(dir, { recursive: true });
     }
 
-    if (existsSync(this.logFilePath)) {
-      const content = readFileSync(this.logFilePath, 'utf-8');
-      const lines = content.trim().split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const rec: AuditRecord = JSON.parse(line);
-          this.records.push(rec);
-          this.lastHash = rec.hash;
-        } catch {
-          // If corrupted line, halt or flag
-        }
-      }
+    if (!existsSync(this.logFilePath)) return;
+
+    let content: string;
+    try {
+      content = readFileSync(this.logFilePath, 'utf-8');
+    } catch {
+      this.failClosed('AUDIT_LOG_READ_FAILED');
+      return;
     }
+    if (!content) return;
+    if (!content.endsWith('\n')) {
+      this.failClosed('AUDIT_LOG_TRUNCATED');
+      return;
+    }
+
+    const lines = content.slice(0, -1).split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(lines[index]);
+      } catch {
+        this.failClosed(`AUDIT_LOG_INVALID_JSON_AT_LINE_${index + 1}`);
+        return;
+      }
+      if (!this.isAuditRecord(parsed)) {
+        this.failClosed(`AUDIT_LOG_INVALID_RECORD_AT_LINE_${index + 1}`);
+        return;
+      }
+      this.records.push(parsed);
+    }
+
+    const integrity = this.verifyRecordsIntegrity();
+    if (!integrity.valid) {
+      this.failClosed(integrity.reason || 'AUDIT_LOG_INTEGRITY_FAILURE');
+      return;
+    }
+    if (this.records.length > 0) this.lastHash = this.records[this.records.length - 1].hash;
   }
 
   public record(
@@ -40,8 +67,15 @@ export class AuditLogger {
     deviceId?: DeviceId,
     taskId?: TaskId
   ): AuditRecord {
-    // Redact sensitive keys
-    const sanitizedDetails = this.redactSecrets(details);
+    if (this.failureReason) {
+      throw new Error(`Audit log is unhealthy: ${this.failureReason}`);
+    }
+    const currentIntegrity = this.verifyIntegrity();
+    if (!currentIntegrity.valid) {
+      throw new Error(`Audit log is unhealthy: ${currentIntegrity.reason}`);
+    }
+
+    const sanitizedDetails = this.redactSecrets(details) as Record<string, unknown>;
 
     const index = this.records.length;
     const timestamp = Date.now();
@@ -63,20 +97,43 @@ export class AuditLogger {
       hash,
     };
 
-    this.records.push(record);
-    this.lastHash = hash;
-
-    // Persist to append-only log file
     try {
       appendFileSync(this.logFilePath, JSON.stringify(record) + '\n', 'utf-8');
-    } catch {
-      // In-memory fallback if file system write fails
+    } catch (error) {
+      this.failClosed('AUDIT_LOG_WRITE_FAILED');
+      throw new Error('Audit log persistence failed; further operations are blocked', { cause: error });
     }
 
+    this.records.push(record);
+    this.lastHash = hash;
     return record;
   }
 
   public verifyIntegrity(): { valid: boolean; corruptedIndex?: number; reason?: string } {
+    if (this.failureReason) return { valid: false, reason: this.failureReason };
+    const recordsIntegrity = this.verifyRecordsIntegrity();
+    if (!recordsIntegrity.valid) {
+      this.failClosed(recordsIntegrity.reason || 'AUDIT_LOG_INTEGRITY_FAILURE');
+      return { ...recordsIntegrity, reason: this.failureReason };
+    }
+
+    let persisted = '';
+    try {
+      if (existsSync(this.logFilePath)) persisted = readFileSync(this.logFilePath, 'utf-8');
+    } catch {
+      this.failClosed('AUDIT_LOG_READ_FAILED');
+      return { valid: false, reason: this.failureReason };
+    }
+    const expected = this.records.map((record) => JSON.stringify(record)).join('\n');
+    const expectedContent = expected ? `${expected}\n` : '';
+    if (persisted !== expectedContent) {
+      this.failClosed('AUDIT_LOG_CONTENT_MISMATCH');
+      return { valid: false, reason: this.failureReason };
+    }
+    return { valid: true };
+  }
+
+  private verifyRecordsIntegrity(): { valid: boolean; corruptedIndex?: number; reason?: string } {
     let expectedPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
     for (let i = 0; i < this.records.length; i++) {
       const rec = this.records[i];
@@ -102,19 +159,61 @@ export class AuditLogger {
     return this.records;
   }
 
-  private redactSecrets(obj: Record<string, unknown>): Record<string, unknown> {
-    const sensitiveKeys = ['secret', 'token', 'key', 'password', 'privateKey', 'auth', 'challenge'];
-    const result: Record<string, unknown> = {};
+  public getPublicRecords(): readonly PublicAuditRecord[] {
+    return this.records.map(({ hash, prevHash, ...record }) => ({
+      ...record,
+      details: this.redactSecrets(record.details) as Record<string, unknown>,
+    }));
+  }
 
-    for (const [k, v] of Object.entries(obj)) {
-      if (sensitiveKeys.some((s) => k.toLowerCase().includes(s))) {
-        result[k] = '[REDACTED]';
-      } else if (v && typeof v === 'object' && !Array.isArray(v)) {
-        result[k] = this.redactSecrets(v as Record<string, unknown>);
-      } else {
-        result[k] = v;
-      }
+  private isAuditRecord(value: unknown): value is AuditRecord {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const record = value as Partial<AuditRecord>;
+    return Number.isInteger(record.index) &&
+      typeof record.timestamp === 'number' &&
+      typeof record.eventType === 'string' &&
+      !!record.details && typeof record.details === 'object' && !Array.isArray(record.details) &&
+      typeof record.prevHash === 'string' &&
+      typeof record.hash === 'string';
+  }
+
+  private failClosed(reason: string): void {
+    this.failureReason ??= reason;
+  }
+
+  private redactSecrets(value: unknown, fieldName = ''): unknown {
+    const normalizedFieldName = fieldName.toLowerCase().replace(/[^a-z]/g, '');
+    const sensitiveFields = [
+      'secret',
+      'token',
+      'privatekey',
+      'password',
+      'passphrase',
+      'auth',
+      'challenge',
+      'signature',
+      'session',
+      'requesttext',
+      'prompt',
+      'transcript',
+      'message',
+      'content',
+    ];
+    if (sensitiveFields.some((field) => normalizedFieldName.includes(field))) {
+      return '[REDACTED]';
     }
-    return result;
+
+    if (Array.isArray(value)) return value.map((item) => this.redactSecrets(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, nested]) => [key, this.redactSecrets(nested, key)])
+      );
+    }
+    if (typeof value === 'string') {
+      return value
+        .replace(/-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]');
+    }
+    return value;
   }
 }

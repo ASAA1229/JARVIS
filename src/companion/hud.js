@@ -4,12 +4,20 @@ let currentSession = null;
 let isMicMuted = false;
 let isListening = false;
 let speechRecognizer = null;
+let speechRecognitionConstructor = null;
+let speechUnavailableReason = '';
 let audioContext = null;
 let animationFrameId = null;
+let voiceTimeoutId = null;
+let discardVoiceResult = false;
+let voiceCaptureGeneration = 0;
+let isSubmitting = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
+  try { isMicMuted = localStorage.getItem('jarvis.mic-muted') === 'true'; } catch { /* Privacy controls remain session-local if storage is blocked. */ }
   initSpeechRecognition();
   setupEventListeners();
+  updateMuteControl();
   initWaveformCanvas();
   await ensureEnrolledDevice();
   pollStatus();
@@ -26,10 +34,25 @@ function setupEventListeners() {
   const reactorCore = document.getElementById('reactor-core');
 
   // Push to talk buttons
-  btnPtt.addEventListener('mousedown', startVoiceCapture);
-  btnPtt.addEventListener('mouseup', stopVoiceCapture);
-  btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); startVoiceCapture(); });
-  btnPtt.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceCapture(); });
+  btnPtt.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    btnPtt.setPointerCapture(event.pointerId);
+    startVoiceCapture();
+  });
+  btnPtt.addEventListener('pointerup', (event) => {
+    event.preventDefault();
+    stopVoiceCapture();
+  });
+  btnPtt.addEventListener('pointercancel', cancelVoiceCapture);
+  btnPtt.addEventListener('lostpointercapture', () => {
+    if (isListening) cancelVoiceCapture();
+  });
+  btnPtt.addEventListener('click', (event) => {
+    if (event.detail !== 0) return;
+    if (isListening) stopVoiceCapture();
+    else startVoiceCapture();
+  });
 
   reactorCore.addEventListener('click', () => {
     if (isListening) stopVoiceCapture();
@@ -39,10 +62,19 @@ function setupEventListeners() {
   // Keyboard shortcut: Spacebar hold for push-to-talk
   let spacePressed = false;
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && !spacePressed && document.activeElement !== textInput && document.activeElement !== document.getElementById('transcript-input')) {
+    const activeElement = document.activeElement;
+    const isEditable = activeElement instanceof HTMLElement &&
+      (activeElement.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName));
+    const isOtherButton = activeElement instanceof HTMLButtonElement && activeElement !== btnPtt;
+    if (e.code === 'Space' && !spacePressed && !isEditable && !isOtherButton) {
       spacePressed = true;
       e.preventDefault();
       startVoiceCapture();
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === 'm' && !e.repeat && !isEditable && !isOtherButton) {
+      e.preventDefault();
+      if (isListening) stopVoiceCapture();
+      else startVoiceCapture();
     }
     if (e.code === 'Escape') {
       cancelVoiceCapture();
@@ -65,27 +97,24 @@ function setupEventListeners() {
 
   // Transcript confirmation actions
   document.getElementById('btn-transcript-submit').addEventListener('click', () => {
-    const val = document.getElementById('transcript-input').value.trim();
-    document.getElementById('transcript-box').classList.add('hidden');
-    if (val) submitDirective(val);
+    const transcriptInput = document.getElementById('transcript-input');
+    const val = transcriptInput.value.trim();
+    if (val) void submitDirective(val);
   });
 
   document.getElementById('btn-transcript-cancel').addEventListener('click', () => {
-    document.getElementById('transcript-box').classList.add('hidden');
-    setAssistantState('IDLE — DIRECTIVE DISCARDED', 'Ready for new instruction.');
+    cancelVoiceCapture();
   });
 
   // Privacy Mute Toggle
   btnMute.addEventListener('click', () => {
     isMicMuted = !isMicMuted;
+    try { localStorage.setItem('jarvis.mic-muted', String(isMicMuted)); } catch { /* Keep the control usable without storage. */ }
+    updateMuteControl();
     if (isMicMuted) {
       cancelVoiceCapture();
-      btnMute.innerText = 'MIC: MUTED';
-      btnMute.classList.add('muted');
       setAssistantState('PRIVACY MODE — MIC MUTED', 'Microphone hardware access disabled.');
     } else {
-      btnMute.innerText = 'MIC: ARMED';
-      btnMute.classList.remove('muted');
       setAssistantState('STANDBY', 'Microphone armed for push-to-talk.');
     }
   });
@@ -95,6 +124,8 @@ function setupEventListeners() {
     document.body.classList.toggle('reduced-motion');
     const isReduced = document.body.classList.contains('reduced-motion');
     btnMotion.innerText = `REDUCED MOTION: ${isReduced ? 'ON' : 'OFF'}`;
+    btnMotion.setAttribute('aria-pressed', String(isReduced));
+    if (!isReduced) initWaveformCanvas();
   });
 
   // Quick Directive Chips
@@ -102,30 +133,39 @@ function setupEventListeners() {
     chip.addEventListener('click', () => {
       const cmd = chip.getAttribute('data-cmd');
       textInput.value = cmd;
-      submitDirective(cmd);
+      void submitDirective(cmd);
     });
   });
 }
 
 function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    console.warn('SpeechRecognition API not available in browser. Push-to-talk will use text input fallback.');
+  if (!window.isSecureContext) {
+    speechRecognitionConstructor = null;
+    speechUnavailableReason = 'Voice input needs HTTPS or a trusted localhost origin. Text input remains available.';
     return;
   }
+  speechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  if (!speechRecognitionConstructor) {
+    speechUnavailableReason = 'This browser does not support speech recognition. Text input remains available.';
+    console.warn('SpeechRecognition API not available in browser. Push-to-talk will use text input fallback.');
+  }
+}
 
-  speechRecognizer = new SpeechRecognition();
-  speechRecognizer.continuous = false;
-  speechRecognizer.interimResults = true;
-  speechRecognizer.lang = 'en-US';
+function createSpeechRecognizer(captureGeneration) {
+  const recognizer = new speechRecognitionConstructor();
+  recognizer.continuous = false;
+  recognizer.interimResults = true;
+  recognizer.lang = 'en-US';
 
-  speechRecognizer.onstart = () => {
+  recognizer.onstart = () => {
+    if (captureGeneration !== voiceCaptureGeneration || !isListening) return;
     setAssistantState('LISTENING...', 'Capturing voice command...');
     document.getElementById('reactor-container').classList.add('listening');
     document.getElementById('btn-ptt').classList.add('active');
   };
 
-  speechRecognizer.onresult = (event) => {
+  recognizer.onresult = (event) => {
+    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted) return;
     let transcript = '';
     for (let i = 0; i < event.results.length; i++) {
       transcript += event.results[i][0].transcript;
@@ -134,54 +174,98 @@ function initSpeechRecognition() {
     document.getElementById('transcript-box').classList.remove('hidden');
   };
 
-  speechRecognizer.onerror = (event) => {
+  recognizer.onerror = (event) => {
+    if (captureGeneration !== voiceCaptureGeneration) return;
     console.error('Speech recognition error:', event.error);
-    setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
     cancelVoiceCapture();
+    setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
   };
 
-  speechRecognizer.onend = () => {
+  recognizer.onend = () => {
+    if (captureGeneration !== voiceCaptureGeneration) return;
     isListening = false;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    if (voiceTimeoutId) {
+      clearTimeout(voiceTimeoutId);
+      voiceTimeoutId = null;
+    }
     document.getElementById('reactor-container').classList.remove('listening');
     document.getElementById('btn-ptt').classList.remove('active');
+    if (discardVoiceResult) {
+      document.getElementById('transcript-input').value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+      discardVoiceResult = false;
+    }
   };
+
+  return recognizer;
 }
 
 function startVoiceCapture() {
   if (isMicMuted) {
-    alert('Microphone is muted by privacy control. Unmute MIC to use voice commands.');
+    setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute only when you want to start voice capture.');
     return;
   }
   if (isListening) return;
+  if (!speechRecognitionConstructor) {
+    setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
+      speechUnavailableReason || 'Use the text input field; no audio capture was started.');
+    return;
+  }
 
+  discardVoiceResult = false;
+  document.getElementById('transcript-input').value = '';
+  document.getElementById('transcript-box').classList.add('hidden');
   isListening = true;
-  if (speechRecognizer) {
-    try {
-      speechRecognizer.start();
-    } catch (e) {
-      // recognition might already be active
-    }
-  } else {
-    // Fallback prompt if Speech API not present
-    setAssistantState('SPEECH API UNAVAILABLE', 'Using high-speed terminal input mode.');
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
+  const captureGeneration = ++voiceCaptureGeneration;
+  try {
+    speechRecognizer = createSpeechRecognizer(captureGeneration);
+    speechRecognizer.start();
+    voiceTimeoutId = setTimeout(() => {
+      if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
+      stopVoiceCapture('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
+    }, 15000);
+  } catch (e) {
+    isListening = false;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    voiceCaptureGeneration++;
+    if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+    speechRecognizer = null;
+    setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
   }
 }
 
-function stopVoiceCapture() {
+function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit the transcript before dispatch.') {
   if (!isListening) return;
   isListening = false;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+  document.getElementById('reactor-container').classList.remove('listening');
+  document.getElementById('btn-ptt').classList.remove('active');
+  if (voiceTimeoutId) {
+    clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+  }
   if (speechRecognizer) {
     try {
       speechRecognizer.stop();
     } catch (e) {
-      // ignore
+      setAssistantState('VOICE STOP UNCERTAIN', 'Check microphone indicator and use Cancel if capture continues.');
     }
   }
-  setAssistantState('CONFIRM DIRECTIVE', 'Verify transcribed text before dispatch.');
+  setAssistantState(label, detail);
 }
 
 function cancelVoiceCapture() {
   isListening = false;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+  discardVoiceResult = true;
+  voiceCaptureGeneration++;
+  if (voiceTimeoutId) {
+    clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+  }
   if (speechRecognizer) {
     try {
       speechRecognizer.abort();
@@ -191,6 +275,7 @@ function cancelVoiceCapture() {
   }
   document.getElementById('reactor-container').classList.remove('listening');
   document.getElementById('btn-ptt').classList.remove('active');
+  document.getElementById('transcript-input').value = '';
   document.getElementById('transcript-box').classList.add('hidden');
   setAssistantState('IDLE — READY', 'Ready for directive.');
 }
@@ -199,41 +284,100 @@ function handleTextSubmit() {
   const input = document.getElementById('hud-text-input');
   const val = input.value.trim();
   if (!val) return;
-  input.value = '';
-  submitDirective(val);
+  void submitDirective(val);
 }
 
 async function submitDirective(text) {
+  if (!currentSession) {
+    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before submitting directives.');
+    addFeedItem('failed', 'Directive not sent: no authenticated session.');
+    return;
+  }
+  if (isSubmitting) return;
+  isSubmitting = true;
+  const sendButton = document.getElementById('btn-hud-send');
+  const transcriptSubmit = document.getElementById('btn-transcript-submit');
+  const textInput = document.getElementById('hud-text-input');
+  const transcriptInput = document.getElementById('transcript-input');
+  const sourceWasTranscript = !document.getElementById('transcript-box').classList.contains('hidden') &&
+    transcriptInput.value.trim() === text;
+  const originalButtonText = sendButton.textContent;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  sendButton.disabled = true;
+  transcriptSubmit.disabled = true;
+  sendButton.textContent = 'TRANSMITTING…';
   setAssistantState('PROCESSING DIRECTIVE...', 'Evaluating via Policy Gateway...');
   addFeedItem('directive', text);
 
   try {
-    const res = await fetch('/api/request', {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ text }),
+      body: { text },
+      signal: controller.signal,
     });
-
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
-    } else if (data.state === 'COMPLETED') {
+    } else if (data.state === 'COMPLETED' &&
+        data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       setAssistantState('DIRECTIVE EXECUTED', data.message);
       addFeedItem('success', `Verified Result: ${data.message}`, data.data);
+    } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
+        data.outcome === 'UNCERTAIN' || data.verified === false) {
+      setAssistantState('OUTCOME NOT VERIFIED', data.message);
+      addFeedItem('pending', `Outcome not fully verified: ${data.message}`, data.data);
     } else {
       setAssistantState('EXECUTION DENIED / FAILED', data.message || data.error);
       addFeedItem('failed', `Denied: ${data.message || data.error}`);
     }
+    if (textInput.value.trim() === text) textInput.value = '';
+    if (sourceWasTranscript) {
+      transcriptInput.value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+    }
   } catch (err) {
-    setAssistantState('COMMUNICATION FAILURE', err.message);
-    addFeedItem('failed', `Network error: ${err.message}`);
+    const message = controller.signal.aborted
+      ? 'Request timed out; the server may have received it. Check the task feed before retrying.'
+      : (err instanceof Error ? err.message : 'Request failed');
+    setAssistantState('COMMUNICATION FAILURE', message);
+    addFeedItem('failed', message);
+    if (sourceWasTranscript && !textInput.value.trim()) textInput.value = text;
+  } finally {
+    clearTimeout(timeoutId);
+    isSubmitting = false;
+    sendButton.disabled = false;
+    transcriptSubmit.disabled = false;
+    sendButton.textContent = originalButtonText;
   }
+}
+
+async function readApiResponse(response) {
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; } catch {
+    payload = { error: raw.slice(0, 240) || 'The server returned a non-JSON response' };
+  }
+  if (!response.ok) {
+    const explanation = typeof payload.error === 'string' ? payload.error :
+      typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(`HTTP ${response.status}: ${explanation}`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('The server returned an invalid response format');
+  }
+  return payload;
+}
+
+function updateMuteControl() {
+  const button = document.getElementById('btn-toggle-mic-mute');
+  if (!button) return;
+  button.setAttribute('aria-pressed', String(isMicMuted));
+  button.innerText = isMicMuted ? 'MIC: MUTED' : 'MIC: ARMED';
+  button.classList.toggle('muted', isMicMuted);
 }
 
 function renderApprovalCard(approvalId, taskId, requestText, message) {
@@ -242,47 +386,86 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
 
   const card = document.createElement('div');
   card.className = 'hud-approval-card';
-  card.id = `hud-appr-${approvalId}`;
-  card.innerHTML = `
-    <div style="font-weight:700; color:#fff;">DIRECTIVE: ${requestText}</div>
-    <div style="color:var(--hud-warn); font-size:11px; margin:4px 0;">${message}</div>
-    <div style="display:flex; gap:6px; margin-top:8px;">
-      <button class="hud-btn hud-btn-cyan" onclick="resolveHudApproval('${approvalId}', true)">CONFIRM & EXECUTE</button>
-      <button class="hud-btn hud-btn-danger" onclick="resolveHudApproval('${approvalId}', false)">DENY</button>
-    </div>
-  `;
+  card.id = 'hud-appr-' + approvalId;
+
+  const directive = document.createElement('div');
+  directive.className = 'hud-approval-directive';
+  directive.textContent = 'DIRECTIVE: ' + String(requestText);
+
+  const description = document.createElement('div');
+  description.className = 'hud-approval-description';
+  description.textContent = String(message || '');
+
+  const actions = document.createElement('div');
+  actions.className = 'hud-approval-actions';
+
+  const approve = document.createElement('button');
+  approve.className = 'hud-btn hud-btn-cyan';
+  approve.textContent = 'CONFIRM & EXECUTE';
+  approve.addEventListener('click', () => resolveHudApproval(approvalId, true));
+
+  const reject = document.createElement('button');
+  reject.className = 'hud-btn hud-btn-danger';
+  reject.textContent = 'DENY';
+  reject.addEventListener('click', () => resolveHudApproval(approvalId, false));
+
+  actions.append(approve, reject);
+  card.append(directive, description, actions);
   slot.appendChild(card);
   updateApprovalCountBadge();
 }
 
 async function resolveHudApproval(approvalId, approved) {
   const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
-  setAssistantState('RESOLVING APPROVAL...', 'Authenticating session...');
+  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
+
+  if (!currentSession) {
+    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before approvals can be submitted.');
+    return;
+  }
 
   try {
-    const res = await fetch(endpoint, {
+    const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': currentSession,
-      },
-      body: JSON.stringify({ approvalId }),
+      body: { approvalId },
     });
-    const result = await res.json();
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
+    }
+    if (!approved && result.success !== true) {
+      throw new Error(result.message || result.error || 'Server did not confirm the rejection');
+    }
 
-    const card = document.getElementById(`hud-appr-${approvalId}`);
-    if (card) card.remove();
-    updateApprovalCountBadge();
+    if (!approved) {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
+      addFeedItem('failed', 'Directive rejected by operator.');
+      return;
+    }
 
-    if (approved) {
-      setAssistantState('APPROVED & VERIFIED', result.message);
-      addFeedItem('success', `Approved Action: ${result.message}`, result.data);
+    if (result.state === 'COMPLETED' && result.success === true &&
+        result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
+      addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
+      addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
     } else {
-      setAssistantState('DIRECTIVE REJECTED', 'Action was rejected by operator.');
-      addFeedItem('failed', 'Directive rejected.');
+      setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
+      addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
     }
   } catch (err) {
-    alert('Failed to resolve approval: ' + err.message);
+    setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
+    addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
   }
 }
 
@@ -305,41 +488,63 @@ function addFeedItem(type, message, details) {
   const item = document.createElement('div');
   item.className = 'task-entry ' + (type === 'success' ? 'success' : type === 'failed' ? 'failed' : type === 'pending' ? 'pending' : '');
 
-  const timeStr = new Date().toLocaleTimeString();
-  let html = `<span class="task-time">[${timeStr}]</span> <strong>${message}</strong>`;
-  if (details) {
-    html += `<pre style="font-size:10px; color:var(--text-muted); margin-top:4px;">${JSON.stringify(details, null, 2)}</pre>`;
+  const time = document.createElement('span');
+  time.className = 'task-time';
+  time.textContent = '[' + new Date().toLocaleTimeString() + ']';
+
+  const description = document.createElement('strong');
+  description.textContent = String(message ?? '');
+  item.append(time, document.createTextNode(' '), description);
+
+  if (details !== undefined && details !== null) {
+    const pre = document.createElement('pre');
+    pre.className = 'hud-task-details';
+    pre.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+    item.appendChild(pre);
   }
-  item.innerHTML = html;
   feed.insertBefore(item, feed.firstChild);
 }
 
 async function ensureEnrolledDevice() {
   try {
-    const res = await fetch('/api/hud/session', { method: 'POST' });
-    const data = await res.json();
-    if (data.sessionId && data.device) {
-      currentSession = data.sessionId;
-      currentDevice = data.device;
-      document.getElementById('hud-device-name').innerText = currentDevice.name;
-      document.getElementById('hud-device-id').innerText = currentDevice.id;
-      document.getElementById('enclave-tag').innerText = 'ENROLLED & ACTIVE';
+    const session = await window.JarvisDeviceCrypto.restoreSession();
+    currentSession = session.sessionId;
+    currentDevice = { id: session.deviceId, name: session.deviceName, permissions: session.permissions };
+    document.getElementById('hud-device-name').textContent = currentDevice.name;
+    document.getElementById('hud-device-id').textContent = currentDevice.id;
+    document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
+    if (speechUnavailableReason) {
+      setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED', speechUnavailableReason);
+    } else {
+      setAssistantState('STANDBY', 'Device-bound session established. Confirm all transcribed directives before execution.');
     }
   } catch (err) {
-    console.error('Failed to initialize HUD enclave session:', err);
+    currentSession = null;
+    currentDevice = null;
+    document.getElementById('hud-device-name').textContent = 'Enrollment required';
+    document.getElementById('hud-device-id').textContent = '--';
+    document.getElementById('enclave-tag').textContent = 'SECURE ENROLLMENT REQUIRED';
+    setAssistantState('SESSION UNAVAILABLE', err instanceof Error ? err.message : 'Enroll this browser through the companion UI first.');
   }
 }
 
 async function pollStatus() {
   try {
     const res = await fetch('/api/status');
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('Status request failed');
     if (data.status === 'ONLINE') {
-      document.getElementById('core-status-dot').style.background = 'var(--cyan-glow)';
-      document.getElementById('tel-audit').innerText = data.auditIntegrity?.valid ? 'CHAIN OK' : 'TAMPER DETECTED';
+      document.getElementById('core-status-dot').classList.remove('degraded');
+      document.getElementById('tel-audit').innerText = 'CORE HEALTHY';
+    } else if (data.status === 'DEGRADED') {
+      document.getElementById('core-status-dot').classList.add('degraded');
+      document.getElementById('tel-audit').innerText = 'DEGRADED';
+      setAssistantState('CORE DEGRADED', 'Security state needs attention. State-changing tasks must remain blocked.');
+    } else {
+      throw new Error('Unknown server status response');
     }
   } catch {
-    document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
+    document.getElementById('core-status-dot').classList.add('degraded');
     document.getElementById('tel-host').innerText = 'OFFLINE';
     setAssistantState('HOST OFFLINE / UNREACHABLE', 'Reconnection in progress...');
   }
@@ -347,10 +552,20 @@ async function pollStatus() {
 
 async function pollAudit() {
   try {
-    const res = await fetch('/api/audit');
-    const data = await res.json();
+    if (!currentSession) return;
     const stream = document.getElementById('hud-audit-stream');
-    stream.innerHTML = '';
+    if (!currentDevice?.permissions?.includes('device:manage:execute')) {
+      stream.replaceChildren();
+      const line = document.createElement('div');
+      line.className = 'audit-line';
+      line.textContent = '[AUTH] DEVICE_MANAGE permission required';
+      stream.appendChild(line);
+      return;
+    }
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/audit');
+    if (!res.ok) return;
+    const data = await res.json();
+    stream.replaceChildren();
     (data.records || []).slice(-6).reverse().forEach((r) => {
       const line = document.createElement('div');
       line.className = 'audit-line';
@@ -365,12 +580,14 @@ async function pollAudit() {
 function initWaveformCanvas() {
   const canvas = document.getElementById('waveform-canvas');
   if (!canvas) return;
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
   const ctx = canvas.getContext('2d');
   let step = 0;
 
   function draw() {
     if (document.body.classList.contains('reduced-motion')) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      animationFrameId = null;
       return;
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);

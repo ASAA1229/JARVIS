@@ -17,7 +17,7 @@
       <div class="hud-brand">
         <div class="hud-core-dot" id="core-status-dot"></div>
         <span class="hud-title">J.A.R.V.I.S.</span>
-        <span class="hud-version">OS v0.7.0 // PROTOCOL: ZERO-TRUST</span>
+        <span class="hud-version">ZERO-TRUST // <a class="hud-nav-link" href="/companion">DEVICE ENROLLMENT</a></span>
       </div>
 
       <div class="hud-telemetry">
@@ -30,8 +30,8 @@
           <span class="tel-val success" id="tel-policy">DEFAULT-DENY</span>
         </div>
         <div class="telemetry-item">
-          <span class="tel-label">AUDIT HASH:</span>
-          <span class="tel-val success" id="tel-audit">CHAIN OK</span>
+          <span class="tel-label">CORE STATE:</span>
+          <span class="tel-val" id="tel-audit">CHECKING</span>
         </div>
         <div class="telemetry-item">
           <span class="tel-label">HOST LINK:</span>
@@ -40,8 +40,9 @@
       </div>
 
       <div class="hud-controls">
-        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation">REDUCED MOTION: OFF</button>
-        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control">MIC: ARMED</button>
+        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation" aria-pressed="false">REDUCED MOTION: OFF</button>
+        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false">MIC: ARMED</button>
+        <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
       </div>
     </header>
 
@@ -50,14 +51,14 @@
       <!-- Left Panel: Device Identity & Security Status -->
       <aside class="hud-panel hud-panel-left glass">
         <div class="panel-header">
-          <h3>AUTHENTICATED ENCLAVE</h3>
+          <h3>DEVICE AUTHENTICATION</h3>
           <span class="panel-tag" id="enclave-tag">STANDBY</span>
         </div>
         <div class="panel-content">
           <div class="stat-card">
             <span class="stat-title">COMPANION DEVICE</span>
-            <div class="stat-value" id="hud-device-name">Pixel Companion</div>
-            <div class="stat-sub" id="hud-device-id">dev-ed25519-bound</div>
+            <div class="stat-value" id="hud-device-name">Checking session…</div>
+            <div class="stat-sub" id="hud-device-id">--</div>
           </div>
 
           <div class="stat-card">
@@ -72,8 +73,7 @@
           <div class="stat-card">
             <span class="stat-title">AUDIT LEDGER STREAM</span>
             <div class="audit-ticker" id="hud-audit-stream">
-              <div class="audit-line">[SYS] Core service initialized</div>
-              <div class="audit-line">[AUTH] Ed25519 enclave ready</div>
+              <div class="audit-line">[SYS] Checking core connection…</div>
             </div>
           </div>
         </div>
@@ -95,8 +95,8 @@
 
         <!-- Assistant Status Display -->
         <div class="hud-status-banner">
-          <span class="hud-state-label" id="hud-state-label">IDLE — READY FOR DIRECTIVE</span>
-          <p class="hud-state-sub" id="hud-state-sub">Press Space, click the Arc Core, or push-to-talk.</p>
+          <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
+          <p class="hud-state-sub" id="hud-state-sub">Hold Space or Ctrl+M, click the Arc Core, or use the push-to-talk button.</p>
         </div>
 
         <!-- Transcript Review & Confirmation Box -->
@@ -106,6 +106,7 @@
             <span class="transcript-badge">EDITABLE</span>
           </div>
           <div class="transcript-content">
+            <label class="sr-only" for="transcript-input">Review or edit the voice transcription</label>
             <input type="text" id="transcript-input" class="transcript-input" placeholder="Verifying speech..." />
           </div>
           <div class="transcript-actions">
@@ -116,11 +117,11 @@
 
         <!-- Voice Interaction Bar -->
         <div class="ptt-controls">
-          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation">
+          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation" aria-pressed="false">
             <span class="ptt-icon">🎙️</span>
             <span class="ptt-text" id="ptt-text">HOLD TO TALK</span>
           </button>
-          <div class="keyboard-hint">OR PRESS <code>SPACE</code> TO TALK | <code>ESC</code> TO CANCEL</div>
+          <div class="keyboard-hint">HOLD <code>SPACE</code> OR TOGGLE <code>CTRL+M</code> | <code>ESC</code> TO CANCEL</div>
         </div>
       </section>
 
@@ -167,6 +168,7 @@
         <div class="command-input-row">
           <div class="input-wrapper">
             <span class="terminal-prefix">&gt;</span>
+            <label class="sr-only" for="hud-text-input">Directive to send to JARVIS</label>
             <input type="text" id="hud-text-input" class="hud-terminal-input" placeholder="Enter directive or use Push-To-Talk voice command..." autocomplete="off" />
           </div>
           <button id="btn-hud-send" class="hud-btn hud-btn-cyan">TRANSMIT</button>
@@ -175,6 +177,7 @@
     </footer>
   </div>
 
+  <script src="/deviceCrypto.js"></script>
   <script src="/hud/hud.js"></script>
 </body>
 </html>

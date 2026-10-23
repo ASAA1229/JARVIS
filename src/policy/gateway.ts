@@ -286,6 +286,14 @@ export class PolicyGateway {
       return { success: false, error: 'Approval request has expired' };
     }
 
+    // Approval transitions are one-way: only a pending, unresolved request may
+    // be approved or rejected. This prevents duplicate/concurrent resolution.
+    if (approval.approved || approval.rejected || approval.consumed) {
+      return { success: false, error: 'Approval request is no longer pending' };
+    }
+
+    // The service validates that the approver device is active and eligible;
+    // keep the state transition single-use at this boundary.
     approval.approved = approved;
     approval.rejected = !approved;
 

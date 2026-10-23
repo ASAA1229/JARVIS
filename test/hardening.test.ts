@@ -35,8 +35,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     phoneADeviceId = enrollA.deviceId!;
 
     const tsA = Date.now();
-    const sigA = CryptoUtil.signData(`SESSION_REQUEST:${tsA}`, phoneAKeypair.privateKey);
-    const sessA = jarvis.identity.createSession(phoneADeviceId, sigA, tsA);
+    const nonceA = CryptoUtil.randomToken(16);
+    const sigA = CryptoUtil.signData(`SESSION_REQUEST:${tsA}:${nonceA}`, phoneAKeypair.privateKey);
+    const sessA = jarvis.identity.createSession(phoneADeviceId, sigA, tsA, nonceA);
     assert.strictEqual(sessA.success, true);
     phoneASessionId = sessA.sessionId!;
 
@@ -51,8 +52,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     phoneBDeviceId = enrollB.deviceId!;
 
     const tsB = Date.now();
-    const sigB = CryptoUtil.signData(`SESSION_REQUEST:${tsB}`, phoneBKeypair.privateKey);
-    const sessB = jarvis.identity.createSession(phoneBDeviceId, sigB, tsB);
+    const nonceB = CryptoUtil.randomToken(16);
+    const sigB = CryptoUtil.signData(`SESSION_REQUEST:${tsB}:${nonceB}`, phoneBKeypair.privateKey);
+    const sessB = jarvis.identity.createSession(phoneBDeviceId, sigB, tsB, nonceB);
     assert.strictEqual(sessB.success, true);
     phoneBSessionId = sessB.sessionId!;
   });
@@ -82,9 +84,13 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);
     const approvalId = res.approvalId!;
 
-    // Phone A approves the task -> succeeds
-    const approveRes = await jarvis.approveTask(approvalId, phoneADeviceId);
-    assert.strictEqual(approveRes.success, true);
+    // Approval consumption is independent of whether this runner can launch a
+    // Windows desktop application and verify its process afterward.
+    const approveRes = await jarvis.approveTask(approvalId, phoneASessionId);
+    const resolvedApproval = jarvis.policy.getApproval(approvalId);
+    assert.strictEqual(resolvedApproval?.approved, true);
+    assert.strictEqual(resolvedApproval?.consumed, true);
+    assert.notStrictEqual(approveRes.state, TaskState.AWAITING_APPROVAL);
 
     // Attacker or duplicate message tries to reuse the same approval ID
     const task = jarvis.getTask(res.taskId)!;
@@ -116,21 +122,25 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     assert.strictEqual(resB2.state, TaskState.COMPLETED);
   });
 
-  test('SEC-HARD-04: Approver verification — unauthorized or revoked phone cannot approve tasks', async () => {
+  test('SEC-HARD-04: Approval service requires an authenticated active approver session', async () => {
     const res = await jarvis.submitRequest(phoneASessionId, 'Launch Calculator');
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);
     const approvalId = res.approvalId!;
 
-    // 1. Fake/unknown device ID attempting approval
+    // Direct service calls must not accept an unverified device identifier.
     await assert.rejects(async () => {
       await jarvis.approveTask(approvalId, 'dev-unknown-attacker');
-    }, /Approver device not registered or revoked/);
+    }, /Approver session is not authenticated/);
+    assert.throws(() => {
+      jarvis.rejectTask(approvalId, 'dev-unknown-attacker');
+    }, /Approver session is not authenticated/);
+    assert.strictEqual(jarvis.getTask(res.taskId)?.state, TaskState.AWAITING_APPROVAL);
 
     // 2. Revoked device attempting approval
     jarvis.identity.revokeDevice(phoneBDeviceId, 'Phone B compromised');
     await assert.rejects(async () => {
-      await jarvis.approveTask(approvalId, phoneBDeviceId);
-    }, /Approver device not registered or revoked/);
+      await jarvis.approveTask(approvalId, phoneBSessionId);
+    }, /Approver session is not authenticated/);
   });
 
   test('SEC-HARD-05: AI Planner schema validator rejects invalid operations and adversarial injections', async () => {
@@ -161,8 +171,9 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     const kp = CryptoUtil.generateEd25519KeyPair();
     const enroll = hostileJarvis.identity.enrollDevice(challenge.challengeToken, 'Test Device', kp.publicKey);
     const ts = Date.now();
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}`, kp.privateKey);
-    const sess = hostileJarvis.identity.createSession(enroll.deviceId!, sig, ts);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${ts}:${nonce}`, kp.privateKey);
+    const sess = hostileJarvis.identity.createSession(enroll.deviceId!, sig, ts, nonce);
 
     // Request through hostile planner must fail validation before policy evaluation
     const res = await hostileJarvis.submitRequest(sess.sessionId!, 'Do something malicious');
@@ -222,10 +233,19 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     }
   });
 
+  test('SEC-HARD-09: Canonical parameter hashing includes nested values and ignores key order', () => {
+    const first = CryptoUtil.canonicalHash({ b: 2, a: { x: 1, y: 2 } });
+    const reordered = CryptoUtil.canonicalHash({ a: { y: 2, x: 1 }, b: 2 });
+    const changedNestedValue = CryptoUtil.canonicalHash({ a: { y: 2, x: 9 }, b: 2 });
+    assert.strictEqual(first, reordered);
+    assert.notStrictEqual(first, changedNestedValue);
+  });
+
   test('SEC-HARD-08: Stale and replay session requests are rejected', () => {
     const staleTimestamp = Date.now() - 120000; // 2 minutes in the past (> 60s limit)
-    const sig = CryptoUtil.signData(`SESSION_REQUEST:${staleTimestamp}`, phoneAKeypair.privateKey);
-    const sessionRes = jarvis.identity.createSession(phoneADeviceId, sig, staleTimestamp);
+    const nonce = CryptoUtil.randomToken(16);
+    const sig = CryptoUtil.signData(`SESSION_REQUEST:${staleTimestamp}:${nonce}`, phoneAKeypair.privateKey);
+    const sessionRes = jarvis.identity.createSession(phoneADeviceId, sig, staleTimestamp, nonce);
 
     assert.strictEqual(sessionRes.success, false);
     assert.match(sessionRes.error || '', /Timestamp is stale/);
