@@ -71,8 +71,13 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const hudRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud`);
     assert.strictEqual(hudRes.status, 200);
     const hudHtml = await hudRes.text();
+    const csp = hudRes.headers.get('content-security-policy') || '';
+    assert.match(csp, /script-src 'self'/);
+    assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
+    assert.match(hudHtml, /local-only processing is not guaranteed/i);
+    assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
 
     // 2. Fetch HUD CSS
@@ -86,5 +91,9 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.strictEqual(jsRes.status, 200);
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
+    assert.match(jsText, /15000/);
+    assert.match(jsText, /discardVoiceResult/);
+    assert.doesNotMatch(jsText, /(?:card|item|entry)\.innerHTML\s*=/i);
+    assert.doesNotMatch(jsText, /onclick=/i);
   });
 });
