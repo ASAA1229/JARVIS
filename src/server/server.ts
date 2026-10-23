@@ -77,7 +77,11 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/api/status') {
         // Public health response only; never disclose device records, public-key
         // material, task content, or audit internals without an authorized session.
-        return this.jsonResponse(res, 200, { status: 'ONLINE' });
+        const integrityHealthy = this.jarvis.audit.verifyIntegrity().valid;
+        const stateHealthy = this.jarvis.identity.isStateHealthy();
+        return this.jsonResponse(res, 200, {
+          status: integrityHealthy && stateHealthy ? 'ONLINE' : 'DEGRADED',
+        });
       }
 
       // Create enrollment challenge
