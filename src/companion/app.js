@@ -281,7 +281,7 @@ async function fetchAuditLogs() {
     if (!res.ok) return;
     const data = await res.json();
     const stream = document.getElementById('audit-log-stream');
-    stream.innerHTML = '';
+    stream.replaceChildren();
 
     (data.records || []).slice(-15).reverse().forEach((r) => {
       const entry = document.createElement('div');
