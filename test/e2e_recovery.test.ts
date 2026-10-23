@@ -450,5 +450,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const compromisedRes = await server.getService().submitRequest(sess.sessionId!, 'Check memory');
     assert.strictEqual(compromisedRes.state, TaskState.FAILED);
     assert.match(compromisedRes.message, /Audit chain integrity violation/);
+    const health = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
+    assert.strictEqual((await health.json()).status, 'DEGRADED');
   });
 });
