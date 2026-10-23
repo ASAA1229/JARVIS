@@ -67,6 +67,19 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
   });
 
   test('HUD-01: Server serves Cinematic HUD assets at /hud endpoint', async () => {
+    const rootRes = await fetch(`http://127.0.0.1:${TEST_PORT}/`);
+    assert.strictEqual(rootRes.status, 200);
+    assert.match(await rootRes.text(), /JARVIS/i);
+
+    const cssResRoot = await fetch(`http://127.0.0.1:${TEST_PORT}/style.css`);
+    assert.strictEqual(cssResRoot.status, 200);
+    assert.ok((await cssResRoot.text()).length > 0);
+
+    const unknownRoute = await fetch(`http://127.0.0.1:${TEST_PORT}/no-such-route`);
+    assert.strictEqual(unknownRoute.status, 404);
+    const wrongMethod = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`);
+    assert.strictEqual(wrongMethod.status, 404);
+
     // 1. Fetch HUD HTML
     const hudRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud`);
     assert.strictEqual(hudRes.status, 200);
