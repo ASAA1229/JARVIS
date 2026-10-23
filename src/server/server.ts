@@ -151,6 +151,10 @@ export class JarvisServer {
         if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
           return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
         }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
         const result = await this.jarvis.submitRequest(sessionId, text.trim());
         return this.jsonResponse(res, 200, result);
       }
@@ -161,15 +165,14 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
         const { approvalId } = body as { approvalId: string };
         if (typeof approvalId !== 'string' || !approvalId) {
           return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         const result = await this.jarvis.approveTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
@@ -181,15 +184,14 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
         const { approvalId } = body as { approvalId: string };
         if (typeof approvalId !== 'string' || !approvalId) {
           return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         const result = this.jarvis.rejectTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
@@ -201,15 +203,14 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Unauthorized session' });
-        }
-
         const body = await this.readJsonBody(req);
         const { deviceId, reason } = body as { deviceId: string; reason?: string };
         if (typeof deviceId !== 'string' || !deviceId) {
           return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         if (deviceId !== auth.device.id && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
           return this.jsonResponse(res, 403, { error: 'Insufficient permission to revoke another device' });
@@ -227,9 +228,9 @@ export class JarvisServer {
         if (!sessionId) {
           return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
         }
-        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
         if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
           return this.jsonResponse(res, 403, { error: 'Insufficient permission to view audit records' });
@@ -265,6 +266,24 @@ export class JarvisServer {
       // Keep internal exception details in server-side diagnostics only.
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
+  }
+
+  private authorizeSignedRequest(req: IncomingMessage, sessionId: string, path: string, body: unknown) {
+    const timestampHeader = req.headers['x-request-timestamp'];
+    const nonce = req.headers['x-request-nonce'];
+    const signature = req.headers['x-request-signature'];
+    if (typeof timestampHeader !== 'string' || typeof nonce !== 'string' || typeof signature !== 'string') {
+      return { valid: false as const, error: 'Missing signed request headers' };
+    }
+    return this.jarvis.identity.validateSignedRequest(
+      sessionId,
+      req.method || 'GET',
+      path,
+      Number(timestampHeader),
+      nonce,
+      body,
+      signature,
+    );
   }
 
   private isOwnerControlAuthorized(req: IncomingMessage): boolean {
