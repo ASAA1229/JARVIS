@@ -1,0 +1,60 @@
+# JARVIS Master Test & Acceptance Register
+
+**Updated:** 2026-10-23. **Overall acceptance:** BLOCKED — NOT READY FOR RELEASE.
+
+## Reported local checks
+Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`:
+
+| Check | Result | Limit |
+|---|---|---|
+| `npm ci` | PASS | Reported lockfile install; rerun on exact final commit. |
+| `npm run build` | PASS | Does not prove real OS behavior. |
+| `npm run lint` | PASS | Existing script reportedly runs TypeScript no-emit checking. |
+| `npm test` | PASS — 51 passed, 0 failed, 0 skipped | Automated unit/integration only; no physical microphone or Android proof. |
+| `npm run test:browser` | PASS | Speech recognition simulated; harness timeout correction was reported uncommitted. |
+| `npm audit --audit-level=low` | PASS — 0 reported vulnerabilities | Rerun before release. |
+| `npm ls --depth=0` | PASS | Top-level dependencies resolved. |
+| Exact-commit hosted CI | UNVERIFIED | No authenticated run verified. |
+| Android build/physical devices | BLOCKED | SDK/tooling and devices unavailable in report. |
+| Real microphone/vendor voice | UNVERIFIED | Simulated browser recognition is not physical acceptance. |
+| Visible Notepad launch on target MSI | UNVERIFIED | Mocks/process tests do not prove the real visible window opened. |
+| Two-phone acceptance | UNVERIFIED | Physical two-device enrollment/revocation not performed. |
+
+## Automated regression areas reported
+
+- Device/session authentication, expiry, revocation, malformed Ed25519 keys and replay protection.
+- Default-deny policy and no public adapter dispatcher bypass.
+- Task-scoped single-use approvals and cross-device permission checks.
+- AI planner schema validation and rejection of prohibited/injected operations.
+- Outcome truthfulness for partial/interrupted execution and audit-persistence failure.
+- Hash-chained audit integrity, redaction, tamper/truncation detection, and fail-closed recovery.
+- Live HTTP lifecycle and persistent revocation recovery.
+- Voice privacy defaults, push-to-talk, mute, cancellation, and transcript disposal (automated/simulated as applicable).
+- HUD route/assets and browser keyboard/reduced-motion/error smoke checks.
+
+## Required real-runtime acceptance
+
+### Windows commands / Notepad
+Run the backend on the actual Windows host and issue the command through the real JARVIS UI/text/voice path. Record the request, policy and approval decision, adapter invocation, OS process evidence, visible-window observation, audit entry, and user-facing result. Test denial, expired session, missing approval, spawn error, cancellation, timeout, and restart. Distinguish requested, awaiting approval, denied, failed, started, and verified. A mock or PID alone is not proof that a visible window is ready.
+
+### Voice/audio
+Test permission granted/denied, missing/disconnected microphone, explicit start/stop, mute, cancel, late/empty transcript, timeout, duplicate activation, page/session close, actual recognition engine and its local/remote data behavior, real TTS playback, unavailable voice, autoplay restriction, and stop/cancel. Confirm no capture at startup, wake word disabled by default, visible listening indicator, and no false speaking/listening status.
+
+### Android / two phones
+Build/install on physical devices. Verify enrollment proof-of-possession, TLS trust, signed requests, replay protection, independent identities/sessions/permissions, revocation, reconnect, notifications, approval expiry, and critical-action step-up. Revoke one phone and prove the other remains independent.
+
+## Release blockers
+
+1. Exact-commit hosted CI.
+2. Owner acceptance on target Windows 11.
+3. Physical microphone and real browser/vendor voice behavior.
+4. Enrollment abuse controls, rate limiting, owner permission controls.
+5. Persistence write-failure/recovery evidence and exhaustive API contracts/error redaction.
+6. Android build and secure backend integration.
+7. Two-phone physical acceptance.
+8. Approved M8 scope and authoritative M10/M11 specifications.
+9. Full all-branch Markdown/test inventory before destructive consolidation.
+
+## Rules
+
+Never remove tests just to make a suite green. Never replace real behavior with production mocks. Label simulated tests honestly. Run all checks against the exact commit being accepted. Preserve unique acceptance criteria and source tests until the complete inventory is reviewed. Do not release or promote to `main` automatically.
