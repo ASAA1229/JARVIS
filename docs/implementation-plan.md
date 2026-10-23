@@ -15,6 +15,7 @@ As authorized, implementation proceeds in testable, incremental milestones adher
 | **M5** | **AI Planner Integration** | Replaceable AI provider interface, structured schema validation, local heuristic planner, proof of policy enforcement | **PARTIAL — local planner and adversarial boundary tested; broad intent coverage is incomplete** |
 | **M6** | **Verification, Hardening & Release** | Automated security suite, live HTTP E2E tests, recovery semantics | **PARTIAL — local suites pass; performance evidence and WSL/Linux runtime verification are incomplete** |
 | **M7** | **Security Remediation & Completion** | Close security findings, regression coverage, browser validation, accurate audit/traceability evidence | **BLOCKED — local checks pass; external acceptance and exact-commit CI remain** |
+| **M12** | **Gesture & Spatial Interaction** | Opt-in local webcam, worker-based hand landmarks, typed HUD-only previews, later policy and voice integration | **PARTIAL — preview foundation implemented on `new`; automated and physical acceptance recorded separately** |
 
 ---
 

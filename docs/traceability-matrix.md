@@ -54,6 +54,18 @@ The authoritative Milestones 1–7 status-by-criterion matrix is in the [current
 | **BROWSER-02** | Uncertain approval outcome is never rendered as verified success | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; approval response intercepted** |
 | **BROWSER-03** | Recognizer permission error is surfaced and leaves text fallback available | `src/companion/hud.js` | `test/browser-smoke.mjs` | **PASS in Microsoft Edge; recognizer error simulated** |
 
+## 3. M12 Gesture Foundation (current `new` branch)
+
+| Requirement | Implementation | Test / evidence status |
+|---|---|---|
+| Camera off by default; explicit activation; video-only capture | `src/companion/gesture.js`, `hud.html` | PASS — browser smoke with fake camera; physical webcam pending |
+| Stop/release on explicit stop, loss/error | `src/companion/gesture.js` | PASS — fake-camera stop, simulated ended event and permission denial; physical removal/visibility acceptance pending |
+| Same-origin local model/WASM, no external request | `src/server/server.ts`, `gesture-worker.js`, CSP | PASS — browser smoke confirms local CPU inference and no external request |
+| Typed versioned intent; confidence, timestamp, ID, target validation | `src/companion/gesture-intent.js` | PASS — `test/gesture.test.ts` (7/7) |
+| Landmark smoothing, confidence floor, dwell, cooldown, neutral rearm, duplicate suppression | `src/companion/gesture-recognition.js` | PASS — synthetic landmark tests only; physical accuracy and false activation not established |
+| Reticle/target preview, not direct action | `src/companion/gesture.js` | PASS — static source guard; hand-driven highlight awaits physical webcam acceptance |
+| Voice arbitration and policy-routed task execution | Not implemented | Future M12 stage; no gesture action is enabled |
+
 ---
 
 ## 2. Historical Test Execution Evidence (superseded)

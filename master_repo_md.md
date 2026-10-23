@@ -1,7 +1,7 @@
 # JARVIS — Master Repository Documentation
 
 **Snapshot date:** 2026-10-23  
-**Source branch:** `fix`  
+**Current feature branch:** `new` (M12 gesture foundation)
 **Disposition:** POC implementation exists; integrated acceptance remains BLOCKED / NOT RELEASE-READY.
 
 > This file consolidates the currently reviewed project facts, architecture, branch policy, milestone status, security invariants, and known limitations. It is not a claim that every Markdown file on every branch has been read. Repository-wide file enumeration for every ref is not exposed by the current connected GitHub actions; existing documentation must not be deleted until a complete branch-by-branch inventory and preservation check can be performed.
@@ -15,6 +15,7 @@ JARVIS is a privacy-conscious personal AI assistant intended to start with a sec
 - Runtime: Node.js 24 + TypeScript modular monolith.
 - Host: Windows 11 target; backend currently loopback-only at `127.0.0.1:3000`.
 - Companion: browser-based HUD with text fallback and push-to-talk / Web Speech integration. Browser speech recognition remains browser/vendor-dependent and is not proven local/offline.
+- M12 gesture foundation: opt-in browser webcam, same-origin MediaPipe hand landmarks in a worker, HUD-only cursor/gesture previews. It cannot call backend actions. Physical webcam accuracy and target-laptop performance remain unverified; see [M12 status](docs/m12-gesture-spatial-interaction.md).
 - Android: separate M9 prototype exists on `new`; it is not integrated with the backend and has not passed physical-device acceptance.
 - Overall release status: **BLOCKED — NOT READY**.
 - Current remediation evidence is documented in `docs/security-api-feature-audit-2026-10-23.md`, `docs/final-integration-acceptance-2026-10-23.md`, and `docs/traceability-matrix.md`.
@@ -54,7 +55,7 @@ AI output is advisory only and must never authorize or directly execute actions.
 10. Microphone capture requires explicit activation, visible status, and reliable cancellation. Wake-word listening is disabled by default.
 11. No secrets, private keys, tokens, or unnecessary sensitive transcripts in logs or committed files.
 
-## 6. Milestones 1–11 status
+## 6. Milestones 1–12 status
 
 Status labels: PASS, PARTIAL, BLOCKED, UNVERIFIED, FAIL. Historical reports are not a substitute for current evidence.
 
@@ -71,6 +72,7 @@ Status labels: PASS, PARTIAL, BLOCKED, UNVERIFIED, FAIL. Historical reports are 
 | M9 | Android prototype/integration | PARTIAL / BLOCKED | Prototype is separate, unbuilt/unintegrated; backend APIs and device acceptance are missing. |
 | M10 | Approved scope unknown | UNVERIFIED / BLOCKED | Find authoritative specification in repository history/branches before implementation. |
 | M11 | Approved scope unknown | UNVERIFIED / BLOCKED | Find authoritative specification in repository history/branches before implementation. |
+| M12 | Gesture & spatial interaction | PARTIAL | Same-origin local camera/tracking foundation on `new`; 7/7 gesture unit tests and fake-camera Edge lifecycle/local-inference smoke passed. Physical precision/latency, voice arbitration, safe action integration, and hardware acceptance remain open. See [M12 ADR](docs/adr/ADR-006-local-gesture-tracking.md) and [acceptance plan](docs/m12-gesture-spatial-interaction.md). |
 
 ## 7. Current local verification evidence (2026-10-23)
 

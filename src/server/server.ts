@@ -68,7 +68,7 @@ export class JarvisServer {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
@@ -102,6 +102,41 @@ export class JarvisServer {
       }
       if (req.method === 'GET' && url.pathname === '/hud/hud.js') {
         return this.serveStatic('hud.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/gesture.js') {
+        return this.serveStatic('gesture.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/gesture-worker.js') {
+        return this.serveStatic('gesture-worker.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/gesture-intent.js') {
+        return this.serveStatic('gesture-intent.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/gesture/gesture-recognition.js') {
+        return this.serveStatic('gesture-recognition.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/gesture/gesture-recognition-core.js') {
+        return this.serveStatic('gesture-recognition-core.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/gesture/vision_bundle.js') {
+        return this.serveFile(join(process.cwd(), 'node_modules', '@mediapipe', 'tasks-vision', 'vision_bundle.js'), 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname.startsWith('/gesture/wasm/')) {
+        const filename = url.pathname.slice('/gesture/wasm/'.length);
+        const wasmFiles: Record<string, { path: string; contentType: string }> = {
+          'vision_wasm_internal.js': { path: 'wasm/vision_wasm_internal.js', contentType: 'application/javascript' },
+          'vision_wasm_internal.wasm': { path: 'wasm/vision_wasm_internal.wasm', contentType: 'application/wasm' },
+          'vision_wasm_module_internal.js': { path: 'wasm/vision_wasm_module_internal.js', contentType: 'application/javascript' },
+          'vision_wasm_module_internal.wasm': { path: 'wasm/vision_wasm_module_internal.wasm', contentType: 'application/wasm' },
+          'vision_wasm_nosimd_internal.js': { path: 'wasm/vision_wasm_nosimd_internal.js', contentType: 'application/javascript' },
+          'vision_wasm_nosimd_internal.wasm': { path: 'wasm/vision_wasm_nosimd_internal.wasm', contentType: 'application/wasm' },
+        };
+        const asset = wasmFiles[filename];
+        if (!asset) return this.jsonResponse(res, 404, { error: 'Gesture runtime asset not found' });
+        return this.serveFile(join(process.cwd(), 'node_modules', '@mediapipe', 'tasks-vision', asset.path), asset.contentType, res);
+      }
+      if (req.method === 'GET' && url.pathname === '/gesture/hand_landmarker.task') {
+        return this.serveFile(join(process.cwd(), 'src', 'companion', 'models', 'hand_landmarker.task'), 'application/octet-stream', res);
       }
 
       // 2. API Routes
@@ -373,6 +408,10 @@ export class JarvisServer {
 
   private serveStatic(filename: string, contentType: string, res: ServerResponse): void {
     const filePath = join(process.cwd(), 'src', 'companion', filename);
+    this.serveFile(filePath, contentType, res);
+  }
+
+  private serveFile(filePath: string, contentType: string, res: ServerResponse): void {
     if (!existsSync(filePath)) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('File not found');

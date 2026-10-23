@@ -207,6 +207,105 @@ body.hud-body {
   color: var(--hud-danger);
 }
 
+.camera-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hud-danger);
+  border: 1px solid rgba(255, 0, 85, .45);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font: 700 9px var(--font-mono);
+  letter-spacing: .3px;
+}
+
+.camera-indicator.camera-active {
+  color: #fff;
+  background: rgba(255, 0, 85, .85);
+  border-color: #ff527f;
+  box-shadow: 0 0 14px rgba(255, 0, 85, .7);
+}
+
+.gesture-card { display: flex; flex-direction: column; gap: 8px; }
+.gesture-card-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; }
+.gesture-card-heading .stat-title { margin: 0; }
+.gesture-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--hud-border);
+  border-radius: 5px;
+  background: radial-gradient(ellipse, rgba(0, 229, 255, .1), rgba(2, 8, 20, .96));
+}
+.gesture-preview video, .gesture-preview canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.gesture-preview video { opacity: 0; transition: opacity .2s ease; }
+.gesture-preview.preview-active video { opacity: .78; }
+.gesture-preview canvas { pointer-events: none; }
+.preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(0, 229, 255, .62);
+  font: 10px var(--font-mono);
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+.gesture-preview.preview-active .preview-placeholder { display: none; }
+.camera-toggle { width: 100%; min-height: 32px; color: #fff; font-weight: 800; }
+.camera-toggle[aria-pressed="true"] { color: #fff; background: rgba(255, 0, 85, .24); border-color: var(--hud-danger); }
+.gesture-status { color: var(--cyan-glow); font: 10px/1.45 var(--font-mono); overflow-wrap: anywhere; }
+.gesture-privacy, .gesture-no-authority { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+
+.gesture-proposal {
+  width: min(100%, 460px);
+  padding: 11px 14px;
+  border-color: rgba(0, 229, 255, .34);
+  background: rgba(4, 15, 30, .82);
+  font: 10px/1.5 var(--font-mono);
+}
+.gesture-proposal > div:nth-child(2) { display: flex; justify-content: space-between; color: #fff; font-size: 12px; font-weight: 700; }
+.gesture-proposal p { margin-top: 4px; color: var(--text-muted); }
+.gesture-proposal strong { color: var(--text-main); }
+.gesture-proposal-title { color: var(--cyan-glow); letter-spacing: 1px; margin-bottom: 5px; }
+.gesture-proposal.proposal-active { border-color: var(--cyan-glow); box-shadow: inset 0 0 18px rgba(0, 229, 255, .1), 0 0 16px rgba(0, 229, 255, .12); }
+.gesture-no-authority { margin-top: 8px !important; color: var(--hud-warn) !important; }
+
+#gesture-reticle {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--cyan-glow);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-40px, -40px, 0);
+  transition: opacity .12s ease;
+  box-shadow: 0 0 12px rgba(0, 229, 255, .8), inset 0 0 8px rgba(0, 229, 255, .38);
+}
+#gesture-trail { position: fixed; inset: 0; z-index: 89; width: 100vw; height: 100vh; pointer-events: none; overflow: visible; }
+#gesture-trail polyline { fill: none; stroke: rgba(0, 229, 255, .32); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 5px rgba(0, 229, 255, .65)); }
+#gesture-reticle::before, #gesture-reticle::after {
+  content: '';
+  position: absolute;
+  background: var(--cyan-glow);
+}
+#gesture-reticle::before { width: 1px; height: 32px; left: 9px; top: -6px; }
+#gesture-reticle::after { height: 1px; width: 32px; top: 9px; left: -6px; }
+#gesture-reticle.visible { opacity: .9; }
+.gesture-hover-target { outline: 1px solid rgba(0, 229, 255, .9) !important; outline-offset: 2px; box-shadow: 0 0 16px rgba(0, 229, 255, .3) !important; }
+
 /* Main Workspace */
 .hud-main {
   flex: 1;
@@ -683,4 +782,8 @@ body.hud-body {
 body.reduced-motion * {
   animation: none !important;
   transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gesture-preview video, #gesture-reticle { transition: none; }
 }

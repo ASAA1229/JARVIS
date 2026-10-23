@@ -59,7 +59,7 @@ try {
   browser = await chromium.launch({
     executablePath: edgePath,
     headless: true,
-    args: ['--disable-gpu', '--no-first-run'],
+    args: ['--disable-gpu', '--no-first-run', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
   });
   const context = await browser.newContext();
   const pageErrors = [];
@@ -74,6 +74,7 @@ try {
   });
   page.on('console', (message) => {
     if (message.type() !== 'error' || message.text().toLowerCase().includes('favicon.ico')) return;
+    if (message.text().startsWith('INFO: Created TensorFlow Lite XNNPACK delegate for CPU.')) return;
     if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
       expectedUnauthorizedConsoleErrors++;
     } else {
@@ -152,6 +153,7 @@ try {
   });
   hud.on('console', (message) => {
     if (message.type() !== 'error') return;
+    if (message.text().startsWith('INFO: Created TensorFlow Lite XNNPACK delegate for CPU.')) return;
     if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
       expectedUnauthorizedConsoleErrors++;
     } else {
@@ -292,6 +294,90 @@ try {
   await hud.mouse.up();
 
   await hud.locator('#btn-toggle-motion').click();
+
+  // The camera remains off until the user explicitly enables it. This uses
+  // Chromium's fake camera device and is lifecycle coverage, not physical-camera acceptance.
+  await context.grantPermissions(['camera'], { origin: baseUrl });
+  if (await hud.locator('#camera-indicator').innerText() !== 'CAMERA OFF' ||
+      await hud.locator('#btn-camera-toggle').getAttribute('aria-pressed') !== 'false') {
+    throw new Error('Camera was not visibly off by default');
+  }
+  const externalGestureRequests = [];
+  const gestureRuntimeRequests = [];
+  hud.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.origin !== baseUrl) externalGestureRequests.push(request.url());
+    if (url.pathname.startsWith('/gesture/') || url.pathname.includes('gesture-')) gestureRuntimeRequests.push(url.pathname);
+  });
+  hud.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.pathname.startsWith('/gesture/') || url.pathname.includes('gesture-')) {
+      gestureRuntimeRequests.push(`${response.status()} ${url.pathname}`);
+    }
+  });
+  await hud.locator('#btn-camera-toggle').click();
+  try {
+    await hud.waitForFunction(() => {
+      const camera = document.getElementById('camera-indicator')?.textContent || '';
+      const status = document.getElementById('gesture-status')?.textContent || '';
+      return camera.includes('CAMERA ACTIVE') &&
+        (status === 'CAMERA ACTIVE — local hand tracking ready' || status.startsWith('NO HAND DETECTED') || status.startsWith('LOCAL TRACKING'));
+    }, null, { timeout: 20000 });
+  } catch {
+    throw new Error(`Local hand tracker did not become ready: ${await hud.locator('#gesture-status').innerText()}; requests=${JSON.stringify(gestureRuntimeRequests)}; pageErrors=${JSON.stringify(pageErrors)}`);
+  }
+  const cameraActive = await hud.evaluate(() => {
+    const video = document.getElementById('gesture-video');
+    return {
+      active: video.srcObject?.active === true,
+      audioTracks: video.srcObject?.getAudioTracks().length ?? -1,
+      hasVideoTrack: video.srcObject?.getVideoTracks().length === 1,
+      indicator: document.getElementById('camera-indicator').textContent,
+    };
+  });
+  if (!cameraActive.active || cameraActive.audioTracks !== 0 || !cameraActive.hasVideoTrack ||
+      !cameraActive.indicator.includes('CAMERA ACTIVE')) {
+    throw new Error(`Camera stream did not meet video-only active-state requirements: ${JSON.stringify(cameraActive)}`);
+  }
+  await hud.evaluate(() => { window.__jarvisCameraTrack = document.getElementById('gesture-video').srcObject.getVideoTracks()[0]; });
+  await hud.locator('#btn-camera-toggle').click();
+  const cameraReleased = await hud.evaluate(() => ({
+    detached: document.getElementById('gesture-video').srcObject === null,
+    ended: window.__jarvisCameraTrack.readyState === 'ended',
+    pressed: document.getElementById('btn-camera-toggle').getAttribute('aria-pressed'),
+  }));
+  if (!cameraReleased.detached || !cameraReleased.ended || cameraReleased.pressed !== 'false') {
+    throw new Error(`Camera stop did not stop every track and detach the stream: ${JSON.stringify(cameraReleased)}`);
+  }
+  await hud.locator('#btn-camera-toggle').click();
+  await hud.waitForFunction(() => {
+    const camera = document.getElementById('camera-indicator')?.textContent || '';
+    const status = document.getElementById('gesture-status')?.textContent || '';
+    return camera.includes('CAMERA ACTIVE') &&
+      (status === 'CAMERA ACTIVE — local hand tracking ready' || status.startsWith('NO HAND DETECTED') || status.startsWith('LOCAL TRACKING'));
+  }, null, { timeout: 20000 });
+  await hud.evaluate(() => document.getElementById('gesture-video').srcObject.getVideoTracks()[0].dispatchEvent(new Event('ended')));
+  await hud.getByText('CAMERA LOST — released').waitFor({ state: 'visible', timeout: 5000 });
+  if (await hud.locator('#camera-indicator').innerText() !== 'CAMERA OFF') {
+    throw new Error('Camera loss did not clear the persistent active indicator');
+  }
+  const denied = await context.newPage();
+  await denied.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => { throw new DOMException('blocked by test fixture', 'NotAllowedError'); },
+    });
+  });
+  await denied.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await denied.locator('#btn-camera-toggle').click();
+  await denied.getByText('CAMERA PERMISSION DENIED — camera remains off').waitFor({ state: 'visible', timeout: 5000 });
+  if (await denied.locator('#btn-camera-toggle').getAttribute('aria-pressed') !== 'false') {
+    throw new Error('Camera permission denial left the UI in an active state');
+  }
+  await denied.close();
+  if (externalGestureRequests.length) {
+    throw new Error(`Gesture runtime attempted external network requests: ${externalGestureRequests.join(', ')}`);
+  }
   if (await hud.locator('body').getAttribute('class').then((value) => !value.includes('reduced-motion'))) {
     throw new Error('Reduced-motion control did not activate');
   }
@@ -317,7 +403,7 @@ try {
   }
   await insecurePage.close();
 
-  console.log('BROWSER_E2E_PASS: primary HUD routing, owner challenge, Ed25519 enrollment, signed requests, duplicate submission guard, expired-session error rendering, XSS regression, approval rejection, uncertain-outcome UI, HUD session restore, text fallback, insecure-context voice restriction, voice cancel/discard/late-result/timeout/permission-error/keyboard UI lifecycle, reduced motion, least-privilege audit polling.');
+  console.log('BROWSER_E2E_PASS: primary HUD routing, owner challenge, Ed25519 enrollment, signed requests, duplicate submission guard, expired-session error rendering, XSS regression, approval rejection, uncertain-outcome UI, HUD session restore, text fallback, insecure-context voice restriction, voice cancel/discard/late-result/timeout/permission-error/keyboard UI lifecycle, reduced motion, least-privilege audit polling, default-off camera, fake-device video-only stream, local model/WASM load, camera stop/release, simulated camera loss, simulated permission denial, no external gesture asset requests.');
 } catch (error) {
   console.error('BROWSER_E2E_FAIL', error);
   console.error(stdout);

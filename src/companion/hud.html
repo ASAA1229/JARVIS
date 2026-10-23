@@ -10,6 +10,8 @@
   <!-- Scanlines & Ambient Grid Overlay -->
   <div class="hud-grid-overlay" aria-hidden="true"></div>
   <div class="hud-scanlines" aria-hidden="true"></div>
+  <svg id="gesture-trail" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline id="gesture-trail-line" points="" /></svg>
+  <div id="gesture-reticle" aria-hidden="true"></div>
 
   <div class="hud-wrapper">
     <!-- Top Bar: Telemetry & Security State -->
@@ -41,7 +43,7 @@
 
       <div class="hud-controls">
         <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation" aria-pressed="false">REDUCED MOTION: OFF</button>
-        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false">MIC: ARMED</button>
+        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false" data-gesture-target="mic-toggle" data-gesture-label="Microphone privacy control">MIC: ARMED</button>
         <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
       </div>
     </header>
@@ -49,7 +51,7 @@
     <!-- Main Panoramic Workspace -->
     <main class="hud-main">
       <!-- Left Panel: Device Identity & Security Status -->
-      <aside class="hud-panel hud-panel-left glass">
+      <aside class="hud-panel hud-panel-left glass" data-gesture-target="device-authentication" data-gesture-label="Device authentication panel">
         <div class="panel-header">
           <h3>DEVICE AUTHENTICATION</h3>
           <span class="panel-tag" id="enclave-tag">STANDBY</span>
@@ -76,11 +78,26 @@
               <div class="audit-line">[SYS] Checking core connection…</div>
             </div>
           </div>
+
+          <div class="stat-card gesture-card">
+            <div class="gesture-card-heading">
+              <span class="stat-title">SPATIAL SENSOR // M12</span>
+              <span id="camera-indicator" class="camera-indicator" role="status" aria-live="polite">CAMERA OFF</span>
+            </div>
+            <div class="gesture-preview" id="gesture-preview">
+              <video id="gesture-video" muted autoplay playsinline aria-label="Mirrored local camera preview"></video>
+              <canvas id="gesture-canvas" aria-hidden="true"></canvas>
+              <span class="preview-placeholder" id="gesture-placeholder">LOCAL TRACKING STANDBY</span>
+            </div>
+            <button id="btn-camera-toggle" class="hud-btn-mini camera-toggle" type="button" aria-pressed="false" data-gesture-target="camera-toggle" data-gesture-label="Camera control">ENABLE CAMERA</button>
+            <p id="gesture-status" class="gesture-status" role="status" aria-live="polite">CAMERA OFF — gesture tracking is opt-in</p>
+            <p class="gesture-privacy">Frames stay in this browser and are not recorded or sent to JARVIS or cloud AI. Tracking assets load from this loopback server; the content policy blocks cross-origin requests. Camera access requests video only; microphone access remains controlled separately by push-to-talk.</p>
+          </div>
         </div>
       </aside>
 
       <!-- Center Stage: Arc Reactor Visualization & Push-To-Talk -->
-      <section class="hud-center-stage">
+      <section class="hud-center-stage" data-gesture-target="center-stage" data-gesture-label="Assistant center stage">
         <!-- Visual Reactor Ring -->
         <div class="reactor-container" id="reactor-container">
           <div class="reactor-outer-ring"></div>
@@ -117,16 +134,24 @@
 
         <!-- Voice Interaction Bar -->
         <div class="ptt-controls">
-          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation" aria-pressed="false">
+          <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation" aria-pressed="false" data-gesture-target="ptt" data-gesture-label="Push to talk control">
             <span class="ptt-icon">🎙️</span>
             <span class="ptt-text" id="ptt-text">HOLD TO TALK</span>
           </button>
           <div class="keyboard-hint">HOLD <code>SPACE</code> OR TOGGLE <code>CTRL+M</code> | <code>ESC</code> TO CANCEL</div>
         </div>
+
+        <div class="gesture-proposal glass" id="gesture-proposal" aria-live="polite">
+          <div class="gesture-proposal-title">GESTURE PROPOSAL // PREVIEW ONLY</div>
+          <div><span id="gesture-name">NO GESTURE</span><span id="gesture-confidence">--</span></div>
+          <p>Target: <strong id="gesture-target">None</strong></p>
+          <p>Proposed: <strong id="gesture-action">No action</strong></p>
+          <p class="gesture-no-authority">Gesture proposals do not call JARVIS actions or grant authorization.</p>
+        </div>
       </section>
 
       <!-- Right Panel: Pending Approvals & Task Lifecycle Evidence -->
-      <aside class="hud-panel hud-panel-right glass">
+      <aside class="hud-panel hud-panel-right glass" data-gesture-target="governance" data-gesture-label="Task governance panel">
         <div class="panel-header">
           <h3>TASK GOVERNANCE</h3>
           <span class="panel-tag warning" id="hud-pending-badge">0 APPROVALS</span>
@@ -152,7 +177,7 @@
     </main>
 
     <!-- Bottom Command Deck: Quick Allowlisted Directives & Fallback Input -->
-    <footer class="hud-footer glass">
+    <footer class="hud-footer glass" data-gesture-target="command-deck" data-gesture-label="Command deck">
       <div class="command-deck">
         <div class="directive-chips">
           <span class="chips-title">DIRECTIVES:</span>
@@ -179,5 +204,6 @@
 
   <script src="/deviceCrypto.js"></script>
   <script src="/hud/hud.js"></script>
+  <script type="module" src="/hud/gesture.js"></script>
 </body>
 </html>
