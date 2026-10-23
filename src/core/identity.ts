@@ -298,6 +298,57 @@ export class DeviceIdentityManager {
   }
 
   /**
+   * Authenticates an API request using the enrolled device key, canonical
+   * request payload, a fresh timestamp, and a one-time nonce.
+   */
+  public validateSignedRequest(
+    sessionId: SessionId,
+    method: string,
+    path: string,
+    timestamp: number,
+    nonce: string,
+    body: unknown,
+    signature: string
+  ): { valid: boolean; device?: DeviceRecord; error?: string } {
+    const auth = this.validateDeviceSession(sessionId);
+    if (!auth.valid || !auth.device) return auth;
+
+    if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 60000) {
+      this.audit.record('SIGNED_REQUEST_REJECTED', { reason: 'TIMESTAMP_STALE', method, path }, auth.device.id);
+      return { valid: false, error: 'Request timestamp is stale or invalid' };
+    }
+    if (typeof nonce !== 'string' || !/^[a-f0-9]{32,128}$/i.test(nonce)) {
+      this.audit.record('SIGNED_REQUEST_REJECTED', { reason: 'INVALID_NONCE', method, path }, auth.device.id);
+      return { valid: false, error: 'A 16-byte-or-stronger hexadecimal nonce is required' };
+    }
+
+    const canonical = CryptoUtil.buildCanonicalRequestString(method, path, sessionId, timestamp, nonce, body);
+    if (!CryptoUtil.verifySignature(canonical, signature, auth.device.publicKey)) {
+      this.audit.record('SIGNED_REQUEST_REJECTED', { reason: 'INVALID_SIGNATURE', method, path }, auth.device.id);
+      return { valid: false, error: 'Request signature verification failed' };
+    }
+
+    const nonceKey = `request:${sessionId}:${nonce}`;
+    const nonceExpiry = this.usedSessionNonces.get(nonceKey);
+    if (nonceExpiry && nonceExpiry > Date.now()) {
+      this.audit.record('SIGNED_REQUEST_REJECTED', { reason: 'NONCE_REPLAY', method, path }, auth.device.id);
+      return { valid: false, error: 'Request nonce has already been used' };
+    }
+
+    this.usedSessionNonces.set(nonceKey, Date.now() + 120000);
+    for (const [key, expiry] of this.usedSessionNonces.entries()) {
+      if (expiry <= Date.now()) this.usedSessionNonces.delete(key);
+    }
+    if (!this.persistState()) {
+      this.usedSessionNonces.delete(nonceKey);
+      return { valid: false, error: 'Could not persist request replay protection state' };
+    }
+
+    this.audit.record('SIGNED_REQUEST_AUTHENTICATED', { method, path }, auth.device.id);
+    return auth;
+  }
+
+  /**
    * Immediately revokes a device and terminates its active sessions.
    */
   public revokeDevice(deviceId: DeviceId, reason: string = 'Owner initiated'): boolean {
