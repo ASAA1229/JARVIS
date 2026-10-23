@@ -354,6 +354,9 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     );
     assert.strictEqual(enroll.success, false);
     assert.match(enroll.error || '', /state is unhealthy/i);
+    const health = await fetch(`http://127.0.0.1:${TEST_PORT + 2}/api/status`);
+    assert.strictEqual(health.status, 200);
+    assert.strictEqual((await health.json()).status, 'DEGRADED');
   });
 
   test('RECOVER-02: Compromised audit chain causes fail-closed execution block', async () => {
