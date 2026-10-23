@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
-import { CryptoUtil } from '../crypto/crypto.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -43,7 +42,7 @@ export class JarvisServer {
     // Set secure security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
@@ -70,16 +69,9 @@ export class JarvisServer {
 
       // 2. API Routes
       if (req.method === 'GET' && url.pathname === '/api/status') {
-        const devices = this.jarvis.identity.listDevices();
-        const tasks = this.jarvis.listTasks();
-        const auditIntegrity = this.jarvis.audit.verifyIntegrity();
-        return this.jsonResponse(res, 200, {
-          status: 'ONLINE',
-          devicesCount: devices.length,
-          tasksCount: tasks.length,
-          auditIntegrity,
-          devices,
-        });
+        // Public health response only; never disclose device records, public-key
+        // material, task content, or audit internals without an authorized session.
+        return this.jsonResponse(res, 200, { status: 'ONLINE' });
       }
 
       // Create enrollment challenge
@@ -91,40 +83,13 @@ export class JarvisServer {
         return this.jsonResponse(res, 201, challenge);
       }
 
-      // Loopback HUD Session Endpoint (Auto-provisions local enclave session for loopback HUD only)
+      // HUD sessions must use the same device-bound cryptographic enrollment and
+      // signed session flow as every other client. Never mint sessions from loopback
+      // status alone or mutate DeviceIdentityManager internals.
       if (req.method === 'POST' && url.pathname === '/api/hud/session') {
-        const remoteIp = req.socket.remoteAddress;
-        if (remoteIp !== '127.0.0.1' && remoteIp !== '::1' && remoteIp !== '::ffff:127.0.0.1') {
-          return this.jsonResponse(res, 403, { error: 'HUD session auto-provisioning is restricted to loopback' });
-        }
-        // Ensure local HUD device exists
-        let localDevice = this.jarvis.identity.listDevices().find(d => d.name === 'Windows 11 HUD Enclave');
-        if (!localDevice) {
-          const challenge = this.jarvis.identity.createEnrollmentChallenge([
-            Permission.SYSTEM_INFO_READ,
-            Permission.APP_LAUNCH,
-          ]);
-          const kp = CryptoUtil.generateEd25519KeyPair();
-          const enroll = this.jarvis.identity.enrollDevice(challenge.challengeToken, 'Windows 11 HUD Enclave', kp.publicKey);
-          localDevice = this.jarvis.identity.getDevice(enroll.deviceId!);
-        }
-
-        // Create genuine active session
-        const ts = Date.now();
-        const dummySessionId = `sess-hud-${CryptoUtil.randomToken(16)}`;
-        // Register session internally
-        const sessionRecord = {
-          id: dummySessionId,
-          deviceId: localDevice!.id,
-          createdAt: ts,
-          expiresAt: ts + 3600 * 1000,
-          active: true,
-        };
-        (this.jarvis.identity as any).sessions.set(dummySessionId, sessionRecord);
-
-        return this.jsonResponse(res, 200, {
-          sessionId: dummySessionId,
-          device: localDevice,
+        return this.jsonResponse(res, 503, {
+          error: 'HUD session bootstrap is disabled until device-bound key enrollment is configured.',
+          code: 'SECURE_HUD_ENROLLMENT_REQUIRED',
         });
       }
 
@@ -223,13 +188,35 @@ export class JarvisServer {
 
       // Audit logs (for dashboard monitoring)
       if (req.method === 'GET' && url.pathname === '/api/audit') {
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) {
+          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        }
+        const auth = this.jarvis.identity.validateDeviceSession(sessionId);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
+        }
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Insufficient permission to view audit records' });
+        }
         const records = this.jarvis.audit.getRecords();
         return this.jsonResponse(res, 200, { records: records.slice(-50) });
       }
 
       return this.jsonResponse(res, 404, { error: 'Not found' });
     } catch (err: unknown) {
-      return this.jsonResponse(res, 500, { error: String(err) });
+      const message = err instanceof Error ? err.message : 'Request failed';
+      if (message === 'Invalid JSON payload') {
+        return this.jsonResponse(res, 400, { error: 'Invalid JSON payload' });
+      }
+      if (message === 'Payload too large') {
+        return this.jsonResponse(res, 413, { error: 'Payload too large' });
+      }
+      if (message.startsWith('Authentication failed')) {
+        return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
+      }
+      // Keep internal exception details in server-side diagnostics only.
+      return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
   }
 
