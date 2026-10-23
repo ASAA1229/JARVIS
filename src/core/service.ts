@@ -15,7 +15,7 @@ import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
 import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { AuditLogger } from '../audit/audit.js';
-import { IAIPlannerProvider, MinimizedContext } from '../planner/planner.js';
+import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 
 export interface TaskLifecycleRecord {
@@ -105,14 +105,41 @@ export class JarvisCoreService {
     };
     this.tasks.set(taskId, taskRecord);
 
-    this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length }, device.id, taskId);
+    try {
+      this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length }, device.id, taskId);
+    } catch {
+      taskRecord.state = TaskState.AWAITING_RECOVERY;
+      taskRecord.error = 'Request could not be durably audited; no operation was planned or executed';
+      return { taskId, state: taskRecord.state, message: taskRecord.error, verified: false };
+    }
 
     // Step 2: Understand request & build bounded plan via Planner (AI Advisory)
     const context: MinimizedContext = {
       requesterName: device.name,
       timestamp: Date.now(),
     };
-    const plan = await this.planner.generatePlan(requestText, context);
+    let plan: PlanProposal;
+    try {
+      plan = await this.planner.generatePlan(requestText, context);
+    } catch (error: unknown) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'The planner failed before an operation could be evaluated; no host operation was executed';
+      try {
+        this.audit.record('PLANNING_FAILED', {
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+        }, device.id, taskId);
+      } catch {
+        taskRecord.state = TaskState.AWAITING_RECOVERY;
+        taskRecord.error = 'Planning failed and the failure could not be durably audited; no host operation was executed';
+      }
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error,
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        verified: false,
+      };
+    }
 
     // Validate plan against strict schema
     const validation = this.planner.validatePlanSchema(plan);

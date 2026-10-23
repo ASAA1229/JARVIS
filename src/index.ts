@@ -1,10 +1,14 @@
-import { JarvisServer } from './server/server.js';
+import { loadLocalEnvironmentFile, ownerEnrollmentStatusMessage, readRuntimeConfig } from './config/runtimeConfig.js';
 
 async function main() {
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  const STATE_PATH = process.env.JARVIS_DEVICE_STATE_PATH || './data/devices.json';
-  const AUDIT_PATH = process.env.JARVIS_AUDIT_PATH || './data/audit.log';
-  const server = new JarvisServer(PORT, AUDIT_PATH, STATE_PATH);
+  loadLocalEnvironmentFile();
+  const config = readRuntimeConfig();
+  const { JarvisServer } = await import('./server/server.js');
+  const server = new JarvisServer(config.port, config.auditPath, config.deviceStatePath);
+
+  if (config.ownerTokenStatus !== 'configured') {
+    console.warn(`${ownerEnrollmentStatusMessage(config.ownerTokenStatus)} Run node scripts/configure-owner-token.mjs after copying .env.example to .env.`);
+  }
 
   console.log('----------------------------------------------------');
   console.log('🤖 Starting JARVIS Secure Personal AI Assistant POC');
@@ -12,14 +16,15 @@ async function main() {
   console.log(`- Architecture: Modular Monolith`);
   console.log(`- Security: Default-Deny Policy Gateway & Tamper-Evident Audit`);
   console.log(`- Host: Windows 11 Home`);
-  console.log(`- Companion Endpoint: http://127.0.0.1:${PORT}`);
+  console.log(`- Companion Endpoint: http://127.0.0.1:${config.port}`);
   console.log('----------------------------------------------------');
 
   await server.start();
-  console.log(`✅ JARVIS Core service is listening on http://127.0.0.1:${PORT}`);
+  console.log(`✅ JARVIS Core service is listening on http://127.0.0.1:${config.port}`);
 }
 
 main().catch((err) => {
-  console.error('Fatal initialization error:', err);
+  const message = err instanceof Error ? err.message : 'Unknown startup error';
+  console.error('Fatal initialization error:', message);
   process.exit(1);
 });

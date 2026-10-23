@@ -17,7 +17,7 @@
       <div class="hud-brand">
         <div class="hud-core-dot" id="core-status-dot"></div>
         <span class="hud-title">J.A.R.V.I.S.</span>
-        <span class="hud-version">OS v0.7.0 // PROTOCOL: ZERO-TRUST</span>
+        <span class="hud-version">ZERO-TRUST // <a class="hud-nav-link" href="/companion">DEVICE ENROLLMENT</a></span>
       </div>
 
       <div class="hud-telemetry">
@@ -30,8 +30,8 @@
           <span class="tel-val success" id="tel-policy">DEFAULT-DENY</span>
         </div>
         <div class="telemetry-item">
-          <span class="tel-label">AUDIT HASH:</span>
-          <span class="tel-val success" id="tel-audit">CHAIN OK</span>
+          <span class="tel-label">CORE STATE:</span>
+          <span class="tel-val" id="tel-audit">CHECKING</span>
         </div>
         <div class="telemetry-item">
           <span class="tel-label">HOST LINK:</span>
@@ -51,14 +51,14 @@
       <!-- Left Panel: Device Identity & Security Status -->
       <aside class="hud-panel hud-panel-left glass">
         <div class="panel-header">
-          <h3>AUTHENTICATED ENCLAVE</h3>
+          <h3>DEVICE AUTHENTICATION</h3>
           <span class="panel-tag" id="enclave-tag">STANDBY</span>
         </div>
         <div class="panel-content">
           <div class="stat-card">
             <span class="stat-title">COMPANION DEVICE</span>
-            <div class="stat-value" id="hud-device-name">Pixel Companion</div>
-            <div class="stat-sub" id="hud-device-id">dev-ed25519-bound</div>
+            <div class="stat-value" id="hud-device-name">Checking session…</div>
+            <div class="stat-sub" id="hud-device-id">--</div>
           </div>
 
           <div class="stat-card">
@@ -73,8 +73,7 @@
           <div class="stat-card">
             <span class="stat-title">AUDIT LEDGER STREAM</span>
             <div class="audit-ticker" id="hud-audit-stream">
-              <div class="audit-line">[SYS] Core service initialized</div>
-              <div class="audit-line">[AUTH] Ed25519 enclave ready</div>
+              <div class="audit-line">[SYS] Checking core connection…</div>
             </div>
           </div>
         </div>
@@ -97,7 +96,7 @@
         <!-- Assistant Status Display -->
         <div class="hud-status-banner">
           <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
-          <p class="hud-state-sub" id="hud-state-sub">Hold Space or Ctrl+M, click the Arc Core, or push-to-talk.</p>
+          <p class="hud-state-sub" id="hud-state-sub">Hold Space or Ctrl+M, click the Arc Core, or use the push-to-talk button.</p>
         </div>
 
         <!-- Transcript Review & Confirmation Box -->

@@ -26,10 +26,11 @@ The current `fix` work addresses cryptographic session establishment, request si
 
 ## Run locally (Windows PowerShell)
 
-Use a strong owner-control token for local enrollment. Do not commit it to source control or place it in the README.
+Create a private `.env` from the committed template. Node.js 24's built-in dotenv loader reads `.env` before application startup; variables already present in the process environment take precedence. The file is ignored by Git.
 
 ```powershell
-$env:JARVIS_OWNER_CONTROL_TOKEN = [guid]::NewGuid().ToString('N')
+Copy-Item .env.example .env
+node scripts/configure-owner-token.mjs
 npm ci
 npm run build
 npm run lint
@@ -37,7 +38,27 @@ npm test
 npm start
 ```
 
-The owner token is required for `POST /api/enrollment/challenge`. The browser companion prompts for it when starting an enrollment challenge. Keep the token in the current shell session; do not paste it into issue reports or logs.
+Open **http://127.0.0.1:3000/** for the primary cinematic HUD with push-to-talk and text requests. The secure browser enrollment page is at **http://127.0.0.1:3000/companion**; after enrolling, return to `/`. `/hud` remains an alias for the primary HUD.
+
+Voice recognition uses the browser's `SpeechRecognition` / `webkitSpeechRecognition` API when available and the page runs in a secure context. Capture starts only on an explicit push-to-talk interaction, stops at 15 seconds, and requires transcript review plus a separate submit action. Speech recognition may process audio through the browser vendor or a cloud service; local-only processing is not guaranteed. Text requests remain available when voice is unsupported or blocked.
+
+WSL/Linux uses the equivalent copy command: `cp .env.example .env`, followed by `node scripts/configure-owner-token.mjs`. The repository's Linux/WSL runtime acceptance is still outstanding.
+
+### Environment variables
+
+| Variable | Required? | Default / behavior |
+|---|---|---|
+| `PORT` | Optional | `3000`; must be an integer from 1 through 65535. The server binds to `127.0.0.1`; there is no configurable host or application URL. |
+| `JARVIS_DEVICE_STATE_PATH` | Optional | `./data/devices.json` for persisted device state. |
+| `JARVIS_AUDIT_PATH` | Optional | `./data/audit.log` for the tamper-evident audit log. |
+| `JARVIS_OWNER_CONTROL_TOKEN` | Required for device enrollment only | Generate locally with the script above. Must be 32–256 URL-safe characters. Missing, placeholder, or weak values disable enrollment; JARVIS still starts, and the challenge endpoint fails closed. |
+| `OPENAI_API_KEY` | Not used by this version | The template contains a placeholder only. The current planner is deterministic and local; no OpenAI provider reads this variable or sends cloud requests. Replacing the placeholder does not enable a provider. |
+
+`NODE_ENV`, session lifetimes, enrollment challenge lifetime, and cryptographic keys are not environment-configurable in this implementation and are therefore not listed as supported settings. No owner token or API key is required to run the local deterministic planner and inspect the public health status.
+
+`node scripts/configure-owner-token.mjs` writes 32 random bytes as a hexadecimal owner token directly into `.env` without displaying it. It refuses to overwrite an already valid token. To rotate one, use the application's device/session revocation and re-enrollment procedures; do not replace it casually if enrolled devices depend on the current owner workflow. The owner token authorizes enrollment challenges only; it is not an OpenAI API key or a device session credential.
+
+To use OpenAI in a future supported provider integration, create an API key in the owner's official OpenAI Platform account and place it locally in `OPENAI_API_KEY`. Do not put it in `JARVIS_OWNER_CONTROL_TOKEN`. The present application does not validate or consume that setting. Never commit `.env`, paste its contents into reports, or share screenshots containing it. If startup reports an invalid `PORT` or unreadable `.env`, correct that local setting; if owner enrollment is reported disabled, generate a token with the script and restart.
 
 ## API surface
 

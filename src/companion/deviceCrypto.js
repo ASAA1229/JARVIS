@@ -175,6 +175,9 @@
       headers,
       body: bodyText,
       cache: 'no-store',
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal: options.signal,
     });
   }
 

@@ -2,7 +2,7 @@
 
 - **Audit date:** 2026-10-23
 - **Baseline audited source ref:** `new` at `a125e1be891edd1c6198be76e0d534366c728cb3`
-- **Current remediation branch:** `fix`, based on `21c02aee19471a048d3391d1515746d25a87247b`
+- **Current remediation branch:** `fix`, based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`
 - **Current remediation state:** uncommitted working-tree changes; the exact tested tree has no commit SHA yet.
 - **Audit branch ownership:** `origin/test` exists but no local `test` branch is checked out; this working-tree update remains uncommitted and must be placed on the evidence branch under repository policy.
 - **Scope:** source-level review of API routes, cryptographic identity/session flow, policy/approval lifecycle, execution adapters, verification, audit logging, HUD, voice lifecycle, persistence and automated-test coverage.
@@ -13,7 +13,7 @@
 
 This document began as a static baseline audit of `a125e1b`. The critical/high findings below describe that baseline, not the current remediation working tree. The remediation state and its verification evidence are recorded immediately below; remaining acceptance gaps continue to block Milestone 7 completion.
 
-### Current remediation and verification (working tree based on `21c02aee19471a048d3391d1515746d25a87247b`)
+### Current remediation and verification (working tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`)
 
 | Baseline finding area | Current implementation / regression evidence | Status |
 |---|---|---|
@@ -27,7 +27,7 @@ This document began as a static baseline audit of `a125e1b`. The critical/high f
 | Browser voice lifecycle, transcript disposal, CSP, and keyboard behavior | Edge smoke covers simulated recognition cancel/late result/discard/timeout, text fallback, keyboard shortcut, reduced motion, and runtime console/page errors | Fixed and simulated-browser-tested; physical microphone/vendor behavior unverified |
 | Current hosted CI and platform/device acceptance | `gh run list` could not authenticate; no new CI run was verified. Native Android/two-phone and owner Windows 11 acceptance were not run. | Outstanding; blocks completion |
 
-**Local verification evidence (2026-10-23, Windows 11 Home build 26300, Node v24.16.0, npm 11.13.0, Microsoft Edge 155.0.4283.62):** `npm ci` PASS; `npm run build` PASS; `npm run lint` PASS; `npm test` PASS (51 tests, 0 failures, 0 skipped); `npm run test:browser` PASS; `npm audit --audit-level=low` PASS (0 vulnerabilities). Read-only Windows OS, memory, battery, and C: drive probes returned verified results. These commands ran against a dirty working tree based on the SHA above; they do not establish a commit-specific hosted CI result.
+**Local verification evidence (2026-10-23, Windows 11 Home build 26300, Node v24.16.0, npm 11.13.0, Microsoft Edge 155.0.4283.62):** `npm ci` PASS; `npm run build` PASS; `npm run lint` PASS; `npm test` PASS (51 tests, 0 failures, 0 skipped); `npm run test:browser` PASS after correcting the harness timeout clock; `npm audit --audit-level=low` PASS (0 vulnerabilities); `npm ls --depth=0` PASS. A sandbox test attempt failed before loading tests with Node `uv_os_get_passwd` ENOMEM; the approved outside-sandbox retry passed. Read-only Windows OS, memory, battery, and C: drive probes returned verified results in the earlier audit. These commands ran against a dirty working tree based on the SHA above; they do not establish a commit-specific hosted CI result. The Android prototype is isolated on the `new` worktree, not integrated or built; see [final integration acceptance](final-integration-acceptance-2026-10-23.md).
 
 The most urgent findings are:
 1. **Critical — HUD session authentication bypass:** `POST /api/hud/session` directly inserts a session into the identity manager's private session map and returns it without proof-of-possession of the device private key.
@@ -254,7 +254,7 @@ On the MSI: run read-only system info, RAM, battery and C: disk queries; launch 
 Milestone 7 stays **INCOMPLETE / BLOCKED** until all conditions hold:
 - [x] F-01 and F-02 fixed and regression-tested in the current working tree.
 - [ ] F-03 through F-10 fully verified/dispositioned; F-06/F-07 still require physical/vendor acceptance evidence.
-- [ ] Full automated suite rerun from an exact committed `fix` SHA; current successful run used an uncommitted tree based on `21c02aee19471a048d3391d1515746d25a87247b`.
+- [ ] Full automated suite rerun from an exact committed `fix` SHA; current successful run used an uncommitted tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`.
 - [x] TypeScript build and lint pass locally.
 - [ ] Every HTTP endpoint has exhaustive contract and security-negative test coverage; current route coverage is broad but not exhaustive.
 - [x] Edge browser smoke covers CSP/XSS, truthful task outcomes and simulated voice lifecycle.

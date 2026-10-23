@@ -2,7 +2,7 @@
 
 - **Audit date:** 2026-10-23
 - **Branch:** `fix`
-- **HEAD / base SHA:** `21c02aee19471a048d3391d1515746d25a87247b`
+- **HEAD / base SHA:** `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`
 - **Tree status:** uncommitted working-tree changes are present. This is the base SHA, not a commit containing the exact audited source.
 - **Scope:** current code and automated evidence; historical findings are retained with updated dispositions.
 
@@ -47,4 +47,4 @@ The count includes findings first reported against the old `new` baseline and th
 6. WSL Ubuntu 2 is present, but Linux Node.js is unavailable; no Linux test was run.
 7. Hosted CI cannot be confirmed for the dirty working tree. No commit, push, branch switch, or PR was created.
 
-Milestone 7 remains **BLOCKED — NOT COMPLETE**. See the [acceptance matrix](milestones-1-to-7-acceptance-audit.md), [test evidence](milestones-1-to-7-test-results.md), and [security/API audit](security-api-feature-audit-2026-10-23.md).
+Milestone 7 remains **BLOCKED — NOT COMPLETE**. M9 source exists only in the separate uncommitted `new` worktree and is not integrated. See the [final integration acceptance report](final-integration-acceptance-2026-10-23.md), [acceptance matrix](milestones-1-to-7-acceptance-audit.md), [test evidence](milestones-1-to-7-test-results.md), and [security/API audit](security-api-feature-audit-2026-10-23.md).

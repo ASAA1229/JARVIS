@@ -105,6 +105,51 @@ describe('JARVIS Core Security & Lifecycle Verification', () => {
     assert.ok(osData.arch);
   });
 
+  test('FLOW-PLANNER-FAIL: Planner exception returns a truthful failed result without executing an adapter', async () => {
+    let adapterCalls = 0;
+    jarvis.planner.generatePlan = async () => { throw new Error('private diagnostic detail'); };
+    jarvis.systemAdapter.getOsInfo = async () => {
+      adapterCalls++;
+      throw new Error('must not execute');
+    };
+
+    const result = await jarvis.submitRequest(companionSessionId, 'What is the OS version?');
+    assert.strictEqual(result.state, TaskState.FAILED);
+    assert.strictEqual(result.outcome, VerificationOutcome.VERIFIED_FAILURE);
+    assert.strictEqual(result.verified, false);
+    assert.match(result.message, /planner failed/i);
+    assert.doesNotMatch(result.message, /private diagnostic detail/);
+    assert.strictEqual(adapterCalls, 0);
+    assert.ok(jarvis.audit.getPublicRecords().some((record) => record.eventType === 'PLANNING_FAILED'));
+    assert.ok(!JSON.stringify(jarvis.audit.getPublicRecords()).includes('private diagnostic detail'));
+  });
+
+  test('FLOW-SYSTEM-FACTS: Memory, battery, and disk prompts select their matching read-only adapters', async () => {
+    const memory = await jarvis.submitRequest(companionSessionId, 'Check system memory and RAM');
+    assert.strictEqual(memory.state, TaskState.COMPLETED);
+    assert.strictEqual(memory.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.ok((memory.data as { totalBytes?: number })?.totalBytes);
+
+    const battery = await jarvis.submitRequest(companionSessionId, 'What is the battery status?');
+    assert.ok([TaskState.COMPLETED, TaskState.PARTIAL].includes(battery.state));
+    assert.ok(battery.data);
+
+    const disk = await jarvis.submitRequest(companionSessionId, 'Check C: drive disk space');
+    assert.strictEqual(disk.state, TaskState.COMPLETED);
+    assert.strictEqual(disk.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.ok((disk.data as { totalBytes?: number })?.totalBytes);
+  });
+
+  test('FLOW-UNSUPPORTED: Unsupported and destructive requests explain denial without running adapters', async () => {
+    const unsupported = await jarvis.submitRequest(companionSessionId, 'Tell me a joke');
+    assert.strictEqual(unsupported.state, TaskState.FAILED);
+    assert.match(unsupported.message, /Could not map request/i);
+
+    const destructive = await jarvis.submitRequest(companionSessionId, 'Delete system files');
+    assert.strictEqual(destructive.state, TaskState.FAILED);
+    assert.match(destructive.message, /prohibited/i);
+  });
+
   test('FLOW-02: Policy Gateway enforces approval for state-changing app launch', async () => {
     const res = await jarvis.submitRequest(companionSessionId, 'Please launch Notepad');
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);

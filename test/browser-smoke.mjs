@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
 const port = 3998;
-const ownerToken = 'browser-e2e-owner-token-2026';
+const ownerToken = 'browser-e2e-owner-token-2026-0123456789abcdef';
 const stamp = String(Date.now());
 const statePath = `./data/browser-smoke-devices-${stamp}.json`;
 const auditPath = `./data/browser-smoke-audit-${stamp}.log`;
@@ -64,6 +64,8 @@ try {
   const context = await browser.newContext();
   const pageErrors = [];
   const consoleErrors = [];
+  let expectedUnauthorizedRequest = false;
+  let expectedUnauthorizedConsoleErrors = 0;
   const auditRequests = [];
   const page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -71,17 +73,22 @@ try {
     if (new URL(request.url()).pathname === '/api/audit') auditRequests.push(request.url());
   });
   page.on('console', (message) => {
-    if (message.type() === 'error' && !message.text().toLowerCase().includes('favicon.ico')) consoleErrors.push(message.text());
+    if (message.type() !== 'error' || message.text().toLowerCase().includes('favicon.ico')) return;
+    if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
+      expectedUnauthorizedConsoleErrors++;
+    } else {
+      consoleErrors.push(message.text());
+    }
   });
 
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/companion`, { waitUntil: 'domcontentloaded' });
   page.on('dialog', async (dialog) => {
     if (dialog.type() === 'prompt') await dialog.accept(ownerToken);
     else await dialog.dismiss();
   });
 
   // Owner-authorized challenge -> Ed25519 proof-of-possession enrollment -> signed session.
-  await page.locator('#btn-simulate-phone').click();
+  await page.locator('#btn-enroll-browser').click();
   try {
     await page.locator('#enrollment-registered').waitFor({ state: 'visible', timeout: 15000 });
   } catch {
@@ -94,13 +101,19 @@ try {
   // Verify a signed read-only API request returns a completed result.
   await page.locator('#input-request').fill('What is the OS version?');
   await page.locator('#btn-send-request').click();
-  await page.locator('#tasks-feed .success').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById('tasks-feed')?.innerText.includes(
+    'Outcome verified: Operation outcome successfully verified (system:get_os_info)',
+  ));
 
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
   const approval = page.locator('#approvals-container .approval-card').first();
-  await approval.waitFor({ state: 'visible', timeout: 10000 });
+  try {
+    await approval.waitFor({ state: 'visible', timeout: 10000 });
+  } catch {
+    throw new Error(`Expected approval card after an allowlisted launch request. Companion feed: ${await page.locator('#tasks-feed').innerText()}`);
+  }
   const injectedImages = await page.locator('#approvals-container img').count();
   const xssExecuted = await page.evaluate(() => window.__xss === 1);
   if (injectedImages !== 0 || xssExecuted) throw new Error('Potential DOM XSS in approval rendering');
@@ -130,7 +143,7 @@ try {
     Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: MockSpeechRecognition });
     const nativeSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = (callback, milliseconds, ...args) =>
-      nativeSetTimeout(callback, milliseconds === 15000 ? 200 : milliseconds, ...args);
+      nativeSetTimeout(callback, milliseconds === 15000 ? 5000 : milliseconds, ...args);
   });
   const hud = await context.newPage();
   hud.on('pageerror', (error) => pageErrors.push(error.message));
@@ -138,13 +151,50 @@ try {
     if (new URL(request.url()).pathname === '/api/audit') auditRequests.push(request.url());
   });
   hud.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    if (message.type() !== 'error') return;
+    if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
+      expectedUnauthorizedConsoleErrors++;
+    } else {
+      consoleErrors.push(message.text());
+    }
   });
-  await hud.goto(`${baseUrl}/hud`, { waitUntil: 'domcontentloaded' });
+  await hud.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   await hud.getByText('ENROLLED & AUTHENTICATED').waitFor({ state: 'visible', timeout: 10000 });
-  await hud.locator('#hud-text-input').fill('What is the OS version?');
+  let hudRequestCount = 0;
+  await hud.route('**/api/request', async (route) => {
+    hudRequestCount++;
+    await delay(250);
+    await route.continue();
+  });
+  await hud.locator('#hud-text-input').fill('Check system memory and RAM');
   await hud.locator('#btn-hud-send').click();
+  await hud.locator('#btn-hud-send').dispatchEvent('click');
   await hud.locator('#hud-tasks-feed .success').first().waitFor({ state: 'visible', timeout: 10000 });
+  if (hudRequestCount !== 1) throw new Error(`Duplicate submit guard allowed ${hudRequestCount} requests`);
+  if (!(await hud.locator('#hud-tasks-feed').innerText()).includes('totalBytes')) {
+    throw new Error('System memory request did not return memory evidence through the primary UI');
+  }
+  await hud.unroute('**/api/request');
+
+  await hud.route('**/api/request', (route) => route.fulfill({
+    status: 401,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'Session expired; establish a new signed session.' }),
+  }));
+  expectedUnauthorizedRequest = true;
+  await hud.locator('#hud-text-input').fill('Check memory after session expiry');
+  await hud.locator('#btn-hud-send').click();
+  await hud.waitForFunction(() => document.getElementById('hud-state-sub')?.textContent?.includes(
+    'HTTP 401: Session expired; establish a new signed session.',
+  ));
+  if (await hud.locator('#hud-text-input').inputValue() !== 'Check memory after session expiry') {
+    throw new Error('A failed request cleared the user input instead of preserving it for recovery');
+  }
+  await hud.unroute('**/api/request');
+  expectedUnauthorizedRequest = false;
+  if (expectedUnauthorizedConsoleErrors !== 1) {
+    throw new Error(`Expected one browser console notice for the deliberate HTTP 401 response, observed ${expectedUnauthorizedConsoleErrors}`);
+  }
 
   // An ambiguous approval result must never be presented as verified success.
   await hud.locator('#hud-text-input').fill('Please launch Notepad');
@@ -228,7 +278,7 @@ try {
   // The 15-second capture bound stops recognition and remains visible to the user.
   await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
   await hud.mouse.down();
-  await hud.getByText('VOICE TIME LIMIT').waitFor({ state: 'visible', timeout: 3000 });
+  await hud.getByText('VOICE TIME LIMIT').waitFor({ state: 'visible', timeout: 7000 });
   await hud.mouse.up();
 
   // Browser permission and recognizer failures must be explicit and leave text available.
@@ -255,7 +305,19 @@ try {
     throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nExpected permission error count: ${expectedRecognitionErrors.length}`);
   }
 
-  console.log('BROWSER_E2E_PASS: owner challenge, Ed25519 enrollment, signed requests, XSS regression, approval rejection, uncertain-outcome UI, HUD session restore, text fallback, voice cancel/discard/late-result/timeout/permission-error/keyboard UI lifecycle, reduced motion, least-privilege audit polling.');
+  const insecurePage = await context.newPage();
+  await insecurePage.addInitScript(() => {
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false });
+  });
+  await insecurePage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await insecurePage.getByText('SECURE CONTEXT REQUIRED').waitFor({ state: 'visible' });
+  await insecurePage.locator('#hud-text-input').fill('Text remains available without a secure voice context');
+  if (!(await insecurePage.locator('#hud-text-input').isVisible())) {
+    throw new Error('Text fallback was hidden in an insecure context');
+  }
+  await insecurePage.close();
+
+  console.log('BROWSER_E2E_PASS: primary HUD routing, owner challenge, Ed25519 enrollment, signed requests, duplicate submission guard, expired-session error rendering, XSS regression, approval rejection, uncertain-outcome UI, HUD session restore, text fallback, insecure-context voice restriction, voice cancel/discard/late-result/timeout/permission-error/keyboard UI lifecycle, reduced motion, least-privilege audit polling.');
 } catch (error) {
   console.error('BROWSER_E2E_FAIL', error);
   console.error(stdout);

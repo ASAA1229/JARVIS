@@ -6,12 +6,13 @@ import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
+import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
   private server: ReturnType<typeof createServer>;
   private port: number;
-  private readonly ownerControlToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;
+  private readonly ownerControlToken: string | undefined;
 
   constructor(
     port: number = 3000,
@@ -19,6 +20,7 @@ export class JarvisServer {
     statePath?: string
   ) {
     this.port = port;
+    this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath);
     this.server = createServer(this.handleRequest.bind(this));
   }
@@ -72,7 +74,10 @@ export class JarvisServer {
 
     try {
       // 1. Static UI routes (Companion & HUD)
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/hud')) {
+        return this.serveStatic('hud.html', 'text/html', res);
+      }
+      if (req.method === 'GET' && (url.pathname === '/companion' || url.pathname === '/companion/index.html')) {
         return this.serveStatic('index.html', 'text/html', res);
       }
       if (req.method === 'GET' && url.pathname === '/style.css') {
@@ -89,7 +94,7 @@ export class JarvisServer {
         res.end();
         return;
       }
-      if (req.method === 'GET' && (url.pathname === '/hud' || url.pathname === '/hud/index.html')) {
+      if (req.method === 'GET' && url.pathname === '/hud/index.html') {
         return this.serveStatic('hud.html', 'text/html', res);
       }
       if (req.method === 'GET' && url.pathname === '/hud/hud.css') {

@@ -2,8 +2,8 @@
 
 - **Execution date:** 2026-10-23
 - **Branch:** `fix`
-- **HEAD SHA for all recorded runs:** `21c02aee19471a048d3391d1515746d25a87247b`
-- **Important source identity limitation:** source, test, workflow, and documentation changes were uncommitted. The SHA is the base commit and does not identify the exact tested working tree. No commit was requested or created.
+- **HEAD SHA for current verification:** `9ead85cdacb7e9dedf855605a6d0942760ea3a6f` (`origin/fix`)
+- **Important source identity limitation:** the M1–7 source and primary tests are in this commit. The browser test timeout correction and documentation edits are uncommitted, so the passing browser workflow used a locally modified harness. No commit was created by this pass.
 - **Remote:** `origin/fix` was at the same SHA at baseline. The current source tree is not represented by that remote commit.
 
 ## Environment
@@ -21,16 +21,16 @@
 
 ## Final verification
 
-Every command below ran against the same uncommitted working tree based on `21c02aee19471a048d3391d1515746d25a87247b`.
+The current build, lint, and full unit/integration test suite were rerun against committed `fix` HEAD `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`. Browser smoke used the uncommitted timeout correction described below. The focused iteration history below is retained as historical evidence from earlier snapshots; it is not a claim those earlier runs used identical files.
 
 | Command | Exit | Passed | Failed | Skipped | Result |
 |---|---:|---:|---:|---:|---|
 | `npm ci` | 0 | — | — | — | Lockfile install succeeded; 7 packages added, npm reported 0 vulnerabilities. |
 | `npm run build` | 0 | — | — | — | TypeScript production build succeeded. |
 | `npm run lint` | 0 | — | — | — | Script is `tsc --noEmit`; type-check succeeded. |
-| `npm test` | 0 | 51 | 0 | 0 | All test suites passed, including live HTTP, persistence, regression, and server lifecycle tests. |
-| `npm run test:browser` | 0 | 1 workflow | 0 | 0 | `BROWSER_E2E_PASS` in real Edge against the local server. Web Speech recognition is simulated; the uncertain approval response is intercepted. |
-| `npm audit --audit-level=low` | 0 | — | — | — | 0 known dependency vulnerabilities. |
+| `npm test` | 0 | 51 | 0 | 0 | All test suites passed, including live HTTP, persistence, regression, and server lifecycle tests. First sandbox run failed before tests loaded with Node `uv_os_get_passwd` ENOMEM; the same command passed outside the sandbox. |
+| `npm run test:browser` | 0 | 1 workflow | 0 | 0 | `BROWSER_E2E_PASS` in real Edge against the local server after fixing the test's accelerated 15-second voice timeout (200 ms caused expiry before assertion; now 5 seconds). Web Speech recognition is simulated; the uncertain approval response is intercepted. |
+| `npm audit --audit-level=low` | 0 | — | — | — | 0 known dependency vulnerabilities. First sandbox request could not reach the registry advisory endpoint; approved network retry succeeded. |
 | `npm ls --depth=0` | 0 | — | — | — | Declared top-level dependencies resolve from the installed lockfile. |
 
 The browser script does not report a test-case count; it is recorded as one successful browser workflow, not as a TAP test. Its mocked boundaries are the Web Speech recognizer and the ambiguous approval response. Enrollment, device-key signing, HTTP requests, static assets, CSP, real DOM rendering, status polling, and the read-only success path use the local server/browser implementation.

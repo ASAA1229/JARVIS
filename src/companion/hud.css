@@ -160,6 +160,9 @@ body.hud-body {
   letter-spacing: 1px;
 }
 
+.hud-nav-link { color: var(--cyan-glow); text-decoration: none; }
+.hud-nav-link:hover, .hud-nav-link:focus-visible { text-decoration: underline; }
+
 .hud-telemetry {
   display: flex;
   gap: 20px;

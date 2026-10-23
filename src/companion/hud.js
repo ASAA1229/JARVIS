@@ -5,15 +5,19 @@ let isMicMuted = false;
 let isListening = false;
 let speechRecognizer = null;
 let speechRecognitionConstructor = null;
+let speechUnavailableReason = '';
 let audioContext = null;
 let animationFrameId = null;
 let voiceTimeoutId = null;
 let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
+let isSubmitting = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
+  try { isMicMuted = localStorage.getItem('jarvis.mic-muted') === 'true'; } catch { /* Privacy controls remain session-local if storage is blocked. */ }
   initSpeechRecognition();
   setupEventListeners();
+  updateMuteControl();
   initWaveformCanvas();
   await ensureEnrolledDevice();
   pollStatus();
@@ -95,9 +99,7 @@ function setupEventListeners() {
   document.getElementById('btn-transcript-submit').addEventListener('click', () => {
     const transcriptInput = document.getElementById('transcript-input');
     const val = transcriptInput.value.trim();
-    transcriptInput.value = '';
-    document.getElementById('transcript-box').classList.add('hidden');
-    if (val) submitDirective(val);
+    if (val) void submitDirective(val);
   });
 
   document.getElementById('btn-transcript-cancel').addEventListener('click', () => {
@@ -107,15 +109,12 @@ function setupEventListeners() {
   // Privacy Mute Toggle
   btnMute.addEventListener('click', () => {
     isMicMuted = !isMicMuted;
-    btnMute.setAttribute('aria-pressed', String(isMicMuted));
+    try { localStorage.setItem('jarvis.mic-muted', String(isMicMuted)); } catch { /* Keep the control usable without storage. */ }
+    updateMuteControl();
     if (isMicMuted) {
       cancelVoiceCapture();
-      btnMute.innerText = 'MIC: MUTED';
-      btnMute.classList.add('muted');
       setAssistantState('PRIVACY MODE — MIC MUTED', 'Microphone hardware access disabled.');
     } else {
-      btnMute.innerText = 'MIC: ARMED';
-      btnMute.classList.remove('muted');
       setAssistantState('STANDBY', 'Microphone armed for push-to-talk.');
     }
   });
@@ -134,14 +133,20 @@ function setupEventListeners() {
     chip.addEventListener('click', () => {
       const cmd = chip.getAttribute('data-cmd');
       textInput.value = cmd;
-      submitDirective(cmd);
+      void submitDirective(cmd);
     });
   });
 }
 
 function initSpeechRecognition() {
+  if (!window.isSecureContext) {
+    speechRecognitionConstructor = null;
+    speechUnavailableReason = 'Voice input needs HTTPS or a trusted localhost origin. Text input remains available.';
+    return;
+  }
   speechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   if (!speechRecognitionConstructor) {
+    speechUnavailableReason = 'This browser does not support speech recognition. Text input remains available.';
     console.warn('SpeechRecognition API not available in browser. Push-to-talk will use text input fallback.');
   }
 }
@@ -203,7 +208,8 @@ function startVoiceCapture() {
   }
   if (isListening) return;
   if (!speechRecognitionConstructor) {
-    setAssistantState('SPEECH API UNAVAILABLE', 'Use the text input field; no audio capture was started.');
+    setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
+      speechUnavailableReason || 'Use the text input field; no audio capture was started.');
     return;
   }
 
@@ -278,8 +284,7 @@ function handleTextSubmit() {
   const input = document.getElementById('hud-text-input');
   const val = input.value.trim();
   if (!val) return;
-  input.value = '';
-  submitDirective(val);
+  void submitDirective(val);
 }
 
 async function submitDirective(text) {
@@ -288,6 +293,20 @@ async function submitDirective(text) {
     addFeedItem('failed', 'Directive not sent: no authenticated session.');
     return;
   }
+  if (isSubmitting) return;
+  isSubmitting = true;
+  const sendButton = document.getElementById('btn-hud-send');
+  const transcriptSubmit = document.getElementById('btn-transcript-submit');
+  const textInput = document.getElementById('hud-text-input');
+  const transcriptInput = document.getElementById('transcript-input');
+  const sourceWasTranscript = !document.getElementById('transcript-box').classList.contains('hidden') &&
+    transcriptInput.value.trim() === text;
+  const originalButtonText = sendButton.textContent;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  sendButton.disabled = true;
+  transcriptSubmit.disabled = true;
+  sendButton.textContent = 'TRANSMITTING…';
   setAssistantState('PROCESSING DIRECTIVE...', 'Evaluating via Policy Gateway...');
   addFeedItem('directive', text);
 
@@ -295,10 +314,9 @@ async function submitDirective(text) {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
       body: { text },
+      signal: controller.signal,
     });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Request failed with HTTP ' + res.status);
+    const data = await readApiResponse(res);
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
@@ -316,10 +334,50 @@ async function submitDirective(text) {
       setAssistantState('EXECUTION DENIED / FAILED', data.message || data.error);
       addFeedItem('failed', `Denied: ${data.message || data.error}`);
     }
+    if (textInput.value.trim() === text) textInput.value = '';
+    if (sourceWasTranscript) {
+      transcriptInput.value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+    }
   } catch (err) {
-    setAssistantState('COMMUNICATION FAILURE', err.message);
-    addFeedItem('failed', `Network error: ${err.message}`);
+    const message = controller.signal.aborted
+      ? 'Request timed out; the server may have received it. Check the task feed before retrying.'
+      : (err instanceof Error ? err.message : 'Request failed');
+    setAssistantState('COMMUNICATION FAILURE', message);
+    addFeedItem('failed', message);
+    if (sourceWasTranscript && !textInput.value.trim()) textInput.value = text;
+  } finally {
+    clearTimeout(timeoutId);
+    isSubmitting = false;
+    sendButton.disabled = false;
+    transcriptSubmit.disabled = false;
+    sendButton.textContent = originalButtonText;
   }
+}
+
+async function readApiResponse(response) {
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; } catch {
+    payload = { error: raw.slice(0, 240) || 'The server returned a non-JSON response' };
+  }
+  if (!response.ok) {
+    const explanation = typeof payload.error === 'string' ? payload.error :
+      typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(`HTTP ${response.status}: ${explanation}`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('The server returned an invalid response format');
+  }
+  return payload;
+}
+
+function updateMuteControl() {
+  const button = document.getElementById('btn-toggle-mic-mute');
+  if (!button) return;
+  button.setAttribute('aria-pressed', String(isMicMuted));
+  button.innerText = isMicMuted ? 'MIC: MUTED' : 'MIC: ARMED';
+  button.classList.toggle('muted', isMicMuted);
 }
 
 function renderApprovalCard(approvalId, taskId, requestText, message) {
@@ -455,7 +513,11 @@ async function ensureEnrolledDevice() {
     document.getElementById('hud-device-name').textContent = currentDevice.name;
     document.getElementById('hud-device-id').textContent = currentDevice.id;
     document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
-    setAssistantState('STANDBY', 'Device-bound session established. Confirm all transcribed directives before execution.');
+    if (speechUnavailableReason) {
+      setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED', speechUnavailableReason);
+    } else {
+      setAssistantState('STANDBY', 'Device-bound session established. Confirm all transcribed directives before execution.');
+    }
   } catch (err) {
     currentSession = null;
     currentDevice = null;
@@ -473,10 +535,13 @@ async function pollStatus() {
     if (!res.ok) throw new Error('Status request failed');
     if (data.status === 'ONLINE') {
       document.getElementById('core-status-dot').classList.remove('degraded');
-      document.getElementById('tel-audit').innerText = 'AUTH REQUIRED';
+      document.getElementById('tel-audit').innerText = 'CORE HEALTHY';
     } else if (data.status === 'DEGRADED') {
       document.getElementById('core-status-dot').classList.add('degraded');
+      document.getElementById('tel-audit').innerText = 'DEGRADED';
       setAssistantState('CORE DEGRADED', 'Security state needs attention. State-changing tasks must remain blocked.');
+    } else {
+      throw new Error('Unknown server status response');
     }
   } catch {
     document.getElementById('core-status-dot').classList.add('degraded');

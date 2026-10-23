@@ -1,8 +1,9 @@
-// Companion UI Logic & Local Cryptographic Simulation
+// Browser companion UI using the real device cryptography module.
 let currentDevice = null;
 let currentSession = null;
 let activeChallenge = null;
 let pendingApprovals = new Map();
+let isRequestSubmitting = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
@@ -14,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupEventListeners() {
   document.getElementById('btn-create-challenge').addEventListener('click', handleCreateChallenge);
-  document.getElementById('btn-simulate-phone').addEventListener('click', handleBrowserDeviceEnrollment);
+  document.getElementById('btn-enroll-browser').addEventListener('click', handleBrowserDeviceEnrollment);
   document.getElementById('btn-revoke-device').addEventListener('click', handleRevokeDevice);
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
@@ -147,25 +148,33 @@ async function handleRevokeDevice() {
 
 async function handleSendRequest() {
   const input = document.getElementById('input-request');
+  const sendButton = document.getElementById('btn-send-request');
   const text = input.value.trim();
   if (!text) return;
+  if (isRequestSubmitting) return;
 
   if (!currentSession) {
     addFeedItem('system-failed', 'Request not sent: secure device enrollment is not configured.');
     return;
   }
 
-  input.value = '';
+  isRequestSubmitting = true;
+  sendButton.disabled = true;
+  const originalButtonText = sendButton.textContent;
+  sendButton.textContent = 'Sending…';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
   addFeedItem('user', text);
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
       body: { text },
+      signal: controller.signal,
     });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Request failed with HTTP ' + res.status);
+    const data = await readApiResponse(res);
+    input.value = '';
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       addApprovalCard(data.approvalId, data.taskId, text, data.message);
@@ -182,8 +191,33 @@ async function handleSendRequest() {
 
     fetchAuditLogs();
   } catch (err) {
-    addFeedItem('system-failed', 'Network / server communication error: ' + err.message);
+    const message = controller.signal.aborted
+      ? 'Request timed out; the server may have received it. Check task state before retrying.'
+      : (err instanceof Error ? err.message : 'Request failed');
+    addFeedItem('system-failed', message);
+  } finally {
+    clearTimeout(timeoutId);
+    isRequestSubmitting = false;
+    sendButton.disabled = false;
+    sendButton.textContent = originalButtonText;
   }
+}
+
+async function readApiResponse(response) {
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; } catch {
+    payload = { error: raw.slice(0, 240) || 'The server returned a non-JSON response' };
+  }
+  if (!response.ok) {
+    const explanation = typeof payload.error === 'string' ? payload.error :
+      typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(`HTTP ${response.status}: ${explanation}`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('The server returned an invalid response format');
+  }
+  return payload;
 }
 
 function addFeedItem(type, message, details) {

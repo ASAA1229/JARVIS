@@ -84,9 +84,13 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);
     const approvalId = res.approvalId!;
 
-    // Phone A approves the task -> succeeds
+    // Approval consumption is independent of whether this runner can launch a
+    // Windows desktop application and verify its process afterward.
     const approveRes = await jarvis.approveTask(approvalId, phoneASessionId);
-    assert.strictEqual(approveRes.success, true);
+    const resolvedApproval = jarvis.policy.getApproval(approvalId);
+    assert.strictEqual(resolvedApproval?.approved, true);
+    assert.strictEqual(resolvedApproval?.consumed, true);
+    assert.notStrictEqual(approveRes.state, TaskState.AWAITING_APPROVAL);
 
     // Attacker or duplicate message tries to reuse the same approval ID
     const task = jarvis.getTask(res.taskId)!;

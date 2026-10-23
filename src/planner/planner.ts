@@ -75,23 +75,19 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public async generatePlan(requestText: string, _context: MinimizedContext): Promise<PlanProposal> {
     const text = requestText.toLowerCase().trim();
 
-    // 1. System info requests
-    if (text.includes('os') || text.includes('system') || text.includes('specs') || text.includes('version')) {
+    // Reject destructive language before broad system-information matching.
+    if (/\b(format|delete|wipe|destroy|remove|drop)\b/.test(text)) {
       return {
-        intent: 'Query Windows OS version and specs',
-        operations: [
-          {
-            operation: 'system:get_os_info',
-            parameters: {},
-            justification: 'User asked for OS/system information',
-          },
-        ],
-        confidence: 0.95,
-        explanation: 'Interpreted as read-only OS fact query',
+        intent: 'Prohibited destructive action',
+        operations: [],
+        confidence: 0.99,
+        explanation: 'Destructive or file modification actions are strictly prohibited by policy',
+        uncertainty: 'Action violates safety invariants',
       };
     }
 
-    if (text.includes('ram') || text.includes('memory')) {
+    // Prefer specific system facts before the broader OS/system-intent terms.
+    if (/\b(ram|memory)\b/.test(text)) {
       return {
         intent: 'Query system memory status',
         operations: [
@@ -106,7 +102,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (text.includes('battery') || text.includes('power') || text.includes('charge')) {
+    if (/\b(battery|power|charge)\b/.test(text)) {
       return {
         intent: 'Query laptop battery status',
         operations: [
@@ -121,18 +117,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    // Guard against destructive intent
-    if (text.includes('format') || text.includes('delete') || text.includes('wipe') || text.includes('destroy') || text.includes('remove') || text.includes('drop')) {
-      return {
-        intent: 'Prohibited destructive action',
-        operations: [],
-        confidence: 0.99,
-        explanation: 'Destructive or file modification actions are strictly prohibited by policy',
-        uncertainty: 'Action violates safety invariants',
-      };
-    }
-
-    if (text.includes('disk') || text.includes('storage') || text.includes('drive space')) {
+    if (/\b(disk|storage)\b|drive\s+space/.test(text)) {
       return {
         intent: 'Query C: drive disk space',
         operations: [
@@ -148,7 +133,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
 
     // 2. Application launch requests
-    if (text.includes('notepad') || text.includes('notes')) {
+    if (/\b(notepad|notes)\b/.test(text)) {
       return {
         intent: 'Launch Notepad application',
         operations: [
@@ -163,7 +148,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (text.includes('calc') || text.includes('calculator')) {
+    if (/\b(calc|calculator)\b/.test(text)) {
       return {
         intent: 'Launch Calculator application',
         operations: [
@@ -178,7 +163,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (text.includes('paint') || text.includes('draw')) {
+    if (/\b(paint|draw)\b/.test(text)) {
       return {
         intent: 'Launch Paint application',
         operations: [
@@ -190,6 +175,21 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
         ],
         confidence: 0.95,
         explanation: 'Interpreted as launching allowlisted Paint application',
+      };
+    }
+
+    if (/\b(os|windows|version|specs|system)\b/.test(text)) {
+      return {
+        intent: 'Query Windows OS version and specs',
+        operations: [
+          {
+            operation: 'system:get_os_info',
+            parameters: {},
+            justification: 'User asked for OS/system information',
+          },
+        ],
+        confidence: 0.95,
+        explanation: 'Interpreted as read-only OS fact query',
       };
     }
 

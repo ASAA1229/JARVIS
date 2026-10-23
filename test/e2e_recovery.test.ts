@@ -7,7 +7,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { TaskState, Permission } from '../src/core/types.js';
 import { rmSync, existsSync, writeFileSync } from 'node:fs';
 
-process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token';
+process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token-0123456789abcdef';
 
 const TEST_AUDIT_LOG = './data/test_audit_e2e_recovery.log';
 const TEST_STATE_FILE = './data/test_state_e2e_recovery.json';
@@ -63,7 +63,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.deepStrictEqual(Object.keys(statusData).sort(), ['status']);
 
     // 2. Generate Enrollment Challenge
-    const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST', headers: { 'x-owner-control-token': 'test-owner-control-token' } });
+    const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST', headers: { 'x-owner-control-token': 'test-owner-control-token-0123456789abcdef' } });
     const challengeData = await challengeRes.json();
     assert.ok(challengeData.challengeToken);
 
@@ -178,6 +178,31 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     } finally {
       await probeServer.stop();
       for (const path of [TEST_AUDIT_LOG + '.owner-auth', TEST_STATE_FILE + '.owner-auth']) {
+        if (existsSync(path)) rmSync(path, { force: true });
+      }
+    }
+  });
+
+  test('SEC-API-CONFIG-01: Placeholder owner token disables enrollment fail-closed', async () => {
+    const previousToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;
+    const placeholderAuditPath = './data/test_placeholder_owner_audit.log';
+    const placeholderStatePath = './data/test_placeholder_owner_state.json';
+    let placeholderServer: JarvisServer | undefined;
+    try {
+      process.env.JARVIS_OWNER_CONTROL_TOKEN = 'REPLACE_WITH_A_RANDOM_SECRET';
+      placeholderServer = new JarvisServer(TEST_PORT + 10, placeholderAuditPath, placeholderStatePath);
+      await placeholderServer.start();
+      const response = await fetch(`http://127.0.0.1:${TEST_PORT + 10}/api/enrollment/challenge`, {
+        method: 'POST',
+        headers: { 'x-owner-control-token': 'REPLACE_WITH_A_RANDOM_SECRET' },
+      });
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, 'OWNER_CONTROL_NOT_CONFIGURED');
+    } finally {
+      await placeholderServer?.stop();
+      if (previousToken === undefined) delete process.env.JARVIS_OWNER_CONTROL_TOKEN;
+      else process.env.JARVIS_OWNER_CONTROL_TOKEN = previousToken;
+      for (const path of [placeholderAuditPath, placeholderStatePath]) {
         if (existsSync(path)) rmSync(path, { force: true });
       }
     }

@@ -69,7 +69,14 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
   test('HUD-01: Server serves Cinematic HUD assets at /hud endpoint', async () => {
     const rootRes = await fetch(`http://127.0.0.1:${TEST_PORT}/`);
     assert.strictEqual(rootRes.status, 200);
-    assert.match(await rootRes.text(), /JARVIS/i);
+    const rootHtml = await rootRes.text();
+    assert.match(rootHtml, /btn-ptt/);
+    assert.match(rootHtml, /btn-toggle-mic-mute/);
+    assert.doesNotMatch(rootHtml, /Pixel Companion|dev-ed25519-bound|CHAIN OK/);
+
+    const companionRes = await fetch(`http://127.0.0.1:${TEST_PORT}/companion`);
+    assert.strictEqual(companionRes.status, 200);
+    assert.match(await companionRes.text(), /btn-enroll-browser/);
 
     const cssResRoot = await fetch(`http://127.0.0.1:${TEST_PORT}/style.css`);
     assert.strictEqual(cssResRoot.status, 200);

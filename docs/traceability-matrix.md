@@ -1,4 +1,4 @@
-> **Current status (2026-10-23): Milestone 7 is BLOCKED — NOT COMPLETE.** The historical log below is superseded by the current local run recorded in Section 4. That run passed on the uncommitted working tree based on `fix` SHA `21c02aee19471a048d3391d1515746d25a87247b`; it is not hosted-CI or platform acceptance evidence. The current audit is [docs/security-api-feature-audit-2026-10-23.md](security-api-feature-audit-2026-10-23.md). Native Android/two-phone, physical microphone/vendor behavior, owner Windows 11 acceptance, and CI on an exact remediation commit remain unverified.
+> **Current status (2026-10-23): integrated release is BLOCKED — NOT READY.** Milestones 1–7 evidence is summarized in the [acceptance audit](milestones-1-to-7-acceptance-audit.md). M9 prototype source is isolated on `new` and not integrated into `fix`; M8 approval artifacts are absent. Current local checks passed on the dirty `fix` tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`; this is not hosted-CI or immutable source evidence. See [final integration acceptance](final-integration-acceptance-2026-10-23.md).
 
 # Requirements Traceability Matrix — Historical Baseline and Current Remediation
 
@@ -123,14 +123,14 @@ The current remediation branch adds regression coverage for:
 
 ## 4. Current Local Verification Evidence — 2026-10-23
 
-The following checks were rerun on the current dirty working tree, whose `HEAD` and `origin/fix` are both `21c02aee19471a048d3391d1515746d25a87247b`. Because the remediation is uncommitted, this SHA identifies the base revision, not an immutable copy of the tested source.
+The following checks were rerun on the current dirty working tree, whose `HEAD` and `origin/fix` are `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`. Because the remediation is uncommitted, this SHA identifies the base revision, not an immutable copy of the tested source.
 
 | Command | Result |
 |---|---|
 | `npm run build` | PASS |
 | `npm run lint` | PASS (`tsc --noEmit`) |
-| `npm test` | PASS — 51 tests, 0 failures, 0 skipped |
-| `npm run test:browser` | PASS — real Microsoft Edge against the local server; Web Speech recognition is mocked |
-| `npm audit --audit-level=low` | PASS — 0 vulnerabilities |
+| `npm test` | PASS — 51 tests, 0 failures, 0 skipped; sandbox attempt hit Node `uv_os_get_passwd` ENOMEM, retry outside sandbox passed |
+| `npm run test:browser` | PASS — Edge against local server; harness timeout clock corrected from 200 ms to 5 seconds; Web Speech mocked |
+| `npm audit --audit-level=low` | PASS — 0 vulnerabilities; approved retry after sandbox registry access failure |
 
-Environment: Windows 11 Home (build 26300), Node `v24.16.0`, npm `11.13.0`, PowerShell `7.6.7`, Microsoft Edge `155.0.4283.62`. `gh run list --branch fix --limit 10` stopped because `gh` is not authenticated. Ubuntu WSL 2 is installed but has no Linux `node` executable; no WSL test ran. Physical microphone/vendor recognition, native Android, two-phone, and owner-device acceptance are not represented by these results. The exact tested source tree remains uncommitted; `21c02aee19471a048d3391d1515746d25a87247b` is its base commit only.
+Environment: Windows 11 Home (build 26300), Node `v24.16.0`, npm `11.13.0`, PowerShell `7.6.7`, Microsoft Edge `155.0.4283.62`. `gh run list --branch fix --limit 10` stopped because `gh` is not authenticated. Ubuntu WSL 2 is installed but has no Linux `node` executable; no WSL test ran. Physical microphone/vendor recognition, Android build, two-phone, and owner-device acceptance are not represented by these results. The exact tested source tree remains uncommitted; `9ead85cdacb7e9dedf855605a6d0942760ea3a6f` is its base commit only. M9 source is isolated in the `new` worktree and has not been merged or built.
