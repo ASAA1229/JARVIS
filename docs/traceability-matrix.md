@@ -1,4 +1,6 @@
-# Requirements Traceability Matrix & Test Results
+> **Current status (2026-10-23): Milestone 7 remains INCOMPLETE.** The PASS labels and test output below are historical baseline evidence from before the current remediation. They are not a sign-off for the latest `fix` branch. The current audit is [docs/security-api-feature-audit-2026-10-23.md](security-api-feature-audit-2026-10-23.md) on `test`; the latest `fix` commit must have a successful CI run and browser/Windows acceptance evidence before this matrix can be considered current.
+
+# Requirements Traceability Matrix — Historical Baseline and Current Remediation
 
 ## 1. Traceability Mapping
 
@@ -30,7 +32,7 @@
 
 ---
 
-## 2. Test Execution Evidence
+## 2. Historical Test Execution Evidence (superseded)
 
 ```text
 > jarvis-core@0.1.0 test
@@ -77,3 +79,20 @@
 ℹ fail 0
 ℹ duration_ms 5806.59ms
 ```
+
+
+## 3. Remediation coverage added on `fix` (not a completion sign-off)
+
+The current remediation branch adds regression coverage for:
+
+- Enrollment challenge owner-token authorization and enrollment proof-of-possession.
+- Legacy HUD session bootstrap fails closed instead of minting a session.
+- Public status endpoint exposes only minimal health state and reports `DEGRADED` when audit or persisted identity state is unhealthy.
+- Audit endpoint rejects unauthenticated and insufficiently privileged access.
+- API malformed JSON, non-JSON content type, null/non-object bodies, oversized payloads, missing fields, unknown paths, and wrong methods.
+- Signed session creation and protected API requests: timestamp freshness, nonce replay, signature validation, and exact-body binding.
+- Approval rejection for unknown IDs and prevention of unauthorized cross-device revocation.
+- Corrupt persisted device state blocks enrollment/session creation and reports degraded health.
+- HUD/companion static checks: CSP, unsafe HTML sink/inline-handler regressions, shared WebCrypto client, and voice timeout/privacy disclosure.
+
+**Verification state:** CI is being rerun on the latest `fix` SHA. This list describes test intent/coverage, not a claim that browser E2E or the owner's Windows 11 MSI has been fully validated.
