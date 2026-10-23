@@ -2,11 +2,11 @@
 
 **Security-first personal AI assistant POC — Windows host with a browser-based companion/HUD.**
 
-> **Current status (2026-10-23): Milestone 7 — Security Remediation & Completion. IN PROGRESS / NOT RELEASE-READY.** Do not begin the next milestone or merge to `main` until the acceptance gates are evidenced. The audit report on `test` is the baseline review; current remediation work is on `fix`.
+> **Current status (2026-10-23): M12 gesture foundation is implemented on `new`; overall product acceptance remains BLOCKED / NOT RELEASE-READY.** M1–7 evidence is a historical audit of the `fix` baseline, and M8, M10, and M11 cannot be certified without approved specifications. See the [current milestone registry](docs/milestones/README.md) and [current repository baseline](docs/repository-baseline-2026-10-23.md).
 
 ## Current milestone and source branches
 
-- `new`: original feature implementation under review.
+- `new`: current feature branch; includes the local-only M12 gesture foundation.
 - `test`: audit baseline, automated tests, and [Security/API/Feature Audit](docs/security-api-feature-audit-2026-10-23.md).
 - `fix`: current remediation and regression tests.
 - `dev`: integration branch; changes from `new`, `fix`, or `test` reach it by PR only.

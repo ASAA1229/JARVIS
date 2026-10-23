@@ -8,7 +8,7 @@ import { rmSync, existsSync } from 'node:fs';
 
 const TEST_AUDIT_LOG = './data/test_audit.log';
 
-describe('JARVIS Core Security & Lifecycle Verification', () => {
+describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }, () => {
   let jarvis: JarvisCoreService;
   let companionKeypair: { publicKey: string; privateKey: string };
   let companionDeviceId: string;
