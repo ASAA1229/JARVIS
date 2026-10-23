@@ -6,6 +6,8 @@ let isListening = false;
 let speechRecognizer = null;
 let audioContext = null;
 let animationFrameId = null;
+let voiceTimeoutId = null;
+let discardVoiceResult = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initSpeechRecognition();
@@ -126,6 +128,7 @@ function initSpeechRecognition() {
   };
 
   speechRecognizer.onresult = (event) => {
+    if (discardVoiceResult || isMicMuted) return;
     let transcript = '';
     for (let i = 0; i < event.results.length; i++) {
       transcript += event.results[i][0].transcript;
@@ -142,46 +145,72 @@ function initSpeechRecognition() {
 
   speechRecognizer.onend = () => {
     isListening = false;
+    if (voiceTimeoutId) {
+      clearTimeout(voiceTimeoutId);
+      voiceTimeoutId = null;
+    }
     document.getElementById('reactor-container').classList.remove('listening');
     document.getElementById('btn-ptt').classList.remove('active');
+    if (discardVoiceResult) {
+      document.getElementById('transcript-input').value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+      discardVoiceResult = false;
+    }
   };
 }
 
 function startVoiceCapture() {
   if (isMicMuted) {
-    alert('Microphone is muted by privacy control. Unmute MIC to use voice commands.');
+    setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute only when you want to start voice capture.');
     return;
   }
   if (isListening) return;
+  if (!speechRecognizer) {
+    setAssistantState('SPEECH API UNAVAILABLE', 'Use the text input field; no audio capture was started.');
+    return;
+  }
 
+  discardVoiceResult = false;
   isListening = true;
-  if (speechRecognizer) {
-    try {
-      speechRecognizer.start();
-    } catch (e) {
-      // recognition might already be active
-    }
-  } else {
-    // Fallback prompt if Speech API not present
-    setAssistantState('SPEECH API UNAVAILABLE', 'Using high-speed terminal input mode.');
+  try {
+    speechRecognizer.start();
+    voiceTimeoutId = setTimeout(() => {
+      if (!isListening) return;
+      setAssistantState('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
+      stopVoiceCapture();
+    }, 15000);
+  } catch (e) {
+    isListening = false;
+    if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+    setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
   }
 }
 
 function stopVoiceCapture() {
   if (!isListening) return;
   isListening = false;
+  if (voiceTimeoutId) {
+    clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+  }
   if (speechRecognizer) {
     try {
       speechRecognizer.stop();
     } catch (e) {
-      // ignore
+      setAssistantState('VOICE STOP UNCERTAIN', 'Check microphone indicator and use Cancel if capture continues.');
     }
   }
-  setAssistantState('CONFIRM DIRECTIVE', 'Verify transcribed text before dispatch.');
+  setAssistantState('CONFIRM DIRECTIVE', 'Verify or edit the transcript before dispatch.');
 }
 
 function cancelVoiceCapture() {
   isListening = false;
+  discardVoiceResult = true;
+  if (voiceTimeoutId) {
+    clearTimeout(voiceTimeoutId);
+    voiceTimeoutId = null;
+  }
   if (speechRecognizer) {
     try {
       speechRecognizer.abort();
@@ -389,7 +418,7 @@ async function pollStatus() {
     if (!res.ok) throw new Error('Status request failed');
     if (data.status === 'ONLINE') {
       document.getElementById('core-status-dot').style.background = 'var(--cyan-glow)';
-      document.getElementById('tel-audit').innerText = data.auditIntegrity?.valid ? 'CHAIN OK' : 'TAMPER DETECTED';
+      document.getElementById('tel-audit').innerText = 'AUTH REQUIRED';
     }
   } catch {
     document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
