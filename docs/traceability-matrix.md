@@ -95,4 +95,4 @@ The current remediation branch adds regression coverage for:
 - Corrupt persisted device state blocks enrollment/session creation and reports degraded health.
 - HUD/companion static checks: CSP, unsafe HTML sink/inline-handler regressions, shared WebCrypto client, and voice timeout/privacy disclosure.
 
-**Verification state:** CI is being rerun on the latest `fix` SHA. This list describes test intent/coverage, not a claim that browser E2E or the owner's Windows 11 MSI has been fully validated.
+**Latest automated verification:** [Windows CI run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/39915715819) on `fix` commit `867747b780a5b1470cf9dcb12f9894bdb09b4639` passed build, TypeScript check, and **38 tests (0 failed, 0 skipped)**. This list describes automated test coverage, not a claim that interactive browser E2E, native Android, or the owner's Windows 11 MSI has been fully validated. Milestone 7 remains **INCOMPLETE / BLOCKED** until those acceptance gaps are closed.
