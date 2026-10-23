@@ -204,6 +204,11 @@ function handleTextSubmit() {
 }
 
 async function submitDirective(text) {
+  if (!currentSession) {
+    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before submitting directives.');
+    addFeedItem('failed', 'Directive not sent: no authenticated session.');
+    return;
+  }
   setAssistantState('PROCESSING DIRECTIVE...', 'Evaluating via Policy Gateway...');
   addFeedItem('directive', text);
 
@@ -217,7 +222,8 @@ async function submitDirective(text) {
       body: JSON.stringify({ text }),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed with HTTP ' + res.status);
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
@@ -242,22 +248,48 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
 
   const card = document.createElement('div');
   card.className = 'hud-approval-card';
-  card.id = `hud-appr-${approvalId}`;
-  card.innerHTML = `
-    <div style="font-weight:700; color:#fff;">DIRECTIVE: ${requestText}</div>
-    <div style="color:var(--hud-warn); font-size:11px; margin:4px 0;">${message}</div>
-    <div style="display:flex; gap:6px; margin-top:8px;">
-      <button class="hud-btn hud-btn-cyan" onclick="resolveHudApproval('${approvalId}', true)">CONFIRM & EXECUTE</button>
-      <button class="hud-btn hud-btn-danger" onclick="resolveHudApproval('${approvalId}', false)">DENY</button>
-    </div>
-  `;
+  card.id = 'hud-appr-' + approvalId;
+
+  const directive = document.createElement('div');
+  directive.style.fontWeight = '700';
+  directive.style.color = '#fff';
+  directive.textContent = 'DIRECTIVE: ' + String(requestText);
+
+  const description = document.createElement('div');
+  description.style.color = 'var(--hud-warn)';
+  description.style.fontSize = '11px';
+  description.style.margin = '4px 0';
+  description.textContent = String(message || '');
+
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.gap = '6px';
+  actions.style.marginTop = '8px';
+
+  const approve = document.createElement('button');
+  approve.className = 'hud-btn hud-btn-cyan';
+  approve.textContent = 'CONFIRM & EXECUTE';
+  approve.addEventListener('click', () => resolveHudApproval(approvalId, true));
+
+  const reject = document.createElement('button');
+  reject.className = 'hud-btn hud-btn-danger';
+  reject.textContent = 'DENY';
+  reject.addEventListener('click', () => resolveHudApproval(approvalId, false));
+
+  actions.append(approve, reject);
+  card.append(directive, description, actions);
   slot.appendChild(card);
   updateApprovalCountBadge();
 }
 
 async function resolveHudApproval(approvalId, approved) {
   const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
-  setAssistantState('RESOLVING APPROVAL...', 'Authenticating session...');
+  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
+
+  if (!currentSession) {
+    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before approvals can be submitted.');
+    return;
+  }
 
   try {
     const res = await fetch(endpoint, {
@@ -268,21 +300,36 @@ async function resolveHudApproval(approvalId, approved) {
       },
       body: JSON.stringify({ approvalId }),
     });
-    const result = await res.json();
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
+    }
+    if (!result.success) {
+      throw new Error(result.message || result.error || 'Server did not confirm the approval transition');
+    }
 
-    const card = document.getElementById(`hud-appr-${approvalId}`);
-    if (card) card.remove();
-    updateApprovalCountBadge();
+    if (!approved) {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
+      addFeedItem('failed', 'Directive rejected by operator.');
+      return;
+    }
 
-    if (approved) {
-      setAssistantState('APPROVED & VERIFIED', result.message);
-      addFeedItem('success', `Approved Action: ${result.message}`, result.data);
+    if (result.state === 'COMPLETED') {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
+      addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
     } else {
-      setAssistantState('DIRECTIVE REJECTED', 'Action was rejected by operator.');
-      addFeedItem('failed', 'Directive rejected.');
+      setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
+      addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
     }
   } catch (err) {
-    alert('Failed to resolve approval: ' + err.message);
+    setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
+    addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
   }
 }
 
@@ -305,35 +352,41 @@ function addFeedItem(type, message, details) {
   const item = document.createElement('div');
   item.className = 'task-entry ' + (type === 'success' ? 'success' : type === 'failed' ? 'failed' : type === 'pending' ? 'pending' : '');
 
-  const timeStr = new Date().toLocaleTimeString();
-  let html = `<span class="task-time">[${timeStr}]</span> <strong>${message}</strong>`;
-  if (details) {
-    html += `<pre style="font-size:10px; color:var(--text-muted); margin-top:4px;">${JSON.stringify(details, null, 2)}</pre>`;
+  const time = document.createElement('span');
+  time.className = 'task-time';
+  time.textContent = '[' + new Date().toLocaleTimeString() + ']';
+
+  const description = document.createElement('strong');
+  description.textContent = String(message ?? '');
+  item.append(time, document.createTextNode(' '), description);
+
+  if (details !== undefined && details !== null) {
+    const pre = document.createElement('pre');
+    pre.style.fontSize = '10px';
+    pre.style.color = 'var(--text-muted)';
+    pre.style.marginTop = '4px';
+    pre.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+    item.appendChild(pre);
   }
-  item.innerHTML = html;
   feed.insertBefore(item, feed.firstChild);
 }
 
 async function ensureEnrolledDevice() {
-  try {
-    const res = await fetch('/api/hud/session', { method: 'POST' });
-    const data = await res.json();
-    if (data.sessionId && data.device) {
-      currentSession = data.sessionId;
-      currentDevice = data.device;
-      document.getElementById('hud-device-name').innerText = currentDevice.name;
-      document.getElementById('hud-device-id').innerText = currentDevice.id;
-      document.getElementById('enclave-tag').innerText = 'ENROLLED & ACTIVE';
-    }
-  } catch (err) {
-    console.error('Failed to initialize HUD enclave session:', err);
-  }
+  // Fail closed: the former endpoint created sessions without private-key proof.
+  // Do not present the HUD as enrolled until secure device-bound enrollment exists.
+  currentSession = null;
+  currentDevice = null;
+  document.getElementById('hud-device-name').textContent = 'Enrollment required';
+  document.getElementById('hud-device-id').textContent = '--';
+  document.getElementById('enclave-tag').textContent = 'SECURE ENROLLMENT REQUIRED';
+  setAssistantState('SESSION UNAVAILABLE', 'HUD actions are disabled until secure device-bound enrollment is configured.');
 }
 
 async function pollStatus() {
   try {
     const res = await fetch('/api/status');
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('Status request failed');
     if (data.status === 'ONLINE') {
       document.getElementById('core-status-dot').style.background = 'var(--cyan-glow)';
       document.getElementById('tel-audit').innerText = data.auditIntegrity?.valid ? 'CHAIN OK' : 'TAMPER DETECTED';
@@ -347,7 +400,9 @@ async function pollStatus() {
 
 async function pollAudit() {
   try {
-    const res = await fetch('/api/audit');
+    if (!currentSession) return;
+    const res = await fetch('/api/audit', { headers: { 'x-session-id': currentSession } });
+    if (!res.ok) return;
     const data = await res.json();
     const stream = document.getElementById('hud-audit-stream');
     stream.innerHTML = '';
