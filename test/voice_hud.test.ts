@@ -91,9 +91,17 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.strictEqual(jsRes.status, 200);
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
+    assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);
     assert.doesNotMatch(jsText, /(?:card|item|entry)\.innerHTML\s*=/i);
     assert.doesNotMatch(jsText, /onclick=/i);
+    const cryptoRes = await fetch(`http://127.0.0.1:${TEST_PORT}/deviceCrypto.js`);
+    assert.strictEqual(cryptoRes.status, 200);
+    const cryptoClient = await cryptoRes.text();
+    assert.match(cryptoClient, /Ed25519/);
+    assert.match(cryptoClient, /indexedDB/);
+    assert.match(cryptoClient, /signedFetch/);
+    assert.match(cryptoClient, /false, \['sign'\]/);
   });
 });
