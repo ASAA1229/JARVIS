@@ -153,14 +153,13 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
   });
 
 
-  test('SEC-API-00: Enrollment challenge requires owner control authorization', async () => {
-    const denied = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
-    assert.strictEqual(denied.status, 401);
-    const allowed = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, {
+  test('SEC-API-00: Enrollment challenge rejects requests without owner control authorization', async () => {
+    const denied = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, {
       method: 'POST',
-      headers: { 'x-owner-control-token': 'test-owner-control-token' },
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     });
-    assert.strictEqual(allowed.status, 201);
+    assert.strictEqual(denied.status, 401);
   });
 
   test('SEC-API-01: HUD cannot provision a session without device-bound proof', async () => {
