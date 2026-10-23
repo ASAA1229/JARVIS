@@ -434,7 +434,7 @@ async function pollAudit() {
     if (!res.ok) return;
     const data = await res.json();
     const stream = document.getElementById('hud-audit-stream');
-    stream.innerHTML = '';
+    stream.replaceChildren();
     (data.records || []).slice(-6).reverse().forEach((r) => {
       const line = document.createElement('div');
       line.className = 'audit-line';
