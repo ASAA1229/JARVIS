@@ -419,6 +419,9 @@ async function pollStatus() {
     if (data.status === 'ONLINE') {
       document.getElementById('core-status-dot').style.background = 'var(--cyan-glow)';
       document.getElementById('tel-audit').innerText = 'AUTH REQUIRED';
+    } else if (data.status === 'DEGRADED') {
+      document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
+      setAssistantState('CORE DEGRADED', 'Security state needs attention. State-changing tasks must remain blocked.');
     }
   } catch {
     document.getElementById('core-status-dot').style.background = 'var(--hud-danger)';
