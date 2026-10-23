@@ -325,8 +325,8 @@ async function resolveHudApproval(approvalId, approved) {
     if (!res.ok) {
       throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
     }
-    if (!result.success) {
-      throw new Error(result.message || result.error || 'Server did not confirm the approval transition');
+    if (!approved && result.success !== true) {
+      throw new Error(result.message || result.error || 'Server did not confirm the rejection');
     }
 
     if (!approved) {
@@ -338,12 +338,18 @@ async function resolveHudApproval(approvalId, approved) {
       return;
     }
 
-    if (result.state === 'COMPLETED') {
+    if (result.state === 'COMPLETED' && result.success === true) {
       const card = document.getElementById('hud-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED'].includes(result.state)) {
+      const card = document.getElementById('hud-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCountBadge();
+      setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
+      addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
     } else {
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
