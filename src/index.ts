@@ -2,7 +2,9 @@ import { JarvisServer } from './server/server.js';
 
 async function main() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  const server = new JarvisServer(PORT);
+  const STATE_PATH = process.env.JARVIS_DEVICE_STATE_PATH || './data/devices.json';
+  const AUDIT_PATH = process.env.JARVIS_AUDIT_PATH || './data/audit.log';
+  const server = new JarvisServer(PORT, AUDIT_PATH, STATE_PATH);
 
   console.log('----------------------------------------------------');
   console.log('🤖 Starting JARVIS Secure Personal AI Assistant POC');
