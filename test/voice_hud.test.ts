@@ -75,6 +75,10 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.strictEqual(cssResRoot.status, 200);
     assert.ok((await cssResRoot.text()).length > 0);
 
+    const challengeWithoutOwnerConfig = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
+    assert.strictEqual(challengeWithoutOwnerConfig.status, 503);
+    assert.strictEqual((await challengeWithoutOwnerConfig.json()).code, 'OWNER_CONTROL_NOT_CONFIGURED');
+
     const unknownRoute = await fetch(`http://127.0.0.1:${TEST_PORT}/no-such-route`);
     assert.strictEqual(unknownRoute.status, 404);
     const wrongMethod = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`);
