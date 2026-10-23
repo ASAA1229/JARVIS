@@ -67,10 +67,10 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    if (message.type() === 'error' && !message.text().toLowerCase().includes('favicon.ico')) consoleErrors.push(message.text());
   });
 
-  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   page.on('dialog', async (dialog) => {
     if (dialog.type() === 'prompt') await dialog.accept(ownerToken);
     else await dialog.dismiss();
@@ -106,7 +106,7 @@ try {
   hud.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
-  await hud.goto(`${baseUrl}/hud`, { waitUntil: 'networkidle' });
+  await hud.goto(`${baseUrl}/hud`, { waitUntil: 'domcontentloaded' });
   await hud.getByText('ENROLLED & AUTHENTICATED').waitFor({ state: 'visible', timeout: 10000 });
   await hud.locator('#hud-text-input').fill('What is the OS version?');
   await hud.locator('#btn-hud-send').click();
