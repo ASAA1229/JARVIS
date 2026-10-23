@@ -13,6 +13,26 @@ const TEST_AUDIT_LOG = './data/test_audit_e2e_recovery.log';
 const TEST_STATE_FILE = './data/test_state_e2e_recovery.json';
 const TEST_PORT = 3899;
 
+function signedHeaders(
+  sessionId: string,
+  privateKey: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Record<string, string> {
+  const timestamp = Date.now();
+  const nonce = CryptoUtil.randomToken(16);
+  const canonical = CryptoUtil.buildCanonicalRequestString(method, path, sessionId, timestamp, nonce, body);
+  const signature = CryptoUtil.signData(canonical, privateKey);
+  return {
+    'Content-Type': 'application/json',
+    'x-session-id': sessionId,
+    'x-request-timestamp': String(timestamp),
+    'x-request-nonce': nonce,
+    'x-request-signature': signature,
+  };
+}
+
 describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verification', () => {
   let server: JarvisServer;
   let companionKeypair: { publicKey: string; privateKey: string };
@@ -80,64 +100,54 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     companionSessionId = sessionData.sessionId;
 
     // 5. Submit Read-Only Request (OS Facts)
+    const req1Body = { text: 'What is the OS version?' };
     const req1Res = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': companionSessionId,
-      },
-      body: JSON.stringify({ text: 'What is the OS version?' }),
+      headers: signedHeaders(companionSessionId, companionKeypair.privateKey, 'POST', '/api/request', req1Body),
+      body: JSON.stringify(req1Body),
     });
     const req1Data = await req1Res.json();
     assert.strictEqual(req1Data.state, 'COMPLETED');
     assert.ok(req1Data.data.platform);
 
     // 6. Submit State-Changing Request (Launch Notepad)
+    const req2Body = { text: 'Please launch Notepad' };
     const req2Res = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': companionSessionId,
-      },
-      body: JSON.stringify({ text: 'Please launch Notepad' }),
+      headers: signedHeaders(companionSessionId, companionKeypair.privateKey, 'POST', '/api/request', req2Body),
+      body: JSON.stringify(req2Body),
     });
     const req2Data = await req2Res.json();
     assert.strictEqual(req2Data.state, 'AWAITING_APPROVAL');
     assert.ok(req2Data.approvalId);
 
     // 7. Approve Task via Authorized Session
+    const approveBody = { approvalId: req2Data.approvalId };
     const approveRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/approval/approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': companionSessionId,
-      },
-      body: JSON.stringify({ approvalId: req2Data.approvalId }),
+      headers: signedHeaders(companionSessionId, companionKeypair.privateKey, 'POST', '/api/approval/approve', approveBody),
+      body: JSON.stringify(approveBody),
     });
     const approveData = await approveRes.json();
     assert.strictEqual(approveData.success, true);
     assert.strictEqual(approveData.state, 'COMPLETED');
 
     // 8. Revoke Device
+    const revokeBody = { deviceId: companionDeviceId };
     const revokeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/device/revoke`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': companionSessionId,
-      },
-      body: JSON.stringify({ deviceId: companionDeviceId }),
+      headers: signedHeaders(companionSessionId, companionKeypair.privateKey, 'POST', '/api/device/revoke', revokeBody),
+      body: JSON.stringify(revokeBody),
     });
     const revokeData = await revokeRes.json();
     assert.strictEqual(revokeData.success, true);
 
     // 9. Subsequent request must be rejected
+    const afterRevokeBody = { text: 'What is the OS version?' };
     const reqAfterRevoke = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': companionSessionId,
-      },
-      body: JSON.stringify({ text: 'What is the OS version?' }),
+      headers: signedHeaders(companionSessionId, companionKeypair.privateKey, 'POST', '/api/request', afterRevokeBody),
+      body: JSON.stringify(afterRevokeBody),
     });
     assert.strictEqual(reqAfterRevoke.status, 401); // Authentication failures use the correct HTTP status
   });
@@ -234,7 +244,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(session.success, true);
 
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`, {
-      headers: { 'x-session-id': session.sessionId! },
+      headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'GET', '/api/audit'),
     });
     assert.strictEqual(response.status, 403);
   });
