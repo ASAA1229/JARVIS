@@ -44,6 +44,7 @@ export class JarvisServer {
     // Set secure security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
@@ -109,6 +110,9 @@ export class JarvisServer {
           deviceName: string;
           publicKey: string;
         };
+        if (typeof challengeToken !== 'string' || typeof deviceName !== 'string' || typeof publicKey !== 'string') {
+          return this.jsonResponse(res, 400, { error: 'challengeToken, deviceName, and publicKey are required strings' });
+        }
         const result = this.jarvis.identity.enrollDevice(challengeToken, deviceName, publicKey);
         if (!result.success) {
           return this.jsonResponse(res, 400, { error: result.error });
@@ -124,6 +128,9 @@ export class JarvisServer {
           signature: string;
           timestamp: number;
         };
+        if (typeof deviceId !== 'string' || typeof signature !== 'string' || !Number.isFinite(timestamp)) {
+          return this.jsonResponse(res, 400, { error: 'deviceId, signature, and numeric timestamp are required' });
+        }
         const sessionRes = this.jarvis.identity.createSession(deviceId, signature, timestamp);
         if (!sessionRes.success) {
           return this.jsonResponse(res, 401, { error: sessionRes.error });
@@ -139,7 +146,10 @@ export class JarvisServer {
         }
         const body = await this.readJsonBody(req);
         const { text } = body as { text: string };
-        const result = await this.jarvis.submitRequest(sessionId, text);
+        if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
+          return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
+        }
+        const result = await this.jarvis.submitRequest(sessionId, text.trim());
         return this.jsonResponse(res, 200, result);
       }
 
@@ -156,6 +166,9 @@ export class JarvisServer {
 
         const body = await this.readJsonBody(req);
         const { approvalId } = body as { approvalId: string };
+        if (typeof approvalId !== 'string' || !approvalId) {
+          return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
         const result = await this.jarvis.approveTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
       }
@@ -173,6 +186,9 @@ export class JarvisServer {
 
         const body = await this.readJsonBody(req);
         const { approvalId } = body as { approvalId: string };
+        if (typeof approvalId !== 'string' || !approvalId) {
+          return this.jsonResponse(res, 400, { error: 'approvalId is required' });
+        }
         const result = this.jarvis.rejectTask(approvalId, auth.device.id);
         return this.jsonResponse(res, 200, result);
       }
@@ -229,6 +245,18 @@ export class JarvisServer {
       if (message === 'Payload too large') {
         return this.jsonResponse(res, 413, { error: 'Payload too large' });
       }
+      if (message === 'Content-Type must be application/json') {
+        return this.jsonResponse(res, 415, { error: message });
+      }
+      if (message === 'Approval not found' || message === 'Associated task not found') {
+        return this.jsonResponse(res, 404, { error: message });
+      }
+      if (/expired|no longer pending|already been consumed|scope was modified|could not be rejected/i.test(message)) {
+        return this.jsonResponse(res, 409, { error: message });
+      }
+      if (/not registered or revoked|lacks permission/i.test(message)) {
+        return this.jsonResponse(res, 403, { error: message });
+      }
       if (message.startsWith('Authentication failed')) {
         return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
       }
@@ -264,6 +292,11 @@ export class JarvisServer {
 
   private readJsonBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
+      const contentType = req.headers['content-type'] || '';
+      if (!contentType.toLowerCase().includes('application/json')) {
+        reject(new Error('Content-Type must be application/json'));
+        return;
+      }
       let body = '';
       let settled = false;
       const fail = (error: Error) => {
