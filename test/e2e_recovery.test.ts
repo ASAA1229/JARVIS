@@ -207,6 +207,51 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(missingFields.status, 400);
   });
 
+  test('SEC-API-08: Protected requests require a valid signature over the exact body', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Signed Request Test', kp.publicKey);
+    assert.strictEqual(enroll.success, true);
+    const sessionTimestamp = Date.now();
+    const sessionNonce = CryptoUtil.randomToken(16);
+    const sessionSignature = CryptoUtil.signData(`SESSION_REQUEST:${sessionTimestamp}:${sessionNonce}`, kp.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, sessionSignature, sessionTimestamp, sessionNonce);
+    assert.strictEqual(session.success, true);
+
+    const signedBody = { text: 'What is the OS version?' };
+    const tamperedBody = { text: 'Please launch Notepad' };
+    const headers = signedHeaders(session.sessionId!, kp.privateKey, 'POST', '/api/request', signedBody);
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(tamperedBody),
+    });
+    assert.strictEqual(response.status, 401);
+  });
+
+  test('SEC-API-09: A signed API request nonce is single-use', async () => {
+    const challenge = server.getService().identity.createEnrollmentChallenge();
+    const kp = CryptoUtil.generateEd25519KeyPair();
+    const enroll = server.getService().identity.enrollDevice(challenge.challengeToken, 'Request Replay Test', kp.publicKey);
+    assert.strictEqual(enroll.success, true);
+    const sessionTimestamp = Date.now();
+    const sessionNonce = CryptoUtil.randomToken(16);
+    const sessionSignature = CryptoUtil.signData(`SESSION_REQUEST:${sessionTimestamp}:${sessionNonce}`, kp.privateKey);
+    const session = server.getService().identity.createSession(enroll.deviceId!, sessionSignature, sessionTimestamp, sessionNonce);
+    assert.strictEqual(session.success, true);
+
+    const body = { text: 'What is the OS version?' };
+    const headers = signedHeaders(session.sessionId!, kp.privateKey, 'POST', '/api/request', body);
+    const first = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    });
+    assert.strictEqual(first.status, 200);
+    const replay = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    });
+    assert.strictEqual(replay.status, 401);
+  });
+
   test('SEC-API-07: Fresh session signature cannot be replayed with the same nonce', async () => {
     const challenge = server.getService().identity.createEnrollmentChallenge();
     const kp = CryptoUtil.generateEd25519KeyPair();
