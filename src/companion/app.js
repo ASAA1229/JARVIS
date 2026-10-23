@@ -254,8 +254,11 @@ async function resolveApproval(approvalId, approved) {
       body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
-    if (!res.ok || !result.success) {
+    if (!res.ok) {
       throw new Error(result.error || result.message || 'Approval request failed with HTTP ' + res.status);
+    }
+    if (!approved && result.success !== true) {
+      throw new Error(result.error || result.message || 'Rejection was not confirmed by the server');
     }
 
     if (!approved) {
@@ -263,13 +266,18 @@ async function resolveApproval(approvalId, approved) {
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'The server confirmed the action was rejected.');
-    } else if (result.state === 'COMPLETED') {
+    } else if (result.state === 'COMPLETED' && result.success === true) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED'].includes(result.state)) {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-failed', 'Approval was processed but the task did not complete: ' + String(result.message || result.state), result.data);
     } else {
-      addFeedItem('system-pending', 'Approval processed but task is not complete: ' + String(result.state || 'UNKNOWN'));
+      addFeedItem('system-pending', 'Approval processed; task state remains ' + String(result.state || 'UNKNOWN') + '. Verify before retrying.');
     }
     fetchAuditLogs();
   } catch (err) {
