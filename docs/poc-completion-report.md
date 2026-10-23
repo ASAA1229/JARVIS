@@ -1,4 +1,6 @@
-# JARVIS Proof-of-Concept (POC) Milestone 6 Completion Report
+> **Historical report, not current release approval.** This document describes the earlier Milestone 6 baseline and its reported 18-test suite. The project has since entered Milestone 7 security remediation. Current status is **INCOMPLETE / BLOCKED** until the latest `fix` branch passes its full CI suite and browser/Windows acceptance gates. Do not use this historical report as proof that current Milestone 7 requirements are complete.
+
+# JARVIS POC — Historical Milestone 6 Completion Report (Superseded)
 
 ## 1. Executive Summary
 The JARVIS secure personal assistant Proof of Concept (POC) has completed **Milestones 1 through 6** on branch `new`. The objective was to build and prove a secure, verifiable, end-to-end request lifecycle across a Windows 11 host and an authenticated Android companion interface:
