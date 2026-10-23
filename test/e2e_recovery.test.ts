@@ -7,6 +7,8 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { TaskState, Permission } from '../src/core/types.js';
 import { rmSync, existsSync } from 'node:fs';
 
+process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token';
+
 const TEST_AUDIT_LOG = './data/test_audit_e2e_recovery.log';
 const TEST_STATE_FILE = './data/test_state_e2e_recovery.json';
 const TEST_PORT = 3899;
@@ -41,7 +43,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.deepStrictEqual(Object.keys(statusData).sort(), ['status']);
 
     // 2. Generate Enrollment Challenge
-    const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
+    const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST', headers: { 'x-owner-control-token': 'test-owner-control-token' } });
     const challengeData = await challengeRes.json();
     assert.ok(challengeData.challengeToken);
 
@@ -138,6 +140,16 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(reqAfterRevoke.status, 401); // Authentication failures use the correct HTTP status
   });
 
+
+  test('SEC-API-00: Enrollment challenge requires owner control authorization', async () => {
+    const denied = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST' });
+    assert.strictEqual(denied.status, 401);
+    const allowed = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, {
+      method: 'POST',
+      headers: { 'x-owner-control-token': 'test-owner-control-token' },
+    });
+    assert.strictEqual(allowed.status, 201);
+  });
 
   test('SEC-API-01: HUD cannot provision a session without device-bound proof', async () => {
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/hud/session`, { method: 'POST' });
