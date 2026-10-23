@@ -116,14 +116,17 @@
     const publicDer = await crypto.subtle.exportKey('spki', generated.publicKey);
     const privateDer = await crypto.subtle.exportKey('pkcs8', generated.privateKey);
     const privateKey = await crypto.subtle.importKey('pkcs8', privateDer, { name: 'Ed25519' }, false, ['sign']);
+    new Uint8Array(privateDer).fill(0);
     const publicBase64 = toBase64(publicDer);
     const publicLines = publicBase64.match(/.{1,64}/g).join('\n');
     const publicKey = '-----BEGIN PUBLIC KEY-----\n' + publicLines + '\n-----END PUBLIC KEY-----';
 
+    const proofPayload = `ENROLLMENT_PROOF:${challengeToken}:${deviceName}:${await sha256Hex(publicKey)}`;
+    const proofSignature = await signText(privateKey, proofPayload);
     const response = await fetch('/api/enrollment/redeem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challengeToken, deviceName, publicKey }),
+      body: JSON.stringify({ challengeToken, deviceName, publicKey, proofSignature }),
     });
     const enrollment = await response.json().catch(() => ({}));
     if (!response.ok || enrollment.success !== true || !enrollment.deviceId) {
