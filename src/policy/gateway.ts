@@ -97,6 +97,7 @@ export class PolicyGateway {
       ['desktop:hotkey', ['keys']],
       ['desktop:zoom', ['direction']],
       ['desktop:copy_selection', []],
+      ['desktop:paste_clipboard', []],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: Permission.APP_LAUNCH,
