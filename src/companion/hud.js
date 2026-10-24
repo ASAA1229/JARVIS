@@ -230,13 +230,13 @@ function createSpeechRecognizer(captureGeneration) {
 }
 
 function normalizeVoiceText(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  return String(value || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function handleHandsFreeTranscript(rawTranscript) {
   const normalized = normalizeVoiceText(rawTranscript);
-  const wakePatterns = [/\\bhey jarvis\\b/, /\\bhello jarvis\\b/, /\\bhi jarvis\\b/, /\\bi am here\\b/, /\\bi'm here\\b/];
-  const stopPatterns = [/\\bstop jarvis\\b/, /\\bjarvis stop\\b/, /\\bjarvis you may leave(?: now)?\\b/, /\\byou may leave jarvis\\b/, /\\bgoodbye jarvis\\b/, /\\bgo to sleep jarvis\\b/];
+  const wakePatterns = [/\bhey jarvis\b/, /\bhello jarvis\b/, /\bhi jarvis\b/, /\bi am here\b/, /\bi'm here\b/];
+  const stopPatterns = [/\bstop jarvis\b/, /\bjarvis stop\b/, /\bjarvis you may leave(?: now)?\b/, /\byou may leave jarvis\b/, /\bgoodbye jarvis\b/, /\bgo to sleep jarvis\b/];
   if (stopPatterns.some((pattern) => pattern.test(normalized))) {
     isWaitingForWakeCommand = false;
     setAssistantState('STANDBY — WAKE PHRASE READY', 'Hands-free standby is active. Say “Hey JARVIS” for a command, or disable hands-free to release the microphone.');
