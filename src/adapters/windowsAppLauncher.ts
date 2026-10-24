@@ -55,16 +55,15 @@ export class WindowsAppLauncherAdapter {
    * Launches an allowlisted Windows application and captures evidence.
    */
   public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {
-    const app = this.allowlist.get(appId.toLowerCase());
-
-    if (!app) {
-      return {
-        success: false,
-        outcome: VerificationOutcome.VERIFIED_FAILURE,
-        error: `Application '${appId}' is not in the allowlist`,
-        evidence: { requestedApp: appId },
-      };
+    if (typeof appId !== 'string' || !appId.trim() || appId.trim().length > 120) {
+      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedApp: String(appId) } };
     }
+    const requestedName = appId.trim();
+    if (this.isFinancialAppName(requestedName)) {
+      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'JARVIS policy excludes payment and financial applications from general-purpose control.', evidence: { requestedApp: requestedName, blockedByPolicy: true } };
+    }
+    const app = this.allowlist.get(requestedName.toLowerCase());
+    if (!app) return this.launchDiscoveredStartMenuApp(requestedName, signal);
 
     try {
       if (signal?.aborted) {
@@ -148,6 +147,61 @@ export class WindowsAppLauncherAdapter {
         outcome: VerificationOutcome.VERIFIED_FAILURE,
         error: `Launch execution error: ${String(err)}`,
         evidence: { app: app.id, error: String(err) },
+      };
+    }
+  }
+
+  private isFinancialAppName(name: string): boolean {
+    return /\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(name);
+  }
+
+  private async launchDiscoveredStartMenuApp(query: string, signal?: AbortSignal): Promise<ExecutionResult> {
+    try {
+      if (process.platform !== 'win32') throw new Error('Dynamic Start menu discovery is available only on Windows.');
+      if (signal?.aborted) throw new Error('Application launch was cancelled.');
+      const safeQuery = query.replace(/'/g, "''");
+      const script = [
+        '$ErrorActionPreference = "Stop"',
+        "$q = '" + safeQuery + "'",
+        '$all = @(Get-StartApps | Where-Object { $_.Name.IndexOf($q, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 30 Name, AppID)',
+        '$all | ConvertTo-Json -Depth 3 -Compress',
+      ].join('; ');
+      const encoded = Buffer.from(script, 'utf16le').toString('base64');
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+        timeout: 8_000, maxBuffer: 128 * 1024, windowsHide: true, signal,
+      });
+      const output = stdout.trim();
+      const parsed = output ? JSON.parse(output) as Array<{ Name: string; AppID: string }> | { Name: string; AppID: string } : [];
+      const candidates = (Array.isArray(parsed) ? parsed : [parsed]).filter((candidate) =>
+        typeof candidate.Name === 'string' && typeof candidate.AppID === 'string' &&
+        !this.isFinancialAppName(candidate.Name),
+      );
+      const exact = candidates.filter((candidate) => candidate.Name.toLowerCase() === query.toLowerCase());
+      const matches = exact.length ? exact : candidates;
+      if (matches.length === 0) {
+        return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: "No installed Start menu application matched '" + query + "'.", evidence: { query, discovery: 'Get-StartApps', matches: 0 } };
+      }
+      if (matches.length !== 1) {
+        return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: "Multiple applications matched '" + query + "'. Ask for the exact app name.", evidence: { query, candidates: matches.map((candidate) => candidate.Name) } };
+      }
+      const selected = matches[0];
+      await execFileAsync('explorer.exe', ['shell:AppsFolder\\' + selected.AppID], {
+        timeout: 8_000, windowsHide: true, signal,
+      });
+      return {
+        success: true,
+        outcome: VerificationOutcome.PARTIAL_SUCCESS,
+        data: { name: selected.Name, appId: selected.AppID, status: 'Launch requested' },
+        evidence: { discovery: 'Get-StartApps', launcher: 'explorer.exe shell:AppsFolder', exactOrUniqueMatch: true, targetWindowVerified: false },
+        error: 'Windows accepted the launch request, but the target application window was not independently verified.',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        outcome: signal?.aborted ? VerificationOutcome.UNCERTAIN : VerificationOutcome.VERIFIED_FAILURE,
+        error: error instanceof Error ? error.message : String(error),
+        evidence: { query, discovery: 'Get-StartApps' },
+        interrupted: signal?.aborted,
       };
     }
   }
