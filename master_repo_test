@@ -181,3 +181,10 @@ New test file: `test/adapter_error_redaction.test.ts` on `gap-closure` / [PR #11
 | Diagnostic usefulness | Completion audit records exception class only | Test added; CI pending |
 
 The core catches adapter exceptions and emits a bounded failure message plus the non-sensitive error class. Adapter-authored errors returned normally by other code paths still need a comprehensive disclosure review. Do not mark this test PASS until the exact PR commit CI completes.
+
+## CI feedback for approval-binding tests — 2026-10-24
+
+- Initial hosted run on the earlier test commit: build PASS, TypeScript check PASS, automated suite FAIL (100 passed, 1 failed); browser smoke was skipped because the test stage failed.
+- Failing case: operation-substitution fixture passed `appId` to `desktop:type_text`, so the correct parameter allowlist rejection happened before the binding check. This did not test the intended branch.
+- Corrected the fixture to use `desktop:launch_and_type` with its allowed parameters while reusing an `app:launch` approval. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
+- Current disposition: corrected CI rerun required; PASS is not claimed yet.
