@@ -41,7 +41,7 @@ Current limitations:
 
 src/memory/personalMemoryStore.ts provides local AES-256-GCM encrypted storage derived from the configured owner control token, integrity verification on read, atomic writes, TTLs, categories, and conservative rejection of credential/payment-like content. The /api/memory endpoints require a signed authenticated session and DEVICE_MANAGE permission.
 
-The initial memory implementation is not a substitute for a full profile UI, memory review workflow, verified deletion across backups, or a semantic retrieval index. Those remain required before memory should be considered complete.
+Voice/text requests such as 'remember my name is Abhishek' and 'what do you remember about me' are routed to owner-only memory operations. Save/delete operations require approval; memory listing requires DEVICE_MANAGE. The initial memory implementation is not a substitute for a full profile UI, semantic retrieval, verified deletion across backups, or richer retention controls. Those remain required before memory should be considered complete.
 
 ## Official store discovery
 
