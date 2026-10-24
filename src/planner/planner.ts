@@ -32,6 +32,11 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'system:get_battery_status',
     'system:get_disk_space',
     'app:launch',
+    'desktop:type_text',
+    'desktop:paste_text',
+    'desktop:hotkey',
+    'desktop:zoom',
+    'desktop:copy_selection',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -130,6 +135,28 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
         confidence: 0.9,
         explanation: 'Interpreted as C: disk space query',
       };
+    }
+
+    // Explicit desktop interaction requests. The policy gateway still requires approval.
+    if (/\\b(zoom in|zoom closer|enlarge)\\b/.test(text)) {
+      return { intent: 'Zoom in on the foreground application', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'in' }, justification: 'User explicitly requested zoom in' }], confidence: 0.9, explanation: 'Will send the foreground app zoom-in shortcut after approval.' };
+    }
+    if (/\\b(zoom out|zoom smaller|shrink)\\b/.test(text)) {
+      return { intent: 'Zoom out on the foreground application', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'out' }, justification: 'User explicitly requested zoom out' }], confidence: 0.9, explanation: 'Will send the foreground app zoom-out shortcut after approval.' };
+    }
+    if (/\\b(reset zoom|normal zoom)\\b/.test(text)) {
+      return { intent: 'Reset foreground application zoom', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'reset' }, justification: 'User explicitly requested zoom reset' }], confidence: 0.9, explanation: 'Will send the foreground app zoom reset shortcut after approval.' };
+    }
+    const typeMatch = requestText.match(/\\b(?:type|write|enter)\\s+(?:the following\\s+)?[“"]?(.+?)[”"]?\\s*$/i);
+    if (typeMatch && typeMatch[1].trim()) {
+      return { intent: 'Enter explicit text in the foreground application', operations: [{ operation: 'desktop:type_text', parameters: { text: typeMatch[1].trim() }, justification: 'User provided the text to enter' }], confidence: 0.88, explanation: 'Will paste the explicitly supplied text into the foreground application after approval.' };
+    }
+    const pasteMatch = requestText.match(/\\bpaste\\s+(?:the following\\s+)?[“"]?(.+?)[”"]?\\s+(?:here|there|into\\s+(?:this|the\\s+current)\\s+(?:app|document|note))\\s*$/i);
+    if (pasteMatch && pasteMatch[1].trim()) {
+      return { intent: 'Paste explicit text in the foreground application', operations: [{ operation: 'desktop:paste_text', parameters: { text: pasteMatch[1].trim() }, justification: 'User specified text and destination context' }], confidence: 0.8, explanation: 'Will paste the supplied text into the foreground application after approval.' };
+    }
+    if (/\\b(copy|copy this|copy selected text)\\b/.test(text)) {
+      return { intent: 'Copy selected text from the foreground application', operations: [{ operation: 'desktop:copy_selection', parameters: {}, justification: 'User explicitly requested copying the current selection' }], confidence: 0.82, explanation: 'Will copy the foreground selection after approval; clipboard data may be sensitive.' };
     }
 
     // 2. Application launch requests
