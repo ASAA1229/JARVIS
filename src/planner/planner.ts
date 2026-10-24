@@ -252,6 +252,15 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
+    const genericOpen = requestText.match(/^\s*(?:please\s+)?open\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
+    if (genericOpen && genericOpen[1].trim()) {
+      const appName = genericOpen[1].trim();
+      if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
+        return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
+      }
+      return { intent: 'Launch installed Windows application', operations: [{ operation: 'app:launch', parameters: { appId: appName }, justification: 'User requested an installed application by name' }], confidence: 0.78, explanation: 'Will search the Windows Start menu for a unique application match and request approval before launching it.' };
+    }
+
     if (/\b(os|windows|version|specs|system)\b/.test(text)) {
       return {
         intent: 'Query Windows OS version and specs',
