@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'node:test';
 import { buildControlActionScript } from '../src/adapters/windowsDesktopAgent.js';
 
 test('desktop:click_control validates and indexes the same UI Automation collection', () => {
