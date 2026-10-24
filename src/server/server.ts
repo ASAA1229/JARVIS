@@ -11,6 +11,7 @@ import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -349,6 +350,27 @@ export class JarvisServer {
           ...sessionRes,
           permissions: [...device.permissions],
         });
+      }
+
+      // Official-store discovery returns official search destinations only; it never installs software.
+      if (req.method === 'POST' && url.pathname === '/api/store-search') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const input = body as { platform?: unknown; query?: unknown };
+        if (!['windows', 'android', 'ios'].includes(String(input.platform)) || typeof input.query !== 'string') {
+          return this.jsonResponse(res, 400, { error: 'platform must be windows, android, or ios; query must be a string' });
+        }
+        try {
+          const result = createOfficialStoreSearch(input.platform as StorePlatform, input.query);
+          this.jarvis.audit.record('OFFICIAL_STORE_SEARCH_CREATED', { platform: result.platform, queryLength: result.query.length }, auth.device.id);
+          return this.jsonResponse(res, 200, result);
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Store search rejected' });
+        }
       }
 
       // Personal memory is encrypted at rest and restricted to authenticated management devices.
