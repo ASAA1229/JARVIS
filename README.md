@@ -79,11 +79,14 @@ WSL/Linux equivalent for copying the template: `cp .env.example .env`.
 
 ## Validation
 
-Latest observed hosted CI:
-- [new commit 6222e196 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500)
-- [dev merge commit d061216b — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606)
+Verified hosted CI evidence for the gap-closure baseline:
+- [new documentation head 6dd9d8d6 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737)
+- [dev integration commit 29df6b86 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008)
+- [fix branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785)
+- [test branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517)
+- Documentation PR #13 merged into dev: https://github.com/Guda-Abhishek/JARVIS/pull/13
 
-These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. See POC2.md for the acceptance register.
+These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. npm audit remains unverified; see POC2.md for acceptance criteria.
 
 ## Branch and release policy
 
