@@ -99,3 +99,9 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 
 - Added `test/rejection_permissions.test.ts` for attempts to reject desktop and personal-memory approvals using devices that lack the required `APP_LAUNCH` or `DEVICE_MANAGE` permission.
 - This new test file is committed after the earlier passing CI run; its validation is pending a new hosted CI run. The earlier 101-test green result does not include this new file.
+
+## Rejection permission test harness correction — 2026-10-24
+
+- The first CI run including `test/rejection_permissions.test.ts` failed because the service rejects unauthorized approvals synchronously while the test used `assert.rejects`, which expects an asynchronous rejection. The implementation threw the expected permission error.
+- Corrected the tests to use `assert.throws`. Latest test commit: `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- This corrected test version requires a fresh CI run; the earlier green run does not include these tests.
