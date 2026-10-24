@@ -94,3 +94,8 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 
 - Hosted CI run [40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717) completed successfully for code/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`: locked dependency install, TypeScript build, TypeScript check, automated suite (**101 passed, 0 failed**), and browser security smoke test all passed. The run is code/test evidence for that commit; documentation-only follow-up commits do not change source or tests. It does not establish physical Windows, microphone/TTS, Android/iOS, or independent security acceptance.
 - Overall POC remains INCOMPLETE / BLOCKED because real Windows desktop, physical voice, two-phone Android, secure remote transport, native iOS, and independent security-review gates are still open.
+
+## Approval-rejection permission regression coverage — 2026-10-24
+
+- Added `test/rejection_permissions.test.ts` for attempts to reject desktop and personal-memory approvals using devices that lack the required `APP_LAUNCH` or `DEVICE_MANAGE` permission.
+- This new test file is committed after the earlier passing CI run; its validation is pending a new hosted CI run. The earlier 101-test green result does not include this new file.
