@@ -129,3 +129,12 @@ The Lovable branch's older POC and master documentation refer to a dirty 2026-10
 - [ ] Android enrollment and revocation with two physical phones, independent keys/sessions/permissions, and secure transport review.
 - [ ] Security adversarial tests for persistence/audit failure, approval binding and policy non-bypass.
 - [ ] Native iOS agent and universal application-control acceptance remain incomplete.
+
+
+## UI Automation control-target regression (2026-10-24)
+
+- Source commit with fix and regression tests: `220e002f8759d1631a032ff1bf7e67e6bf362273`.
+- Fixed a second instance of the same variable-binding defect: click now validates and indexes `$foundControls`; set-value validates and indexes `$matches`.
+- Added `test/windows_desktop_agent.test.ts` to verify collection consistency for both operations and escaping of single quotes in PowerShell control names and text values.
+- Hosted CI passed for `fix` push, `fix` PR, `new` push, `test` push, and `enhancement` PR on that commit.
+- This is script-generation regression coverage. Actual UI Automation execution, unique control matching, and post-action behavior still require supervised Windows 11 acceptance.
