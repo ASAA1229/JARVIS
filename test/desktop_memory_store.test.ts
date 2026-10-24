@@ -64,6 +64,15 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   const missingName = await planner.generatePlan('open Notepad and write my name', context);
   assert.equal(missingName.operations.length, 0);
   assert.match(missingName.explanation, /verified owner name configured/);
+  const savedName = await planner.generatePlan('open Notepad and write my name', {
+    ...context, memory: ['owner name: Abhishek Guda'],
+  });
+  assert.equal(savedName.operations[0]?.operation, 'desktop:launch_and_type');
+  assert.deepEqual(savedName.operations[0]?.parameters, { appId: 'notepad', text: 'Abhishek Guda' });
+  const copyPaste = await planner.generatePlan('copy this and paste it in Notepad', context);
+  assert.deepEqual(copyPaste.operations.map((op) => op.operation), [
+    'desktop:copy_selection', 'app:launch', 'desktop:paste_clipboard',
+  ]);
   const validation = planner.validatePlanSchema(type);
   assert.equal(validation.valid, true);
   assert.equal(planner.validatePlanSchema(compound).valid, true);
