@@ -122,7 +122,7 @@ function setupEventListeners() {
     speechOutputEnabled = !speechOutputEnabled;
     btnSpeech.setAttribute('aria-pressed', String(speechOutputEnabled));
     btnSpeech.textContent = speechOutputEnabled ? 'VOICE: ON' : 'VOICE: OFF';
-    if (!speechOutputEnabled && speechSynthesisAvailable) window.speechSynthesis.cancel();
+    if (!speechOutputEnabled && speechSynthesisAvailable) { window.speechSynthesis.cancel(); isSpeaking = false; }
     if (speechOutputEnabled) speakResponse('Voice responses enabled.');
   });
 
@@ -570,6 +570,7 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
+      speakResponse('The directive was rejected.');
       return;
     }
 
@@ -580,12 +581,14 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
+      speakResponse(result.message || 'The approved task completed and was verified.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('hud-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
+      speakResponse(result.message || 'The approved task did not complete.');
     } else {
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
@@ -593,6 +596,7 @@ async function resolveHudApproval(approvalId, approved) {
   } catch (err) {
     setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
     addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
+    speakResponse(err instanceof Error ? err.message : 'Approval status could not be confirmed.');
   }
 }
 
