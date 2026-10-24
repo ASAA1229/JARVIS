@@ -10,7 +10,10 @@ export type DesktopAction =
   | { operation: 'desktop:hotkey'; parameters: { keys: string[] } }
   | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
   | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
-  | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> };
+  | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
+  | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
+  | { operation: 'desktop:click_control'; parameters: { name: string } }
+  | { operation: 'desktop:set_value'; parameters: { name: string; text: string } };
 
 const HOTKEYS: Record<string, string> = {
   CTRL: '^', ALT: '%', SHIFT: '+', ENTER: '{ENTER}', TAB: '{TAB}',
@@ -147,6 +150,91 @@ export class WindowsDesktopAgent {
           data: { action: 'zoom', direction: action.parameters.direction },
           evidence: { host: 'windows', keySequence: sequence, acknowledgement: confirmed },
           error: confirmed ? undefined : 'Zoom key was not acknowledged; visual zoom level was not verified.',
+        };
+      }
+
+      if (action.operation === 'desktop:inspect_window') {
+        const script = [
+          'Add-Type -AssemblyName UIAutomationClient',
+          'Add-Type -AssemblyName UIAutomationTypes',
+          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+          'if ($null -eq $root) { throw "No foreground window is available." }',
+          '$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker',
+          '$items = New-Object System.Collections.Generic.List[object]',
+          '$current = $walker.GetFirstChild($root)',
+          'while ($null -ne $current -and $items.Count -lt 80) { $items.Add(@{ name = $current.Current.Name; controlType = $current.Current.ControlType.ProgrammaticName; automationId = $current.Current.AutomationId }); $current = $walker.GetNextSibling($current) }',
+          '$result = @{ process = $foreground.ProcessName; windowTitle = $foreground.MainWindowTitle; controls = @($items) }',
+          '$result | ConvertTo-Json -Depth 4 -Compress',
+        ].join('; ');
+        const output = await this.runPowerShell(script, signal);
+        const parsed = JSON.parse(output) as { process: string; windowTitle: string; controls: Array<{ name: string; controlType: string; automationId: string }> };
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: parsed,
+          evidence: { host: 'windows', mechanism: 'Windows UI Automation control-tree inspection', controlsReported: parsed.controls.length },
+        };
+      }
+
+      if (action.operation === 'desktop:click_control') {
+        const name = action.parameters.name;
+        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
+        const safeName = escapePowerShellSingleQuoted(name.trim());
+        const script = [
+          'Add-Type -AssemblyName UIAutomationClient',
+          'Add-Type -AssemblyName UIAutomationTypes',
+          "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+          '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+          'if ($matches.Count -ne 1) { throw ("Expected exactly one control named " + ' + "'" + safeName + "'" + ' + "; found " + $matches.Count) }',
+          '$element = $matches.Item(0)',
+          '$pattern = $null',
+          'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose an Invoke action." }',
+          '$pattern.Invoke()',
+          '[Console]::Out.WriteLine("CONTROL_INVOKED")',
+        ].join('; ');
+        const output = await this.runPowerShell(script, signal);
+        const confirmed = output.includes('CONTROL_INVOKED');
+        return {
+          success: confirmed,
+          outcome: confirmed ? VerificationOutcome.PARTIAL_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
+          data: { controlName: name },
+          evidence: { host: 'windows', mechanism: 'UI Automation InvokePattern', acknowledgement: confirmed },
+          error: confirmed ? undefined : 'Control invocation was not acknowledged.',
+        };
+      }
+
+      if (action.operation === 'desktop:set_value') {
+        const name = action.parameters.name;
+        const text = action.parameters.text;
+        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
+        this.validateText(text);
+        const safeName = escapePowerShellSingleQuoted(name.trim());
+        const safeText = escapePowerShellSingleQuoted(text);
+        const script = [
+          'Add-Type -AssemblyName UIAutomationClient',
+          'Add-Type -AssemblyName UIAutomationTypes',
+          "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+          '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+          'if ($matches.Count -ne 1) { throw ("Expected exactly one control named " + ' + "'" + safeName + "'" + ' + "; found " + $matches.Count) }',
+          '$element = $matches.Item(0)',
+          'if ($element.Current.IsPassword -or $element.Current.Name -match "(?i)password|passcode|pin|cvv|card number|bank account|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
+          '$pattern = $null',
+          'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Value action." }',
+          "$pattern.SetValue('" + safeText + "')",
+          '$actual = $pattern.Current.Value',
+          'if ($actual -cne ' + "'" + safeText + "'" + ') { throw "UI Automation value verification did not match." }',
+          '[Console]::Out.WriteLine("VALUE_VERIFIED")',
+        ].join('; ');
+        const output = await this.runPowerShell(script, signal);
+        const confirmed = output.includes('VALUE_VERIFIED');
+        return {
+          success: confirmed,
+          outcome: confirmed ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
+          data: { controlName: name, characters: text.length },
+          evidence: { host: 'windows', mechanism: 'UI Automation ValuePattern', valueVerified: confirmed },
+          error: confirmed ? undefined : 'The control value could not be verified.',
         };
       }
 
