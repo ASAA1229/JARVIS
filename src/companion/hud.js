@@ -390,8 +390,9 @@ function createSpeechRecognizer(captureGeneration) {
     if (captureGeneration !== voiceCaptureGeneration) return;
     console.error('Speech recognition error:', event.error);
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      cancelVoiceCapture();
       disableHandsFree();
-      setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access in the browser, then enable hands-free again.');
+      setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access for this site in browser settings, then retry voice input.');
       return;
     }
     if (isHandsFreeEnabled && !isMicMuted) {
