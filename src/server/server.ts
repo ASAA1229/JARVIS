@@ -10,7 +10,7 @@ import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
-import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 
 export class JarvisServer {
