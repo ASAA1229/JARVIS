@@ -221,20 +221,10 @@ try {
   }
   await hud.unroute('**/api/approval/approve');
 
-  // Cancel must discard both the transcript and any late result from that capture.
+  // Click-to-toggle voice capture must stay open after the initiating click.
   const ptt = hud.locator('#btn-ptt');
-  const pttBounds = await ptt.boundingBox();
-  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
-  await hud.mouse.down();
-  await hud.waitForTimeout(100);
-  const voiceDebug = await hud.evaluate(() => ({
-    recognizers: window.__mockRecognizers.length,
-    speechRecognition: typeof window.SpeechRecognition,
-    webkitSpeechRecognition: typeof window.webkitSpeechRecognition,
-    state: document.getElementById('hud-state-label').textContent,
-    hitTarget: document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.id,
-  }));
-  if (voiceDebug.recognizers !== 1) throw new Error(`Push-to-talk pointer did not start recognition: ${JSON.stringify(voiceDebug)}`);
+  await ptt.click();
+  await hud.waitForFunction(() => window.__mockRecognizers.length === 1, null, { timeout: 3000 });
   const listeningState = await hud.locator('#hud-state-label').innerText();
   if (listeningState !== 'LISTENING...') throw new Error(`Push-to-talk did not enter LISTENING state: ${listeningState}`);
   await hud.evaluate(() => window.__mockRecognizers[0].onresult({
@@ -249,17 +239,15 @@ try {
       await hud.locator('#transcript-box').isVisible()) {
     throw new Error('A canceled voice capture exposed a stale transcript');
   }
-  await hud.mouse.up();
 
-  // The explicit Discard action also clears the editable transcript.
-  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
-  await hud.mouse.down();
+  // The explicit Discard action clears an editable transcript.
+  await ptt.click();
   await hud.waitForFunction(() => window.__mockRecognizers.length === 2, null, { timeout: 3000 });
   await hud.evaluate(() => window.__mockRecognizers[1].onresult({
     results: [[{ transcript: 'discard this directive' }]],
   }));
   await hud.locator('#transcript-box').waitFor({ state: 'visible' });
-  await hud.mouse.up();
+  await ptt.click();
   await hud.locator('#btn-transcript-cancel').click();
   if (await hud.locator('#transcript-input').inputValue() !== '' ||
       await hud.locator('#transcript-box').isVisible()) {
@@ -278,20 +266,17 @@ try {
   }
 
   // The 15-second capture bound stops recognition and remains visible to the user.
-  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
-  await hud.mouse.down();
+  await ptt.click();
   await hud.getByText('VOICE TIME LIMIT').waitFor({ state: 'visible', timeout: 7000 });
-  await hud.mouse.up();
+  await ptt.click();
 
-  // Browser permission and recognizer failures must be explicit and leave text available.
+  // Browser permission failure is explicit, releases the capture state, and leaves text available.
   const recognizerCount = await hud.evaluate(() => window.__mockRecognizers.length);
-  await hud.mouse.move(pttBounds.x + pttBounds.width / 2, pttBounds.y + pttBounds.height / 2);
-  await hud.mouse.down();
+  await ptt.click();
   await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, recognizerCount, { timeout: 3000 });
   await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'not-allowed' }), recognizerCount);
-  await hud.getByText('SPEECH ENGINE ERROR').waitFor({ state: 'visible' });
-  await hud.getByText('Recognition failed: not-allowed').waitFor({ state: 'visible' });
-  await hud.mouse.up();
+  await hud.getByText('MICROPHONE PERMISSION REQUIRED').waitFor({ state: 'visible' });
+  await hud.getByText('Allow microphone access for this site in browser settings, then retry voice input.').waitFor({ state: 'visible' });
 
   await hud.locator('#btn-toggle-motion').click();
 
