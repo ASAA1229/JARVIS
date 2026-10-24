@@ -309,6 +309,23 @@ export class JarvisCoreService {
         case 'app:launch':
           rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
           break;
+        case 'desktop:launch_and_type': {
+          const launch = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
+          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+            rawResult = launch;
+          } else {
+            const typing = await this.desktopAgent.execute({
+              operation: 'desktop:type_text',
+              parameters: { text: opRequest.parameters.text as string },
+            }, abortController.signal);
+            rawResult = {
+              ...typing,
+              data: { launch: launch.data, typing: typing.data },
+              evidence: { launch: launch.evidence, typing: typing.evidence },
+            };
+          }
+          break;
+        }
         case 'desktop:type_text':
         case 'desktop:paste_text':
         case 'desktop:hotkey':
