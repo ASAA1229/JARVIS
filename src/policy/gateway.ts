@@ -119,7 +119,6 @@ export class PolicyGateway {
     }] as [string, PolicyRule]),
     ['device:enrollment:exchange', { operation: 'device:enrollment:exchange', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.MEDIUM, requiresApproval: false }],
     ['device:self-revoke', { operation: 'device:self-revoke', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.HIGH, requiresApproval: false }],
-    ['device:self-revoke', { operation: 'device:self-revoke', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.HIGH, requiresApproval: false }],
   ]);
 
   constructor(audit: AuditLogger, grantPath = './data/approval-grants.json', ownerControlToken?: string) {
@@ -225,7 +224,19 @@ export class PolicyGateway {
       };
     }
 
-    // Rule 3: Validate parameters against allowed list
+    // Rule 3: Runtime inputs are untrusted even when TypeScript types say otherwise.
+    // Reject malformed parameter containers before enumerating keys or hashing them.
+    if (!req.parameters || typeof req.parameters !== 'object' || Array.isArray(req.parameters)) {
+      this.audit.record('POLICY_DENIED_INVALID_PARAMETERS', { operation: req.operation, reason: 'PARAMETERS_NOT_OBJECT' }, device.id, taskId);
+      return {
+        allowed: false,
+        requiresApproval: false,
+        riskTier: rule.riskTier,
+        reason: 'Operation parameters must be a plain object',
+      };
+    }
+
+    // Rule 4: Validate parameters against allowed list
     if (rule.allowedParameters) {
       for (const param of Object.keys(req.parameters)) {
         if (!rule.allowedParameters.includes(param)) {
@@ -279,6 +290,27 @@ export class PolicyGateway {
           requiresApproval: true,
           riskTier: rule.riskTier,
           reason: 'Approval record not found',
+        };
+      }
+
+      // Bind every approval to the exact task, requesting device, and operation.
+      // A matching parameter hash alone is not sufficient: identical parameters
+      // must never let an approval be replayed against another task or operation.
+      if (approval.taskId !== taskId || approval.deviceId !== device.id || approval.operation !== req.operation) {
+        this.audit.record('POLICY_DENIED_APPROVAL_BINDING_MISMATCH', {
+          approvalId: approval.id,
+          expectedTaskId: approval.taskId,
+          requestedTaskId: taskId,
+          expectedDeviceId: approval.deviceId,
+          requestedDeviceId: device.id,
+          expectedOperation: approval.operation,
+          requestedOperation: req.operation,
+        }, device.id, taskId);
+        return {
+          allowed: false,
+          requiresApproval: false,
+          riskTier: rule.riskTier,
+          reason: 'Approval token is not bound to this task, device, and operation',
         };
       }
 
