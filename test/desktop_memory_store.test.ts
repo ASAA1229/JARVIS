@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PersonalMemoryStore } from '../src/memory/personalMemoryStore.js';
@@ -38,7 +38,7 @@ test('tampered memory fails closed instead of silently replacing data', () => wi
   new PersonalMemoryStore(path, TOKEN).save('preference', 'concise responses');
   const raw = JSON.parse(readFileSync(path, 'utf8')) as { ciphertext: string };
   raw.ciphertext = Buffer.from('tampered').toString('base64');
-  require('node:fs').writeFileSync(path, JSON.stringify(raw));
+  writeFileSync(path, JSON.stringify(raw));
   assert.throws(() => new PersonalMemoryStore(path, TOKEN), /could not be decrypted or validated/);
 }));
 
