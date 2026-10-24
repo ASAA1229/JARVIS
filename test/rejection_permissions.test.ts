@@ -37,7 +37,7 @@ test('rejecting a desktop approval requires APP_LAUNCH permission', async () => 
 
   const pending = await jarvis.submitRequest(requester.sessionId, 'Please launch Notepad');
   assert.equal(pending.state, TaskState.AWAITING_APPROVAL);
-  await assert.rejects(
+  assert.throws(
     () => jarvis.rejectTask(pending.approvalId!, readOnlyApprover.sessionId),
     /lacks permission for this action/i,
   );
@@ -56,7 +56,7 @@ test('rejecting a personal-memory approval requires DEVICE_MANAGE permission', a
     RiskTier.HIGH,
   );
 
-  await assert.rejects(
+  assert.throws(
     () => jarvis.rejectTask(approval.id, readOnlyApprover.sessionId),
     /lacks DEVICE_MANAGE permission for personal memory/i,
   );
