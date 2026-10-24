@@ -74,3 +74,31 @@ The repository's own implementation-status documentation identifies these remain
 ## Overall assessment
 
 The latest commit has a **passing automated CI result**, and the targeted UI Automation variable defect is corrected. JARVIS is **not release-ready** on the evidence available here: universal desktop control, native mobile agents, and physical-device/security acceptance still require implementation and testing. Do not represent these unverified areas as passed.
+
+
+## Addendum — exact shared-commit CI and branch inventory (2026-10-24)
+
+The post-consolidation commit `1add4dd60da8bfdfdbdf4db6966b2460fd088bf5` completed all configured hosted CI runs:
+
+- [`fix` push run 40086575134](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086575134): PASS.
+- [`fix` pull-request run 40086577025](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577025): PASS.
+- [`new` push run 40086577872](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577872): PASS.
+- [`test` push run 40086580489](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086580489): PASS.
+
+The runs execute the repository workflow's clean dependency install, build, TypeScript check, automated test suite, and browser smoke suite. This is exact-commit hosted CI evidence for the shared baseline; it does not replace manual acceptance on Windows or physical phones.
+
+### Branch/documentation reconciliation
+
+Recursive Git tree inspection covered `main`, `dev`, `new`, `fix`, `test`, `lovable`, `enhancement`, and `Jarvis-Abhi` (all returned non-truncated trees). The `feature/local-neural-tts` ref could not be included in that API tree request because its slash-containing branch name was rejected by the connected fetch wrapper. The `new`, `fix`, `test`, and `enhancement` trees match for the reviewed test/doc baseline; `dev` is an ancestor of `enhancement` and remains behind it. `main` was not changed.
+
+The current `enhancement` versions of `POC.md`, `POC2.md`, `master_repo_md.md`, and `master_repo_test` are newer and more detailed than their `lovable` versions. The Lovable versions contain historical 2026-10-23 evidence tied to a dirty tree and an older commit; their historical claims must not overwrite newer exact-commit CI results. The Lovable branch also contains accepted ADR drafts and older audit/plan documents. Those remain useful historical design context, but their status/evidence dates must be preserved and they must not be treated as current acceptance evidence. The current canonical documents remain authoritative for implementation status.
+
+### Remaining acceptance blockers
+
+- Real Windows 11 UI path: visible app launch, target selection, content entry and independent post-action verification.
+- Physical microphone, wake phrase, recognition lifecycle and audible TTS behavior.
+- Android enrollment, secure channel, revocation and two-phone isolation on physical devices; native iOS agent remains incomplete.
+- Security review of persistence failure/recovery, API error redaction, and policy non-bypass under adversarial integration tests.
+- Exact-commit local device evidence cannot be produced by GitHub CI alone.
+
+**Disposition remains BLOCKED / NOT RELEASE-READY.**
