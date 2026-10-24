@@ -172,12 +172,21 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          '$before = [System.Windows.Forms.Clipboard]::GetText()',
           '[System.Windows.Forms.SendKeys]::SendWait("^c")',
-          'Start-Sleep -Milliseconds 180',
+          'Start-Sleep -Milliseconds 250',
           '$clip = [System.Windows.Forms.Clipboard]::GetText()',
-          '[Console]::Out.WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($clip)))',
+          'if ([string]::IsNullOrWhiteSpace($clip) -or $clip -eq $before) { [Console]::Out.WriteLine("COPY_UNVERIFIED") } else { [Console]::Out.WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($clip))) }',
         ].join('; ');
         const output = await this.runPowerShell(script, signal);
+        if (!output || output.includes('COPY_UNVERIFIED')) {
+          return {
+            success: false,
+            outcome: VerificationOutcome.UNCERTAIN,
+            error: 'No new non-empty selection was verified; JARVIS will not reuse possibly stale clipboard content.',
+            evidence: { host: 'windows', mechanism: 'Ctrl+C + clipboard comparison', verified: false },
+          };
+        }
         const encoded = output.split(/\r?\n/).filter(Boolean).at(-1) || '';
         const text = Buffer.from(encoded, 'base64').toString('utf8');
         return {
