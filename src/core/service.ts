@@ -451,7 +451,7 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
-    if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
+    if ((approval.operation === 'app:launch' || approval.operation.startsWith('desktop:')) && !approver.permissions.includes(Permission.APP_LAUNCH)) {
       this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error('Approver lacks permission for this action');
     }
