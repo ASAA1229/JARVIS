@@ -1,65 +1,78 @@
 # Cross-Device Agent Protocol and Implementation Status
 
-## Execution architecture
+**Updated:** 2026-10-24  
+**Status:** Windows local POC foundation present; native Android agents and secure remote operation are not yet accepted.
 
-The server is the planner and policy authority; it is not itself a universal device controller. Each target device must run a device-side agent that advertises supported capabilities and executes only signed, policy-authorized requests.
+## Architecture target
 
-### Request lifecycle
+The server is the planner and policy authority; it is not itself a universal device controller. Each target device must run a device-side agent that advertises capabilities and executes only authenticated, policy-authorized requests.
 
-1. The user submits a voice/text goal from an enrolled device.
-2. The planner produces a bounded list of typed operations. Model output is advisory only.
-3. The policy gateway validates every operation and parameters.
-4. Each state-changing step obtains a task-scoped approval. Approval binds the device, operation, canonical parameters hash, and expiry.
-5. The authenticated device agent executes the action with cancellation and a timeout.
-6. The agent returns structured evidence; JARVIS verifies the result and appends an audit record.
-7. The next workflow step is evaluated independently. A failure or uncertain result stops the workflow.
+1. User submits a voice/text goal from an enrolled device.
+2. Planner produces a bounded list of typed operations; model output is advisory.
+3. Policy gateway validates every operation and parameter.
+4. State-changing steps obtain task-scoped approval when required. Approval binds device, task, operation, canonical parameter hash and expiry.
+5. Authenticated device-side adapter executes with cancellation and timeout.
+6. Adapter returns structured evidence; verifier evaluates the result and audit records the outcome.
+7. Each following workflow step is checked independently. Unexpected state or uncertain outcome stops dependent actions.
 
-### Signed HTTP requests
+## Current repository evidence
 
-Native clients must use the same device-bound session and signed-request protocol as the existing companion. Signatures must bind the HTTP method, request path, session ID, timestamp, nonce, and SHA-256 body digest. Nonces are single-use. Do not embed owner control tokens or shared server secrets in mobile apps.
+The current source includes:
+- Ed25519 device identity/session foundations and signed request validation.
+- Timestamp/nonce replay protection and device revocation.
+- Enrollment transactions with owner approval and TOTP step-up.
+- Default-deny policy checks and task/device/operation/parameter-bound approval logic.
+- Hash-chained audit records and encrypted local memory.
+- A bounded Windows foreground-window adapter and selected application launch.
+- A browser-based companion/HUD.
+
+The source tree does **not** contain a completed native Android application/agent. The web companion does not provide native Android Keystore, unrestricted app control, or background telephony authority.
+
+## Signed request requirements
+
+Native clients must use the device-bound session and signed-request protocol. Signatures bind HTTP method, request path, session ID, timestamp, nonce and SHA-256 body digest. Nonces are single-use. Never embed owner control tokens or shared server secrets in mobile apps. Device revocation and session expiry must be checked at execution time.
 
 ## Windows agent
 
-src/adapters/windowsDesktopAgent.ts implements a bounded foreground-window adapter for explicit text entry, clipboard selection/paste, allowlisted hotkeys, and zoom shortcuts. It uses PowerShell in non-interactive STA mode without shell:true, requires the existing app-launch permission, and each state-changing operation is approval-gated.
+The current Windows adapter targets the foreground window and supports bounded actions such as explicit text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, foreground-window inspection, unique-name control invocation and value-setting. The app launcher has a small static allowlist and constrained Start-menu discovery.
 
-Current limitations:
-- The desktop interaction adapter targets the current foreground window, not arbitrary hidden windows. UI Automation currently enumerates immediate controls and requires exact unique control names; it is not complete automation for every custom-rendered app.
-- Keyboard/clipboard acknowledgement is not proof that an application accepted or saved the content. Those actions are reported as partial until stronger UI Automation verification is available.
-- Financial/payment application names in the foreground process/window title are blocked as a defense-in-depth check; this heuristic is not a complete way to detect every financial website or app.
-- This is not yet universal Windows UI Automation. A production agent should use a dedicated Windows UI Automation implementation, explicit target selection, accessibility-tree inspection, and stronger foreground identity checks.
+Limitations:
+- It is not universal control of every installed Windows app.
+- UI Automation requires accessible controls and exact unique names; custom-rendered apps may not expose usable controls.
+- Clipboard/keyboard acknowledgements do not prove that destination content was accepted or saved.
+- Financial/payment protection based on process/window names is defense in depth, not complete detection.
+- Physical target-Windows acceptance is still required.
 
-### Supported bounded workflows
+## Android requirements
 
-- zoom in, zoom out, reset zoom sends an app-appropriate keyboard shortcut to the foreground window.
-- type <explicit text> pastes the supplied text to the foreground window after approval.
-- copy selected text copies the current selection and returns its text; this can expose sensitive data, so approval is required.
-- copy this and paste it into Notepad plans copy → launch Notepad → paste. Each step passes policy independently.
-- open Notepad and write <explicit text> launches Notepad and enters the supplied text after approval.
-- open Notepad and write my name is not executed if a verified owner name is unavailable; JARVIS asks the owner to configure or provide it.
+- Native companion/agent with Android Keystore-backed device key.
+- Independent enrollment, identity, sessions, permissions and revocation for each phone.
+- Signed requests, replay protection, secure authenticated transport and run-time authorization.
+- App discovery/launch through permitted OS APIs; selected notifications, messaging and telephony only where platform and app capabilities permit.
+- AccessibilityService only after explicit user enablement, with transparent disclosure and narrow permissions.
+- Real two-phone acceptance: enroll both, verify independent keys/permissions, revoke one, and prove the other remains usable.
+- Remote control must remain disabled until transport, authorization and physical-device acceptance are proven.
 
-## Personal memory
+## Laptop reachability and recovery
 
-src/memory/personalMemoryStore.ts provides local AES-256-GCM encrypted storage derived from the configured owner control token, integrity verification on read, atomic writes, TTLs, categories, and conservative rejection of credential/payment-like content. The /api/memory endpoints require a signed authenticated session and DEVICE_MANAGE permission.
+- Check authenticated reachability and current session before execution.
+- If the laptop is asleep, attempt wake only through an explicitly supported and configured mechanism.
+- If unavailable, queue harmless informational tasks only. Reject or revalidate state-changing tasks on reconnection.
+- On unexpected state, stop dependent operations, reconcile what happened, and retry/roll back only when safe.
+- Do not report success without evidence.
 
-Voice/text requests such as 'remember my name is Abhishek' and 'what do you remember about me' are routed to owner-only memory operations. Save/delete operations require approval; memory listing requires DEVICE_MANAGE. The initial memory implementation is not a substitute for a full profile UI, semantic retrieval, verified deletion across backups, or richer retention controls. Those remain required before memory should be considered complete.
+## Universal app discovery and integrations
 
-## Official store discovery
+The target is to discover installed and built-in apps on Windows and both Android phones, identify available official APIs and accessible UI capabilities, then select the safest authorized adapter. Unsupported capabilities must be reported explicitly.
 
-POST /api/store-search is authenticated and returns official Microsoft Store, Google Play, or Apple App Store search URLs. It excludes known payment app names. It does not silently install software: installation must continue through the official store and its user/OS confirmation flow. Automated installation is platform-dependent and not claimed as implemented.
+Email, WhatsApp, SMS, normal cellular calls, supported VoIP calls, Teams, Microsoft 365, calendar scheduling and other application integrations remain incomplete until their end-to-end adapters and acceptance tests exist. Official-store search currently generates official search destinations; it does not install apps.
 
-## Android and iOS
+## Memory and AI privacy
 
-Native agents are not yet complete. They must be separately installed and enrolled; web browser capabilities cannot substitute for native OS authority.
+The encrypted local memory store is an initial foundation, not a complete user-facing memory system. Rich retrieval, conflict resolution, source visibility, cross-device sync, retention workflows and verified deletion across backups remain open.
 
-Android implementation requirements:
-- Keystore-backed device key, authenticated enrollment, signed requests, revocation checks, and least-privilege permissions.
-- App launch through package manager; ring/find through OS-supported features; AccessibilityService only after explicit user enablement and with a clear privacy indicator.
-- Store installation remains a Play Store handoff with user confirmation; no silent install or sideload.
-
-iOS implementation requirements:
-- Device-bound authentication and supported Shortcuts/App Intents, app URL schemes where available, and Apple-approved Find My integration.
-- Do not promise unrestricted cross-app control, background automation, or voice-only unlocking. iOS restrictions must be surfaced as unsupported/partial capabilities.
+Prefer local AI for private data. Before cloud sharing when required, disclose the data and purpose, minimize the payload, and obtain authorization. The planner/model never bypasses the policy gateway.
 
 ## Validation boundary
 
-CI can validate TypeScript, planner/policy behavior, encrypted memory, and store URL generation. It cannot prove that a Windows app received text, that zoom changed visually, or that mobile controls work on physical devices. Windows UI tests and Android/iOS device tests are still required before claiming universal control.
+Hosted CI can validate TypeScript, planner/policy behavior, encrypted memory and adapter tests. It cannot prove that an actual Windows application received/saved text, that zoom changed visually, or that native Android controls work on physical devices. Keep universal application control, always-ready local wake-word behavior, two-phone remote operation, communications integrations and recurring unattended workflows marked partial/planned until target acceptance evidence exists.

@@ -1,175 +1,105 @@
 # JARVIS Repository Audit Report — 2026-10-24
 
+**Updated after JARVIS Gap Closure Rounds 1–15.** This report records the live GitHub branch state, source-level findings, hosted CI evidence, and remaining acceptance gaps. It is not a physical-device certification.
+
 ## Scope and method
 
-This audit reviews the GitHub repository state available on 2026-10-24, including branch ancestry, the latest Windows desktop-agent change, project status documentation, and the latest GitHub Actions CI run for commit `096f91fc796105c300d8e51699da84b9e14ceb75`.
+Reviewed repository metadata, remote branch inventory, PR #12, branch/tree comparisons, the recursive source tree on new, core implementation files, current POC/requirements documentation, and recent GitHub Actions runs.
 
-This is a repository/CI audit, not a claim of complete physical-device acceptance. The remote GitHub tools can inspect source and CI results but cannot operate the owner's Windows desktop, microphones, Android phones, or iOS devices directly.
+Repository: https://github.com/Guda-Abhishek/JARVIS  
+Default branch: main (private repository)  
+Audit baseline before this report's documentation updates: new at 6222e1964774c78e6853d6113335b1a3f0284881.
 
-## Branch findings
+The remote GitHub review can inspect source and hosted CI but cannot operate the owner's Windows desktop, microphone, or Android phones. Source presence and CI success are not proof of real-world acceptance.
 
-- `enhancement` contains the current `fix`, `new`, `test`, `dev`, `Jarvis-Abhi`, and `feature/local-neural-tts` histories as ancestors, based on GitHub compare results.
-- `lovable` diverged from `enhancement` with three documentation-only files (`POC.md`, `POC2.md`, and `master_repo_md.md`). These are not merged into this code baseline by this audit; they require a deliberate documentation reconciliation rather than blind branch replacement.
-- `main` is intentionally excluded from automated updates and remains unchanged.
-- The desired shared development baseline is the `enhancement` commit plus this audit report. The `fix`, `new`, and `test` branch heads can be fast-forwarded to that shared commit without force-pushing their existing histories.
+## Branch and PR findings
 
-## Latest automated validation
+At the start of this audit, the remote branches were:
+- dev — d061216b2a007992e4ddae912d8e88c812934bd1
+- main — 5c7d8d303862de6ac730db9e15855b5f6a70af59
+- new — 6222e1964774c78e6853d6113335b1a3f0284881
 
-GitHub Actions run: [JARVIS CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086166228)
+PR #12, titled “New”, from new to dev was already merged on 2026-10-24. Merge commit: d061216b2a007992e4ddae912d8e88c812934bd1. See https://github.com/Guda-Abhishek/JARVIS/pull/12.
 
-Run result: **success** for commit `096f91fc796105c300d8e51699da84b9e14ceb75`.
+The dev and new commits reference the same Git tree c1f4e650e4e358bd9e00505c2e3e01cff32f9a18. Thus their code/files were identical at the time of inspection, while dev was one merge commit ahead of new. This is a same-tree result, not identical commit IDs.
 
-Completed successfully:
-1. Checkout repository
-2. Set up Node.js 24
-3. Install locked dependencies with `npm ci`
-4. TypeScript build (`npm run build`)
-5. TypeScript check (`npm run lint`)
-6. Automated tests (`npm test`)
-7. Browser security smoke test (`npm run test:browser`)
+The missing role branches were recreated from dev:
+- fix — debugging and regression fixes
+- test — test/audit work
+- enhancement — broader feature enhancements
 
-The workflow's configured commands all passed for that commit. After this report is committed and the shared branch heads are updated, the push-triggered CI runs for `fix`, `new`, and `test` must be checked separately before those branches are described as validated.
+main was not modified. The branch recreation was based on dev's merge commit. Branch-specific CI triggered for fix/test was still in progress at the time of the initial inventory; the latest run status must be checked before describing those branch heads as CI-validated.
 
-## Finding addressed
+## Hosted CI evidence
 
-**Windows UI Automation control-count variable mismatch.** The `desktop:set_value` operation originally checked `$foundControls.Count` while the query result was stored in `$matches`. The validation now checks `$matches.Count`; the separate click-control operation continues to check `$foundControls.Count`. This prevents an undefined/stale variable from undermining unique-control validation. The change is included in commit `096f91f`, whose CI run passed.
+- new, commit 6222e1964774c78e6853d6113335b1a3f0284881: successful run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500
+- dev, commit d061216b2a007992e4ddae912d8e88c812934bd1: successful run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606
 
-## Code and security review
+The latest new commit message records the final 103-test security CI pass. Use the linked workflow run for exact job evidence. The configured CI includes locked dependency installation, build/typecheck, tests and browser smoke. npm audit is not confirmed by these runs; the package advisory endpoint was previously unavailable.
 
-The Windows agent is deliberately bounded to the current foreground window, uses a non-shell PowerShell invocation, allowlists keyboard shortcuts, limits text length, rejects credential/financial-like target fields, and requires policy authorization upstream. These are useful guardrails, not proof of universal or complete desktop control.
+## Source-level implementation findings
 
-The repository's own implementation-status documentation identifies these remaining limits:
-- UI Automation requires accessible, uniquely named controls; custom-rendered applications may not expose a usable tree.
-- Clipboard and keyboard acknowledgements do not prove that a destination accepted, persisted, or saved the content; such results must remain partial unless independently verified.
-- Foreground title/process heuristics do not reliably detect every financial/payment UI.
-- Native authenticated Android/iOS agents and physical-device acceptance remain incomplete.
-- Personal memory still needs richer review/retrieval and verified deletion/retention behavior before it can be called complete.
-- Official-store discovery returns official search links; it does not silently install applications.
+### Present foundation
+- Node.js 24 / TypeScript modular-monolith project with build, lint/typecheck, test and browser-smoke scripts.
+- Device identity/session and signed-request foundations using Ed25519, replay checks, enrollment proof-of-possession, owner approval, TOTP step-up and revocation.
+- Default-deny policy gateway with operation/permission/parameter checks, task-scoped approval binding and audit logging.
+- Hash-chained audit records, error redaction and fail-closed handling in security-sensitive paths.
+- Selected read-only Windows system queries.
+- Windows app launch adapter with a small static allowlist and constrained Start-menu discovery.
+- Foreground-window desktop adapter for explicit text paste, clipboard selection, allowlisted hotkeys, zoom shortcuts, control inspection/click/value setting.
+- Encrypted local memory foundation with categories/TTL and integrity checks.
+- Browser companion/HUD with push-to-talk/text fallback, optional local Piper TTS, and capability registry.
+- Official app-store search URL generation.
+
+### Gaps confirmed by source/document inspection
+1. **Universal Windows control:** current UI automation targets the foreground window and accessible uniquely named controls. It cannot guarantee operation in every installed/custom-rendered app. Keyboard/clipboard acknowledgements do not prove content was saved.
+2. **Voice:** current voice manager defaults wake-word listening off. Browser speech recognition may use vendor/cloud processing. Always-ready local wake phrase and real microphone/TTS acceptance are not proven.
+3. **Native Android:** no complete native Android agent or Android Keystore client is present in this source tree. Two-phone enrollment, secure remote transport and device-level acceptance remain open.
+4. **Communications:** end-to-end email send/schedule, WhatsApp, SMS, cellular/VoIP calls, Teams, Microsoft 365 and calendar adapters are not complete in this POC.
+5. **Scheduling and autonomy:** durable multi-step workflows, recurring/conditional scheduling, unattended persistence/recovery and reconnect reconciliation are incomplete.
+6. **Memory:** encrypted local storage exists, but full review/conflict UI, source visibility, semantic retrieval, cross-device sync policy, retention lifecycle and verified deletion across backups remain open.
+7. **App installation:** current official-store functionality generates official search destinations; it does not silently install apps.
+8. **Financial/payment protection:** process/window-name checks are only defense in depth. The owner policy exclusion must remain and must not be represented as perfect detection.
+9. **Remote transport:** current loopback-first behavior does not establish a secure, accepted remote device channel.
+10. **Cost/privacy:** the deterministic planner does not currently use OPENAI_API_KEY; hybrid local/cloud routing and provider/free-tier verification remain future work.
 
 ## Acceptance matrix
 
-| Area | Evidence available | Status |
+| Area | Repository/CI evidence | Current status |
 |---|---|---|
-| TypeScript build | GitHub Actions run above | PASS |
-| TypeScript static check | GitHub Actions run above | PASS |
-| Automated test suite | GitHub Actions run above | PASS |
-| Browser security smoke test | GitHub Actions run above | PASS |
-| UI Automation unique-control variable fix | Source reviewed; same commit CI passed | PASS for static/test evidence |
-| Actual Windows app interaction and saved-content verification | Requires the owner's Windows 11 session and target apps | NOT VERIFIED |
-| Wake word, microphone, speech recognition and TTS on target hardware | Requires live audio/hardware test | NOT VERIFIED |
-| Android enrollment, revocation and remote task execution | Requires enrolled physical Android devices | NOT VERIFIED |
-| Native iOS agent | Implementation status says incomplete | BLOCKED / INCOMPLETE |
-| Universal Windows application control | Implementation status says incomplete | PARTIAL |
-| Security-policy non-bypass under live adversarial testing | Requires targeted integration/security tests beyond ordinary CI | NOT FULLY VERIFIED |
+| Build, static check, automated tests, browser smoke | Successful hosted CI on new and dev commits above | PASS for those exact commits |
+| Device identity, request signing, approval gateway | Code and regression tests present | Implemented foundation; independent review and edge-case coverage remain |
+| Windows app launch | Adapter and tests present | Partial; target Windows interactive-session test required |
+| Windows UI Automation | Bounded adapter and tests present | Partial; real app acceptance and stronger outcome verification required |
+| Voice/HUD | Browser companion and smoke harness present | Partial; physical mic, local wake and audible TTS not accepted |
+| Encrypted memory | Store/API foundation and tests present | Partial |
+| Native Android / two phones | No completed native agent in tree | Planned/incomplete |
+| Email, messaging, calls, Teams, Microsoft 365 | No complete end-to-end integration layer | Planned/incomplete |
+| Scheduled unattended workflows | No complete durable scheduler/orchestrator | Planned/incomplete |
+| Universal app discovery/control | Partial launch discovery and bounded Windows UI automation | Planned/partial; not universal |
+| npm audit | No verified current result | Unverified |
+| Physical-device/security acceptance | Not possible through hosted CI alone | Open |
 
-## Follow-up actions
+## Required next steps
 
-1. Confirm CI succeeds on the updated `fix`, `new`, and `test` branch heads.
-2. Reconcile the three documentation-only files unique to `lovable` if their content is still authoritative; do not replace current implementation documentation blindly.
-3. Add focused regression tests around UI Automation target-count handling and parameter/field-name escaping.
-4. Perform supervised Windows 11 acceptance tests for target selection, text entry, copy/paste, cancellation, app-launch evidence, and post-action verification.
-5. Test Android companion enrollment, session revocation, and approval flows on the actual enrolled devices.
-6. Keep `main` unchanged until the owner performs the planned manual release merge from `dev`.
+1. Keep POC.md honest about implemented vs partial behavior; keep POC2.md as the acceptance checklist.
+2. Merge the current documentation reconciliation to dev by PR only; do not automate main.
+3. Run exact-commit CI on all updated branches and confirm the newly recreated branch runs.
+4. Close P0 security/approval/transport gaps before broad automation.
+5. Validate the Windows agent on the target laptop and implement/test native Android support on both phones.
+6. Build communication, calendar, application-adapter, and durable workflow layers incrementally with explicit approvals and result verification.
+7. Run failure-injection, privacy, memory-retention/deletion, performance and physical-device acceptance.
+8. Update existing documentation only; do not create duplicate status/requirements Markdown files.
 
 ## Overall assessment
 
-The latest commit has a **passing automated CI result**, and the targeted UI Automation variable defect is corrected. JARVIS is **not release-ready** on the evidence available here: universal desktop control, native mobile agents, and physical-device/security acceptance still require implementation and testing. Do not represent these unverified areas as passed.
+The repository has a useful security-oriented foundation and a green automated baseline, but it is **not yet the planned universal JARVIS assistant**. The most significant missing areas are native Android/remote operation, real Windows acceptance, local always-ready voice, end-to-end communication integrations, durable scheduling/workflows, and full user-controlled memory. The next implementation phase should begin with the POC2 acceptance register and staged security-first delivery, not a broad unbounded feature dump.
 
 
-## Addendum — exact shared-commit CI and branch inventory (2026-10-24)
+## Addendum — gap-closure documentation reconciliation (2026-10-24)
 
-The post-consolidation commit `1add4dd60da8bfdfdbdf4db6966b2460fd088bf5` completed all configured hosted CI runs:
+After the initial source audit, the following existing files were updated on the non-main branch new to align the current status and the 15 approved discovery decisions: POC.md, POC2.md, README.md, AGENTS.md, master_repo_md.md, docs/PERSONALIZED_JARVIS_REQUIREMENTS.md, and docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md. This audit report was also refreshed. No new Markdown files were created and no application source code was changed by this documentation pass.
 
-- [`fix` push run 40086575134](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086575134): PASS.
-- [`fix` pull-request run 40086577025](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577025): PASS.
-- [`new` push run 40086577872](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577872): PASS.
-- [`test` push run 40086580489](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086580489): PASS.
+The documentation now distinguishes current repository implementation from the broader target: local always-ready wake-word voice, native Android/Android Keystore, two-phone remote control, email/WhatsApp/SMS/call/Teams/Microsoft 365 integrations, durable scheduling, full memory lifecycle, and universal app control remain incomplete until implemented and accepted.
 
-The runs execute the repository workflow's clean dependency install, build, TypeScript check, automated test suite, and browser smoke suite. This is exact-commit hosted CI evidence for the shared baseline; it does not replace manual acceptance on Windows or physical phones.
-
-### Branch/documentation reconciliation
-
-Recursive Git tree inspection covered `main`, `dev`, `new`, `fix`, `test`, `lovable`, `enhancement`, and `Jarvis-Abhi` (all returned non-truncated trees). The `feature/local-neural-tts` ref could not be included in that API tree request because its slash-containing branch name was rejected by the connected fetch wrapper. The `new`, `fix`, `test`, and `enhancement` trees match for the reviewed test/doc baseline; `dev` is an ancestor of `enhancement` and remains behind it. `main` was not changed.
-
-The current `enhancement` versions of `POC.md`, `POC2.md`, `master_repo_md.md`, and `master_repo_test` are newer and more detailed than their `lovable` versions. The Lovable versions contain historical 2026-10-23 evidence tied to a dirty tree and an older commit; their historical claims must not overwrite newer exact-commit CI results. The Lovable branch also contains accepted ADR drafts and older audit/plan documents. Those remain useful historical design context, but their status/evidence dates must be preserved and they must not be treated as current acceptance evidence. The current canonical documents remain authoritative for implementation status.
-
-### Remaining acceptance blockers
-
-- Real Windows 11 UI path: visible app launch, target selection, content entry and independent post-action verification.
-- Physical microphone, wake phrase, recognition lifecycle and audible TTS behavior.
-- Android enrollment, secure channel, revocation and two-phone isolation on physical devices; native iOS agent remains incomplete.
-- Security review of persistence failure/recovery, API error redaction, and policy non-bypass under adversarial integration tests.
-- Exact-commit local device evidence cannot be produced by GitHub CI alone.
-
-**Disposition remains BLOCKED / NOT RELEASE-READY.**
-
-## Addendum — second UI Automation regression corrected (2026-10-24)
-
-A deeper review of the generated PowerShell revealed that the count-check variables in the two UI Automation operations were still crossed in the current source: `desktop:click_control` queried `$foundControls` but checked `$matches.Count`, while `desktop:set_value` queried `$matches` but checked `$foundControls.Count`. The earlier audit statement that this was fully corrected was premature.
-
-Correction committed in the current baseline:
-- Extracted pure control-script construction into `buildControlActionScript`, so the collection used for uniqueness validation is the same collection indexed by each operation.
-- Added `test/windows_desktop_agent.test.ts` regression tests for both collection-count bindings and PowerShell single-quote escaping.
-- Commit `220e002f8759d1631a032ff1bf7e67e6bf362273` passed hosted CI on `fix` push, `fix` pull request, `new` push, `test` push, and `enhancement` pull request. See [fix push CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087868925), [fix PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872607), [new CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872145), [test CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087882564), and [enhancement PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087864041).
-
-This is automated regression evidence for command construction, not proof of successful interaction with actual Windows UI Automation controls on the target MSI.
-
-
-## Addendum — final automated desktop-control regression baseline (2026-10-24)
-
-Final code/test baseline: `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`. The Windows desktop adapter now has six focused tests covering collection/count consistency, PowerShell single-quote escaping, sensitive-field guard generation, independent value read-back, missing set-value input, and invalid control-name rejection before OS execution.
-
-Hosted CI completed successfully for the same commit:
-- [`fix` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089155846) — PASS.
-- [`fix` pull request](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159050) — PASS.
-- [`new` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159384) — PASS.
-- [`test` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089168551) — PASS.
-- [`enhancement` pull request](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089122755) — PASS.
-
-The workflow successfully ran locked dependency installation, TypeScript build, TypeScript checking, automated tests, and browser smoke tests. This verifies the CI harness, not interactive desktop control. Windows CI runners do not provide evidence that a visible Notepad window opened in the owner's interactive desktop session; physical microphone, wake phrase, Android/two-phone, and native iOS acceptance remain unverified. Do not mark those gates complete without target-environment evidence.
-
-## Addendum — approval scope binding and malformed policy inputs (2026-10-24)
-
-Working branch: `gap-closure`; pull request: [#11 — Security gap closure: approval binding and policy validation](https://github.com/Guda-Abhishek/JARVIS/pull/11), targeting `dev`. `main` was not modified.
-
-Source changes in this branch:
-- `src/policy/gateway.ts` now rejects malformed runtime parameter containers and verifies the approval record matches the exact task ID, requesting device ID, operation, and canonical parameter hash before consuming an approval.
-- `src/core/service.ts` now enforces the same operation-family permissions during rejection as during approval: memory requires `DEVICE_MANAGE`; app/desktop requires `APP_LAUNCH`.
-- Removed a duplicate `device:self-revoke` rule entry.
-- Added `test/policy_gateway_binding.test.ts` for task replay, device mismatch, operation substitution, malformed parameter containers, and disallowed parameters.
-
-Validation status at report update: source and tests are committed on `gap-closure`; PR CI must be checked for the final head before claiming automated validation. The new test file has not been represented as passing until hosted CI confirms it. This change addresses one concrete security gap, not the entire approval/API lifecycle.
-
-Still open: approval expiry and concurrency API tests, persistence/audit-failure cases, error-redaction review, independent adversarial review, Windows interactive-session acceptance, physical voice acceptance, Android two-phone enrollment/revocation, secure remote transport, and native iOS.
-
-## Addendum — adapter exception disclosure hardening (2026-10-24)
-
-The `gap-closure` branch additionally changes the core execution catch path to return a generic failure message instead of surfacing arbitrary adapter exception text. Audit evidence includes only the exception class, not the exception message. Regression test `test/adapter_error_redaction.test.ts` injects a path-like diagnostic and asserts that the private path does not appear in the task result or public audit records.
-
-This is a targeted fix for the core adapter exception path. Some adapters may still return their own authored error messages, so a full route-by-route and adapter-by-adapter disclosure review remains open. Exact-head CI validation is pending at this documentation update; do not claim the newly added tests pass until the PR check reports success.
-
-## Addendum — CI feedback and test fixture correction (2026-10-24)
-
-The first CI run for the new regression suite completed dependency installation, build, and TypeScript checking successfully, then reported one failure in the newly added operation-substitution test. The test passed an `appId` parameter to `desktop:type_text`, so the intended operation-allowlist check correctly rejected the request before the approval-binding check. This was a test-fixture defect, not a demonstrated implementation regression.
-
-The fixture was corrected to use a valid parameter shape for `desktop:launch_and_type` while presenting an approval created for `app:launch`. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`. The corrected commit's hosted CI result is pending at this report update; do not mark the new suite green until that run completes.
-
-## Addendum — corrected security regression CI result (2026-10-24)
-
-[GitHub Actions run 40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717) completed successfully for code/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`. Locked dependency install, TypeScript build, TypeScript check, automated tests (**101 passed, 0 failed**), and browser security smoke test passed. The new approval-binding and adapter-error-redaction tests passed. Documentation-only updates followed this code/test commit; no source or test changes were made after the passing run.
-
-This closes the automated CI gate for this code/test set, not the remaining target-device or independent-review gates. The PR remains open against `dev`; no automatic merge to `dev` or `main` has occurred.
-
-## Addendum — approval-rejection permission tests (2026-10-24)
-
-Added `test/rejection_permissions.test.ts` after the previously documented passing CI run. It covers rejection of desktop approvals without `APP_LAUNCH` and personal-memory approvals without `DEVICE_MANAGE`, and verifies the approval remains pending after the unauthorized attempt. This test file is not covered by run 40091754717; a new hosted CI run for the latest branch head is required before claiming it passes.
-
-## Addendum — rejection permission test assertion correction (2026-10-24)
-
-The first CI run that included `test/rejection_permissions.test.ts` failed both new cases because the tests used `assert.rejects` even though `rejectTask` performs its authorization check synchronously and throws directly. The reported error messages were the expected permission denials. The test harness was corrected to use `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`. A new CI run is required; no passing result is claimed for these two cases yet.
-
-## Addendum — final gap-closure regression CI (2026-10-24)
-
-[GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438) completed successfully for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`. Locked dependency install, TypeScript build, TypeScript check, automated suite (**103 passed, 0 failed, 0 skipped**), and browser security smoke (`BROWSER_E2E_PASS`) all passed. This includes the corrected approval binding tests, adapter exception redaction test, and permission checks for approval rejection.
-
-Documentation-only updates followed this source/test commit; source and test files were unchanged after the passing run. The PR remains open against `dev`. The code-level CI gate is green; physical Windows desktop/audio/Android/iOS acceptance and independent security review remain open, so the overall product is still not release-ready.
+The branch update/reconciliation itself is scoped to non-main refs. PR #12 was already merged before this work. The documentation-only changes were proposed to dev through PR #13: https://github.com/Guda-Abhishek/JARVIS/pull/13. main remains untouched. Hosted CI run 40099075664 passed for the previous new head 9c53c3ea7adcc518b62335f972baf592bf5f4069; this audit update creates a newer commit, so check the current head/PR validation before merging.
