@@ -217,3 +217,15 @@ The prior passing CI run predates this test file. A new run is required to mark 
 - First CI run with `test/rejection_permissions.test.ts`: build/typecheck PASS, test suite FAIL on two cases because synchronous throws were asserted with `assert.rejects`.
 - Expected permission checks were reached; test harness changed to `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
 - Corrected CI rerun required; do not mark these cases PASS before it completes.
+
+## Final gap-closure CI evidence — 2026-10-24
+
+- [GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438): PASS for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- Locked dependency installation: PASS.
+- TypeScript build: PASS.
+- TypeScript check: PASS.
+- Automated suite: **103 passed, 0 failed, 0 skipped**.
+- Browser security smoke: PASS (`BROWSER_E2E_PASS`).
+- Coverage added: approval replay binding (task/device/operation), malformed parameters, adapter error disclosure, and permission-restricted approval rejection.
+- Documentation-only updates followed the passing source/test commit; no source or test changes were made afterward.
+- Physical target-device acceptance, full API/error review, dependency audit status, and independent security review remain open.
