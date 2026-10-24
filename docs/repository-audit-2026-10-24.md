@@ -147,3 +147,9 @@ Still open: approval expiry and concurrency API tests, persistence/audit-failure
 The `gap-closure` branch additionally changes the core execution catch path to return a generic failure message instead of surfacing arbitrary adapter exception text. Audit evidence includes only the exception class, not the exception message. Regression test `test/adapter_error_redaction.test.ts` injects a path-like diagnostic and asserts that the private path does not appear in the task result or public audit records.
 
 This is a targeted fix for the core adapter exception path. Some adapters may still return their own authored error messages, so a full route-by-route and adapter-by-adapter disclosure review remains open. Exact-head CI validation is pending at this documentation update; do not claim the newly added tests pass until the PR check reports success.
+
+## Addendum — CI feedback and test fixture correction (2026-10-24)
+
+The first CI run for the new regression suite completed dependency installation, build, and TypeScript checking successfully, then reported one failure in the newly added operation-substitution test. The test passed an `appId` parameter to `desktop:type_text`, so the intended operation-allowlist check correctly rejected the request before the approval-binding check. This was a test-fixture defect, not a demonstrated implementation regression.
+
+The fixture was corrected to use a valid parameter shape for `desktop:launch_and_type` while presenting an approval created for `app:launch`. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`. The corrected commit's hosted CI result is pending at this report update; do not mark the new suite green until that run completes.
