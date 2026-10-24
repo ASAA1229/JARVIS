@@ -50,60 +50,29 @@ function setupEventListeners() {
   const btnSpeech = document.getElementById('btn-speech-output');
   const reactorCore = document.getElementById('reactor-core');
 
-  // Push to talk buttons
-  btnPtt.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    btnPtt.setPointerCapture(event.pointerId);
-    startVoiceCapture();
-  });
-  btnPtt.addEventListener('pointerup', (event) => {
-    event.preventDefault();
-    stopVoiceCapture();
-  });
-  btnPtt.addEventListener('pointercancel', cancelVoiceCapture);
-  btnPtt.addEventListener('lostpointercapture', () => {
-    if (isListening) cancelVoiceCapture();
-  });
-  btnPtt.addEventListener('click', (event) => {
-    if (event.detail !== 0) return;
+  // Click-to-toggle voice capture: a normal click must not stop recognition immediately.
+  const toggleVoiceCapture = () => {
     if (isListening) stopVoiceCapture();
     else startVoiceCapture();
-  });
+  };
+  btnPtt.addEventListener('click', toggleVoiceCapture);
+  reactorCore.addEventListener('click', toggleVoiceCapture);
 
-  reactorCore.addEventListener('click', () => {
-    if (isListening) stopVoiceCapture();
-    else startVoiceCapture();
-  });
-
-  // Keyboard shortcut: Spacebar hold for push-to-talk
-  let spacePressed = false;
+  // Keyboard shortcuts use the same toggle behavior as the on-screen control.
   window.addEventListener('keydown', (e) => {
     const activeElement = document.activeElement;
     const isEditable = activeElement instanceof HTMLElement &&
       (activeElement.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName));
     const isOtherButton = activeElement instanceof HTMLButtonElement && activeElement !== btnPtt;
-    if (e.code === 'Space' && !spacePressed && !isEditable && !isOtherButton) {
-      spacePressed = true;
+    if (e.code === 'Space' && !e.repeat && !isEditable && !isOtherButton) {
       e.preventDefault();
-      startVoiceCapture();
+      toggleVoiceCapture();
     }
     if (e.ctrlKey && e.key.toLowerCase() === 'm' && !e.repeat && !isEditable && !isOtherButton) {
       e.preventDefault();
-      if (isListening) stopVoiceCapture();
-      else startVoiceCapture();
+      toggleVoiceCapture();
     }
-    if (e.code === 'Escape') {
-      cancelVoiceCapture();
-    }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    if (e.code === 'Space' && spacePressed) {
-      spacePressed = false;
-      e.preventDefault();
-      stopVoiceCapture();
-    }
+    if (e.code === 'Escape' && isListening) cancelVoiceCapture();
   });
 
   // Send terminal text input
@@ -288,21 +257,45 @@ function startHandsFreeStandby() {
     }
 
     if (isWakePhrase(normalized)) {
-      handleHandsFreeWake();
+      const wakePatterns = [/\\bhey jarvis\\b/, /\\bhello jarvis\\b/, /\\bhi jarvis\\b/, /\\bi am here\\b/, /\\bim here\\b/];
+      let command = normalized;
+      for (const pattern of wakePatterns) {
+        if (pattern.test(command)) { command = command.replace(pattern, ' ').trim(); break; }
+      }
+      if (command) {
+        handsFreeStandby = false;
+        stopHandsFreeStandby();
+        updateHandsFreeButtons();
+        setAssistantState('COMMAND RECEIVED', command);
+        void submitDirective(command);
+      } else {
+        handleHandsFreeWake();
+      }
     }
   };
 
   recognizer.onerror = (event) => {
     if (!handsFreeEnabled) return;
-    if (event.error === 'not-allowed') {
-      setAssistantState('MICROPHONE DENIED', 'Permission denied. Re-enable microphone access to use hands-free mode.');
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      setAssistantState('MICROPHONE DENIED', 'Allow microphone access for this site in browser settings, then enable listening again.');
       disableWakeDetection();
       return;
     }
-    if (handsFreeStandby) {
+    if (event.error === 'audio-capture') {
+      setAssistantState('MICROPHONE UNAVAILABLE', 'Another app may be using the microphone, or no input device is available.');
+    } else if (event.error === 'network') {
+      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'Browser speech recognition could not reach its recognition service. Check internet access or use text input.');
+    } else if (event.error === 'no-speech') {
+      setAssistantState('NO SPEECH DETECTED', 'I did not hear speech. Check the selected microphone and try again.');
+    } else {
+      setAssistantState('VOICE RECOGNITION ERROR', `Recognition failed: ${event.error}. You can retry or use text input.`);
+    }
+    if (handsFreeStandby && handsFreeEnabled) {
+      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
+        handsFreeRestartTimer = null;
         if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
-      }, 750);
+      }, 900);
     }
   };
 
