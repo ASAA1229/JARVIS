@@ -40,6 +40,9 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:zoom',
     'desktop:copy_selection',
     'desktop:paste_clipboard',
+    'desktop:inspect_window',
+    'desktop:click_control',
+    'desktop:set_value',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -138,6 +141,18 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
         confidence: 0.9,
         explanation: 'Interpreted as C: disk space query',
       };
+    }
+
+    if (/\b(inspect|describe|what is in)\s+(?:the\s+)?(?:current|active|foreground)\s+window\b/i.test(requestText)) {
+      return { intent: 'Inspect current foreground window controls', operations: [{ operation: 'desktop:inspect_window', parameters: {}, justification: 'User requested current-window context' }], confidence: 0.86, explanation: 'Will inspect accessible control names in the foreground window; control values are not read.' };
+    }
+    const clickControl = requestText.match(/\bclick\s+(?:the\s+)?(?:button|control)\s+(?:named\s+)?["“]?(.+?)["”]?\s*$/i);
+    if (clickControl && clickControl[1].trim()) {
+      return { intent: 'Click an exact named foreground control', operations: [{ operation: 'desktop:click_control', parameters: { name: clickControl[1].trim() }, justification: 'User specified an exact control name' }], confidence: 0.82, explanation: 'Will click only if exactly one accessible control matches, after approval.' };
+    }
+    const setControl = requestText.match(/\bset\s+(?:the\s+)?(?:field|control)\s+["“]?(.+?)["”]?\s+to\s+["“]?(.+?)["”]?\s*$/i);
+    if (setControl && setControl[1].trim() && setControl[2].trim()) {
+      return { intent: 'Set a named foreground control value', operations: [{ operation: 'desktop:set_value', parameters: { name: setControl[1].trim(), text: setControl[2].trim() }, justification: 'User specified a named field and explicit value' }], confidence: 0.78, explanation: 'Will update only a unique non-password, non-financial accessible field after approval and verify its value.' };
     }
 
     // Explicit desktop interaction requests. The policy gateway still requires approval.
