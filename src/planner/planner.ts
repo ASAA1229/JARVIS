@@ -93,14 +93,14 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (rememberName && rememberName[1].trim()) {
       return { intent: 'Save owner name to personal memory', operations: [{ operation: 'memory:save', parameters: { category: 'preference', content: 'owner name: ' + rememberName[1].trim() }, justification: 'Owner explicitly requested remembering their name' }], confidence: 0.96, explanation: 'Will save your name in encrypted personal memory after approval.' };
     }
-    const rememberAnything = requestText.match(/\bremember\s+(?:that\s+)?(.+?)\s*$/i);
-    if (rememberAnything && rememberAnything[1].trim()) {
-      return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
-    }
     if (/\b(what do you remember|list my memories|show my memories|what have you remembered)\b/i.test(requestText)) {
       return { intent: 'List owner-controlled personal memories', operations: [{ operation: 'memory:list', parameters: {}, justification: 'Owner asked to review saved memories' }], confidence: 0.9, explanation: 'Will retrieve the owner-controlled memory list from encrypted local storage.' };
     }
 
+    const rememberAnything = requestText.match(/\bremember\s+(?:that\s+)?(.+?)\s*$/i);
+    if (rememberAnything && rememberAnything[1].trim()) {
+      return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
+    }
     // Reject destructive language before broad system-information matching.
     if (/\b(format|delete|wipe|destroy|remove|drop)\b/.test(text)) {
       return {
