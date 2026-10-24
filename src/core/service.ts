@@ -13,6 +13,7 @@ import { DeviceIdentityManager } from '../core/identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
 import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
 import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
+import { WindowsDesktopAgent, DesktopAction } from '../adapters/windowsDesktopAgent.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
@@ -51,6 +52,7 @@ export class JarvisCoreService {
   public readonly policy: PolicyGateway;
   public readonly systemAdapter: WindowsSystemAdapter;
   public readonly appAdapter: WindowsAppLauncherAdapter;
+  public readonly desktopAgent: WindowsDesktopAgent;
   public readonly verifier: OutcomeVerifier;
   public planner: IAIPlannerProvider;
 
@@ -69,6 +71,7 @@ export class JarvisCoreService {
     if (ownerControlToken) this.deviceSecurity = new DeviceSecurityService(this.identity, this.audit, this.policy, ownerControlToken, statePath ? `${statePath}.security` : './data/security.json');
     this.systemAdapter = new WindowsSystemAdapter();
     this.appAdapter = new WindowsAppLauncherAdapter();
+    this.desktopAgent = new WindowsDesktopAgent();
     this.verifier = new OutcomeVerifier();
     this.planner = planner;
   }
@@ -305,6 +308,16 @@ export class JarvisCoreService {
           break;
         case 'app:launch':
           rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
+          break;
+        case 'desktop:type_text':
+        case 'desktop:paste_text':
+        case 'desktop:hotkey':
+        case 'desktop:zoom':
+        case 'desktop:copy_selection':
+          rawResult = await this.desktopAgent.execute({
+            operation: opRequest.operation,
+            parameters: opRequest.parameters,
+          } as DesktopAction, abortController.signal);
           break;
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
