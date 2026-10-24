@@ -66,6 +66,9 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   assert.deepEqual(rememberName.operations[0]?.parameters, { category: 'preference', content: 'owner name: Abhishek Guda' });
   const reviewMemory = await planner.generatePlan('what do you remember about me', context);
   assert.equal(reviewMemory.operations[0]?.operation, 'memory:list');
+  const forgetMemory = await planner.generatePlan('forget memory 0123456789abcdef0123456789abcdef', context);
+  assert.equal(forgetMemory.operations[0]?.operation, 'memory:delete');
+  assert.deepEqual(forgetMemory.operations[0]?.parameters, { id: '0123456789abcdef0123456789abcdef' });
   const openChrome = await planner.generatePlan('open Chrome', context);
   assert.equal(openChrome.operations[0]?.operation, 'app:launch');
   assert.deepEqual(openChrome.operations[0]?.parameters, { appId: 'Chrome' });
