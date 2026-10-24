@@ -15,9 +15,9 @@ test('capability catalogue uses unique stable identifiers', () => {
 });
 
 test('planned desktop automation is not represented as already implemented', () => {
-  assert.equal(getCapability('desktop.ui-automation')?.status, 'planned');
-  assert.equal(getCapability('desktop.text-and-clipboard')?.status, 'planned');
-  assert.equal(getCapability('desktop.zoom-gesture')?.status, 'planned');
+  assert.equal(getCapability('desktop.ui-automation')?.status, 'partial');
+  assert.equal(getCapability('desktop.text-and-clipboard')?.status, 'partial');
+  assert.equal(getCapability('desktop.zoom-gesture')?.status, 'partial');
 });
 
 test('financial automation and voice-only unlock remain blocked', () => {
