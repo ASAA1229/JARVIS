@@ -127,3 +127,17 @@ Hosted CI completed successfully for the same commit:
 - [`enhancement` pull request](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089122755) — PASS.
 
 The workflow successfully ran locked dependency installation, TypeScript build, TypeScript checking, automated tests, and browser smoke tests. This verifies the CI harness, not interactive desktop control. Windows CI runners do not provide evidence that a visible Notepad window opened in the owner's interactive desktop session; physical microphone, wake phrase, Android/two-phone, and native iOS acceptance remain unverified. Do not mark those gates complete without target-environment evidence.
+
+## Addendum — approval scope binding and malformed policy inputs (2026-10-24)
+
+Working branch: `gap-closure`; pull request: [#11 — Security gap closure: approval binding and policy validation](https://github.com/Guda-Abhishek/JARVIS/pull/11), targeting `dev`. `main` was not modified.
+
+Source changes in this branch:
+- `src/policy/gateway.ts` now rejects malformed runtime parameter containers and verifies the approval record matches the exact task ID, requesting device ID, operation, and canonical parameter hash before consuming an approval.
+- `src/core/service.ts` now enforces the same operation-family permissions during rejection as during approval: memory requires `DEVICE_MANAGE`; app/desktop requires `APP_LAUNCH`.
+- Removed a duplicate `device:self-revoke` rule entry.
+- Added `test/policy_gateway_binding.test.ts` for task replay, device mismatch, operation substitution, malformed parameter containers, and disallowed parameters.
+
+Validation status at report update: source and tests are committed on `gap-closure`; PR CI must be checked for the final head before claiming automated validation. The new test file has not been represented as passing until hosted CI confirms it. This change addresses one concrete security gap, not the entire approval/API lifecycle.
+
+Still open: approval expiry and concurrency API tests, persistence/audit-failure cases, error-redaction review, independent adversarial review, Windows interactive-session acceptance, physical voice acceptance, Android two-phone enrollment/revocation, secure remote transport, and native iOS.
