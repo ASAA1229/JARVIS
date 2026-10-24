@@ -187,16 +187,16 @@ function createSpeechRecognizer(captureGeneration) {
 
   recognizer.onresult = (event) => {
     if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
+    if (isHandsFreeEnabled) {
+      const finalResult = event.results[event.results.length - 1];
+      if (!finalResult || !finalResult.isFinal) return;
+      handleHandsFreeTranscript(finalResult[0].transcript);
+      return;
+    }
     let transcript = '';
     for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript + ' ';
     transcript = transcript.trim();
     if (!transcript) return;
-    if (isHandsFreeEnabled) {
-      const finalResult = event.results[event.results.length - 1];
-      if (!finalResult || !finalResult.isFinal) return;
-      handleHandsFreeTranscript(transcript);
-      return;
-    }
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
   };
