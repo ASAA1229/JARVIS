@@ -48,7 +48,7 @@ export class WindowsDesktopAgent {
       "$foregroundPid = [uint32]0",
       "[void][JarvisForeground]::GetWindowThreadProcessId([JarvisForeground]::GetForegroundWindow(), [ref]$foregroundPid)",
       "$foreground = Get-Process -Id $foregroundPid -ErrorAction Stop",
-      "if ($foreground.ProcessName -match '(?i)phonepe|paytm|googlepay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications.' }",
+      "if (($foreground.ProcessName + ' ' + $foreground.MainWindowTitle) -match '(?i)phonepe|paytm|google\\s*pay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications or windows.' }",
     ].join('; ');
   }
 
