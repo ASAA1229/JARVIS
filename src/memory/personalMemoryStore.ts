@@ -35,7 +35,10 @@ export class PersonalMemoryStore {
     try {
       const envelope = JSON.parse(readFileSync(this.filePath, 'utf8')) as EncryptedEnvelope;
       if (envelope.version !== 1) throw new Error('Unsupported memory format.');
-      const decipher = createDecipheriv('aes-256-gcm', this.key, Buffer.from(envelope.iv, 'base64'));
+      const salt = Buffer.from(envelope.salt, 'base64');
+      if (salt.length !== 16) throw new Error('Invalid memory salt.');
+      const key = scryptSync(this.key, salt, 32);
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
       decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
       const plain = Buffer.concat([
         decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
