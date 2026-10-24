@@ -49,7 +49,7 @@ export class PersonalMemoryStore {
       for (const record of payload.records) {
         if (this.isValidRecord(record)) this.records.set(record.id, record);
       }
-      this.pruneExpired();
+      if (this.pruneExpired()) this.persist();
     } catch {
       this.healthy = false;
       this.records.clear();
@@ -65,9 +65,16 @@ export class PersonalMemoryStore {
       typeof r.createdAt === 'number' && typeof r.updatedAt === 'number';
   }
 
-  private pruneExpired(): void {
+  private pruneExpired(): boolean {
     const now = Date.now();
-    for (const [id, record] of this.records) if (record.expiresAt !== undefined && record.expiresAt <= now) this.records.delete(id);
+    let removed = false;
+    for (const [id, record] of this.records) {
+      if (record.expiresAt !== undefined && record.expiresAt <= now) {
+        this.records.delete(id);
+        removed = true;
+      }
+    }
+    return removed;
   }
 
   private persist(): void {
@@ -90,7 +97,7 @@ export class PersonalMemoryStore {
 
   public list(): PersonalMemory[] {
     if (!this.healthy) throw new Error('Memory store is unhealthy.');
-    this.pruneExpired();
+    if (this.pruneExpired()) this.persist();
     return [...this.records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map((r) => ({ ...r }));
   }
 
