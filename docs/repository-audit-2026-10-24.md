@@ -167,3 +167,9 @@ Added `test/rejection_permissions.test.ts` after the previously documented passi
 ## Addendum — rejection permission test assertion correction (2026-10-24)
 
 The first CI run that included `test/rejection_permissions.test.ts` failed both new cases because the tests used `assert.rejects` even though `rejectTask` performs its authorization check synchronously and throws directly. The reported error messages were the expected permission denials. The test harness was corrected to use `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`. A new CI run is required; no passing result is claimed for these two cases yet.
+
+## Addendum — final gap-closure regression CI (2026-10-24)
+
+[GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438) completed successfully for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`. Locked dependency install, TypeScript build, TypeScript check, automated suite (**103 passed, 0 failed, 0 skipped**), and browser security smoke (`BROWSER_E2E_PASS`) all passed. This includes the corrected approval binding tests, adapter exception redaction test, and permission checks for approval rejection.
+
+Documentation-only updates followed this source/test commit; source and test files were unchanged after the passing run. The PR remains open against `dev`. The code-level CI gate is green; physical Windows desktop/audio/Android/iOS acceptance and independent security review remain open, so the overall product is still not release-ready.
