@@ -33,6 +33,8 @@ export interface TaskLifecycleRecord {
   result?: ExecutionResult;
   error?: string;
   interrupted?: boolean;
+  operations?: OperationRequest[];
+  operationIndex?: number;
 }
 
 export interface TaskResult {
@@ -169,6 +171,11 @@ export class JarvisCoreService {
 
     // Single bounded operation per task in POC slice
     const proposedOp = plan.operations[0];
+    taskRecord.operations = plan.operations.map((operation) => ({
+      operation: operation.operation,
+      parameters: operation.parameters,
+    }));
+    taskRecord.operationIndex = 0;
     taskRecord.operation = proposedOp.operation;
     taskRecord.parameters = proposedOp.parameters;
 
@@ -395,6 +402,25 @@ export class JarvisCoreService {
         outcome: VerificationOutcome.UNCERTAIN,
         verified: false,
       };
+    }
+
+    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS &&
+        taskRecord.operations && taskRecord.operationIndex !== undefined &&
+        taskRecord.operationIndex + 1 < taskRecord.operations.length) {
+      const nextIndex = taskRecord.operationIndex + 1;
+      const nextOperation = taskRecord.operations[nextIndex];
+      taskRecord.operationIndex = nextIndex;
+      taskRecord.operation = nextOperation.operation;
+      taskRecord.parameters = nextOperation.parameters;
+      taskRecord.state = TaskState.CREATED;
+      taskRecord.updatedAt = Date.now();
+      this.audit.record('WORKFLOW_STEP_VERIFIED', {
+        completedIndex: nextIndex - 1,
+        nextIndex,
+        nextOperation: nextOperation.operation,
+        totalSteps: taskRecord.operations.length,
+      }, taskRecord.deviceId, taskId);
+      return this.#evaluateAndProceed(taskId, nextOperation, taskRecord.deviceId);
     }
 
     return {
