@@ -52,6 +52,20 @@ Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942
 - Voice privacy defaults, push-to-talk, mute, cancellation, and transcript disposal (automated/simulated as applicable).
 - HUD route/assets and browser keyboard/reduced-motion/error smoke checks.
 
+## Hands-free voice and spoken-response acceptance (fix branch)
+
+Implementation added on `fix`: opt-in hands-free wake detection for “Hey/Hello/Hi JARVIS” and “I'm here”; stop phrases; command capture for wake phrase plus command in one utterance or separate utterances; browser speech synthesis for verified outcomes, failures, and approval messages; and recognition-error recovery. **Not yet tested or accepted in the target environment.**
+
+| Check | Current result | Required evidence |
+|---|---|---|
+| TypeScript/build/lint on updated branch | NOT RUN from this connected editing session | Run `npm run build` and `npm run lint` on the exact commit. |
+| Automated unit/browser tests | NOT RUN from this connected editing session | Run `npm test` and `npm run test:browser`; add mock-event coverage for wake, command, stop, TTS and duplicate suppression. |
+| Real wake phrase + Notepad launch | UNVERIFIED | On target Windows, say “Hey JARVIS, open Notepad”; prove actual app launch, policy decision, audit record, and truthful result. |
+| Spoken response audibility | UNVERIFIED | Verify browser voice output is audible, voice availability/autoplay behavior, and no microphone feedback loop. |
+| Separate wake then command | UNVERIFIED | Say “Hey JARVIS”, wait for acknowledgment, then “Open Notepad”. |
+| Hands-free stop and disable | UNVERIFIED | Test stop phrase returns to wake standby; disable releases microphone; mute stops capture. |
+| Offline/background behavior | NOT CLAIMED | Determine browser vendor/service behavior; no offline guarantee without evidence. |
+
 ## M12 local-only gesture foundation
 
 The `new` branch adds `test/gesture.test.ts` for strict schema/version/allowlist/staleness checks, confidence bounds, synthetic landmark pose rules, dwell/rearm/duplicate suppression, tracking loss, and a source boundary check that gesture modules cannot call backend routes, shells, or adapters. All **7/7** passed. The Edge browser smoke passed with a fake camera: default-off state, local model/WASM initialization and CPU inference, video-only stream, explicit stop/release, simulated camera loss/permission denial, and cross-origin request monitoring. These are mocked/synthetic checks, not physical webcam acceptance.

@@ -133,7 +133,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
 
     // 2. Application launch requests
-    if (/\b(notepad|notes)\b/.test(text)) {
+    if (/\b(notepad|note\s*pad|notes)\b/.test(text)) {
       return {
         intent: 'Launch Notepad application',
         operations: [

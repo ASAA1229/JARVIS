@@ -93,7 +93,7 @@ See `master_repo_test` for the test evidence matrix and limitations.
 
 ## 8. Voice/audio status
 
-The browser HUD includes push-to-talk and a voice lifecycle, but browser Web Speech behavior depends on the browser/vendor and has not been proven to be offline/local. Automated browser checks simulate recognition. Physical microphone capture, vendor behavior, real playback, and privacy behavior need target-device acceptance. Ensure permission handling, visible listening/mute state, cancellation, transcript disposal, no duplicate streams/listeners, timeout cleanup, no false speaking/listening animation, and no speech success claims when playback fails.
+The `fix` branch now adds an opt-in hands-free wake/command loop, configured wake and stop phrases, browser speech-synthesis responses, and recognition-error recovery to the HUD. The existing push-to-talk and text fallbacks remain. This is not yet accepted: run build/lint/tests and verify real microphone capture, same-utterance and separate-utterance commands, actual audible playback, recognizer restart behavior, and privacy behavior on the target Windows browser. Browser Web Speech behavior is browser/vendor-dependent and is not proven local/offline or reliably continuous in every environment. Automated/simulated recognition is not physical acceptance. Keep visible microphone state, immediate mute/disable, transcript disposal, duplicate prevention, timeout cleanup, and truthful execution outcomes.
 
 ## 9. Command execution / Notepad regression
 

@@ -12,6 +12,11 @@ let voiceTimeoutId = null;
 let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
 let isSubmitting = false;
+let isHandsFreeEnabled = false;
+let isWaitingForWakeCommand = false;
+let isSpeaking = false;
+let speechOutputEnabled = true;
+let speechSynthesisAvailable = 'speechSynthesis' in window;
 let handsFreeEnabled = false;
 let handsFreeStandby = false;
 let handsFreeRecognizer = null;
@@ -41,6 +46,8 @@ function setupEventListeners() {
   const btnHandsFreeToggle = document.getElementById('btn-hands-free-toggle');
   const btnHandsFreePause = document.getElementById('btn-hands-free-pause');
   const btnMotion = document.getElementById('btn-toggle-motion');
+  const btnHandsFree = document.getElementById('btn-hands-free');
+  const btnSpeech = document.getElementById('btn-speech-output');
   const reactorCore = document.getElementById('reactor-core');
 
   // Push to talk buttons
@@ -116,18 +123,54 @@ function setupEventListeners() {
     cancelVoiceCapture();
   });
 
+  if (btnHandsFree) btnHandsFree.addEventListener('click', () => {
+    if (isHandsFreeEnabled) disableHandsFree();
+    else enableHandsFree();
+  });
+  if (btnSpeech) btnSpeech.addEventListener('click', () => {
+    speechOutputEnabled = !speechOutputEnabled;
+    btnSpeech.setAttribute('aria-pressed', String(speechOutputEnabled));
+    btnSpeech.textContent = speechOutputEnabled ? 'VOICE: ON' : 'VOICE: OFF';
+    if (!speechOutputEnabled && speechSynthesisAvailable) { window.speechSynthesis.cancel(); isSpeaking = false; }
+    if (speechOutputEnabled) speakResponse('Voice responses enabled.');
+  });
+
   // Privacy Mute Toggle
   btnMute.addEventListener('click', () => {
     isMicMuted = !isMicMuted;
     try { localStorage.setItem('jarvis.mic-muted', String(isMicMuted)); } catch { /* Keep the control usable without storage. */ }
     updateMuteControl();
     if (isMicMuted) {
+      disableHandsFree();
       cancelVoiceCapture();
       disableHandsFree();
       setAssistantState('PRIVACY MODE — MIC MUTED', 'Microphone hardware access disabled.');
     } else {
-      setAssistantState('STANDBY', 'Microphone armed for push-to-talk.');
+      setAssistantState('STANDBY', 'Microphone armed. Enable hands-free or use push-to-talk.');
     }
+  });
+
+  btnHandsFreeToggle.addEventListener('click', () => {
+    if (!handsFreeEnabled) enableHandsFree(); else disableHandsFree();
+  });
+
+  btnHandsFreePause.addEventListener('click', () => {
+    if (!handsFreeEnabled) {
+      setAssistantState('HANDS-FREE DISABLED', 'Enable hands-free mode before resuming wake detection.');
+      return;
+    }
+    if (handsFreeStandby) {
+      handsFreeStandby = false;
+      stopHandsFreeStandby();
+      setAssistantState('LISTENING PAUSED', 'Wake detection paused. Resume to regain standby listening.');
+      btnHandsFreePause.textContent = 'RESUME LISTENING';
+      btnHandsFreePause.setAttribute('aria-pressed', 'false');
+      return;
+    }
+    handsFreeStandby = true;
+    btnHandsFreePause.textContent = 'PAUSE LISTENING';
+    btnHandsFreePause.setAttribute('aria-pressed', 'true');
+    startHandsFreeStandby();
   });
 
   btnHandsFreeToggle.addEventListener('click', () => {
@@ -357,11 +400,17 @@ function createSpeechRecognizer(captureGeneration) {
   };
 
   recognizer.onresult = (event) => {
-    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted) return;
-    let transcript = '';
-    for (let i = 0; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
+    if (isHandsFreeEnabled) {
+      const finalResult = event.results[event.results.length - 1];
+      if (!finalResult || !finalResult.isFinal) return;
+      handleHandsFreeTranscript(finalResult[0].transcript);
+      return;
     }
+    let transcript = '';
+    for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript + ' ';
+    transcript = transcript.trim();
+    if (!transcript) return;
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
   };
@@ -369,6 +418,20 @@ function createSpeechRecognizer(captureGeneration) {
   recognizer.onerror = (event) => {
     if (captureGeneration !== voiceCaptureGeneration) return;
     console.error('Speech recognition error:', event.error);
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      disableHandsFree();
+      setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access in the browser, then enable hands-free again.');
+      return;
+    }
+    if (isHandsFreeEnabled && !isMicMuted) {
+      isListening = false;
+      if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
+      document.getElementById('reactor-container').classList.remove('listening');
+      document.getElementById('btn-ptt').classList.remove('active');
+      setAssistantState('VOICE RECOVERING', `Speech recognition interrupted (${event.error}). Retrying wake detection.`);
+      scheduleHandsFreeRestart();
+      return;
+    }
     cancelVoiceCapture();
     setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
   };
@@ -388,9 +451,103 @@ function createSpeechRecognizer(captureGeneration) {
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
     }
+    if (isHandsFreeEnabled && !isMicMuted && !isSpeaking) scheduleHandsFreeRestart();
   };
 
   return recognizer;
+}
+
+function normalizeVoiceText(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function handleHandsFreeTranscript(rawTranscript) {
+  const normalized = normalizeVoiceText(rawTranscript);
+  const wakePatterns = [/\bhey jarvis\b/, /\bhello jarvis\b/, /\bhi jarvis\b/, /\bi am here\b/, /\bi'm here\b/];
+  const stopPatterns = [/\bstop jarvis\b/, /\bjarvis stop\b/, /\bjarvis you may leave(?: now)?\b/, /\byou may leave jarvis\b/, /\bgoodbye jarvis\b/, /\bgo to sleep jarvis\b/];
+  if (stopPatterns.some((pattern) => pattern.test(normalized))) {
+    isWaitingForWakeCommand = false;
+    setAssistantState('STANDBY — WAKE PHRASE READY', 'Hands-free standby is active. Say “Hey JARVIS” for a command, or disable hands-free to release the microphone.');
+    void speakResponse('Standing by. Say Hey JARVIS when you need me.');
+    return;
+  }
+  let command = normalized;
+  let foundWake = false;
+  for (const pattern of wakePatterns) {
+    if (pattern.test(command)) { foundWake = true; command = command.replace(pattern, ' ').trim(); break; }
+  }
+  if (foundWake) {
+    isWaitingForWakeCommand = true;
+    if (command) {
+      isWaitingForWakeCommand = false;
+      setAssistantState('COMMAND RECEIVED', command);
+      void submitDirective(command);
+    } else {
+      setAssistantState('JARVIS IS LISTENING', 'Wake phrase detected. Say your command now.');
+      void speakResponse('Yes? I am listening.');
+    }
+    return;
+  }
+  if (isWaitingForWakeCommand) {
+    isWaitingForWakeCommand = false;
+    setAssistantState('COMMAND RECEIVED', rawTranscript);
+    void submitDirective(rawTranscript);
+  }
+}
+
+function scheduleHandsFreeRestart() {
+  if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
+  handsFreeRestartTimer = setTimeout(() => {
+    handsFreeRestartTimer = null;
+    if (!isHandsFreeEnabled || isMicMuted || isSpeaking || isListening || isSubmitting || !speechRecognitionConstructor) return;
+    startVoiceCapture();
+  }, 350);
+}
+
+function enableHandsFree() {
+  if (isMicMuted) { setAssistantState('MIC MUTED', 'Unmute the microphone before enabling hands-free mode.'); return; }
+  if (!speechRecognitionConstructor) { setAssistantState('SPEECH API UNAVAILABLE', speechUnavailableReason || 'Use push-to-talk or text input in this browser.'); return; }
+  isHandsFreeEnabled = true;
+  isWaitingForWakeCommand = false;
+  const button = document.getElementById('btn-hands-free');
+  if (button) { button.textContent = 'HANDS-FREE: ON'; button.setAttribute('aria-pressed', 'true'); }
+  setAssistantState('HANDS-FREE STANDBY', 'Listening for “Hey JARVIS”. Microphone remains active until you disable hands-free.');
+  startVoiceCapture();
+}
+
+function disableHandsFree() {
+  isHandsFreeEnabled = false;
+  isWaitingForWakeCommand = false;
+  if (handsFreeRestartTimer) { clearTimeout(handsFreeRestartTimer); handsFreeRestartTimer = null; }
+  const button = document.getElementById('btn-hands-free');
+  if (button) { button.textContent = 'HANDS-FREE: OFF'; button.setAttribute('aria-pressed', 'false'); }
+  cancelVoiceCapture();
+  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  isSpeaking = false;
+  setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'STANDBY', 'Hands-free disabled. Microphone will not listen until you activate voice again.');
+}
+
+function speakResponse(message) {
+  const text = String(message || '').trim();
+  if (!text || !speechOutputEnabled || !speechSynthesisAvailable || !('SpeechSynthesisUtterance' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    isSpeaking = true;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1;
+    const chooseVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      utterance.voice = voices.find((voice) => /^en(-|_)/i.test(voice.lang) && /natural|neural|english/i.test(voice.name)) || voices.find((voice) => /^en(-|_)/i.test(voice.lang)) || null;
+    };
+    chooseVoice();
+    utterance.onend = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
+    utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    isSpeaking = false;
+    console.warn('JARVIS speech output unavailable:', error);
+  }
 }
 
 function startVoiceCapture() {
@@ -416,7 +573,7 @@ function startVoiceCapture() {
     speechRecognizer.start();
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
-      stopVoiceCapture('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
+      stopVoiceCapture(isHandsFreeEnabled ? 'HANDS-FREE STANDBY' : 'VOICE TIME LIMIT', isHandsFreeEnabled ? 'Refreshing the browser recognition session.' : 'The 15-second capture limit was reached. Review the transcript before sending.');
     }, 15000);
   } catch (e) {
     isListening = false;
@@ -512,19 +669,23 @@ async function submitDirective(text) {
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
+      speakResponse(data.message || 'I need your approval before performing that action.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
     } else if (data.state === 'COMPLETED' &&
         data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       setAssistantState('DIRECTIVE EXECUTED', data.message);
       addFeedItem('success', `Verified Result: ${data.message}`, data.data);
+      speakResponse(data.message || 'The action completed successfully.');
     } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
         data.outcome === 'UNCERTAIN' || data.verified === false) {
       setAssistantState('OUTCOME NOT VERIFIED', data.message);
       addFeedItem('pending', `Outcome not fully verified: ${data.message}`, data.data);
+      speakResponse(data.message || 'I could not fully verify the outcome.');
     } else {
       setAssistantState('EXECUTION DENIED / FAILED', data.message || data.error);
       addFeedItem('failed', `Denied: ${data.message || data.error}`);
+      speakResponse(data.message || data.error || 'The request was denied or failed.');
     }
     if (textInput.value.trim() === text) textInput.value = '';
     if (sourceWasTranscript) {
@@ -537,6 +698,7 @@ async function submitDirective(text) {
       : (err instanceof Error ? err.message : 'Request failed');
     setAssistantState('COMMUNICATION FAILURE', message);
     addFeedItem('failed', message);
+    speakResponse(message);
     if (sourceWasTranscript && !textInput.value.trim()) textInput.value = text;
   } finally {
     clearTimeout(timeoutId);
@@ -544,6 +706,7 @@ async function submitDirective(text) {
     sendButton.disabled = false;
     transcriptSubmit.disabled = false;
     sendButton.textContent = originalButtonText;
+    if (isHandsFreeEnabled && !isSpeaking && !isListening && !isMicMuted) scheduleHandsFreeRestart();
   }
 }
 
@@ -635,6 +798,7 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
+      speakResponse('The directive was rejected.');
       return;
     }
 
@@ -645,12 +809,14 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
+      speakResponse(result.message || 'The approved task completed and was verified.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('hud-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
+      speakResponse(result.message || 'The approved task did not complete.');
     } else {
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
@@ -658,6 +824,7 @@ async function resolveHudApproval(approvalId, approved) {
   } catch (err) {
     setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
     addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
+    speakResponse(err instanceof Error ? err.message : 'Approval status could not be confirmed.');
   }
 }
 
