@@ -9,7 +9,8 @@ export type DesktopAction =
   | { operation: 'desktop:paste_text'; parameters: { text: string } }
   | { operation: 'desktop:hotkey'; parameters: { keys: string[] } }
   | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
-  | { operation: 'desktop:copy_selection'; parameters: Record<string, never> };
+  | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
+  | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> };
 
 const HOTKEYS: Record<string, string> = {
   CTRL: '^', ALT: '%', SHIFT: '+', ENTER: '{ENTER}', TAB: '{TAB}',
@@ -146,6 +147,24 @@ export class WindowsDesktopAgent {
           data: { action: 'zoom', direction: action.parameters.direction },
           evidence: { host: 'windows', keySequence: sequence, acknowledgement: confirmed },
           error: confirmed ? undefined : 'Zoom key was not acknowledged; visual zoom level was not verified.',
+        };
+      }
+
+      if (action.operation === 'desktop:paste_clipboard') {
+        const script = [
+          '$ErrorActionPreference = "Stop"',
+          'Add-Type -AssemblyName System.Windows.Forms',
+          '[System.Windows.Forms.SendKeys]::SendWait("^v")',
+          '[Console]::Out.WriteLine("CLIPBOARD_PASTE_SENT")',
+        ].join('; ');
+        const output = await this.runPowerShell(script, signal);
+        const confirmed = output.includes('CLIPBOARD_PASTE_SENT');
+        return {
+          success: confirmed,
+          outcome: VerificationOutcome.PARTIAL_SUCCESS,
+          data: { action: 'paste-clipboard' },
+          evidence: { host: 'windows', acknowledgement: confirmed },
+          error: confirmed ? undefined : 'Clipboard paste was not acknowledged; destination content was not verified.',
         };
       }
 
