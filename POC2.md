@@ -21,8 +21,8 @@
 - [ ] **Two-phone acceptance:** Enroll both devices, verify separate keys/sessions/permissions, revoke one, and prove the other remains independently usable.
 - [ ] **Device enrollment real-client acceptance:** Current enrollment transactions are loopback-only and process-local. Validate two independent browser profiles and an Android companion against a secure remote transport design before remote QR enrollment; do not change the server bind address to make this work. Test owner approval, TOTP step-up, cancellation, expiry, and revocation on real clients.
 - [ ] **TOTP owner recovery:** TOTP state encryption is keyed from the owner control token. Establish and verify a safe owner recovery procedure before changing/rotating that token or before a lost-authenticator event; no bypass is implemented.
-- [x] **Hosted CI:** Exact-commit hosted CI passed for commit `220e002f8759d1631a032ff1bf7e67e6bf362273` on `fix` push, `fix` PR, `new` push, `test` push, and `enhancement` PR. The same commit adds regression tests for UI Automation control-count binding and PowerShell value escaping. See [audit addendum](docs/repository-audit-2026-10-24.md#addendum--exact-shared-commit-ci-and-branch-inventory-2026-10-24) and [test register](master_repo_test).
-- [ ] **Dependency reproducibility:** Re-run clean lockfile installation, build, typecheck/lint, tests, and security audit on the final reviewed commit.
+- [x] **Hosted CI:** Exact-commit hosted CI passed for commit `9a40f95528d32aaed63626a1c48ae1ef4e1cda51` on `fix` push, `fix` PR, `new` push, `test` push, and `enhancement` PR. The same commit adds regression tests for UI Automation control-count binding and PowerShell value escaping. See [audit addendum](docs/repository-audit-2026-10-24.md#addendum--exact-shared-commit-ci-and-branch-inventory-2026-10-24) and [test register](master_repo_test).
+- [x] **Dependency reproducibility (CI stages):** Exact-commit hosted CI passed locked dependency installation, build, typecheck/lint, automated tests, and browser smoke on `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`. [Audit evidence](docs/repository-audit-2026-10-24.md). `npm audit` is not part of CI and remains unverified.
 - [x] **Repository consolidation inventory:** Completed recursive Markdown/test inventory for `main`, `dev`, `enhancement`, `new`, `fix`, `test`, `lovable`, `Jarvis-Abhi`, and `feature/local-neural-tts`. Current decisions, exact hosted CI, and branch/test divergence dispositions are recorded in `master_repo_md.md`, `master_repo_test`, and `docs/repository-audit-2026-10-24.md`. Historical Lovable docs and divergent test variants were retained on their original refs; no source tests or branches were deleted. The older test variants were not blindly overwritten onto the newer current suite.
 - [ ] **Worktrees:** Inventory existing worktrees and create/verify isolated milestone worktrees for M1–M11 without overwriting dirty work; document future-milestone provisioning.
 
@@ -49,3 +49,11 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - [ ] Verify “Hey JARVIS, open Notepad” preserves and dispatches the command text through the authenticated policy gateway.
 - [ ] Verify browser microphone permission, selected input device, speech-service/network availability, no-speech recovery, and the visible error states in Edge/Chrome.
 - [ ] Verify hands-free standby can restart after recognition sessions end, and confirm actual physical microphone and TTS playback on Windows/Android.
+
+
+## Final automated validation — 2026-10-24
+
+- [x] Final reviewed code/test commit: `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`.
+- [x] Hosted CI green on `fix` push/PR, `new` push, `test` push, and `enhancement` PR; all workflow stages completed successfully. Exact run links are in [the audit](docs/repository-audit-2026-10-24.md).
+- [x] Added six focused Windows UI Automation script/validation regression tests.
+- [ ] Live Windows interactive-session acceptance, real microphone/TTS/wake behavior, Android two-phone tests, native iOS, and independent adversarial security review remain blocked on target devices/owner review. These cannot be truthfully completed by hosted CI alone.
