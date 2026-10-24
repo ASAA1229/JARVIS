@@ -7,11 +7,11 @@
 ## Confirmed repository/branch state
 
 - PR #12 (new → dev feature integration) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/12
-- PR #13 (documentation reconciliation) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/13
-- dev is at 29df6b8699a8145f2163efee0c0ac306af2e7adc. The new branch contains the same tree as dev at the PR #13 merge; its head differs by the merge commit.
-- fix, test and enhancement were recreated from dev and fast-forwarded to the current integration commit. The exact same commit passed CI on dev, fix and test; enhancement points to that same commit.
+- PR #13 (main documentation reconciliation) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/13
+- PR #14 (post-merge status and CI evidence refresh) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/14
+- dev is at d5fc9cc42e0476dcf24d85ea6d95815fb592497e. new contains the same tree as dev at the PR #14 merge, before the current follow-up checklist clarification.
+- fix, test and enhancement were recreated from dev and fast-forwarded to the current integration commit. The same commit passed CI on dev, fix and test; enhancement points to the same commit.
 - main remains at 5c7d8d303862de6ac730db9e15855b5f6a70af59 and has not been modified.
-- CI for the follow-up status-refresh PR is required before that documentation-only follow-up is merged.
 - CI success is not physical-device acceptance. npm audit is not confirmed by these runs.
 
 ## P0 — Security and execution foundation
