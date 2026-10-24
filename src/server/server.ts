@@ -8,6 +8,7 @@ import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
+import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -322,6 +323,39 @@ export class JarvisServer {
           ...sessionRes,
           permissions: [...device.permissions],
         });
+      }
+
+      // Local TTS is an authenticated, bounded operation; it has no execution authority.
+      if (req.method === 'POST' && url.pathname === '/api/voice/synthesize') {
+        const sessionId = req.headers['x-session-id'] as string;
+        if (!sessionId) return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const { text } = body as { text: string };
+        if (typeof text !== 'string' || !text.trim() || text.length > 1200) {
+          return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 1200 characters' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) {
+          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        let provider;
+        try {
+          provider = createConfiguredPiperProvider();
+        } catch (error) {
+          return this.jsonResponse(res, 503, { error: error instanceof Error ? error.message : 'Local speech configuration is invalid' });
+        }
+        if (!provider) {
+          return this.jsonResponse(res, 503, { error: 'Local Piper TTS is not configured', code: 'LOCAL_TTS_NOT_CONFIGURED' });
+        }
+        try {
+          const audio = await provider.synthesize(text);
+          res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          res.end(audio);
+          return;
+        } catch (error) {
+          return this.jsonResponse(res, 502, { error: error instanceof Error ? error.message : 'Local speech generation failed' });
+        }
       }
 
       // Submit user request
