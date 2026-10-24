@@ -52,6 +52,12 @@ test('official store discovery returns only official store domains and excludes 
 test('desktop voice intents produce only bounded allowlisted operations', async () => {
   const planner = new LocalHeuristicPlanner();
   const context = { requesterName: 'Owner', timestamp: Date.now() };
+  const openChrome = await planner.generatePlan('open Chrome', context);
+  assert.equal(openChrome.operations[0]?.operation, 'app:launch');
+  assert.deepEqual(openChrome.operations[0]?.parameters, { appId: 'Chrome' });
+  const blockedPaymentApp = await planner.generatePlan('open Paytm', context);
+  assert.equal(blockedPaymentApp.operations.length, 0);
+  assert.match(blockedPaymentApp.explanation, /payment and financial applications/);
   const zoom = await planner.generatePlan('zoom in', context);
   const inspect = await planner.generatePlan('inspect the current window', context);
   assert.equal(inspect.operations[0]?.operation, 'desktop:inspect_window');
