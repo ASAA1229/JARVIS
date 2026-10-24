@@ -393,13 +393,6 @@ export class JarvisServer {
           this.jarvis.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, auth.device.id);
           return this.jsonResponse(res, 201, { record });
         }
-        if (req.method === 'DELETE' && url.pathname === '/api/memory') {
-          const input = body as { id?: unknown };
-          if (typeof input.id !== 'string' || !input.id) return this.jsonResponse(res, 400, { error: 'Memory id is required' });
-          const deleted = this.personalMemory.delete(input.id);
-          this.jarvis.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: input.id, deleted }, auth.device.id);
-          return this.jsonResponse(res, deleted ? 200 : 404, { deleted });
-        }
         return this.jsonResponse(res, 405, { error: 'Unsupported memory method or route' });
       }
 
