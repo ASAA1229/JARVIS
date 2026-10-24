@@ -1,7 +1,7 @@
 # JARVIS POC — Current Implemented Baseline
 
 **Updated:** 2026-10-24  
-**Source reviewed:** new at 6222e1964774c78e6853d6113335b1a3f0284881  
+**Source reviewed:** new at 6222e1964774c78e6853d6113335b1a3f0284881 (application source baseline); documentation reconciliation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 This document records repository-visible implementation and hosted CI evidence. A green CI run does not establish real Windows, microphone, telephony, or Android-device acceptance.

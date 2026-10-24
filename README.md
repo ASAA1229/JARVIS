@@ -8,8 +8,8 @@
 
 - main: production/release branch; automated work must not commit, push, or merge to it.
 - dev: integration branch. PR #12 from new was merged on 2026-10-24.
-- new: feature/gap-closure branch; its current tree matches dev, though dev is one merge commit ahead.
-- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list.
+- new: feature/gap-closure branch. Its documentation reconciliation was integrated through PR #13.
+- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list; all three were fast-forwarded to the current dev integration commit.
 - PRs from non-main branches target dev. The owner performs any eventual dev → main merge manually.
 
 ## Product goal
