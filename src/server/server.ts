@@ -382,17 +382,6 @@ export class JarvisServer {
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
         }
-        if (req.method === 'POST' && url.pathname === '/api/memory') {
-          const input = body as { category?: unknown; content?: unknown; ttlDays?: unknown };
-          if (!['preference', 'project', 'routine', 'general'].includes(String(input.category)) ||
-              typeof input.content !== 'string' ||
-              (input.ttlDays !== undefined && typeof input.ttlDays !== 'number')) {
-            return this.jsonResponse(res, 400, { error: 'category, content, and optional numeric ttlDays are required' });
-          }
-          const record = this.personalMemory.save(input.category as MemoryCategory, input.content, input.ttlDays as number | undefined);
-          this.jarvis.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, auth.device.id);
-          return this.jsonResponse(res, 201, { record });
-        }
         return this.jsonResponse(res, 405, { error: 'Unsupported memory method or route' });
       }
 
