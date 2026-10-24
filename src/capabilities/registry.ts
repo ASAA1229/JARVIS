@@ -70,11 +70,11 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     name: 'Cross-application desktop interaction',
     description: 'Use accessibility/UI Automation to interact with permitted windows and controls.',
     platforms: ['windows'],
-    status: 'partial',
+    status: 'planned',
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Bounded foreground-window keyboard/clipboard adapter exists; universal UI Automation and target-window verification remain incomplete.',
+    notes: 'Universal accessibility-tree/UI Automation is not implemented; current keyboard adapter is bounded to foreground-window shortcuts.',
   },
   {
     id: 'desktop.text-and-clipboard',
