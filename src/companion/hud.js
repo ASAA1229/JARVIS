@@ -204,6 +204,20 @@ function createSpeechRecognizer(captureGeneration) {
   recognizer.onerror = (event) => {
     if (captureGeneration !== voiceCaptureGeneration) return;
     console.error('Speech recognition error:', event.error);
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      disableHandsFree();
+      setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access in the browser, then enable hands-free again.');
+      return;
+    }
+    if (isHandsFreeEnabled && !isMicMuted) {
+      isListening = false;
+      if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
+      document.getElementById('reactor-container').classList.remove('listening');
+      document.getElementById('btn-ptt').classList.remove('active');
+      setAssistantState('VOICE RECOVERING', `Speech recognition interrupted (${event.error}). Retrying wake detection.`);
+      scheduleHandsFreeRestart();
+      return;
+    }
     cancelVoiceCapture();
     setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
   };
@@ -345,7 +359,7 @@ function startVoiceCapture() {
     speechRecognizer.start();
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
-      stopVoiceCapture('VOICE TIME LIMIT', 'The 15-second capture limit was reached. Review the transcript before sending.');
+      stopVoiceCapture(isHandsFreeEnabled ? 'HANDS-FREE STANDBY' : 'VOICE TIME LIMIT', isHandsFreeEnabled ? 'Refreshing the browser recognition session.' : 'The 15-second capture limit was reached. Review the transcript before sending.');
     }, 15000);
   } catch (e) {
     isListening = false;
