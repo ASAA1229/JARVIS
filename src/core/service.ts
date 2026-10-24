@@ -19,6 +19,7 @@ import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { DeviceSecurityService } from './deviceSecurity.js';
+import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 
 export interface TaskLifecycleRecord {
   id: TaskId;
@@ -57,6 +58,7 @@ export class JarvisCoreService {
   public readonly desktopAgent: WindowsDesktopAgent;
   public readonly verifier: OutcomeVerifier;
   public planner: IAIPlannerProvider;
+  public readonly personalMemory?: PersonalMemoryStore;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
   private activeExecutionTokens = new Map<TaskId, AbortController>();
@@ -76,6 +78,12 @@ export class JarvisCoreService {
     this.desktopAgent = new WindowsDesktopAgent();
     this.verifier = new OutcomeVerifier();
     this.planner = planner;
+    if (ownerControlToken) {
+      this.personalMemory = new PersonalMemoryStore(
+        statePath ? statePath + '.memory' : './data/personal-memory.enc',
+        ownerControlToken,
+      );
+    }
   }
 
   /**
@@ -126,6 +134,7 @@ export class JarvisCoreService {
     const context: MinimizedContext = {
       requesterName: device.name,
       timestamp: Date.now(),
+      memory: this.personalMemory?.list().slice(0, 20).map((record) => record.content),
     };
     let plan: PlanProposal;
     try {
