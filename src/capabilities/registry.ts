@@ -63,7 +63,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'This is not yet universal application UI control.',
+    notes: 'Static allowlist plus unique Start menu app discovery is available; apps without Start menu entries and independent target-window verification remain unsupported.',
   },
   {
     id: 'desktop.ui-automation',
