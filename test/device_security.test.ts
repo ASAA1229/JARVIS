@@ -78,7 +78,7 @@ test('enrollment QR creates a pending request; owner TOTP approval enrolls only 
     const [pending] = f.security.listPending(f.owner);
     assert.equal(pending.requestHash, requestHash);
     now += 30_000;
-    assert.throws(() => f.security.approve(f.owner, created.transactionId, 'altered-request-hash', codeFor(setup.secret, now)), /expired or changed/);
+    await assert.rejects(f.security.approve(f.owner, created.transactionId, 'altered-request-hash', codeFor(setup.secret, now)), /expired or changed/);
     now += 30_000;
     const enrolled = f.security.approve(f.owner, created.transactionId, requestHash, codeFor(setup.secret, now));
     assert.equal(f.identity.getDevice(enrolled.deviceId)?.platform, 'Android');
