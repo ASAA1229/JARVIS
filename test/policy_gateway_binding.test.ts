@@ -82,7 +82,7 @@ test('approval is bound to the exact operation', () => {
   assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
 
   const result = gateway.evaluate(
-    { operation: 'desktop:type_text', parameters },
+    { operation: 'desktop:launch_and_type', parameters: { appId: 'notepad', text: 'hello' } },
     device,
     'task-a',
     approval.id,
