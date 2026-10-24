@@ -65,7 +65,7 @@ export class JarvisCoreService {
   ) {
     this.audit = new AuditLogger(logPath);
     this.identity = new DeviceIdentityManager(this.audit, statePath);
-    this.policy = new PolicyGateway(this.audit);
+    this.policy = new PolicyGateway(this.audit, statePath ? `${statePath}.approvals` : './data/approval-grants.json', ownerControlToken);
     if (ownerControlToken) this.deviceSecurity = new DeviceSecurityService(this.identity, this.audit, this.policy, ownerControlToken, statePath ? `${statePath}.security` : './data/security.json');
     this.systemAdapter = new WindowsSystemAdapter();
     this.appAdapter = new WindowsAppLauncherAdapter();
