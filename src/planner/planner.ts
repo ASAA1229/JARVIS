@@ -15,6 +15,7 @@ export interface PlanProposal {
 export interface MinimizedContext {
   requesterName: string;
   timestamp: number;
+  memory?: string[];
 }
 
 export interface IAIPlannerProvider {
@@ -79,7 +80,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     return { valid: errors.length === 0, errors };
   }
 
-  public async generatePlan(requestText: string, _context: MinimizedContext): Promise<PlanProposal> {
+  public async generatePlan(requestText: string, context: MinimizedContext): Promise<PlanProposal> {
     const text = requestText.toLowerCase().trim();
 
     // Reject destructive language before broad system-information matching.
@@ -149,8 +150,17 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (/\b(reset zoom|normal zoom)\b/.test(text)) {
       return { intent: 'Reset foreground application zoom', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'reset' }, justification: 'User explicitly requested zoom reset' }], confidence: 0.9, explanation: 'Will send the foreground app zoom reset shortcut after approval.' };
     }
+    const ownerName = (context.memory || []).map((item) => {
+      const match = item.match(/\b(?:owner|user|my)\s+name\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{0,79})/i);
+      return match?.[1]?.trim().replace(/[.!,;]+$/, '');
+    }).find((value) => Boolean(value));
     if (/\bopen\s+(?:the\s+)?notepad\b.*\bwrite\s+(?:my name|my full name)\b/i.test(requestText)) {
-      return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+      if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+      return { intent: 'Launch Notepad and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId: 'notepad', text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will open Notepad and enter the owner name saved in personal memory after approval.' };
+    }
+    if (/\b(?:write|type|enter)\s+(?:my name|my full name)\b/i.test(requestText)) {
+      if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+      return { intent: 'Enter the saved owner name', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will enter the owner name saved in personal memory after approval.' };
     }
     const launchAndType = requestText.match(/\bopen\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+[“"]?(.+?)[”"]?\s*$/i);
     if (launchAndType && launchAndType[2].trim()) {
