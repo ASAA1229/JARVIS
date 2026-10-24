@@ -105,3 +105,9 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 - The first CI run including `test/rejection_permissions.test.ts` failed because the service rejects unauthorized approvals synchronously while the test used `assert.rejects`, which expects an asynchronous rejection. The implementation threw the expected permission error.
 - Corrected the tests to use `assert.throws`. Latest test commit: `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
 - This corrected test version requires a fresh CI run; the earlier green run does not include these tests.
+
+## Final gap-closure regression CI — 2026-10-24
+
+- [GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438) completed successfully for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`: locked dependency install PASS; TypeScript build PASS; TypeScript check PASS; automated suite **103 passed, 0 failed, 0 skipped**; browser security smoke PASS (`BROWSER_E2E_PASS`). This includes the approval-binding, adapter-error-redaction, and permission-restricted rejection tests.
+- Documentation-only updates followed this source/test commit; no source or test files changed after this passing run.
+- Overall POC remains INCOMPLETE / BLOCKED because physical Windows/voice/Android acceptance, secure remote transport review, native iOS, full API/error review, and independent security review are not complete.
