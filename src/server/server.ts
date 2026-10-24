@@ -9,6 +9,7 @@ import { Permission } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
+import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -75,6 +76,23 @@ export class JarvisServer {
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
+      // Capability metadata is descriptive only; it does not grant action permissions.
+      if (req.method === 'GET' && url.pathname === '/api/capabilities') {
+        const requestedPlatform = url.searchParams.get('platform');
+        const supportedPlatforms: readonly string[] = ['windows', 'android', 'ios', 'web'];
+        if (requestedPlatform && !supportedPlatforms.includes(requestedPlatform)) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'Unsupported platform filter' }));
+          return;
+        }
+        const capabilities = requestedPlatform
+          ? listCapabilitiesForPlatform(requestedPlatform as Exclude<JarvisPlatform, 'all'>)
+          : listCapabilities();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ capabilities }));
+        return;
+      }
+
       // 1. Static UI routes (Companion & HUD)
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/hud')) {
         return this.serveStatic('hud.html', 'text/html', res);
