@@ -102,3 +102,14 @@ The current `enhancement` versions of `POC.md`, `POC2.md`, `master_repo_md.md`, 
 - Exact-commit local device evidence cannot be produced by GitHub CI alone.
 
 **Disposition remains BLOCKED / NOT RELEASE-READY.**
+
+## Addendum — second UI Automation regression corrected (2026-10-24)
+
+A deeper review of the generated PowerShell revealed that the count-check variables in the two UI Automation operations were still crossed in the current source: `desktop:click_control` queried `$foundControls` but checked `$matches.Count`, while `desktop:set_value` queried `$matches` but checked `$foundControls.Count`. The earlier audit statement that this was fully corrected was premature.
+
+Correction committed in the current baseline:
+- Extracted pure control-script construction into `buildControlActionScript`, so the collection used for uniqueness validation is the same collection indexed by each operation.
+- Added `test/windows_desktop_agent.test.ts` regression tests for both collection-count bindings and PowerShell single-quote escaping.
+- Commit `220e002f8759d1631a032ff1bf7e67e6bf362273` passed hosted CI on `fix` push, `fix` pull request, `new` push, `test` push, and `enhancement` pull request. See [fix push CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087868925), [fix PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872607), [new CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872145), [test CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087882564), and [enhancement PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087864041).
+
+This is automated regression evidence for command construction, not proof of successful interaction with actual Windows UI Automation controls on the target MSI.
