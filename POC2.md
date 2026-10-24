@@ -40,3 +40,12 @@
 ## Required evidence to move an item into POC
 
 For each item, record: acceptance criterion; exact commit SHA; implementation path; test command and output; whether the test is mocked or real; target OS/browser/device; manual/physical evidence where required; known limitations; reviewer decision. Only then mark it complete in `POC.md` and remove it from this pending list. Keep the overall POC incomplete while any release-blocking acceptance gate remains open.
+
+
+## Voice recognition reliability — verification pending
+
+- [ ] Run build, lint, unit tests, and browser smoke tests on the merged `new` branch.
+- [ ] Verify click-to-toggle push-to-talk stays listening after one click, captures speech, and shows a reviewable transcript; confirm a second click stops capture.
+- [ ] Verify “Hey JARVIS, open Notepad” preserves and dispatches the command text through the authenticated policy gateway.
+- [ ] Verify browser microphone permission, selected input device, speech-service/network availability, no-speech recovery, and the visible error states in Edge/Chrome.
+- [ ] Verify hands-free standby can restart after recognition sessions end, and confirm actual physical microphone and TTS playback on Windows/Android.
