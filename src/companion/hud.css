@@ -787,3 +787,34 @@ body.reduced-motion * {
 @media (prefers-reduced-motion: reduce) {
   .gesture-preview video, #gesture-reticle { transition: none; }
 }
+
+
+/* Responsive cinematic polish: preserve the existing HUD identity while improving hierarchy and touch usability. */
+.hud-header { gap: 18px; flex-wrap: wrap; border: 1px solid rgba(0,229,255,.24); box-shadow: 0 10px 40px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.035); }
+.hud-brand { min-width: 220px; }
+.hud-title { text-shadow: 0 0 18px rgba(0,229,255,.28); }
+.hud-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; max-width:100%; }
+.hud-btn-mini { min-height:36px; padding:8px 11px; border:1px solid rgba(0,229,255,.24); border-radius:6px; background:rgba(0,229,255,.055); color:var(--text-main); font:700 10px/1.35 var(--font-mono); letter-spacing:.045em; cursor:pointer; transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease; }
+.hud-btn-mini:hover:not(:disabled), .hud-btn-mini:focus-visible { outline:none; border-color:var(--cyan-glow); background:rgba(0,229,255,.13); box-shadow:0 0 18px rgba(0,229,255,.12); }
+.hud-btn-mini:active:not(:disabled) { transform:translateY(1px); }
+.hud-btn-mini:disabled { opacity:.45; cursor:not-allowed; }
+.hud-btn-mic[aria-pressed="true"] { color:var(--hud-danger); border-color:rgba(255,0,85,.45); background:rgba(255,0,85,.09); }
+.hud-privacy-notice { flex-basis:100%; max-width:560px; margin:2px 0 0 auto; color:#9fb4c8; font-size:10px; line-height:1.5; }
+.hud-panel, .hud-footer { box-shadow:0 12px 36px rgba(0,0,0,.25), inset 0 1px rgba(255,255,255,.025); }
+.panel-header { gap:12px; }
+.hud-panel h3, .tasks-timeline-header, .chips-title { letter-spacing:.11em; }
+.hud-tasks-feed, .audit-ticker { scrollbar-width:thin; scrollbar-color:rgba(0,229,255,.35) transparent; }
+.hud-tasks-feed::-webkit-scrollbar, .audit-ticker::-webkit-scrollbar { width:6px; }
+.hud-tasks-feed::-webkit-scrollbar-thumb, .audit-ticker::-webkit-scrollbar-thumb { background:rgba(0,229,255,.35); border-radius:8px; }
+.hud-chip { min-height:32px; padding:7px 10px; }
+.hud-chip:focus-visible, .hud-btn:focus-visible, .hud-terminal-input:focus-visible { outline:2px solid var(--cyan-glow); outline-offset:2px; }
+.hud-terminal-input { min-width:0; user-select:text; }
+.hud-terminal-input::placeholder { color:#7e91a8; }
+.hud-btn-cyan { box-shadow:0 0 18px rgba(0,229,255,.08); }
+@media (max-width:1100px) { .hud-header { align-items:flex-start; } .hud-telemetry { flex-wrap:wrap; gap:8px 14px; } .hud-controls { justify-content:flex-start; } .hud-privacy-notice { margin-left:0; } }
+@media (max-width:760px) {
+ .hud-wrapper { padding:8px; gap:8px; } .hud-header { padding:12px; } .hud-brand { flex-wrap:wrap; gap:8px; } .hud-version { width:100%; }
+ .hud-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; } .hud-btn-mini { width:100%; min-height:40px; }
+ .hud-privacy-notice { grid-column:1 / -1; } .command-input-row { gap:6px; } .hud-btn { padding:9px 11px; } .directive-chips { align-items:stretch; } .hud-chip { flex:1 1 auto; }
+}
+@media (max-width:420px) { .hud-controls { grid-template-columns:1fr; } .command-input-row { flex-direction:column; } .command-input-row .hud-btn { width:100%; } }
