@@ -113,3 +113,17 @@ Correction committed in the current baseline:
 - Commit `220e002f8759d1631a032ff1bf7e67e6bf362273` passed hosted CI on `fix` push, `fix` pull request, `new` push, `test` push, and `enhancement` pull request. See [fix push CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087868925), [fix PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872607), [new CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087872145), [test CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087882564), and [enhancement PR CI](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40087864041).
 
 This is automated regression evidence for command construction, not proof of successful interaction with actual Windows UI Automation controls on the target MSI.
+
+
+## Addendum — final automated desktop-control regression baseline (2026-10-24)
+
+Final code/test baseline: `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`. The Windows desktop adapter now has six focused tests covering collection/count consistency, PowerShell single-quote escaping, sensitive-field guard generation, independent value read-back, missing set-value input, and invalid control-name rejection before OS execution.
+
+Hosted CI completed successfully for the same commit:
+- [`fix` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089155846) — PASS.
+- [`fix` pull request](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159050) — PASS.
+- [`new` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159384) — PASS.
+- [`test` push](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089168551) — PASS.
+- [`enhancement` pull request](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089122755) — PASS.
+
+The workflow successfully ran locked dependency installation, TypeScript build, TypeScript checking, automated tests, and browser smoke tests. This verifies the CI harness, not interactive desktop control. Windows CI runners do not provide evidence that a visible Notepad window opened in the owner's interactive desktop session; physical microphone, wake phrase, Android/two-phone, and native iOS acceptance remain unverified. Do not mark those gates complete without target-environment evidence.
