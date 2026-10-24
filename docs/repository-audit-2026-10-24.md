@@ -153,3 +153,9 @@ This is a targeted fix for the core adapter exception path. Some adapters may st
 The first CI run for the new regression suite completed dependency installation, build, and TypeScript checking successfully, then reported one failure in the newly added operation-substitution test. The test passed an `appId` parameter to `desktop:type_text`, so the intended operation-allowlist check correctly rejected the request before the approval-binding check. This was a test-fixture defect, not a demonstrated implementation regression.
 
 The fixture was corrected to use a valid parameter shape for `desktop:launch_and_type` while presenting an approval created for `app:launch`. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`. The corrected commit's hosted CI result is pending at this report update; do not mark the new suite green until that run completes.
+
+## Addendum — corrected security regression CI result (2026-10-24)
+
+[GitHub Actions run 40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717) completed successfully for code/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`. Locked dependency install, TypeScript build, TypeScript check, automated tests (**101 passed, 0 failed**), and browser security smoke test passed. The new approval-binding and adapter-error-redaction tests passed. Documentation-only updates followed this code/test commit; no source or test changes were made after the passing run.
+
+This closes the automated CI gate for this code/test set, not the remaining target-device or independent-review gates. The PR remains open against `dev`; no automatic merge to `dev` or `main` has occurred.
