@@ -53,6 +53,14 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   const planner = new LocalHeuristicPlanner();
   const context = { requesterName: 'Owner', timestamp: Date.now() };
   const zoom = await planner.generatePlan('zoom in', context);
+  const inspect = await planner.generatePlan('inspect the current window', context);
+  assert.equal(inspect.operations[0]?.operation, 'desktop:inspect_window');
+  const click = await planner.generatePlan('click button named Save', context);
+  assert.equal(click.operations[0]?.operation, 'desktop:click_control');
+  assert.deepEqual(click.operations[0]?.parameters, { name: 'Save' });
+  const setField = await planner.generatePlan('set field Search to JARVIS', context);
+  assert.equal(setField.operations[0]?.operation, 'desktop:set_value');
+  assert.deepEqual(setField.operations[0]?.parameters, { name: 'Search', text: 'JARVIS' });
   assert.equal(zoom.operations[0]?.operation, 'desktop:zoom');
   assert.deepEqual(zoom.operations[0]?.parameters, { direction: 'in' });
   const type = await planner.generatePlan('type Hello JARVIS', context);
