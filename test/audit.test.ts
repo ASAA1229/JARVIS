@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { AuditLogger } from '../src/audit/audit.js';
 import { CryptoUtil } from '../src/crypto/crypto.js';
 import { AuditRecord } from '../src/core/types.js';
 
 function withAuditDirectory(run: (directory: string) => void): void {
-  const directory = mkdtempSync('./data/test-audit-regression-');
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-test-audit-regression-'));
   try {
     run(directory);
   } finally {
