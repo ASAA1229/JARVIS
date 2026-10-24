@@ -99,3 +99,10 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - Initial CI failed two newly added tests because they used asynchronous `assert.rejects` for synchronous permission exceptions. The expected permission checks were reached.
 - Updated the assertions to `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
 - [ ] Re-run CI on the corrected test commit and verify the full browser smoke stage before closing this item.
+
+## Final gap-closure CI — 2026-10-24
+
+- [x] [GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438) completed successfully for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`: locked dependency install PASS; TypeScript build PASS; TypeScript check PASS; automated suite **103 passed, 0 failed, 0 skipped**; browser security smoke PASS (`BROWSER_E2E_PASS`). This includes the approval-binding, adapter-error-redaction, and permission-restricted rejection tests.
+- [ ] Complete broader approval HTTP contract tests (expiry, duplicate/concurrent transitions, stale task state, persistence/audit failure).
+- [ ] Complete route-by-route adapter/API error disclosure review and independent adversarial review.
+- [ ] Complete physical Windows/voice/Android acceptance; native iOS and remote transport remain incomplete.
