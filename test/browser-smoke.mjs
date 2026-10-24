@@ -64,12 +64,22 @@ try {
   const context = await browser.newContext();
   const pageErrors = [];
   const consoleErrors = [];
+  const unexpectedServerFailures = [];
+  let expectedOptionalTtsFailures = 0;
+  const trackResponse = (response) => {
+    if (response.status() < 500) return;
+    const url = response.url();
+    if (response.status() === 503 && url.includes('/api/voice/synthesize')) expectedOptionalTtsFailures++;
+    else unexpectedServerFailures.push(url + ' (' + response.status() + ')');
+  };
   let expectedUnauthorizedRequest = false;
   let expectedUnauthorizedConsoleErrors = 0;
   const page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('response', trackResponse);
   page.on('console', (message) => {
     if (message.type() !== 'error' || message.text().toLowerCase().includes('favicon.ico')) return;
+    if (message.text().includes('Failed to load resource: the server responded with a status of 503 (Service Unavailable)')) return;
     if (message.text().startsWith('INFO: Created TensorFlow Lite XNNPACK delegate for CPU.')) return;
     if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
       expectedUnauthorizedConsoleErrors++;
@@ -144,8 +154,10 @@ try {
   });
   const hud = await context.newPage();
   hud.on('pageerror', (error) => pageErrors.push(error.message));
+  hud.on('response', trackResponse);
   hud.on('console', (message) => {
     if (message.type() !== 'error') return;
+    if (message.text().includes('Failed to load resource: the server responded with a status of 503 (Service Unavailable)')) return;
     if (message.text().startsWith('INFO: Created TensorFlow Lite XNNPACK delegate for CPU.')) return;
     if (expectedUnauthorizedRequest && message.text().includes('401 (Unauthorized)')) {
       expectedUnauthorizedConsoleErrors++;
@@ -365,6 +377,8 @@ try {
 
   await hud.waitForTimeout(4200);
   // The bootstrap browser is explicitly enrolled with DEVICE_MANAGE. Ordinary-device audit denial is covered by API security tests.
+  if (unexpectedServerFailures.length) throw new Error('Unexpected server failures: ' + unexpectedServerFailures.join(' | '));
+  if (expectedOptionalTtsFailures > 0) console.log('OPTIONAL_LOCAL_TTS_UNAVAILABLE: browser speech fallback exercised (' + expectedOptionalTtsFailures + ' responses)');
   const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
   const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
   if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length !== 1) {
