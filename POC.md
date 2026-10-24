@@ -75,3 +75,11 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 - Recognition errors now surface actionable states for microphone permission denial, unavailable microphone hardware, speech-service/network failure, and no speech detected. Permission denial also cancels and releases the active capture state.
 - The push-to-talk transcript remains a review-and-confirm flow; hands-free wake commands use the existing authenticated directive and policy path. No policy/approval bypass was added.
 - Browser automation coverage was updated for click-to-toggle capture and microphone-permission recovery. Physical microphone, browser speech-service availability, and real-device acceptance still require testing.
+
+## Approval-binding security remediation — 2026-10-24
+
+- Added a fail-closed runtime check for malformed policy parameter containers before enumeration or hashing.
+- Task-scoped approval evaluation now checks the approval's task ID, requesting device ID, and operation name as well as the canonical parameter hash. Matching parameters alone can no longer replay an approval into a different task, device, or operation.
+- Approval rejection now applies the same operation-family permission checks as approval: memory operations require `DEVICE_MANAGE`; app launch and desktop operations require `APP_LAUNCH`.
+- Added `test/policy_gateway_binding.test.ts` covering task replay, device mismatch, operation mismatch, malformed parameter containers, and unknown parameters.
+- This is source/test implementation, not acceptance evidence until the new PR CI passes. Physical Windows/voice/Android acceptance and independent security review remain open; overall POC remains INCOMPLETE / BLOCKED.
