@@ -302,3 +302,11 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
     assert.strictEqual(str.includes('Query OS info'), false);
   });
 });
+
+test('VOICE-INTENT: spoken "open note pad" resolves to the allowlisted Notepad action', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('open note pad', { requesterName: 'voice-test', timestamp: Date.now() });
+  assert.strictEqual(plan.operations.length, 1);
+  assert.strictEqual(plan.operations[0].operation, 'app:launch');
+  assert.strictEqual(plan.operations[0].parameters.appId, 'notepad');
+});
