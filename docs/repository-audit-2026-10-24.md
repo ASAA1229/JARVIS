@@ -163,3 +163,7 @@ This closes the automated CI gate for this code/test set, not the remaining targ
 ## Addendum — approval-rejection permission tests (2026-10-24)
 
 Added `test/rejection_permissions.test.ts` after the previously documented passing CI run. It covers rejection of desktop approvals without `APP_LAUNCH` and personal-memory approvals without `DEVICE_MANAGE`, and verifies the approval remains pending after the unauthorized attempt. This test file is not covered by run 40091754717; a new hosted CI run for the latest branch head is required before claiming it passes.
+
+## Addendum — rejection permission test assertion correction (2026-10-24)
+
+The first CI run that included `test/rejection_permissions.test.ts` failed both new cases because the tests used `assert.rejects` even though `rejectTask` performs its authorization check synchronously and throws directly. The reported error messages were the expected permission denials. The test harness was corrected to use `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`. A new CI run is required; no passing result is claimed for these two cases yet.
