@@ -140,6 +140,23 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
     assert.ok((disk.data as { totalBytes?: number })?.totalBytes);
   });
 
+  test('FLOW-WORKFLOW: multiple planned operations execute sequentially with independent policy evaluation', async () => {
+    jarvis.planner.generatePlan = async () => ({
+      intent: 'Read OS details then memory status',
+      operations: [
+        { operation: 'system:get_os_info', parameters: {}, justification: 'Read OS information' },
+        { operation: 'system:get_memory_info', parameters: {}, justification: 'Read memory information' },
+      ],
+      confidence: 0.95,
+      explanation: 'Two-step read-only workflow',
+    });
+    const result = await jarvis.submitRequest(companionSessionId, 'check system and memory');
+    assert.strictEqual(result.state, TaskState.COMPLETED);
+    assert.strictEqual(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+    assert.ok(result.data);
+    assert.ok(jarvis.audit.getPublicRecords().some((record) => record.eventType === 'WORKFLOW_STEP_VERIFIED'));
+  });
+
   test('FLOW-UNSUPPORTED: Unsupported and destructive requests explain denial without running adapters', async () => {
     const unsupported = await jarvis.submitRequest(companionSessionId, 'Tell me a joke');
     assert.strictEqual(unsupported.state, TaskState.FAILED);
