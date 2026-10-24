@@ -288,10 +288,17 @@ input[type="text"]:focus {
 }
 
 .code-token {
+  display: block;
   font-family: monospace;
   font-size: 14px;
   color: #fff;
   word-break: break-all;
+  margin-top: 8px;
+}
+
+.muted-code {
+  color: #d9ecff;
+  font-size: 12px;
 }
 
 .countdown {
@@ -299,6 +306,17 @@ input[type="text"]:focus {
   color: var(--warning);
   margin-top: 4px;
 }
+
+.security-panel { margin-top: 16px; padding: 16px; border: 1px solid rgba(0, 224, 255, .24); border-radius: 10px; background: rgba(0, 15, 25, .42); }
+.security-panel h3 { color: var(--primary); letter-spacing: .08em; text-transform: uppercase; }
+.security-panel h4 { margin: 18px 0 8px; color: #d7e8f2; }
+.security-qr { display: block; width: min(220px, 100%); height: auto; margin: 12px 0; padding: 8px; background: #fff; border-radius: 6px; }
+.security-panel input { min-width: 150px; padding: 10px; color: var(--text-main); background: rgba(0,0,0,.45); border: 1px solid var(--border-color); border-radius: 6px; }
+.security-record { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:10px; margin:6px 0; background:rgba(255,255,255,.035); border:1px solid var(--border-color); border-radius:7px; }
+.security-record small { display:block; color:var(--text-muted); }
+.permission-options { display:grid; gap:7px; margin:10px 0; color:var(--text-muted); font-size:12px; }
+.permission-options label { display:flex; align-items:center; gap:8px; }
+@media (max-width: 620px) { .security-panel .input-group, .security-panel .action-row { align-items:stretch; flex-direction:column; } }
 
 /* Approvals & Tasks */
 .approval-card {

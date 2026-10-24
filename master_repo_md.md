@@ -1,7 +1,7 @@
 # JARVIS — Master Repository Documentation
 
-**Snapshot date:** 2026-10-23  
-**Current feature branch:** `new` (M12 gesture foundation)
+**Snapshot date:** 2026-10-24
+**Current feature branch:** `new` (device security workflow + M12 gesture foundation)
 **Disposition:** POC implementation exists; integrated acceptance remains BLOCKED / NOT RELEASE-READY.
 
 > This file consolidates the currently reviewed project facts, architecture, branch policy, milestone status, security invariants, and known limitations. It is not a claim that every Markdown file on every branch has been read. Repository-wide file enumeration for every ref is not exposed by the current connected GitHub actions; existing documentation must not be deleted until a complete branch-by-branch inventory and preservation check can be performed.
@@ -120,3 +120,14 @@ This master document is intended to be the consolidated project reference. The s
 ## 14. Future milestone template
 
 Each future milestone requires an approved scope, non-goals, prerequisites, affected modules, security/privacy review, acceptance criteria, unit/integration/E2E/hardware tests, required environment, rollback, documentation, evidence, and a dependency map. A worktree existing is not evidence of milestone completion.
+
+## 15. Device enrollment and owner authentication (implemented locally, 2026-10-24)
+
+- First-owner bootstrap remains a one-time local action authorized by `JARVIS_OWNER_CONTROL_TOKEN`; it is disabled once an active device exists. The bootstrap identity receives the existing management permission to operate owner controls.
+- Later enrollment uses a signed, `DEVICE_MANAGE` session and fresh TOTP step-up to create a 120-second transaction. The QR carries a `jarvis://enroll` reference and a 256-bit one-time code. Only the SHA-256 hash is held in transaction state; the raw code is returned to the creator for QR/manual fallback and is never audited.
+- The enrolling browser creates an Ed25519 identity and signs a proof bound to transaction id, device name, platform, public-key hash, server-selected permissions, expiry, and the one-time code. Exchange creates a pending request only. A management device must approve the matching request hash with a fresh TOTP step before the identity is created. Reject/cancel/expiry are terminal states.
+- Google Authenticator-compatible TOTP uses RFC-style SHA-1, six digits, and 30-second periods through `otpauth`. Validation accepts at most one adjacent step and prevents accepted-step reuse. Five failed codes within 15 minutes lock verification until the window passes. The seed, accepted counter, and failure timestamps are AES-256-GCM encrypted at rest; the encryption key is HKDF-derived from the configured owner control token. Rotating that token makes existing encrypted TOTP state unreadable and requires owner recovery/reset.
+- `PolicyGateway` authorizes security controls; `DeviceIdentityManager` remains the source of device/session identity and immediate revocation. The UI lists device/session state, pending requests, least-privilege permissions, QR/manual code, cancellation, approval, rejection, and revocation.
+- Enrollment transactions are process-local and expire on access/sweep; restart invalidates in-flight transactions. TOTP state is persisted. Network binding remains `127.0.0.1`; this does not enable Android over LAN or the public internet. Remote phone scanning/approval is blocked pending HTTPS/remote transport design. Manual same-origin browser entry and automated HTTP tests are supported.
+- Current local evidence: `npm run build` PASS; `npm run lint` PASS; `npm test` PASS 75/75 when using the temporary Windows `os.userInfo()` compatibility shim; `npm run test:browser` FAILS at the existing voice-recognition timing wait in `test/browser-smoke.mjs:290`; the new TOTP/QR approval workflow is not covered by this browser harness; `npm audit` could not reach the npm advisory endpoint. See `master_repo_test`.
+- This implementation is **PARTIAL**, not device-accepted: physical Android/second-browser enrollment, authenticator app scan on a phone, browser camera QR scanning, session expiry/revocation across restart, and hosted CI are not proven by local unit/HTTP tests.

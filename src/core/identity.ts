@@ -105,9 +105,10 @@ export class DeviceIdentityManager {
   public createEnrollmentChallenge(
     permissions: Permission[] = [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH],
     ttlSeconds: number = 120
-  ): { challengeToken: string; expiresAt: number } {
+  ): { challengeToken: string; expiresAt: number; uri: string } {
     const challengeToken = CryptoUtil.randomToken(16);
     const expiresAt = Date.now() + ttlSeconds * 1000;
+    const uri = `jarvis://enroll?challengeToken=${encodeURIComponent(challengeToken)}`;
 
     this.challenges.set(challengeToken, {
       challengeToken,
@@ -121,7 +122,7 @@ export class DeviceIdentityManager {
       permissions,
     });
 
-    return { challengeToken, expiresAt };
+    return { challengeToken, expiresAt, uri };
   }
 
   /**
@@ -130,12 +131,14 @@ export class DeviceIdentityManager {
   public enrollDevice(
     challengeToken: string,
     deviceName: string,
-    publicKeyPem: string
+    publicKeyPem: string,
+    platform = 'Browser'
   ): { success: boolean; deviceId?: DeviceId; error?: string } {
     if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; enrollment is blocked' };
-    if (typeof deviceName !== 'string' || !deviceName.trim() || deviceName.length > 80) {
+    if (typeof deviceName !== 'string' || !deviceName.trim() || deviceName.length > 80 || /[\u0000-\u001f\u007f]/.test(deviceName)) {
       return { success: false, error: 'Device name must be 1-80 characters' };
     }
+    if (typeof platform !== 'string' || !/^[a-zA-Z0-9 ._-]{1,40}$/.test(platform)) return { success: false, error: 'Device platform is invalid' };
     const challenge = this.challenges.get(challengeToken);
 
     if (!challenge) {
@@ -172,6 +175,7 @@ export class DeviceIdentityManager {
     const deviceRecord: DeviceRecord = {
       id: deviceId,
       name: deviceName,
+      platform,
       publicKey: publicKeyPem,
       status: DeviceStatus.ACTIVE,
       permissions: challenge.assignedPermissions,
@@ -179,20 +183,20 @@ export class DeviceIdentityManager {
       lastSeenAt: now,
     };
 
+    this.audit.record('DEVICE_ENROLLMENT_COMMITTING', { deviceId, permissions: deviceRecord.permissions }, deviceId);
     this.devices.set(deviceId, deviceRecord);
     if (!this.persistState()) {
       this.devices.delete(deviceId);
       return { success: false, error: 'Could not persist device enrollment; enrollment was not completed' };
     }
 
-    this.audit.record(
-      'DEVICE_ENROLLED',
-      {
-        deviceId,
-        permissions: deviceRecord.permissions,
-      },
-      deviceId
-    );
+    try {
+      this.audit.record('DEVICE_ENROLLED', { deviceId, permissions: deviceRecord.permissions }, deviceId);
+    } catch {
+      this.devices.delete(deviceId);
+      this.persistState();
+      return { success: false, error: 'Could not audit device enrollment; enrollment was rolled back' };
+    }
 
     return { success: true, deviceId };
   }
@@ -375,5 +379,9 @@ export class DeviceIdentityManager {
 
   public listDevices(): DeviceRecord[] {
     return Array.from(this.devices.values());
+  }
+
+  public hasActiveSession(deviceId: DeviceId, now = Date.now()): boolean {
+    return [...this.sessions.values()].some((session) => session.deviceId === deviceId && session.active && session.expiresAt > now);
   }
 }

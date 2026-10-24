@@ -1,6 +1,6 @@
 # JARVIS POC — Implemented and Evidence-Backed
 
-**Updated:** 2026-10-23  
+**Updated:** 2026-10-24
 **Overall POC acceptance:** INCOMPLETE / BLOCKED. This file lists implemented behavior and local evidence; it does not mean the product is release-ready.
 
 ## Implemented baseline
@@ -8,6 +8,7 @@
 - Node.js 24 + TypeScript modular-monolith backend.
 - Browser-based companion/HUD with text fallback and push-to-talk controls.
 - Device identity and session protocol using Ed25519; one-time enrollment challenges and signed session/request flow are present in the remediation checkout.
+- Owner-authorized device enrollment with expiring QR/manual-code transactions, Ed25519 proof-of-possession, pending approval, explicit TOTP step-up, least-privilege permission selection, cancellation/rejection, device listing, and server-side revocation. TOTP seeds and anti-replay/failure state are encrypted at rest.
 - Default-deny `PolicyGateway`, operation allowlist, task-scoped approvals, single-use approval consumption, session expiry/revocation, and AI planner schema validation.
 - Selected read-only Windows system-information operations and allowlisted installed-app launch adapter.
 - Outcome states distinguish verified, partial, failed, and uncertain execution; interrupted or unaudited results must not be reported as verified success.
@@ -33,7 +34,20 @@ These results were reported against a dirty tree and are not exact-commit hosted
 - An opt-in, video-only camera and same-origin MediaPipe Hand Landmarker/WASM run in a worker. Camera defaults off, the active state is visible, and stop releases tracks and inference resources.
 - Automated gesture tests passed **7/7** using synthetic landmark fixtures. They cover schema/version/target/staleness bounds, confidence floor, dwell/rearm/duplicate suppression, point/pinch/swipe, tracking loss, and absence of gesture-to-backend/shell/adapter execution paths.
 - `npm run test:browser` passed in Microsoft Edge with a fake-camera device. The fake stream loaded the same-origin model/WASM and ran CPU inference; the test checked video-only capture, stop/release, simulated camera loss/permission denial, and no external request. This is not physical webcam or gesture-accuracy acceptance.
-- On this branch, `npm run build`, `npm run lint`, and `npm ls --depth=0` passed. The full `npm test` run has existing environment/timing failures and is not green; see `master_repo_test` for exact counts. The final `npm audit` endpoint was unreachable.
+- The earlier full test attempt on this branch had environment/timing failures; that is superseded by the current evidence below. The final `npm audit` endpoint was unreachable.
+
+## Current device-security worktree evidence (2026-10-24)
+
+The `new` branch worktree is currently dirty with the device-enrollment/authentication implementation. Automated checks against this working tree:
+
+- `npm run build`: PASS.
+- `npm run lint`: PASS (TypeScript no-emit check).
+- `npm test`: PASS — 75 passed, 0 failed, 0 skipped. This Windows sandbox required a temporary process-only shim for Node `os.userInfo()` returning `uv_os_get_passwd … ENOMEM`; the shim was removed after the run and did not change project files.
+- `npm run test:browser`: FAIL — after legacy bootstrap enrollment and earlier HUD checks, the simulated voice-recognition lifecycle wait at `test/browser-smoke.mjs:290` timed out twice. The new QR/TOTP approval workflow is not covered by this harness.
+- `npm audit --audit-level=low`: UNAVAILABLE — npm registry advisory endpoint failed; installation itself reported 0 vulnerabilities, which is not a substitute for an audit result.
+- `npm ls --depth=0` and JavaScript syntax checks: PASS.
+
+Device-security tests cover TOTP provisioning/verification, encrypted seed-at-rest, TOTP replay and failure lockout, hashed single-use enrollment references, QR output, proof-of-possession, pending-before-approval, exact request binding, least-privilege grants, cancellation/expiry, unauthorized management denial, and the HTTP create → exchange → approve → session → revoke path. No physical Android or remote-device acceptance is claimed.
 - M12 is **PARTIAL**. Gesture proposals are previews only. Policy/approval/adapter integration, voice arbitration, deletion confirmation, physical precision/false-activation/latency, sustained resource use, and target laptop acceptance remain open.
 
 ## Implemented does not mean externally accepted

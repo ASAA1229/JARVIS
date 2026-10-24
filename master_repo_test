@@ -1,6 +1,26 @@
 # JARVIS Master Test & Acceptance Register
 
-**Updated:** 2026-10-23. **Overall acceptance:** BLOCKED — NOT READY FOR RELEASE.
+**Updated:** 2026-10-24. **Overall acceptance:** BLOCKED — NOT READY FOR RELEASE.
+
+## Current device-security worktree verification (2026-10-24)
+
+Worktree: branch `new`, dirty task changes (no new commit SHA). This evidence is local and is not hosted CI.
+
+| Check | Result | Notes |
+|---|---|---|
+| `npm run build` | PASS | TypeScript build completed. |
+| `npm run lint` | PASS | Project script is `tsc --noEmit`. |
+| `npm test` | PASS — 75 passed, 0 failed, 0 skipped | Required a temporary process-only `os.userInfo()` shim for sandbox `uv_os_get_passwd … ENOMEM`; shim removed afterward. |
+| `npm run test:browser` | FAIL | After legacy bootstrap enrollment and earlier HUD checks, timed out twice at `test/browser-smoke.mjs:290` while waiting for the simulated recognizer lifecycle. The new QR/TOTP workflow is not covered by this harness. |
+| `npm audit --audit-level=low` | UNAVAILABLE | npm registry advisory endpoint errored. Dependency installation reported zero issues, but no final audit result is claimed. |
+| `npm ls --depth=0` | PASS | Direct dependencies resolved. |
+| `node --check src/companion/app.js` / `deviceCrypto.js` | PASS | Browser JavaScript syntax. |
+
+### New enrollment/TOTP test coverage
+
+- `test/device_security.test.ts`: provisioning URI and SVG QR, server verification, encrypted secret-at-rest/no audit leak, proof-of-possession, pending owner review, exact-hash/TOTP approval, least-privilege grant, one-time code replay rejection, failed-code lockout, cancellation/expiry invalidation, unauthorized management denial, and HTTP create → exchange → approve → session → revoke flow with revoked-session denial.
+- Existing `test/e2e_recovery.test.ts` full API regression remains passing; its expired-approval test now uses an isolated key to avoid test-order-dependent duplicate identity state.
+- Automated exchange tests use synthetic Ed25519 keys and test TOTP seed values. They do not prove Google Authenticator camera scanning, physical Android enrollment, second-device network transport, or UI browser acceptance.
 
 ## Reported local checks
 Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`:

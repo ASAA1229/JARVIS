@@ -17,6 +17,7 @@ import { OutcomeVerifier } from '../verification/verifier.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
+import { DeviceSecurityService } from './deviceSecurity.js';
 
 export interface TaskLifecycleRecord {
   id: TaskId;
@@ -46,6 +47,7 @@ export interface TaskResult {
 export class JarvisCoreService {
   public readonly audit: AuditLogger;
   public readonly identity: DeviceIdentityManager;
+  public readonly deviceSecurity?: DeviceSecurityService;
   public readonly policy: PolicyGateway;
   public readonly systemAdapter: WindowsSystemAdapter;
   public readonly appAdapter: WindowsAppLauncherAdapter;
@@ -58,11 +60,13 @@ export class JarvisCoreService {
   constructor(
     planner: IAIPlannerProvider,
     logPath: string = './data/audit.log',
-    statePath?: string
+    statePath?: string,
+    ownerControlToken?: string
   ) {
     this.audit = new AuditLogger(logPath);
     this.identity = new DeviceIdentityManager(this.audit, statePath);
     this.policy = new PolicyGateway(this.audit);
+    if (ownerControlToken) this.deviceSecurity = new DeviceSecurityService(this.identity, this.audit, this.policy, ownerControlToken, statePath ? `${statePath}.security` : './data/security.json');
     this.systemAdapter = new WindowsSystemAdapter();
     this.appAdapter = new WindowsAppLauncherAdapter();
     this.verifier = new OutcomeVerifier();

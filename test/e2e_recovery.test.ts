@@ -103,7 +103,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     });
     const sessionData = await sessionRes.json();
     assert.strictEqual(sessionData.success, true);
-    assert.deepStrictEqual(sessionData.permissions, [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH]);
+    assert.deepStrictEqual(sessionData.permissions, [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH, Permission.DEVICE_MANAGE]);
     companionSessionId = sessionData.sessionId;
 
     // 5. Submit Read-Only Request (OS Facts)
@@ -350,10 +350,11 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
   test('SEC-API-14: Expired approval is rejected over HTTP without execution', async () => {
     const challenge = server.getService().identity.createEnrollmentChallenge();
+    const isolatedKeypair = CryptoUtil.generateEd25519KeyPair();
     const enrollment = server.getService().identity.enrollDevice(
       challenge.challengeToken,
       'Expired Approval Test',
-      companionKeypair.publicKey,
+      isolatedKeypair.publicKey,
     );
     assert.strictEqual(enrollment.success, true);
 
@@ -361,7 +362,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const nonce = CryptoUtil.randomToken(16);
     const signature = CryptoUtil.signData(
       `SESSION_REQUEST:${timestamp}:${nonce}`,
-      companionKeypair.privateKey,
+      isolatedKeypair.privateKey,
     );
     const session = server.getService().identity.createSession(
       enrollment.deviceId!,
@@ -374,7 +375,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const requestBody = { text: 'Please launch Notepad' };
     const taskResponse = await fetch(`http://127.0.0.1:${TEST_PORT}/api/request`, {
       method: 'POST',
-      headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'POST', '/api/request', requestBody),
+      headers: signedHeaders(session.sessionId!, isolatedKeypair.privateKey, 'POST', '/api/request', requestBody),
       body: JSON.stringify(requestBody),
     });
     assert.strictEqual(taskResponse.status, 200);
@@ -388,7 +389,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const approvalBody = { approvalId: task.approvalId };
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/approval/approve`, {
       method: 'POST',
-      headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'POST', '/api/approval/approve', approvalBody),
+      headers: signedHeaders(session.sessionId!, isolatedKeypair.privateKey, 'POST', '/api/approval/approve', approvalBody),
       body: JSON.stringify(approvalBody),
     });
     assert.strictEqual(response.status, 409);

@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import QRCode from 'qrcode';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission } from '../core/types.js';
@@ -21,7 +22,7 @@ export class JarvisServer {
   ) {
     this.port = port;
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
-    this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath);
+    this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -158,11 +159,16 @@ export class JarvisServer {
         if (!this.isOwnerControlAuthorized(req)) {
           return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
         }
+        if (this.jarvis.identity.listDevices().some((device) => device.status === 'ACTIVE')) {
+          return this.jsonResponse(res, 403, { error: 'Bootstrap enrollment is closed; an authorized device must create and approve enrollment requests' });
+        }
         const challenge = this.jarvis.identity.createEnrollmentChallenge([
           Permission.SYSTEM_INFO_READ,
           Permission.APP_LAUNCH,
+          Permission.DEVICE_MANAGE,
         ]);
-        return this.jsonResponse(res, 201, challenge);
+        const qrSvg = await QRCode.toString(challenge.uri, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, width: 220 });
+        return this.jsonResponse(res, 201, { ...challenge, qrSvg });
       }
 
       // HUD sessions must use the same device-bound cryptographic enrollment and
@@ -201,6 +207,91 @@ export class JarvisServer {
           return this.jsonResponse(res, 400, { error: result.error });
         }
         return this.jsonResponse(res, 200, result);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/enrollment/exchange') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const fields = body as Record<string, unknown>;
+        if (['transactionId', 'code', 'name', 'platform', 'publicKey', 'proofSignature'].some((key) => typeof fields[key] !== 'string')) return this.jsonResponse(res, 400, { error: 'Enrollment request fields are invalid' });
+        if (!this.jarvis.deviceSecurity) return this.jsonResponse(res, 503, { error: 'Owner security is not configured' });
+        const state = this.jarvis.deviceSecurity.exchangeEnrollment(fields as { transactionId: string; code: string; name: string; platform: string; publicKey: string; proofSignature: string });
+        return this.jsonResponse(res, 202, state);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/enrollment/status') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.transactionId !== 'string' || typeof body.code !== 'string') return this.jsonResponse(res, 400, { error: 'Enrollment reference is invalid' });
+        const state = this.jarvis.deviceSecurity?.statusForEnrollment(body.transactionId, body.code);
+        return state ? this.jsonResponse(res, 200, state) : this.jsonResponse(res, 404, { error: 'Enrollment request not found' });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/enrollment/details') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.transactionId !== 'string' || typeof body.code !== 'string') return this.jsonResponse(res, 400, { error: 'Enrollment reference is invalid' });
+        const details = this.jarvis.deviceSecurity?.getEnrollmentDetails(body.transactionId, body.code);
+        return details ? this.jsonResponse(res, 200, details) : this.jsonResponse(res, 404, { error: 'Enrollment reference is invalid or expired' });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/enrollment/transactions') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.totpCode !== 'string') return this.jsonResponse(res, 400, { error: 'Authenticator code is required' });
+        const auth = this.authorizeControl(req, url.pathname, body, 'device:enrollment:create');
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        if (!this.jarvis.deviceSecurity) return this.jsonResponse(res, 503, { error: 'Owner security is not configured' });
+        const result = await this.jarvis.deviceSecurity.createEnrollment(auth.device, body.totpCode, Array.isArray(body.permissions) ? body.permissions as Permission[] : undefined);
+        return this.jsonResponse(res, 201, result);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/enrollment/pending') {
+        const auth = this.authorizeControl(req, url.pathname, undefined, 'device:enrollment:list');
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        return this.jsonResponse(res, 200, { requests: this.jarvis.deviceSecurity?.listPending(auth.device) || [] });
+      }
+
+      if (req.method === 'POST' && ['/api/enrollment/approve', '/api/enrollment/reject', '/api/enrollment/cancel'].includes(url.pathname)) {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.transactionId !== 'string') return this.jsonResponse(res, 400, { error: 'transactionId is required' });
+        const op = url.pathname.endsWith('approve') ? 'device:enrollment:approve' : url.pathname.endsWith('reject') ? 'device:enrollment:reject' : 'device:enrollment:cancel';
+        const auth = this.authorizeControl(req, url.pathname, body, op);
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        const security = this.jarvis.deviceSecurity;
+        if (!security) return this.jsonResponse(res, 503, { error: 'Owner security is not configured' });
+        if (op.endsWith('approve')) {
+          if (typeof body.totpCode !== 'string' || typeof body.requestHash !== 'string') return this.jsonResponse(res, 400, { error: 'Fresh authenticator code and request binding are required' });
+          const result = await security.approve(auth.device, body.transactionId, body.requestHash, body.totpCode);
+          return this.jsonResponse(res, 200, { success: true, deviceId: result.deviceId });
+        }
+        const success = op.endsWith('reject') ? security.reject(auth.device, body.transactionId) : security.cancel(auth.device, body.transactionId);
+        return this.jsonResponse(res, success ? 200 : 409, { success });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/devices') {
+        const auth = this.authorizeControl(req, url.pathname, undefined, 'device:list');
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        const now = Date.now();
+        const devices = this.jarvis.identity.listDevices().map((device) => ({ id: device.id, name: device.name, platform: 'Browser', status: device.status, permissions: device.permissions, enrolledAt: device.enrolledAt, lastActivityAt: device.lastSeenAt, sessionActive: this.jarvis.identity.hasActiveSession?.(device.id, now) ?? device.status === 'ACTIVE' }));
+        return this.jsonResponse(res, 200, { devices });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/security/totp/status') {
+        const auth = this.authorizeControl(req, url.pathname, undefined, 'security:totp:verify');
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        return this.jsonResponse(res, 200, { status: this.jarvis.deviceSecurity?.getTotpStatus() || 'DISABLED' });
+      }
+
+      if (req.method === 'POST' && ['/api/security/totp/setup', '/api/security/totp/verify-setup', '/api/security/totp/disable'].includes(url.pathname)) {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const operation = url.pathname.endsWith('setup') && !url.pathname.endsWith('verify-setup') ? 'security:totp:setup' : url.pathname.endsWith('disable') ? 'security:totp:disable' : 'security:totp:verify';
+        const auth = this.authorizeControl(req, url.pathname, body, operation);
+        if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
+        const security = this.jarvis.deviceSecurity;
+        if (!security) return this.jsonResponse(res, 503, { error: 'Owner security is not configured' });
+        if (operation === 'security:totp:setup') return this.jsonResponse(res, 201, await security.startTotpSetup(auth.device));
+        if (typeof body.code !== 'string') return this.jsonResponse(res, 400, { error: 'Authenticator code is required' });
+        const success = operation === 'security:totp:disable' ? security.disableTotp(auth.device, body.code) : security.verifyTotpSetup(auth.device, body.code);
+        return this.jsonResponse(res, success ? 200 : 401, { success, status: security.getTotpStatus() });
       }
 
       // Establish session
@@ -301,10 +392,6 @@ export class JarvisServer {
 
       // Revoke device
       if (req.method === 'POST' && url.pathname === '/api/device/revoke') {
-        const sessionId = req.headers['x-session-id'] as string;
-        if (!sessionId) {
-          return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
-        }
         const body = await this.readJsonBody(req);
         if (!this.isJsonObject(body)) {
           return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
@@ -313,13 +400,14 @@ export class JarvisServer {
         if (typeof deviceId !== 'string' || !deviceId) {
           return this.jsonResponse(res, 400, { error: 'deviceId is required' });
         }
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
-        if (!auth.valid || !auth.device) {
-          return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
-        }
-        if (deviceId !== auth.device.id && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
-          return this.jsonResponse(res, 403, { error: 'Insufficient permission to revoke another device' });
-        }
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const ownDevice = deviceId === auth.device.id;
+        const decision = this.jarvis.policy.evaluate({ operation: ownDevice ? 'device:self-revoke' : 'device:revoke', parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
+        if (!decision.allowed) return this.jsonResponse(res, 403, { error: 'Device is not authorized to revoke this device' });
+        if (auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.jarvis.deviceSecurity?.getTotpStatus() === 'ENABLED' && (typeof body.totpCode !== 'string' || !this.jarvis.deviceSecurity.verifyStepUp(auth.device, body.totpCode))) return this.jsonResponse(res, 401, { error: 'Fresh authenticator verification required' });
         const success = this.jarvis.identity.revokeDevice(deviceId, reason);
         if (!success) {
           return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
@@ -365,11 +453,18 @@ export class JarvisServer {
       if (/expired|no longer pending|already been consumed|scope was modified|could not be rejected/i.test(message)) {
         return this.jsonResponse(res, 409, { error: message });
       }
+      if (/proof verification failed/i.test(message)) return this.jsonResponse(res, 401, { error: 'Enrollment proof verification failed' });
+      if (/invalid enrollment details/i.test(message)) return this.jsonResponse(res, 400, { error: 'Enrollment details are invalid' });
+      if (/denied by security policy/i.test(message)) return this.jsonResponse(res, 403, { error: 'Enrollment request denied by security policy' });
+      if (/Enrollment code is invalid|Enrollment request expired or changed/i.test(message)) return this.jsonResponse(res, 409, { error: 'Enrollment transaction is invalid, expired, or no longer available' });
       if (/not registered or revoked|lacks permission/i.test(message)) {
         return this.jsonResponse(res, 403, { error: message });
       }
       if (message.startsWith('Authentication failed')) {
         return this.jsonResponse(res, 401, { error: 'Unauthorized session' });
+      }
+      if (/authenticator verification required|invalid or unknown|invalid, expired|expired or changed|lacks active device-management|invalid enrollment details|permission allowlist/i.test(message)) {
+        return this.jsonResponse(res, 403, { error: message });
       }
       // Keep internal exception details in server-side diagnostics only.
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
@@ -396,6 +491,16 @@ export class JarvisServer {
       body,
       signature,
     );
+  }
+
+  private authorizeControl(req: IncomingMessage, path: string, body: unknown, operation: string): { device?: import('../core/types.js').DeviceRecord; status: number; error?: string } {
+    const sessionId = req.headers['x-session-id'];
+    if (typeof sessionId !== 'string') return { status: 401, error: 'Missing authenticated device session' };
+    const auth = this.authorizeSignedRequest(req, sessionId, path, body);
+    if (!auth.valid || !auth.device) return { status: 401, error: auth.error || 'Signed request authentication failed' };
+    const decision = this.jarvis.policy.evaluate({ operation, parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
+    if (!decision.allowed) return { status: 403, error: 'Device is not authorized for this security operation' };
+    return { status: 200, device: auth.device };
   }
 
   private isOwnerControlAuthorized(req: IncomingMessage): boolean {

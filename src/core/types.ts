@@ -29,6 +29,7 @@ export enum DeviceStatus {
 export interface DeviceRecord {
   id: DeviceId;
   name: string;
+  platform?: string;
   publicKey: string; // Ed25519 public key hex or base64
   status: DeviceStatus;
   permissions: Permission[];

@@ -40,8 +40,11 @@
               <button id="btn-enroll-browser" class="btn btn-secondary">Enroll This Browser (WebCrypto)</button>
             </div>
             <div id="challenge-box" class="challenge-box hidden">
-              <div class="token-title">Single-Use Enrollment Token (120s TTL)</div>
+              <div class="token-title">Single-Use Enrollment QR / Token (120s TTL)</div>
+              <img id="challenge-qr" class="security-qr hidden" alt="Enrollment challenge QR code">
+              <p id="challenge-status" class="muted">Scan with another device or enter the token manually. Approval remains required from an already-authorized owner device.</p>
               <code id="challenge-token" class="code-token">--</code>
+              <code id="challenge-uri" class="code-token muted-code">--</code>
               <div class="countdown" id="challenge-timer">Expires in: 120s</div>
             </div>
           </div>
@@ -52,9 +55,44 @@
               <div><span class="label">Session:</span> <span id="info-session-id" class="val">--</span></div>
               <div><span class="label">Audit Chain:</span> <span id="info-audit-integrity" class="val success">VALID</span></div>
             </div>
+            <section id="owner-security" class="security-panel hidden" aria-labelledby="security-title">
+              <h3 id="security-title">Security · Devices</h3>
+              <p class="muted">Owner controls require this enrolled device and an authenticator step-up.</p>
+              <div class="action-row">
+                <button id="btn-totp-setup" class="btn btn-secondary">Set up Google Authenticator</button>
+                <button id="btn-totp-disable" class="btn btn-danger hidden">Disable authenticator</button>
+                <span id="totp-status" class="status-pill">Authenticator: DISABLED</span>
+              </div>
+              <div id="totp-setup-panel" class="hidden">
+                <img id="totp-qr" class="security-qr" alt="Authenticator setup QR code">
+                <p>Scan with Google Authenticator, then enter the six-digit code to enable.</p>
+                <code id="totp-secret" class="code-token"></code>
+                <div class="input-group"><input id="totp-setup-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code"><button id="btn-totp-verify" class="btn btn-primary">Verify setup</button></div>
+              </div>
+              <div class="action-row mt-12">
+                <input id="enrollment-totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Authenticator code">
+                <button id="btn-create-transaction" class="btn btn-primary">Enroll a new device</button>
+              </div>
+              <div class="permission-options"><label><input type="checkbox" id="permission-app-launch"> Allow selected application launching</label><label><input type="checkbox" id="permission-device-manage"> Allow device management (owner approval + authenticator required)</label></div>
+              <div id="transaction-panel" class="challenge-box hidden">
+                <strong>Enrollment QR · expires in <span id="transaction-countdown">120s</span></strong>
+                <img id="enrollment-qr" class="security-qr" alt="Expiring device enrollment QR code">
+                <p>On the new device, open the companion and enter this code.</p>
+                <code id="enrollment-code" class="code-token"></code>
+                <button id="btn-cancel-transaction" class="btn btn-danger">Cancel enrollment</button>
+              </div>
+              <h4>Pending enrollment requests</h4><div id="pending-enrollments"><p class="muted">No pending requests.</p></div>
+              <h4>Authorized devices</h4><div id="authorized-devices"><p class="muted">Loading devices…</p></div>
+            </section>
             <div class="action-row mt-12">
               <button id="btn-revoke-device" class="btn btn-danger">Revoke Device Immediately</button>
             </div>
+          </div>
+          <div class="security-panel" id="enroll-on-this-device">
+            <h3>Enroll this device</h3>
+            <p class="muted">Enter the transaction reference and code from an owner-generated QR. Scanning only creates a request; an owner must approve it.</p>
+            <div class="input-group"><input id="enrollment-transaction-id" autocomplete="off" placeholder="Transaction reference"><input id="enrollment-entry-code" autocomplete="off" placeholder="One-time enrollment code"><button id="btn-submit-enrollment" class="btn btn-secondary">Request enrollment</button></div>
+            <p id="enrollment-request-status" class="muted" aria-live="polite"></p>
           </div>
         </div>
       </section>

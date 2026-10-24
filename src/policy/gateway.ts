@@ -74,6 +74,15 @@ export class PolicyGateway {
         allowedParameters: ['appId'],
       },
     ],
+    ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
+      operation,
+      requiredPermission: Permission.DEVICE_MANAGE,
+      riskTier: RiskTier.HIGH,
+      requiresApproval: false,
+    }] as [string, PolicyRule]),
+    ['device:enrollment:exchange', { operation: 'device:enrollment:exchange', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.MEDIUM, requiresApproval: false }],
+    ['device:self-revoke', { operation: 'device:self-revoke', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.HIGH, requiresApproval: false }],
+    ['device:self-revoke', { operation: 'device:self-revoke', requiredPermission: Permission.SYSTEM_INFO_READ, riskTier: RiskTier.HIGH, requiresApproval: false }],
   ]);
 
   constructor(audit: AuditLogger) {

@@ -139,6 +139,54 @@
     return { deviceId: record.deviceId, deviceName: record.deviceName, ...session };
   }
 
+  async function requestEnrollment(transactionId, code, deviceName, platform = 'Browser') {
+    if (!transactionId || !code) throw new Error('A transaction reference and one-time enrollment code are required');
+    const generated = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const publicDer = await crypto.subtle.exportKey('spki', generated.publicKey);
+    const privateDer = await crypto.subtle.exportKey('pkcs8', generated.privateKey);
+    const privateKey = await crypto.subtle.importKey('pkcs8', privateDer, { name: 'Ed25519' }, false, ['sign']);
+    new Uint8Array(privateDer).fill(0);
+    const publicBase64 = toBase64(publicDer);
+    const publicKey = '-----BEGIN PUBLIC KEY-----\n' + publicBase64.match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----';
+    // The server binds permissions and expiry in the proof hash. The client first
+    // obtains those non-secret transaction fields through the status endpoint.
+    const readStatus = () => fetch('/api/enrollment/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transactionId, code }), cache: 'no-store', credentials: 'same-origin', redirect: 'error' });
+    const statusResponse = await readStatus();
+    const status = await statusResponse.json().catch(() => ({}));
+    if (!statusResponse.ok || status.state !== 'WAITING_FOR_SCAN') throw new Error('Enrollment transaction is expired or no longer available');
+    const txResponse = await fetch('/api/enrollment/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transactionId, code }), cache: 'no-store', credentials: 'same-origin', redirect: 'error' });
+    const tx = await txResponse.json().catch(() => ({}));
+    if (!txResponse.ok || !Array.isArray(tx.permissions)) throw new Error('Enrollment transaction details are unavailable');
+    const requestHash = await sha256Hex(stableStringify({ transactionId, name: deviceName.trim(), platform, publicKey, permissions: tx.permissions, expiresAt: status.expiresAt }));
+    const signature = await signText(privateKey, `JARVIS_ENROLLMENT_V1:${transactionId}:${requestHash}:${code}`);
+    const response = await fetch('/api/enrollment/exchange', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId, code, name: deviceName.trim(), platform, publicKey, proofSignature: signature }),
+      cache: 'no-store', credentials: 'same-origin', redirect: 'error',
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.state !== 'AWAITING_OWNER_AUTHORIZATION') throw new Error(result.error || 'Enrollment request was not accepted');
+    return new Promise((resolve, reject) => {
+      const deadline = Math.min(status.expiresAt, Date.now() + 120000);
+      const poll = async () => {
+        try {
+          if (Date.now() >= deadline) throw new Error('Enrollment approval wait expired');
+          const res = await readStatus();
+          const state = await res.json();
+          if (state.state === 'ENROLLED' && state.deviceId) {
+            const record = { id: CURRENT_KEY, deviceId: state.deviceId, deviceName, privateKey, createdAt: Date.now() };
+            await saveDevice(record);
+            resolve({ deviceId: record.deviceId, deviceName, ...await establishSession(record) });
+            return;
+          }
+          if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(state.state)) throw new Error('Owner rejected or cancelled this enrollment request');
+          setTimeout(poll, 1500);
+        } catch (error) { reject(error); }
+      };
+      setTimeout(poll, 1000);
+    });
+  }
+
   async function restoreSession() {
     const record = await loadDevice();
     if (!record || !record.deviceId || !record.privateKey) {
@@ -186,5 +234,5 @@
     return record ? { deviceId: record.deviceId, deviceName: record.deviceName } : null;
   }
 
-  window.JarvisDeviceCrypto = { enrollDevice, restoreSession, signedFetch, currentDevice };
+  window.JarvisDeviceCrypto = { enrollDevice, requestEnrollment, restoreSession, signedFetch, currentDevice };
 })();

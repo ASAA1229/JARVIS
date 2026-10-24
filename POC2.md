@@ -1,6 +1,6 @@
 # JARVIS POC2 — Pending, Blocked, Unverified, and Future Work
 
-**Updated:** 2026-10-23  
+**Updated:** 2026-10-24
 **Rule:** Nothing moves to `POC.md` until its acceptance criteria are satisfied with recorded evidence.
 
 ## POC blockers / incomplete work
@@ -10,7 +10,7 @@
 - [ ] **M4 — Approval lifecycle:** Complete HTTP/API contract coverage for approve, reject, expiry, duplicate requests, stale approvals, concurrent transitions, and task/device/parameter binding.
 - [ ] **M5 — AI planner:** Re-verify runtime integration, schema validation, adversarial input rejection, and strict policy gateway enforcement.
 - [ ] **M6 — Verification/hardening:** Obtain exact-commit CI and target-platform acceptance; retain fail-closed and outcome-truth guarantees.
-- [ ] **M7 — Security remediation:** Complete enrollment abuse controls/rate limits, owner permission controls, persistence write-failure/recovery tests, API contract/error redaction, accessibility and remaining high-risk findings.
+- [ ] **M7 — Remaining security remediation:** The new branch now has owner-controlled expiring enrollment requests, explicit request approval/rejection/cancel, TOTP step-up, replay/failure controls, encrypted TOTP state, and device/session management with automated coverage. Remaining M7 gates include broader persistence failure/recovery verification, exhaustive API contract/error-redaction review, accessibility, audit-failure edge cases, hosted CI, and independent security review.
 - [ ] **Voice/audio — physical acceptance:** Test real microphone permission, capture, stop/mute/cancel, device removal, recognition timeouts/late results, actual TTS playback, autoplay failures, and privacy indicators on supported browsers.
 - [ ] **Speech privacy:** Determine and document whether the selected browser recognition engine sends audio to a vendor service; do not claim local/offline recognition without evidence.
 - [ ] **M8 — Specification:** Locate an approved M8 specification and the relevant discovery decisions. Do not invent requirements; remain blocked until scope is approved.
@@ -19,6 +19,8 @@
 - [ ] **M11 — Specification:** Find the authoritative scope in history/branches or request owner approval; do not infer it.
 - [ ] **M12 — Gesture & spatial interaction:** Current `new` branch has a local-only preview foundation. Before completion, pass target Windows webcam/lifecycle acceptance, measured precision/false-activation/latency/performance thresholds, voice arbitration and stale-target tests, and any policy-routed action integration tests. Keep deletion, approval, and system actions disabled until each passes review; see [M12 acceptance plan](docs/m12-gesture-spatial-interaction.md).
 - [ ] **Two-phone acceptance:** Enroll both devices, verify separate keys/sessions/permissions, revoke one, and prove the other remains independently usable.
+- [ ] **Device enrollment real-client acceptance:** Current enrollment transactions are loopback-only and process-local. Validate two independent browser profiles and an Android companion against a secure remote transport design before remote QR enrollment; do not change the server bind address to make this work. Test owner approval, TOTP step-up, cancellation, expiry, and revocation on real clients.
+- [ ] **TOTP owner recovery:** TOTP state encryption is keyed from the owner control token. Establish and verify a safe owner recovery procedure before changing/rotating that token or before a lost-authenticator event; no bypass is implemented.
 - [ ] **Hosted CI:** Verify workflow result for the exact accepted commit; local green tests alone are insufficient.
 - [ ] **Dependency reproducibility:** Re-run clean lockfile installation, build, typecheck/lint, tests, and security audit on the final reviewed commit.
 - [ ] **Repository consolidation:** Inventory all Markdown and test files across `main`, `dev`, `new`, `fix`, `test`, and `lovable`; merge unique requirements/results into `master_repo_md.md` and `master_repo_test`; verify no unique criteria or source tests would be lost before deleting files.
