@@ -74,3 +74,10 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - [x] **Regression test added:** `test/adapter_error_redaction.test.ts` injects a private path-like diagnostic and checks task/audit outputs do not disclose it.
 - [ ] **CI validation pending:** Verify this test and the approval-binding tests pass on the final PR head.
 - [ ] **Broader review pending:** audit all HTTP routes and adapter-authored errors for path, command, token, or sensitive data disclosure.
+
+## CI-driven test correction — 2026-10-24
+
+- The first hosted run for the new suite passed build and TypeScript checks but failed one new operation-binding test because the test fixture used a parameter name rejected by the target operation before the approval-binding branch could be exercised. The implementation's parameter allowlist behaved as designed.
+- Corrected the test to use a valid parameter shape for the alternate operation, preserving the intended replay/binding assertion.
+- Corrected test commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
+- [ ] Re-run/confirm hosted CI for the corrected PR head before marking the new suite PASS.
