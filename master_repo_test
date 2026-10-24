@@ -188,3 +188,14 @@ The core catches adapter exceptions and emits a bounded failure message plus the
 - Failing case: operation-substitution fixture passed `appId` to `desktop:type_text`, so the correct parameter allowlist rejection happened before the binding check. This did not test the intended branch.
 - Corrected the fixture to use `desktop:launch_and_type` with its allowed parameters while reusing an `app:launch` approval. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
 - Current disposition: corrected CI rerun required; PASS is not claimed yet.
+
+## Corrected approval-binding and error-redaction CI — 2026-10-24
+
+- [GitHub Actions run 40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717): PASS for source/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
+- Locked dependency installation: PASS.
+- TypeScript build: PASS.
+- TypeScript check: PASS.
+- Automated suite: **101 passed, 0 failed, 0 skipped**.
+- Browser security smoke: PASS (`BROWSER_E2E_PASS`).
+- The initial operation-substitution fixture failure was corrected; the corrected task/device/operation binding test passes.
+- Documentation-only commits followed this source/test commit; source and tests were unchanged after the passing run. Physical target-device acceptance and independent security review remain open.
