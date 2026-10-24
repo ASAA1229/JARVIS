@@ -50,6 +50,12 @@ The `new` branch worktree is currently dirty with the device-enrollment/authenti
 Device-security tests cover TOTP provisioning/verification, encrypted seed-at-rest, TOTP replay and failure lockout, hashed single-use enrollment references, QR output, proof-of-possession, pending-before-approval, exact request binding, least-privilege grants, cancellation/expiry, unauthorized management denial, and the HTTP create → exchange → approve → session → revoke path. No physical Android or remote-device acceptance is claimed.
 - M12 is **PARTIAL**. Gesture proposals are previews only. Policy/approval/adapter integration, voice arbitration, deletion confirmation, physical precision/false-activation/latency, sustained resource use, and target laptop acceptance remain open.
 
+## HUD/voice merge review (2026-10-24)
+
+- The `new` branch contained unresolved Git conflict markers in `src/companion/hud.html`, duplicated hands-free event listeners, and two competing `speakResponse` declarations. The conflict and duplicate code were corrected in the HUD fix commit.
+- Voice output is gated by the existing voice-output toggle and microphone privacy state; audible playback, browser autoplay, and actual Piper CLI compatibility remain unverified until target-runtime testing.
+- Responsive HUD styling was enhanced for compact layouts, keyboard focus visibility, button states, and readable telemetry. Visual/browser acceptance is still required.
+
 ## Implemented does not mean externally accepted
 
 - Windows application-launch implementation exists, but real visible Notepad acceptance on the target MSI must be separately recorded. A mocked test does not count.
