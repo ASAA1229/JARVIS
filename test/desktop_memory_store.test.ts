@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { PersonalMemoryStore } from '../src/memory/personalMemoryStore.js';
 import { createOfficialStoreSearch } from '../src/stores/officialStore.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
+import { WindowsAppLauncherAdapter } from '../src/adapters/windowsAppLauncher.js';
 
 const TOKEN = 'owner-token-for-memory-tests-0123456789';
 
@@ -41,6 +42,14 @@ test('tampered memory fails closed instead of silently replacing data', () => wi
   writeFileSync(path, JSON.stringify(raw));
   assert.throws(() => new PersonalMemoryStore(path, TOKEN), /could not be decrypted or validated/);
 }));
+
+test('Windows app launcher blocks payment apps before any OS launch attempt', async () => {
+  const launcher = new WindowsAppLauncherAdapter();
+  const result = await launcher.launchApp('PhonePe');
+  assert.equal(result.success, false);
+  assert.match(result.error || '', /excludes payment and financial applications/);
+  assert.equal(result.evidence.blockedByPolicy, true);
+});
 
 test('official store discovery returns only official store domains and excludes payment apps', () => {
   assert.equal(new URL(createOfficialStoreSearch('windows', 'VLC').searchUrl).hostname, 'apps.microsoft.com');
