@@ -67,3 +67,10 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - [ ] **CI validation pending:** Confirm PR #11 passes build, typecheck, automated tests, and browser smoke test; do not mark this code accepted until the exact commit is green.
 - [ ] **Further approval contract tests:** expiry, duplicate/concurrent transitions, stale task state, audit persistence failure, and task/device parameter binding through the HTTP API remain open.
 - [ ] **Release gates unchanged:** physical Windows app interaction, microphone/TTS, Android two-phone acceptance, native iOS, remote transport review, and independent adversarial security review remain incomplete.
+
+## Adapter exception disclosure hardening — 2026-10-24
+
+- [x] **Code change:** Core adapter exceptions are converted to a generic user-facing failure; raw exception strings are not copied into result evidence or audit details.
+- [x] **Regression test added:** `test/adapter_error_redaction.test.ts` injects a private path-like diagnostic and checks task/audit outputs do not disclose it.
+- [ ] **CI validation pending:** Verify this test and the approval-binding tests pass on the final PR head.
+- [ ] **Broader review pending:** audit all HTTP routes and adapter-authored errors for path, command, token, or sensitive data disclosure.
