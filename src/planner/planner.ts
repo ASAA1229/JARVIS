@@ -97,6 +97,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       return { intent: 'List owner-controlled personal memories', operations: [{ operation: 'memory:list', parameters: {}, justification: 'Owner asked to review saved memories' }], confidence: 0.9, explanation: 'Will retrieve the owner-controlled memory list from encrypted local storage.' };
     }
 
+    const forgetMemory = requestText.match(/\b(?:forget|delete)\s+(?:the\s+)?memory\s+([a-f0-9]{32})\b/i);
+    if (forgetMemory) {
+      return { intent: 'Delete a personal memory', operations: [{ operation: 'memory:delete', parameters: { id: forgetMemory[1] }, justification: 'Owner requested deletion of a specific memory id' }], confidence: 0.94, explanation: 'Will request approval before deleting this memory entry.' };
+    }
     const rememberAnything = requestText.match(/\bremember\s+(?:that\s+)?(.+?)\s*$/i);
     if (rememberAnything && rememberAnything[1].trim()) {
       return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
