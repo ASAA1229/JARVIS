@@ -23,7 +23,7 @@ Native clients must use the same device-bound session and signed-request protoco
 src/adapters/windowsDesktopAgent.ts implements a bounded foreground-window adapter for explicit text entry, clipboard selection/paste, allowlisted hotkeys, and zoom shortcuts. It uses PowerShell in non-interactive STA mode without shell:true, requires the existing app-launch permission, and each state-changing operation is approval-gated.
 
 Current limitations:
-- The adapter targets the current foreground window, not arbitrary hidden windows. UI Automation currently enumerates immediate controls and requires exact unique control names; it is not complete automation for every custom-rendered app.
+- The desktop interaction adapter targets the current foreground window, not arbitrary hidden windows. UI Automation currently enumerates immediate controls and requires exact unique control names; it is not complete automation for every custom-rendered app.
 - Keyboard/clipboard acknowledgement is not proof that an application accepted or saved the content. Those actions are reported as partial until stronger UI Automation verification is available.
 - Financial/payment application names in the foreground process/window title are blocked as a defense-in-depth check; this heuristic is not a complete way to detect every financial website or app.
 - This is not yet universal Windows UI Automation. A production agent should use a dedicated Windows UI Automation implementation, explicit target selection, accessibility-tree inspection, and stronger foreground identity checks.
