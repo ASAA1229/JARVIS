@@ -131,3 +131,18 @@ Each future milestone requires an approved scope, non-goals, prerequisites, affe
 - Enrollment transactions are process-local and expire on access/sweep; restart invalidates in-flight transactions. TOTP state is persisted. Network binding remains `127.0.0.1`; this does not enable Android over LAN or the public internet. Remote phone scanning/approval is blocked pending HTTPS/remote transport design. Manual same-origin browser entry and automated HTTP tests are supported.
 - Current local evidence: `npm run build` PASS; `npm run lint` PASS; `npm test` PASS 75/75 when using the temporary Windows `os.userInfo()` compatibility shim; `npm run test:browser` FAILS at the existing voice-recognition timing wait in `test/browser-smoke.mjs:290`; the new TOTP/QR approval workflow is not covered by this browser harness; `npm audit` could not reach the npm advisory endpoint. See `master_repo_test`.
 - This implementation is **PARTIAL**, not device-accepted: physical Android/second-browser enrollment, authenticator app scan on a phone, browser camera QR scanning, session expiry/revocation across restart, and hosted CI are not proven by local unit/HTTP tests.
+
+
+## 16. Final branch/documentation reconciliation — 2026-10-24
+
+A recursive, non-truncated Git tree inventory was completed for all repository branches found in the branch list: `main`, `dev`, `enhancement`, `fix`, `new`, `test`, `lovable`, `Jarvis-Abhi`, and `feature/local-neural-tts` (the last was queried by its resolved commit SHA because its slash-containing branch name was rejected by the connector's tree URL parser).
+
+- The `fix`, `new`, `test`, and `enhancement` heads are aligned on the same consolidated implementation and current test/docs set.
+- `dev` is an ancestor of the consolidated baseline; its changes are represented in that ancestry, and its historical test/docs snapshots differ where the current remediation added newer coverage and status.
+- `main` remains untouched.
+- `lovable` contains older POC/master-doc snapshots plus design decisions and milestone reports. Those older snapshots cite a dirty 2026-10-23 tree and are not current acceptance evidence. The current POC/status/test registers above are the authoritative current summary; historical Lovable documents remain on their original branch for traceability and were not allowed to overwrite newer implementation or tests.
+- Relevant cross-cutting decisions carried into this master summary: Node.js 24/TypeScript modular monolith; AI/vision proposals have no execution authority; default-deny PolicyGateway and task-bound approvals; independent device identity/session/revocation; canonical signed requests and replay resistance; persistent revocation and fail-closed audit recovery; browser speech is vendor-dependent until proven local; native Android is preferred for production device-key security; camera/gesture input remains opt-in, visibly indicated, and non-authoritative.
+
+No source test or branch was deleted. Divergent older test variants were retained on their historical refs rather than blindly replacing newer tests. The current canonical suite is hosted-CI green on commit `1add4dd60da8bfdfdbdf4db6966b2460fd088bf5`; the exact post-audit CI results are recorded in `master_repo_test` and `docs/repository-audit-2026-10-24.md`.
+
+**Open acceptance gate:** repository consolidation does not equal product acceptance. Real Windows runtime, physical audio, Android/two-phone, native iOS, and adversarial security verification remain open.
