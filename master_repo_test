@@ -211,3 +211,9 @@ New file: `test/rejection_permissions.test.ts` on `gap-closure` / PR #11.
 | Approval state | Unauthorized rejection leaves approval pending | Test added; CI pending |
 
 The prior passing CI run predates this test file. A new run is required to mark these cases PASS.
+
+## Rejection test assertion correction — 2026-10-24
+
+- First CI run with `test/rejection_permissions.test.ts`: build/typecheck PASS, test suite FAIL on two cases because synchronous throws were asserted with `assert.rejects`.
+- Expected permission checks were reached; test harness changed to `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- Corrected CI rerun required; do not mark these cases PASS before it completes.
