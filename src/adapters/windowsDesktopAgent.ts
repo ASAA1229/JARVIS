@@ -31,6 +31,48 @@ function encodePowerShell(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
+export function buildControlActionScript(
+  operation: 'desktop:click_control' | 'desktop:set_value',
+  name: string,
+  text?: string,
+): string {
+  const safeName = escapePowerShellSingleQuoted(name.trim());
+  const base = [
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+  ];
+  if (operation === 'desktop:click_control') {
+    return [
+      ...base,
+      '$foundControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+      'if ($foundControls.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+      '$element = $foundControls.Item(0)',
+      '$pattern = $null',
+      'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose an Invoke action." }',
+      '$pattern.Invoke()',
+      '[Console]::Out.WriteLine("CONTROL_INVOKED")',
+    ].join('; ');
+  }
+  if (typeof text !== 'string') throw new Error('A text value is required for desktop:set_value.');
+  const safeText = escapePowerShellSingleQuoted(text);
+  return [
+    ...base,
+    '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+    'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+    '$element = $matches.Item(0)',
+    '$actualName = $element.Current.Name',
+    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|cvv|card number|bank account|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
+    '$pattern = $null',
+    'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Value action." }',
+    "$pattern.SetValue('" + safeText + "')",
+    '$actual = $pattern.Current.Value',
+    'if ($actual -cne ' + "'" + safeText + "'" + ') { throw "UI Automation value verification did not match." }',
+    '[Console]::Out.WriteLine("VALUE_VERIFIED")',
+  ].join('; ');
+}
+
 /**
  * Windows-side interaction adapter. It acts on the current foreground window
  * only. The caller must authorize each action through PolicyGateway first.
@@ -178,20 +220,7 @@ export class WindowsDesktopAgent {
       if (action.operation === 'desktop:click_control') {
         const name = action.parameters.name;
         if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
-        const safeName = escapePowerShellSingleQuoted(name.trim());
-        const script = [
-          'Add-Type -AssemblyName UIAutomationClient',
-          'Add-Type -AssemblyName UIAutomationTypes',
-          "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
-          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
-          '$foundControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
-          'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
-          '$element = $foundControls.Item(0)',
-          '$pattern = $null',
-          'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose an Invoke action." }',
-          '$pattern.Invoke()',
-          '[Console]::Out.WriteLine("CONTROL_INVOKED")',
-        ].join('; ');
+        const script = buildControlActionScript('desktop:click_control', name);
         const output = await this.runPowerShell(script, signal);
         const confirmed = output.includes('CONTROL_INVOKED');
         return {
@@ -208,24 +237,7 @@ export class WindowsDesktopAgent {
         const text = action.parameters.text;
         if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
         this.validateText(text);
-        const safeName = escapePowerShellSingleQuoted(name.trim());
-        const safeText = escapePowerShellSingleQuoted(text);
-        const script = [
-          'Add-Type -AssemblyName UIAutomationClient',
-          'Add-Type -AssemblyName UIAutomationTypes',
-          "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
-          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
-          '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
-          'if ($foundControls.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
-          '$element = $matches.Item(0)',
-          'if ($element.Current.IsPassword -or $element.Current.Name -match "(?i)password|passcode|pin|cvv|card number|bank account|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
-          '$pattern = $null',
-          'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Value action." }',
-          "$pattern.SetValue('" + safeText + "')",
-          '$actual = $pattern.Current.Value',
-          'if ($actual -cne ' + "'" + safeText + "'" + ') { throw "UI Automation value verification did not match." }',
-          '[Console]::Out.WriteLine("VALUE_VERIFIED")',
-        ].join('; ');
+        const script = buildControlActionScript('desktop:set_value', name, text);
         const output = await this.runPowerShell(script, signal);
         const confirmed = output.includes('VALUE_VERIFIED');
         return {
