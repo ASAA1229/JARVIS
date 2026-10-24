@@ -28,6 +28,9 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public readonly name = 'local-heuristic-v1';
 
   private static readonly ALLOWED_OPERATIONS = new Set([
+    'memory:save',
+    'memory:list',
+    'memory:delete',
     'system:get_os_info',
     'system:get_memory_info',
     'system:get_battery_status',
@@ -85,6 +88,18 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
 
   public async generatePlan(requestText: string, context: MinimizedContext): Promise<PlanProposal> {
     const text = requestText.toLowerCase().trim();
+
+    const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
+    if (rememberName && rememberName[1].trim()) {
+      return { intent: 'Save owner name to personal memory', operations: [{ operation: 'memory:save', parameters: { category: 'preference', content: 'owner name: ' + rememberName[1].trim() }, justification: 'Owner explicitly requested remembering their name' }], confidence: 0.96, explanation: 'Will save your name in encrypted personal memory after approval.' };
+    }
+    const rememberAnything = requestText.match(/\bremember\s+(?:that\s+)?(.+?)\s*$/i);
+    if (rememberAnything && rememberAnything[1].trim()) {
+      return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
+    }
+    if (/\b(what do you remember|list my memories|show my memories|what have you remembered)\b/i.test(requestText)) {
+      return { intent: 'List owner-controlled personal memories', operations: [{ operation: 'memory:list', parameters: {}, justification: 'Owner asked to review saved memories' }], confidence: 0.9, explanation: 'Will retrieve the owner-controlled memory list from encrypted local storage.' };
+    }
 
     // Reject destructive language before broad system-information matching.
     if (/\b(format|delete|wipe|destroy|remove|drop)\b/.test(text)) {
