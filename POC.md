@@ -1,7 +1,7 @@
 # JARVIS POC — Current Implemented Baseline
 
 **Updated:** 2026-10-24  
-**Source reviewed:** application source baseline 6222e1964774c78e6853d6113335b1a3f0284881; documentation reconciliation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c. The follow-up status refresh is tracked in PR #14.  
+**Source reviewed:** application source baseline 6222e1964774c78e6853d6113335b1a3f0284881; documentation reconciliation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c. PR #14 status-refresh documentation was merged to dev at d5fc9cc42e0476dcf24d85ea6d95815fb592497e.  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 This document records repository-visible implementation and hosted CI evidence. A green CI run does not establish real Windows, microphone, telephony, or Android-device acceptance.
@@ -24,10 +24,10 @@ This document records repository-visible implementation and hosted CI evidence. 
 
 ## Current hosted CI evidence
 
-- new documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c: [CI run 40099231737](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737) completed successfully.
-- dev integration head 29df6b8699a8145f2163efee0c0ac306af2e7adc: [CI run 40099365008](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008) completed successfully.
-- The same integration commit passed CI on fix ([run 40099378785](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785)) and test ([run 40099381517](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517)).
-- PR #13 documentation reconciliation merged to dev at 29df6b8699a8145f2163efee0c0ac306af2e7adc.
+- new documentation head f82ff59da540cc011bf0ac77b93d4e75263d3445: [CI run 40099759927](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099759927) completed successfully.
+- dev integration head d5fc9cc42e0476dcf24d85ea6d95815fb592497e: [CI run 40099889438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099889438) completed successfully.
+- The same integration commit passed CI on fix ([run 40099901244](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099901244)) and test ([run 40099904367](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099904367)). enhancement points to the same commit.
+- PR #14 (status/documentation refresh) merged into dev at d5fc9cc42e0476dcf24d85ea6d95815fb592497e.
 - These are repository automation results, not physical-device acceptance. npm audit remains unverified.
 
 ## Capability boundaries — do not overstate
