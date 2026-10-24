@@ -32,6 +32,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'system:get_battery_status',
     'system:get_disk_space',
     'app:launch',
+    'desktop:launch_and_type',
     'desktop:type_text',
     'desktop:paste_text',
     'desktop:hotkey',
@@ -146,6 +147,14 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
     if (/\b(reset zoom|normal zoom)\b/.test(text)) {
       return { intent: 'Reset foreground application zoom', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'reset' }, justification: 'User explicitly requested zoom reset' }], confidence: 0.9, explanation: 'Will send the foreground app zoom reset shortcut after approval.' };
+    }
+    if (/\bopen\s+(?:the\s+)?notepad\b.*\bwrite\s+(?:my name|my full name)\b/i.test(requestText)) {
+      return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+    }
+    const launchAndType = requestText.match(/\bopen\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+[“"]?(.+?)[”"]?\s*$/i);
+    if (launchAndType && launchAndType[2].trim()) {
+      const appId = launchAndType[1].toLowerCase() === 'calculator' ? 'calc' : launchAndType[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
+      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: launchAndType[2].trim() }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.88, explanation: 'Will launch the requested allowlisted application and enter the supplied text after approval.' };
     }
     const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s*$/i);
     if (typeMatch && typeMatch[1].trim()) {
