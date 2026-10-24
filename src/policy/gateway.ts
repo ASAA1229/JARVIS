@@ -230,7 +230,7 @@ export class PolicyGateway {
 
     // A prior owner approval may be remembered for this exact app/device/parameter
     // tuple. It never authorizes a different app or a different device.
-    if (req.operation === 'app:launch') {
+    if (req.operation === 'app:launch' && !existingApprovalId) {
       if (!this.grantStateHealthy) {
         return { allowed: false, requiresApproval: true, riskTier: rule.riskTier, reason: 'Remembered approval state is unhealthy; fresh approval required' };
       }
