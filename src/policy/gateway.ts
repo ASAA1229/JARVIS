@@ -106,7 +106,7 @@ export class PolicyGateway {
       ['desktop:set_value', ['name', 'text']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
-      requiredPermission: operation.startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
+      requiredPermission: (operation as string).startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
       riskTier: operation === 'desktop:inspect_window' || operation === 'memory:list' ? RiskTier.LOW : RiskTier.HIGH,
       requiresApproval: !['desktop:inspect_window', 'memory:list'].includes(operation as string),
       allowedParameters: allowedParameters as string[],
