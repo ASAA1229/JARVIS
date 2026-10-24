@@ -66,3 +66,12 @@ Device-security tests cover TOTP provisioning/verification, encrypted seed-at-re
 ## POC completion gate
 
 The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed with evidence, the target Windows runtime is accepted, required device/voice behavior is verified, and exact-source CI is available. Move individual items from `POC2.md` into this file only after the corresponding acceptance criteria pass and evidence is recorded.
+
+
+## Voice capture reliability fix (2026-10-24)
+
+- Changed the HUD voice button from pointer-down/pointer-up capture to click-to-toggle. A normal click previously started recognition and immediately stopped it on pointer release, which could leave no time to speak.
+- Wake detection now preserves a command spoken in the same utterance as a wake phrase (for example, “Hey JARVIS, open Notepad”) instead of throwing away the command portion.
+- Recognition errors now surface actionable states for microphone permission denial, unavailable microphone hardware, speech-service/network failure, and no speech detected. Permission denial also cancels and releases the active capture state.
+- The push-to-talk transcript remains a review-and-confirm flow; hands-free wake commands use the existing authenticated directive and policy path. No policy/approval bypass was added.
+- Browser automation coverage was updated for click-to-toggle capture and microphone-permission recovery. Physical microphone, browser speech-service availability, and real-device acceptance still require testing.
