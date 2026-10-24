@@ -359,6 +359,7 @@ function initSpeechRecognition() {
 
 function createSpeechRecognizer(captureGeneration) {
   const recognizer = new speechRecognitionConstructor();
+  let finalTranscript = '';
   recognizer.continuous = false;
   recognizer.interimResults = true;
   recognizer.lang = 'en-US';
@@ -378,9 +379,17 @@ function createSpeechRecognizer(captureGeneration) {
       handleHandsFreeTranscript(finalResult[0].transcript);
       return;
     }
-    let transcript = '';
-    for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript + ' ';
-    transcript = transcript.trim();
+    // Keep finalized segments separate from interim hypotheses. Rebuilding the
+    // transcript from every result on each event duplicated words in Chrome.
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (result.isFinal) finalTranscript += result[0].transcript + ' ';
+    }
+    const interimTranscript = Array.from(event.results)
+      .filter((result) => !result.isFinal)
+      .map((result) => result[0].transcript)
+      .join(' ');
+    const transcript = `${finalTranscript} ${interimTranscript}`.trim();
     if (!transcript) return;
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
@@ -423,6 +432,15 @@ function createSpeechRecognizer(captureGeneration) {
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
+    } else if (!isHandsFreeEnabled && !isMicMuted && finalTranscript.trim()) {
+      // A user-started push-to-talk capture is an explicit request to process
+      // the spoken directive. Submit only finalized recognition text, never an
+      // interim guess, and let the policy gateway handle any required approval.
+      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ');
+      document.getElementById('transcript-input').value = recognizedCommand;
+      document.getElementById('transcript-box').classList.remove('hidden');
+      setAssistantState('VOICE RECOGNIZED', 'Analyzing the recognized command through the policy gateway.');
+      void submitDirective(recognizedCommand);
     }
     if (isHandsFreeEnabled && !isMicMuted && !isSpeaking) scheduleHandsFreeRestart();
   };
