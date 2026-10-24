@@ -1,0 +1,577 @@
+// Browser companion UI using the real device cryptography module.
+let currentDevice = null;
+let currentSession = null;
+let activeChallenge = null;
+let pendingApprovals = new Map();
+let isRequestSubmitting = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupEventListeners();
+  restoreExistingDevice();
+  pollStatus();
+  setInterval(pollStatus, 3000);
+  setInterval(fetchAuditLogs, 4000);
+});
+
+function setupEventListeners() {
+  document.getElementById('btn-create-challenge').addEventListener('click', handleCreateChallenge);
+  document.getElementById('btn-enroll-browser').addEventListener('click', handleBrowserDeviceEnrollment);
+  document.getElementById('btn-revoke-device').addEventListener('click', handleRevokeDevice);
+  document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
+  document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
+  document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
+  document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
+  document.getElementById('btn-totp-disable').addEventListener('click', handleTotpDisable);
+  document.getElementById('btn-create-transaction').addEventListener('click', handleCreateTransaction);
+  document.getElementById('btn-cancel-transaction').addEventListener('click', handleCancelTransaction);
+  document.getElementById('btn-submit-enrollment').addEventListener('click', handleSubmitEnrollment);
+
+  // Quick chip prompts
+  document.querySelectorAll('.chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const prompt = chip.getAttribute('data-prompt');
+      document.getElementById('input-request').value = prompt;
+      handleSendRequest();
+    });
+  });
+
+  document.getElementById('input-request').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleSendRequest();
+  });
+}
+
+async function handleCreateChallenge() {
+  const ownerToken = window.prompt('Enter the configured owner control token to authorize enrollment:');
+  if (!ownerToken) return;
+
+  const box = document.getElementById('challenge-box');
+  const qr = document.getElementById('challenge-qr');
+  const status = document.getElementById('challenge-status');
+  const timer = document.getElementById('challenge-timer');
+  const token = document.getElementById('challenge-token');
+  const uri = document.getElementById('challenge-uri');
+
+  try {
+    const res = await fetch('/api/enrollment/challenge', {
+      method: 'POST',
+      headers: { 'x-owner-control-token': ownerToken },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.challengeToken) {
+      throw new Error(data.error || 'Enrollment challenge failed with HTTP ' + res.status);
+    }
+    const expiresAt = Number(data.expiresAt || Date.now() + 120000);
+    activeChallenge = { ...data, expiresAt };
+
+    const svg = typeof data.qrSvg === 'string' && data.qrSvg.trim().startsWith('<svg') ? data.qrSvg : null;
+    if (svg && qr) {
+      qr.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      qr.classList.remove('hidden');
+    } else if (qr) {
+      qr.removeAttribute('src');
+      qr.classList.add('hidden');
+    }
+
+    token.textContent = data.challengeToken;
+    if (uri) {
+      uri.textContent = data.uri || `jarvis://enroll?challengeToken=${encodeURIComponent(data.challengeToken)}`;
+    }
+    box.classList.remove('hidden');
+    status.textContent = 'Scan with another device or enter the challenge token manually. Approval is still required from an already-authorized owner device.';
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      timer.textContent = `Expires in: ${remaining}s`;
+      if (!remaining) {
+        status.textContent = 'Challenge expired. Generate a new challenge to continue.';
+        box.classList.add('expired');
+      }
+    };
+    updateCountdown();
+    if (activeChallenge.countdownTimer) clearInterval(activeChallenge.countdownTimer);
+    activeChallenge.countdownTimer = setInterval(updateCountdown, 1000);
+  } catch (err) {
+    activeChallenge = null;
+    if (status) {
+      status.textContent = err instanceof Error ? err.message : 'Unknown enrollment error';
+    }
+    box.classList.remove('hidden');
+    if (qr) qr.classList.add('hidden');
+    alert('Failed to generate challenge: ' + (err instanceof Error ? err.message : 'Unknown error'));
+  }
+}
+
+async function handleBrowserDeviceEnrollment() {
+  try {
+    if (!activeChallenge) await handleCreateChallenge();
+    if (!activeChallenge || !activeChallenge.challengeToken) {
+      throw new Error('Create an owner-authorized enrollment challenge first.');
+    }
+    const enrolled = await window.JarvisDeviceCrypto.enrollDevice(
+      activeChallenge.challengeToken,
+      'JARVIS Browser Companion',
+    );
+    currentDevice = { id: enrolled.deviceId, name: enrolled.deviceName, permissions: enrolled.permissions };
+    currentSession = enrolled.sessionId;
+    activeChallenge = null;
+    document.getElementById('challenge-box').classList.add('hidden');
+    updateUIWithDevice();
+    addFeedItem('system-success', 'This browser is enrolled with a non-extractable private key and a signed session.');
+  } catch (err) {
+    currentDevice = null;
+    currentSession = null;
+    setEnrollmentUnavailable(err instanceof Error ? err.message : 'Secure enrollment failed.');
+  }
+}
+
+async function restoreExistingDevice() {
+  try {
+    const existing = await window.JarvisDeviceCrypto.currentDevice();
+    if (!existing) return;
+    const session = await window.JarvisDeviceCrypto.restoreSession();
+    currentDevice = { id: session.deviceId, name: session.deviceName, permissions: session.permissions };
+    currentSession = session.sessionId;
+    updateUIWithDevice();
+  } catch (err) {
+    currentDevice = null;
+    currentSession = null;
+    setEnrollmentUnavailable(err instanceof Error ? err.message : 'Could not restore the device session.');
+  }
+}
+
+function setEnrollmentUnavailable(message) {
+  document.getElementById('enrollment-unregistered').classList.remove('hidden');
+  document.getElementById('enrollment-registered').classList.add('hidden');
+  document.getElementById('device-pill').textContent = 'SECURE ENROLLMENT REQUIRED';
+  document.getElementById('header-device-name').textContent = 'No authenticated device';
+  addFeedItem('system-failed', message);
+}
+
+function updateUIWithDevice() {
+  document.getElementById('enrollment-unregistered').classList.add('hidden');
+  document.getElementById('enrollment-registered').classList.remove('hidden');
+  document.getElementById('device-pill').innerText = 'ENROLLED & ACTIVE';
+  document.getElementById('device-pill').classList.add('success');
+  document.getElementById('info-device-id').innerText = currentDevice ? currentDevice.id : '--';
+  document.getElementById('info-device-name').innerText = currentDevice ? currentDevice.name : '--';
+  document.getElementById('info-session-id').innerText = currentSession ? currentSession.substring(0, 16) + '...' : '--';
+  document.getElementById('header-device-name').innerText = currentDevice ? currentDevice.name : 'Enrolled';
+  const canManage = Boolean(currentDevice?.permissions?.includes('device:manage:execute'));
+  document.getElementById('owner-security').classList.toggle('hidden', !canManage);
+  if (canManage) refreshSecurityPanels();
+}
+
+function qrData(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
+
+async function signedJson(path, method = 'GET', body) {
+  const response = await window.JarvisDeviceCrypto.signedFetch(path, { method, body });
+  const value = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(value.error || `Request failed (${response.status})`);
+  return value;
+}
+
+async function refreshSecurityPanels() {
+  try {
+    const [deviceResult, pendingResult, totp] = await Promise.all([
+      signedJson('/api/devices'), signedJson('/api/enrollment/pending'), signedJson('/api/security/totp/status'),
+    ]);
+    const status = document.getElementById('totp-status');
+    status.textContent = 'Authenticator: ' + totp.status;
+    status.classList.toggle('success', totp.status === 'ENABLED');
+    document.getElementById('btn-totp-setup').classList.toggle('hidden', totp.status === 'ENABLED');
+    document.getElementById('btn-totp-disable').classList.toggle('hidden', totp.status !== 'ENABLED');
+    renderDevices(deviceResult.devices || []);
+    renderPendingEnrollments(pendingResult.requests || []);
+  } catch (error) {
+    document.getElementById('pending-enrollments').textContent = error.message;
+    document.getElementById('authorized-devices').textContent = error.message;
+  }
+}
+
+function renderDevices(devices) {
+  const container = document.getElementById('authorized-devices');
+  container.replaceChildren();
+  if (!devices.length) { container.textContent = 'No devices enrolled.'; return; }
+  for (const device of devices) {
+    const row = document.createElement('div'); row.className = 'security-record';
+    const details = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = device.name + ' · ' + (device.platform || 'Unknown platform');
+    const meta = document.createElement('small'); meta.textContent = `${device.status} · enrolled ${new Date(device.enrolledAt).toLocaleString()} · last activity ${new Date(device.lastActivityAt).toLocaleString()} · session ${device.sessionActive ? 'active' : 'inactive'}`;
+    details.append(title, meta); row.append(details);
+    if (device.status === 'ACTIVE') {
+      const revoke = document.createElement('button'); revoke.className = 'btn btn-danger'; revoke.textContent = 'Revoke';
+      revoke.addEventListener('click', () => revokeManagedDevice(device)); row.append(revoke);
+    }
+    container.append(row);
+  }
+}
+
+function renderPendingEnrollments(requests) {
+  const container = document.getElementById('pending-enrollments'); container.replaceChildren();
+  if (!requests.length) { container.textContent = 'No pending requests.'; return; }
+  for (const request of requests) {
+    const row = document.createElement('div'); row.className = 'security-record';
+    const details = document.createElement('div'); const title = document.createElement('strong');
+    title.textContent = request.deviceName + ' · ' + request.platform;
+    const meta = document.createElement('small'); meta.textContent = `Requested ${new Date(request.requestedAt).toLocaleString()} · permissions: ${request.permissions.join(', ')}`;
+    details.append(title, meta); row.append(details);
+    const approve = document.createElement('button'); approve.className = 'btn btn-primary'; approve.textContent = 'Approve';
+    approve.addEventListener('click', async () => {
+      const totpCode = document.getElementById('enrollment-totp-code').value.trim();
+      if (!totpCode) { alert('Enter a fresh authenticator code first.'); return; }
+      try { await signedJson('/api/enrollment/approve', 'POST', { transactionId: request.transactionId, requestHash: request.requestHash, totpCode }); document.getElementById('enrollment-totp-code').value = ''; await refreshSecurityPanels(); }
+      catch (error) { alert('Approval failed: ' + error.message); }
+    });
+    const reject = document.createElement('button'); reject.className = 'btn btn-danger'; reject.textContent = 'Reject';
+    reject.addEventListener('click', async () => { try { await signedJson('/api/enrollment/reject', 'POST', { transactionId: request.transactionId }); await refreshSecurityPanels(); } catch (error) { alert('Rejection failed: ' + error.message); } });
+    row.append(approve, reject); container.append(row);
+  }
+}
+
+async function handleTotpSetup() {
+  try {
+    const result = await signedJson('/api/security/totp/setup', 'POST', {});
+    document.getElementById('totp-qr').src = qrData(result.qrSvg);
+    document.getElementById('totp-secret').textContent = result.secret;
+    document.getElementById('totp-setup-panel').classList.remove('hidden');
+  } catch (error) { alert('Authenticator setup failed: ' + error.message); }
+}
+
+async function handleTotpVerify() {
+  const code = document.getElementById('totp-setup-code').value.trim();
+  try {
+    await signedJson('/api/security/totp/verify-setup', 'POST', { code });
+    document.getElementById('totp-setup-panel').classList.add('hidden');
+    document.getElementById('totp-secret').textContent = '';
+    document.getElementById('totp-setup-code').value = '';
+    await refreshSecurityPanels();
+  } catch (error) { alert('Authenticator verification failed: ' + error.message); }
+}
+
+async function handleTotpDisable() {
+  const code = window.prompt('Enter a fresh authenticator code to disable two-factor verification:');
+  if (!code) return;
+  try { await signedJson('/api/security/totp/disable', 'POST', { code }); await refreshSecurityPanels(); }
+  catch (error) { alert('Could not disable authenticator: ' + error.message); }
+}
+
+async function handleCreateTransaction() {
+  const totpCode = document.getElementById('enrollment-totp-code').value.trim();
+  const permissions = ['system:info:read'];
+  if (document.getElementById('permission-app-launch').checked) permissions.push('app:launch:execute');
+  if (document.getElementById('permission-device-manage').checked) permissions.push('device:manage:execute');
+  try {
+    const result = await signedJson('/api/enrollment/transactions', 'POST', { totpCode, permissions });
+    activeChallenge = result;
+    document.getElementById('enrollment-qr').src = qrData(result.qrSvg);
+    document.getElementById('enrollment-code').textContent = result.code;
+    document.getElementById('transaction-panel').classList.remove('hidden');
+    document.getElementById('enrollment-totp-code').value = '';
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((result.expiresAt - Date.now()) / 1000));
+      document.getElementById('transaction-countdown').textContent = `${remaining}s`;
+      if (!remaining) { document.getElementById('transaction-panel').classList.add('hidden'); activeChallenge = null; }
+    };
+    update(); activeChallenge.timer = setInterval(update, 1000);
+    await refreshSecurityPanels();
+  } catch (error) { alert('Could not start enrollment: ' + error.message); }
+}
+
+async function handleCancelTransaction() {
+  if (!activeChallenge?.transactionId) return;
+  try {
+    await signedJson('/api/enrollment/cancel', 'POST', { transactionId: activeChallenge.transactionId });
+    clearInterval(activeChallenge.timer); activeChallenge = null;
+    document.getElementById('transaction-panel').classList.add('hidden');
+  } catch (error) { alert('Cancellation failed: ' + error.message); }
+}
+
+async function handleSubmitEnrollment() {
+  const status = document.getElementById('enrollment-request-status');
+  let transactionId = document.getElementById('enrollment-transaction-id').value.trim();
+  let code = document.getElementById('enrollment-entry-code').value.trim();
+  if (transactionId.startsWith('jarvis://')) {
+    try { const parsed = new URL(transactionId); transactionId = parsed.searchParams.get('transaction') || ''; code = parsed.searchParams.get('code') || code; }
+    catch { status.textContent = 'The scanned enrollment link is invalid.'; return; }
+  }
+  status.textContent = 'Sending signed device request; awaiting owner approval…';
+  try {
+    const enrolled = await window.JarvisDeviceCrypto.requestEnrollment(transactionId, code, 'JARVIS Browser Companion', 'Browser');
+    currentDevice = { id: enrolled.deviceId, name: enrolled.deviceName, permissions: enrolled.permissions };
+    currentSession = enrolled.sessionId; status.textContent = 'Enrolled after owner approval.'; updateUIWithDevice();
+  } catch (error) { status.textContent = error instanceof Error ? error.message : 'Enrollment did not complete.'; }
+}
+
+async function revokeManagedDevice(device) {
+  if (!confirm(`Immediately revoke ${device.name} and invalidate its sessions?`)) return;
+  const totpCode = window.prompt('Enter a fresh authenticator code to confirm revocation:');
+  if (!totpCode) return;
+  try { await signedJson('/api/device/revoke', 'POST', { deviceId: device.id, reason: 'Owner initiated', totpCode }); await refreshSecurityPanels(); }
+  catch (error) { alert('Revocation failed: ' + error.message); }
+}
+
+async function handleRevokeDevice() {
+  if (!currentDevice) return;
+  if (!confirm(`Are you sure you want to revoke ${currentDevice.name}? Immediate revocation is enforced.`)) return;
+
+  try {
+    const totpCode = document.getElementById('totp-status').textContent.includes('ENABLED') ? window.prompt('Enter a fresh authenticator code to confirm revocation:') : undefined;
+    if (document.getElementById('totp-status').textContent.includes('ENABLED') && !totpCode) return;
+    const revokeResponse = await window.JarvisDeviceCrypto.signedFetch('/api/device/revoke', {
+      method: 'POST',
+      body: { deviceId: currentDevice.id, reason: 'Manual self-revocation', ...(totpCode ? { totpCode } : {}) },
+    });
+    const revokeResult = await revokeResponse.json().catch(() => ({}));
+    if (!revokeResponse.ok || revokeResult.success !== true) {
+      throw new Error(revokeResult.error || 'Device revocation was not confirmed');
+    }
+
+    currentDevice = null;
+    currentSession = null;
+    activeChallenge = null;
+
+    document.getElementById('enrollment-unregistered').classList.remove('hidden');
+    document.getElementById('enrollment-registered').classList.add('hidden');
+    document.getElementById('challenge-box').classList.add('hidden');
+    document.getElementById('device-pill').innerText = 'REVOKED / UNENROLLED';
+    document.getElementById('header-device-name').innerText = 'No Device';
+
+    fetchAuditLogs();
+    alert('Device has been successfully revoked. All active sessions terminated immediately.');
+  } catch (err) {
+    alert('Revocation failed: ' + err.message);
+  }
+}
+
+async function handleSendRequest() {
+  const input = document.getElementById('input-request');
+  const sendButton = document.getElementById('btn-send-request');
+  const text = input.value.trim();
+  if (!text) return;
+  if (isRequestSubmitting) return;
+
+  if (!currentSession) {
+    addFeedItem('system-failed', 'Request not sent: secure device enrollment is not configured.');
+    return;
+  }
+
+  isRequestSubmitting = true;
+  sendButton.disabled = true;
+  const originalButtonText = sendButton.textContent;
+  sendButton.textContent = 'Sending…';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  addFeedItem('user', text);
+
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
+      method: 'POST',
+      body: { text },
+      signal: controller.signal,
+    });
+
+    const data = await readApiResponse(res);
+    input.value = '';
+
+    if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
+      addApprovalCard(data.approvalId, data.taskId, text, data.message);
+      addFeedItem('system-pending', `Requires approval: ${data.message}`, data);
+    } else if (data.state === 'COMPLETED' &&
+        data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
+      addFeedItem('system-success', `Outcome verified: ${data.message}`, data.data);
+    } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
+        data.outcome === 'UNCERTAIN' || data.verified === false) {
+      addFeedItem('system-pending', `Outcome not fully verified: ${data.message}`, data.data);
+    } else {
+      addFeedItem('system-failed', `Request denied or failed: ${data.message || data.error}`, data);
+    }
+
+    fetchAuditLogs();
+  } catch (err) {
+    const message = controller.signal.aborted
+      ? 'Request timed out; the server may have received it. Check task state before retrying.'
+      : (err instanceof Error ? err.message : 'Request failed');
+    addFeedItem('system-failed', message);
+  } finally {
+    clearTimeout(timeoutId);
+    isRequestSubmitting = false;
+    sendButton.disabled = false;
+    sendButton.textContent = originalButtonText;
+  }
+}
+
+async function readApiResponse(response) {
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; } catch {
+    payload = { error: raw.slice(0, 240) || 'The server returned a non-JSON response' };
+  }
+  if (!response.ok) {
+    const explanation = typeof payload.error === 'string' ? payload.error :
+      typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(`HTTP ${response.status}: ${explanation}`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('The server returned an invalid response format');
+  }
+  return payload;
+}
+
+function addFeedItem(type, message, details) {
+  const feed = document.getElementById('tasks-feed');
+  const item = document.createElement('div');
+  item.className = 'task-item ' + (type === 'system-success' ? 'success' : type === 'system-failed' ? 'failed' : 'pending');
+
+  const header = document.createElement('div');
+  header.className = 'task-header';
+  const label = document.createElement('strong');
+  label.textContent = String(type).toUpperCase();
+  const time = document.createElement('span');
+  time.textContent = new Date().toLocaleTimeString();
+  header.append(label, document.createTextNode(' '), time);
+
+  const body = document.createElement('div');
+  body.textContent = String(message ?? '');
+  item.append(header, body);
+
+  if (details !== undefined && details !== null) {
+    const data = document.createElement('pre');
+    data.className = 'task-data';
+    data.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+    item.appendChild(data);
+  }
+  feed.insertBefore(item, feed.firstChild);
+}
+
+function addApprovalCard(approvalId, taskId, requestText, message) {
+  const container = document.getElementById('approvals-container');
+  document.getElementById('no-approvals-msg').classList.add('hidden');
+
+  const card = document.createElement('div');
+  card.className = 'approval-card';
+  card.id = 'card-appr-' + approvalId;
+
+  const request = document.createElement('div');
+  const requestLabel = document.createElement('strong');
+  requestLabel.textContent = 'Action: ';
+  request.append(requestLabel, document.createTextNode(String(requestText)));
+
+  const description = document.createElement('div');
+  description.className = 'muted mt-12';
+  description.textContent = String(message || '');
+
+  const actions = document.createElement('div');
+  actions.className = 'action-row mt-12';
+  const approve = document.createElement('button');
+  approve.className = 'btn btn-primary';
+  approve.textContent = 'Approve & Execute';
+  approve.addEventListener('click', () => resolveApproval(approvalId, true));
+  const reject = document.createElement('button');
+  reject.className = 'btn btn-danger';
+  reject.textContent = 'Deny / Reject';
+  reject.addEventListener('click', () => resolveApproval(approvalId, false));
+  actions.append(approve, reject);
+
+  card.append(request, description, actions);
+  container.appendChild(card);
+  updateApprovalCount();
+}
+
+async function resolveApproval(approvalId, approved) {
+  const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
+  if (!currentSession) {
+    addFeedItem('system-failed', 'Approval unavailable: no authenticated session.');
+    return;
+  }
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
+      method: 'POST',
+      body: { approvalId },
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(result.error || result.message || 'Approval request failed with HTTP ' + res.status);
+    }
+    if (!approved && result.success !== true) {
+      throw new Error(result.error || result.message || 'Rejection was not confirmed by the server');
+    }
+
+    if (!approved) {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-failed', 'The server confirmed the action was rejected.');
+    } else if (result.state === 'COMPLETED' && result.success === true &&
+        result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
+    } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
+      const card = document.getElementById('card-appr-' + approvalId);
+      if (card) card.remove();
+      updateApprovalCount();
+      addFeedItem('system-failed', 'Approval was processed but the task did not complete: ' + String(result.message || result.state), result.data);
+    } else {
+      addFeedItem('system-pending', 'Approval processed; task state remains ' + String(result.state || 'UNKNOWN') + '. Verify before retrying.');
+    }
+    fetchAuditLogs();
+  } catch (err) {
+    addFeedItem('system-failed', 'Approval state unknown; refresh server state before retrying.');
+  }
+}
+
+function updateApprovalCount() {
+  const count = document.querySelectorAll('.approval-card').length;
+  document.getElementById('approval-count').innerText = `${count} Pending`;
+  if (count === 0) {
+    document.getElementById('no-approvals-msg').classList.remove('hidden');
+  }
+}
+
+async function pollStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    if (data.status === 'ONLINE') {
+      document.getElementById('status-dot').className = 'pulse-indicator online';
+    }
+  } catch {
+    document.getElementById('status-dot').className = 'pulse-indicator offline';
+  }
+}
+
+async function fetchAuditLogs() {
+  try {
+    if (!currentSession) return;
+    const stream = document.getElementById('audit-log-stream');
+    if (!currentDevice?.permissions?.includes('device:manage:execute')) {
+      stream.replaceChildren();
+      const notice = document.createElement('div');
+      notice.className = 'audit-entry';
+      notice.textContent = 'Audit access requires DEVICE_MANAGE permission.';
+      stream.appendChild(notice);
+      return;
+    }
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/audit');
+    if (!res.ok) return;
+    const data = await res.json();
+    stream.replaceChildren();
+
+    (data.records || []).slice(-15).reverse().forEach((r) => {
+      const entry = document.createElement('div');
+      entry.className = 'audit-entry';
+      const timeStr = new Date(r.timestamp).toLocaleTimeString();
+      const time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = '[' + timeStr + ']';
+      const event = document.createElement('span');
+      event.className = 'event';
+      event.textContent = String(r.eventType || 'EVENT');
+      entry.append(time, document.createTextNode(' '), event, document.createTextNode(': ' + JSON.stringify(r.details || {})));
+      stream.appendChild(entry);
+    });
+  } catch {
+    // Ignore log fetch errors
+  }
+}
