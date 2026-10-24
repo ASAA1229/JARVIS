@@ -10,12 +10,14 @@ import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
+import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
   private server: ReturnType<typeof createServer>;
   private port: number;
   private readonly ownerControlToken: string | undefined;
+  private readonly personalMemory?: PersonalMemoryStore;
 
   constructor(
     port: number = 3000,
@@ -25,6 +27,12 @@ export class JarvisServer {
     this.port = port;
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
+    if (this.ownerControlToken) {
+      this.personalMemory = new PersonalMemoryStore(
+        statePath ? statePath + '.memory' : './data/personal-memory.enc',
+        this.ownerControlToken,
+      );
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -341,6 +349,41 @@ export class JarvisServer {
           ...sessionRes,
           permissions: [...device.permissions],
         });
+      }
+
+      // Personal memory is encrypted at rest and restricted to authenticated management devices.
+      if (url.pathname.startsWith('/api/memory')) {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        if (!this.personalMemory) return this.jsonResponse(res, 503, { error: 'Personal memory requires a configured owner control token' });
+        const body = req.method === 'GET' ? undefined : await this.readJsonBody(req);
+        if (req.method !== 'GET' && !this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Memory access requires device-management permission' });
+
+        if (req.method === 'GET' && url.pathname === '/api/memory') {
+          return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/memory') {
+          const input = body as { category?: unknown; content?: unknown; ttlDays?: unknown };
+          if (!['preference', 'project', 'routine', 'general'].includes(String(input.category)) ||
+              typeof input.content !== 'string' ||
+              (input.ttlDays !== undefined && typeof input.ttlDays !== 'number')) {
+            return this.jsonResponse(res, 400, { error: 'category, content, and optional numeric ttlDays are required' });
+          }
+          const record = this.personalMemory.save(input.category as MemoryCategory, input.content, input.ttlDays as number | undefined);
+          this.jarvis.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, auth.device.id);
+          return this.jsonResponse(res, 201, { record });
+        }
+        if (req.method === 'DELETE' && url.pathname === '/api/memory') {
+          const input = body as { id?: unknown };
+          if (typeof input.id !== 'string' || !input.id) return this.jsonResponse(res, 400, { error: 'Memory id is required' });
+          const deleted = this.personalMemory.delete(input.id);
+          this.jarvis.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: input.id, deleted }, auth.device.id);
+          return this.jsonResponse(res, deleted ? 200 : 404, { deleted });
+        }
+        return this.jsonResponse(res, 405, { error: 'Unsupported memory method or route' });
       }
 
       // Local TTS is an authenticated, bounded operation; it has no execution authority.
