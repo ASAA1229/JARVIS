@@ -83,3 +83,9 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 - Approval rejection now applies the same operation-family permission checks as approval: memory operations require `DEVICE_MANAGE`; app launch and desktop operations require `APP_LAUNCH`.
 - Added `test/policy_gateway_binding.test.ts` covering task replay, device mismatch, operation mismatch, malformed parameter containers, and unknown parameters.
 - This is source/test implementation, not acceptance evidence until the new PR CI passes. Physical Windows/voice/Android acceptance and independent security review remain open; overall POC remains INCOMPLETE / BLOCKED.
+
+## Adapter exception redaction — 2026-10-24
+
+- The core execution service no longer returns raw adapter exception strings to the user or includes them in audit evidence. It returns a bounded failure message and records only the non-sensitive exception class in completion audit metadata.
+- Added `test/adapter_error_redaction.test.ts` to inject a path-like private diagnostic and assert it is absent from the task result and public audit records.
+- These tests are committed on `gap-closure`; their status remains pending until the exact PR CI run completes. This does not yet constitute a full API error-redaction review across every route and adapter.
