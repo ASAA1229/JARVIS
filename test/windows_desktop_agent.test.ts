@@ -29,3 +29,39 @@ test('UI Automation control scripts escape PowerShell single-quoted values', () 
   assert.ok(valueScript.includes("$pattern.SetValue('It''s JARVIS')"));
   assert.ok(valueScript.includes("$actual -cne 'It''s JARVIS'"));
 });
+
+test('set_value script keeps sensitive-field checks and independent value verification', () => {
+  const script = buildControlActionScript('desktop:set_value', 'Account name', 'demo');
+
+  assert.match(script, /Current\.IsPassword/);
+  assert.match(script, /password\|passcode\|pin\|cvv\|card number\|bank account\|security code/);
+  assert.match(script, /\$actual = \$pattern\.Current\.Value/);
+  assert.match(script, /\$actual -cne 'demo'/);
+  assert.match(script, /VALUE_VERIFIED/);
+});
+
+test('set_value script rejects a missing text argument before execution', () => {
+  assert.throws(
+    () => buildControlActionScript('desktop:set_value', 'Title'),
+    /A text value is required/,
+  );
+});
+
+test('desktop action validation rejects empty or oversized control names before invoking PowerShell', async () => {
+  const { WindowsDesktopAgent } = await import('../src/adapters/windowsDesktopAgent.js');
+  const agent = new WindowsDesktopAgent();
+
+  const emptyName = await agent.execute({
+    operation: 'desktop:click_control',
+    parameters: { name: '   ' },
+  });
+  assert.equal(emptyName.success, false);
+  assert.match(emptyName.error || '', /Control name must contain 1–120 characters/);
+
+  const longName = await agent.execute({
+    operation: 'desktop:set_value',
+    parameters: { name: 'x'.repeat(121), text: 'demo' },
+  });
+  assert.equal(longName.success, false);
+  assert.match(longName.error || '', /Control name must contain 1–120 characters/);
+});
