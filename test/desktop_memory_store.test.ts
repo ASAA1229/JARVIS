@@ -58,6 +58,13 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   const type = await planner.generatePlan('type Hello JARVIS', context);
   assert.equal(type.operations[0]?.operation, 'desktop:type_text');
   assert.deepEqual(type.operations[0]?.parameters, { text: 'Hello JARVIS' });
+  const compound = await planner.generatePlan('open Notepad and write Hello JARVIS', context);
+  assert.equal(compound.operations[0]?.operation, 'desktop:launch_and_type');
+  assert.deepEqual(compound.operations[0]?.parameters, { appId: 'notepad', text: 'Hello JARVIS' });
+  const missingName = await planner.generatePlan('open Notepad and write my name', context);
+  assert.equal(missingName.operations.length, 0);
+  assert.match(missingName.explanation, /verified owner name configured/);
   const validation = planner.validatePlanSchema(type);
   assert.equal(validation.valid, true);
+  assert.equal(planner.validatePlanSchema(compound).valid, true);
 });
