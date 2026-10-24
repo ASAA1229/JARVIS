@@ -26,6 +26,8 @@
 - [ ] **Repository consolidation:** Inventory all Markdown and test files across `main`, `dev`, `new`, `fix`, `test`, and `lovable`; merge unique requirements/results into `master_repo_md.md` and `master_repo_test`; verify no unique criteria or source tests would be lost before deleting files.
 - [ ] **Worktrees:** Inventory existing worktrees and create/verify isolated milestone worktrees for M1–M11 without overwriting dirty work; document future-milestone provisioning.
 
+- [ ] **HUD/voice integration verification:** Re-run build/lint/unit/browser smoke on the exact merged `new` branch; test wake enable/pause/disable, mute, voice-output toggle, single spoken response per result, audio playback failure recovery, mobile layout, keyboard navigation, and real Piper CLI/model playback. Verify the final branch has no conflict markers or duplicate voice/listener definitions.
+
 ## Future scope (requires explicit approval before implementation)
 
 - Native Android companion using Android Keystore hardware-backed key storage where available.
