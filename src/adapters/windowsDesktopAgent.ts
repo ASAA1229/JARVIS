@@ -185,7 +185,7 @@ export class WindowsDesktopAgent {
           "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
           '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
           '$foundControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
-          'if ($foundControls.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+          'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
           '$element = $foundControls.Item(0)',
           '$pattern = $null',
           'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose an Invoke action." }',
