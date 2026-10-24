@@ -159,10 +159,9 @@ export class WindowsDesktopAgent {
           'Add-Type -AssemblyName UIAutomationTypes',
           '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
           'if ($null -eq $root) { throw "No foreground window is available." }',
-          '$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker',
+          '$allControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)',
           '$items = New-Object System.Collections.Generic.List[object]',
-          '$current = $walker.GetFirstChild($root)',
-          'while ($null -ne $current -and $items.Count -lt 80) { $items.Add(@{ name = $current.Current.Name; controlType = $current.Current.ControlType.ProgrammaticName; automationId = $current.Current.AutomationId }); $current = $walker.GetNextSibling($current) }',
+          'for ($i = 0; $i -lt [Math]::Min($allControls.Count, 80); $i++) { $control = $allControls.Item($i); $items.Add(@{ name = $control.Current.Name; controlType = $control.Current.ControlType.ProgrammaticName; automationId = $control.Current.AutomationId }) }',
           '$result = @{ process = $foreground.ProcessName; windowTitle = $foreground.MainWindowTitle; controls = @($items) }',
           '$result | ConvertTo-Json -Depth 4 -Compress',
         ].join('; ');
