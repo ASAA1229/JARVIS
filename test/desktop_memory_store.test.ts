@@ -61,6 +61,11 @@ test('official store discovery returns only official store domains and excludes 
 test('desktop voice intents produce only bounded allowlisted operations', async () => {
   const planner = new LocalHeuristicPlanner();
   const context = { requesterName: 'Owner', timestamp: Date.now() };
+  const rememberName = await planner.generatePlan('remember my name is Abhishek Guda', context);
+  assert.equal(rememberName.operations[0]?.operation, 'memory:save');
+  assert.deepEqual(rememberName.operations[0]?.parameters, { category: 'preference', content: 'owner name: Abhishek Guda' });
+  const reviewMemory = await planner.generatePlan('what do you remember about me', context);
+  assert.equal(reviewMemory.operations[0]?.operation, 'memory:list');
   const openChrome = await planner.generatePlan('open Chrome', context);
   assert.equal(openChrome.operations[0]?.operation, 'app:launch');
   assert.deepEqual(openChrome.operations[0]?.parameters, { appId: 'Chrome' });
