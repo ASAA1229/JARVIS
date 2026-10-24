@@ -94,3 +94,12 @@ The latest new commit message records the final 103-test security CI pass. Use t
 ## Overall assessment
 
 The repository has a useful security-oriented foundation and a green automated baseline, but it is **not yet the planned universal JARVIS assistant**. The most significant missing areas are native Android/remote operation, real Windows acceptance, local always-ready voice, end-to-end communication integrations, durable scheduling/workflows, and full user-controlled memory. The next implementation phase should begin with the POC2 acceptance register and staged security-first delivery, not a broad unbounded feature dump.
+
+
+## Addendum — gap-closure documentation reconciliation (2026-10-24)
+
+After the initial source audit, the following existing files were updated on the non-main branch new to align the current status and the 15 approved discovery decisions: POC.md, POC2.md, README.md, AGENTS.md, master_repo_md.md, docs/PERSONALIZED_JARVIS_REQUIREMENTS.md, and docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md. This audit report was also refreshed. No new Markdown files were created and no application source code was changed by this documentation pass.
+
+The documentation now distinguishes current repository implementation from the broader target: local always-ready wake-word voice, native Android/Android Keystore, two-phone remote control, email/WhatsApp/SMS/call/Teams/Microsoft 365 integrations, durable scheduling, full memory lifecycle, and universal app control remain incomplete until implemented and accepted.
+
+The branch update/reconciliation itself is scoped to non-main refs. PR #12 was already merged before this work; the documentation changes are new changes on new and should be proposed to dev by a fresh PR. main remains untouched. CI must be checked again for the updated new commit and the documentation PR before claiming that updated documentation is validated.
