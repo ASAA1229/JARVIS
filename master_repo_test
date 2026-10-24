@@ -199,3 +199,15 @@ The core catches adapter exceptions and emits a bounded failure message plus the
 - Browser security smoke: PASS (`BROWSER_E2E_PASS`).
 - The initial operation-substitution fixture failure was corrected; the corrected task/device/operation binding test passes.
 - Documentation-only commits followed this source/test commit; source and tests were unchanged after the passing run. Physical target-device acceptance and independent security review remain open.
+
+## Approval-rejection permission tests — 2026-10-24
+
+New file: `test/rejection_permissions.test.ts` on `gap-closure` / PR #11.
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Desktop approval rejection | Read-only approver without `APP_LAUNCH` is denied | Test added; CI pending |
+| Memory approval rejection | Approver without `DEVICE_MANAGE` is denied | Test added; CI pending |
+| Approval state | Unauthorized rejection leaves approval pending | Test added; CI pending |
+
+The prior passing CI run predates this test file. A new run is required to mark these cases PASS.
