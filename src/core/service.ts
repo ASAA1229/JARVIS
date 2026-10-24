@@ -393,11 +393,14 @@ export class JarvisCoreService {
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
     } catch (err: unknown) {
+      // Adapter exceptions can contain local paths, command fragments, or other
+      // implementation details. Keep the user-facing result generic and retain
+      // only a non-sensitive error class for diagnostics.
       rawResult = {
         success: false,
         outcome: VerificationOutcome.VERIFIED_FAILURE,
-        error: String(err),
-        evidence: { error: String(err) },
+        error: 'The operation failed inside its adapter; no verified success is reported.',
+        evidence: { errorType: err instanceof Error ? err.name : 'UnknownError' },
       };
     } finally {
       this.activeExecutionTokens.delete(taskId);
@@ -434,6 +437,7 @@ export class JarvisCoreService {
           operation: opRequest.operation,
           honestOutcome: verification.honestOutcome,
           verified: verification.verified,
+          ...(typeof rawResult.evidence.errorType === 'string' ? { errorType: rawResult.evidence.errorType } : {}),
         },
         taskRecord.deviceId,
         taskId
