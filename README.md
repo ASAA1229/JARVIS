@@ -1,42 +1,58 @@
 # JARVIS
 
-**Security-first personal AI assistant POC — Windows host with a browser-based companion/HUD.**
+**Security-first personal AI assistant POC — Windows host and browser-based companion, with native Android agents planned.**
 
-> **Current status (2026-10-23): M12 gesture foundation is implemented on `new`; overall product acceptance remains BLOCKED / NOT RELEASE-READY.** M1–7 evidence is a historical audit of the `fix` baseline, and M8, M10, and M11 cannot be certified without approved specifications. See the [current milestone registry](docs/milestones/README.md) and [current repository baseline](docs/repository-baseline-2026-10-23.md).
+> **Current status (2026-10-24): NOT RELEASE-READY.** The repository has a working security-oriented backend foundation and a successful hosted CI run, but the universal assistant vision is not implemented end-to-end. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
 
-## Current milestone and source branches
+## Branch and PR status
 
-- `new`: current feature branch; includes the local-only M12 gesture foundation.
-- `test`: audit baseline, automated tests, and [Security/API/Feature Audit](docs/security-api-feature-audit-2026-10-23.md).
-- `fix`: current remediation and regression tests.
-- `dev`: integration branch; changes from `new`, `fix`, or `test` reach it by PR only.
-- `main`: production/release branch. **Never push, commit, or merge to `main` automatically.** The owner performs any final merge manually from `dev`.
+- main: production/release branch; automated work must not commit, push, or merge to it.
+- dev: integration branch. PR #12 from new was merged on 2026-10-24.
+- new: feature/gap-closure branch; its current tree matches dev, though dev is one merge commit ahead.
+- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list.
+- PRs from non-main branches target dev. The owner performs any eventual dev → main merge manually.
 
-The current `fix` work addresses cryptographic session establishment, request signing/replay protection, enrollment proof-of-possession, API authorization and validation, approval-state correctness, persistence failure handling, safe DOM rendering, browser voice lifecycle, and regression tests. The milestone is not complete merely because build/typecheck/tests pass: browser runtime behavior, target Windows 11 behavior, and all remaining high-risk findings must be verified too.
+## Product goal
 
-## Current implementation status
+JARVIS should become a voice-driven personal AI operating assistant for the user's Windows 11 laptop and two Android phones. It should handle work end-to-end across supported applications: Windows desktop control, email, WhatsApp and other messaging, SMS, normal and supported online calls, Microsoft Teams, Microsoft 365, documents, calendars, reminders, and scheduled multi-step workflows.
 
-See [Cross-Device Implementation Status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md) for the real execution boundaries, security model, supported Windows actions, encrypted personal-memory API, official-store discovery, and the remaining native Android/iOS work. CI passing does not replace real Windows UI or mobile-device acceptance tests.
+The universal goal is capability-based: discover installed/built-in applications, inspect available official APIs and accessible UI capabilities, select the safest authorized adapter, verify results, and clearly report unsupported operations. It is not a claim of unrestricted control over every app or OS.
 
-## Expanded personalized-assistant vision
+## Current implementation baseline
 
-The target product requirements and capability status model are documented in [Personalized JARVIS Requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md). The runtime capability catalogue is available at `GET /api/capabilities`; optionally filter it with `?platform=windows`, `android`, `ios`, or `web`. This endpoint describes capability status only and does not authorize actions.
+- Node.js 24 + TypeScript modular monolith.
+- Ed25519 device identity/session and signed-request foundation, replay protection, enrollment and TOTP owner step-up, revocation.
+- Default-deny policy gateway, bounded operation allowlist, task-scoped approval checks and hash-chained audit logging.
+- Selected read-only Windows system queries and limited Windows app launch.
+- Foreground-window UI Automation for selected text/control/clipboard/zoom interactions.
+- Browser companion/HUD with push-to-talk and text fallback.
+- Optional local Piper TTS, with browser speech synthesis fallback.
+- Encrypted local personal-memory foundation and official-store search-link generation.
+- Capability registry with implemented/partial/planned/restricted status.
+- Automated test suite and browser smoke test.
 
-Capabilities explicitly distinguish `implemented`, `partial`, `planned`, and `restricted`. Broad cross-app automation, mobile agents, official-store installation, personal memory, and advanced workflows are not considered complete until their platform adapters and acceptance tests exist. Financial-app automation and voice-only device unlocking remain blocked.
+## Important limitations
 
-## POC architecture
+- The Windows app launch and UI automation adapters are bounded; this is not universal control of every installed app.
+- Always-ready local wake-word listening is not yet accepted; voice manager defaults wake-word listening off. Browser recognition may use vendor/cloud processing.
+- Android native agents, Android Keystore integration, two-phone physical acceptance and secure remote laptop control are incomplete.
+- Complete email, WhatsApp, SMS, telephony, Teams, Microsoft 365 and calendar integrations are not present yet.
+- Scheduled recurring workflows, durable unattended execution, full memory lifecycle UI, semantic retrieval and verified deletion across backups remain incomplete.
+- Payment/financial application automation, credential entry, unrestricted shell execution, administrator elevation, security bypass, and voice-only high-risk authentication remain restricted.
 
-- **Runtime:** Node.js 24 + TypeScript, modular monolith.
-- **Identity:** Ed25519 device keys, short-lived one-time enrollment challenges, signed session establishment, signed API requests, timestamp/nonce replay protection, and device revocation.
-- **Policy:** default deny, bounded operation allowlist, task-scoped approval, parameter-hash binding, and approval state-transition checks.
-- **Execution:** read-only Windows system information and selected installed-app launch only; no arbitrary shell, scripts, administrator elevation, or financial operations.
-- **Verification/audit:** outcome verification, hash-chained audit events, redaction, persisted device state, and fail-closed behavior when security state is unhealthy.
-- **Browser companion/HUD:** cinematic HUD, push-to-talk, transcript confirmation, text fallback, and a shared WebCrypto Ed25519 client. Browser key storage uses IndexedDB and the imported private key is non-extractable where supported.
-- **AI planning:** model/planner output is advisory and must pass the policy gateway; it never receives execution authority.
+## Architecture and security
+
+- Planner output is advisory. It never receives execution authority.
+- Every action must pass the default-deny policy gateway and registered executor.
+- State-changing actions require the applicable risk-based approval; approval is bound to task, device, operation, parameters and expiry.
+- Verify actual outcomes; do not claim success from command acknowledgement alone.
+- Stop dependent steps after unexpected behavior and reconcile actual state before any safe retry/recovery.
+- Prefer local processing for private data. Disclose and minimize cloud data sharing and obtain authorization when required.
+- Do not run as administrator or silently install/sideload applications.
 
 ## Run locally (Windows PowerShell)
 
-Create a private `.env` from the committed template. Node.js 24's built-in dotenv loader reads `.env` before application startup; variables already present in the process environment take precedence. The file is ignored by Git.
+Create a private .env from the committed template. The file is ignored by Git.
 
 ```powershell
 Copy-Item .env.example .env
@@ -45,75 +61,30 @@ npm ci
 npm run build
 npm run lint
 npm test
+npm run test:browser
 npm start
 ```
 
-Open **http://127.0.0.1:3000/** for the primary cinematic HUD with push-to-talk and text requests. The secure browser enrollment page is at **http://127.0.0.1:3000/companion**; after enrolling, return to `/`. `/hud` remains an alias for the primary HUD.
+Open http://127.0.0.1:3000/ for the local HUD. The companion enrollment page is at http://127.0.0.1:3000/companion. The server binds to loopback; this does not enable remote-device access.
 
-Voice recognition uses the browser's `SpeechRecognition` / `webkitSpeechRecognition` API when available and the page runs in a secure context. Capture starts only on an explicit push-to-talk interaction, stops at 15 seconds, and requires transcript review plus a separate submit action. Speech recognition may process audio through the browser vendor or a cloud service; local-only processing is not guaranteed. Text requests remain available when voice is unsupported or blocked.
+WSL/Linux equivalent for copying the template: `cp .env.example .env`.
 
-WSL/Linux uses the equivalent copy command: `cp .env.example .env`, followed by `node scripts/configure-owner-token.mjs`. The repository's Linux/WSL runtime acceptance is still outstanding.
+### Configuration notes
 
-### Environment variables
-
-| Variable | Required? | Default / behavior |
-|---|---|---|
-| `PORT` | Optional | `3000`; must be an integer from 1 through 65535. The server binds to `127.0.0.1`; there is no configurable host or application URL. |
-| `JARVIS_DEVICE_STATE_PATH` | Optional | `./data/devices.json` for persisted device state. |
-| `JARVIS_AUDIT_PATH` | Optional | `./data/audit.log` for the tamper-evident audit log. |
-| `JARVIS_OWNER_CONTROL_TOKEN` | Required for device enrollment only | Generate locally with the script above. Must be 32–256 URL-safe characters. Missing, placeholder, or weak values disable enrollment; JARVIS still starts, and the challenge endpoint fails closed. |
-| `OPENAI_API_KEY` | Not used by this version | The template contains a placeholder only. The current planner is deterministic and local; no OpenAI provider reads this variable or sends cloud requests. Replacing the placeholder does not enable a provider. |
-
-`NODE_ENV`, session lifetimes, enrollment challenge lifetime, and cryptographic keys are not environment-configurable in this implementation and are therefore not listed as supported settings. No owner token or API key is required to run the local deterministic planner and inspect the public health status.
-
-`node scripts/configure-owner-token.mjs` writes 32 random bytes as a hexadecimal owner token directly into `.env` without displaying it. It refuses to overwrite an already valid token. To rotate one, use the application's device/session revocation and re-enrollment procedures; do not replace it casually if enrolled devices depend on the current owner workflow. The owner token authorizes enrollment challenges only; it is not an OpenAI API key or a device session credential.
-
-To use OpenAI in a future supported provider integration, create an API key in the owner's official OpenAI Platform account and place it locally in `OPENAI_API_KEY`. Do not put it in `JARVIS_OWNER_CONTROL_TOKEN`. The present application does not validate or consume that setting. Never commit `.env`, paste its contents into reports, or share screenshots containing it. If startup reports an invalid `PORT` or unreadable `.env`, correct that local setting; if owner enrollment is reported disabled, generate a token with the script and restart.
-
-## API surface
-
-| Route | Purpose | Security notes |
-|---|---|---|
-| `GET /api/status` | Minimal health status | Public response exposes only `ONLINE` or `DEGRADED` |
-| `POST /api/enrollment/challenge` | Create one-time enrollment challenge | Requires `x-owner-control-token`; disabled if owner token is not configured |
-| `POST /api/enrollment/redeem` | Register device public key | Requires proof-of-possession signature |
-| `POST /api/session` | Establish device session | Requires Ed25519 signature over timestamp + one-time nonce |
-| `POST /api/request` | Submit a bounded request | Requires active session plus canonical signed request headers |
-| `POST /api/approval/approve` | Approve eligible pending task | Requires signed request and an eligible active device |
-| `POST /api/approval/reject` | Reject eligible pending task | Requires signed request and an eligible active device |
-| `POST /api/device/revoke` | Revoke self or permitted target | Cross-device revocation requires `DEVICE_MANAGE` |
-| `GET /api/audit` | Read recent audit records | Requires signed request and `DEVICE_MANAGE` permission |
-| `POST /api/hud/session` | Legacy HUD bootstrap | Intentionally returns `503`; direct session minting is disabled |
-
-Protected API requests use the canonical signed payload contract:
-
-`METHOD:PATH:SESSION_ID:TIMESTAMP:NONCE:SHA256(BODY)`
-
-The nonce must be fresh and is consumed once. A browser that cannot support Ed25519/WebCrypto or secure key storage must fail closed and use the text UI only after a valid device session is established.
-
-## Security boundaries and known limitations
-
-- Voice is push-to-talk only; there is no wake-word or continuous capture by default. Browser speech recognition may use a vendor/remote service; **local-only processing is not guaranteed**. The HUD discloses this and provides text input.
-- The browser POC is not yet a complete native Android companion or remote-device transport. Network access, Android Keystore-backed identity, enrollment QR workflow, two-phone permissions, and owner/delegated-admin management require separate verification.
-- The default enrollment challenge assigns limited permissions. Privileged audit viewing and cross-device revocation require `DEVICE_MANAGE`; the current UI does not yet provide an owner-approved permission assignment workflow.
-- The server binds to loopback by default. Do not expose it publicly or forward its port to an untrusted network.
-- Passing CI is necessary but not sufficient. Browser automation and checks on the owner's Windows 11 MSI remain required before Milestone 7 can be accepted.
+- PORT defaults to 3000 and is validated as a port number.
+- JARVIS_DEVICE_STATE_PATH and JARVIS_AUDIT_PATH can configure local state paths.
+- JARVIS_OWNER_CONTROL_TOKEN is required for owner-controlled enrollment and encrypted memory features; generate it locally with the script.
+- OPENAI_API_KEY is not used by the current deterministic planner. Adding it does not enable cloud AI.
+- Optional Piper settings configure local TTS. If not configured, the companion can fall back to browser speech synthesis.
 
 ## Validation
 
-CI runs on a Windows runner with Node.js 24 and executes:
+Latest observed hosted CI:
+- [new commit 6222e196 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500)
+- [dev merge commit d061216b — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606)
 
-1. `npm ci`
-2. `npm run build`
-3. `npm run lint`
-4. `npm test`
-
-See the [test branch audit](https://github.com/Guda-Abhishek/JARVIS/blob/test/docs/security-api-feature-audit-2026-10-23.md) and [GitHub Actions runs](https://github.com/Guda-Abhishek/JARVIS/actions). The traceability matrix and completion report are historical until refreshed with the final accepted `fix` commit and exact CI evidence.
+These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. See POC2.md for the acceptance register.
 
 ## Branch and release policy
 
-- Work on `new`, `test`, and `fix`; commit and push only to the branch that owns the work.
-- PRs from `new`, `test`, or `fix` target `dev` only when checks pass.
-- Never automate commits, PRs, or merges into `main`. The owner manually reviews and merges `dev` to `main`.
-- Do not force-push, reset, or discard unrelated work.
-- Do not claim success for an action whose outcome is uncertain.
+Use fix for debugging/regressions, test for test/audit work, new for features and staged development, enhancement for broader enhancements, and dev for integration. Create non-main PRs to dev. Do not automate changes to main; the owner performs the final dev → main merge manually.
