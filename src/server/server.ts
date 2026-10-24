@@ -28,12 +28,7 @@ export class JarvisServer {
     this.port = port;
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
-    if (this.ownerControlToken) {
-      this.personalMemory = new PersonalMemoryStore(
-        statePath ? statePath + '.memory' : './data/personal-memory.enc',
-        this.ownerControlToken,
-      );
-    }
+    this.personalMemory = this.jarvis.personalMemory;
     this.server = createServer(this.handleRequest.bind(this));
   }
 
