@@ -138,3 +138,20 @@ The Lovable branch's older POC and master documentation refer to a dirty 2026-10
 - Added `test/windows_desktop_agent.test.ts` to verify collection consistency for both operations and escaping of single quotes in PowerShell control names and text values.
 - Hosted CI passed for `fix` push, `fix` PR, `new` push, `test` push, and `enhancement` PR on that commit.
 - This is script-generation regression coverage. Actual UI Automation execution, unique control matching, and post-action behavior still require supervised Windows 11 acceptance.
+
+
+## Final consolidated hosted CI — 2026-10-24
+
+Final source/test commit `9a40f95528d32aaed63626a1c48ae1ef4e1cda51` passed all configured workflow stages (locked dependency install, TypeScript build, TypeScript check, automated suite, browser security smoke test):
+
+| Event | Run | Result |
+|---|---|---|
+| `fix` push | [40089155846](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089155846) | PASS |
+| `fix` PR | [40089159050](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159050) | PASS |
+| `new` push | [40089159384](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159384) | PASS |
+| `test` push | [40089168551](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089168551) | PASS |
+| `enhancement` PR | [40089122755](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089122755) | PASS |
+
+The new Windows adapter tests verify the generated PowerShell control lookup uses the same collection for uniqueness checking and indexing, escapes single-quoted control/text values, includes password/financial-like field guards, compares the resulting value independently, and rejects missing text or invalid control names. These are code/script-generation tests, not live UI Automation acceptance.
+
+Historical dirty-worktree results above are retained as historical evidence and are not superseded silently: exact-commit hosted CI is green now, while real Windows interactive session, physical audio, Android/two-phone, native iOS, and independent security review remain release blockers. `npm audit` was not part of the configured workflow and remains unverified.
