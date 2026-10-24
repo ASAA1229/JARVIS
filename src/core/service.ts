@@ -19,7 +19,7 @@ import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { DeviceSecurityService } from './deviceSecurity.js';
-import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
+import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
 
 export interface TaskLifecycleRecord {
   id: TaskId;
@@ -307,6 +307,39 @@ export class JarvisCoreService {
 
       // Dispatch ONLY to allowlisted adapters
       switch (opRequest.operation) {
+        case 'memory:list': {
+          if (!this.personalMemory) {
+            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          } else {
+            rawResult = { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: this.personalMemory.list(), evidence: { memoryAvailable: true, encryptedAtRest: true } };
+          }
+          break;
+        }
+        case 'memory:save': {
+          if (!this.personalMemory) {
+            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          } else {
+            const record = this.personalMemory.save(
+              opRequest.parameters.category as MemoryCategory,
+              opRequest.parameters.content as string,
+              opRequest.parameters.ttlDays as number | undefined,
+            );
+            this.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, taskRecord.deviceId, taskId);
+            rawResult = { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: record.id, category: record.category, createdAt: record.createdAt, expiresAt: record.expiresAt }, evidence: { encryptedAtRest: true, memoryId: record.id } };
+          }
+          break;
+        }
+        case 'memory:delete': {
+          if (!this.personalMemory) {
+            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          } else {
+            const id = opRequest.parameters.id as string;
+            const deleted = this.personalMemory.delete(id);
+            this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted }, taskRecord.deviceId, taskId);
+            rawResult = { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted } };
+          }
+          break;
+        }
         case 'system:get_os_info':
           rawResult = await this.systemAdapter.getOsInfo();
           break;
@@ -463,6 +496,10 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
+    if (approval.operation.startsWith('memory:') && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
+      throw new Error('Approver lacks DEVICE_MANAGE permission for personal memory');
+    }
     if ((approval.operation === 'app:launch' || approval.operation.startsWith('desktop:')) && !approver.permissions.includes(Permission.APP_LAUNCH)) {
       this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error('Approver lacks permission for this action');
