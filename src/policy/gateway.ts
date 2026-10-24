@@ -91,6 +91,9 @@ export class PolicyGateway {
       },
     ],
     ...[
+      ['memory:save', ['category', 'content', 'ttlDays']],
+      ['memory:list', []],
+      ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],
       ['desktop:type_text', ['text']],
       ['desktop:paste_text', ['text']],
@@ -103,9 +106,9 @@ export class PolicyGateway {
       ['desktop:set_value', ['name', 'text']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
-      requiredPermission: Permission.APP_LAUNCH,
-      riskTier: operation === 'desktop:inspect_window' ? RiskTier.LOW : RiskTier.HIGH,
-      requiresApproval: operation !== 'desktop:inspect_window',
+      requiredPermission: operation.startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
+      riskTier: operation === 'desktop:inspect_window' || operation === 'memory:list' ? RiskTier.LOW : RiskTier.HIGH,
+      requiresApproval: !['desktop:inspect_window', 'memory:list'].includes(operation as string),
       allowedParameters: allowedParameters as string[],
     }] as [string, PolicyRule]),
     ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
