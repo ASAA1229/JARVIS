@@ -93,3 +93,9 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 
 - [x] Added `test/rejection_permissions.test.ts` to verify a read-only device cannot reject desktop or personal-memory approvals without the matching permission.
 - [ ] Run and verify hosted CI on the latest branch head; the previous 101-test green run predates this new test file.
+
+## Rejection test harness correction — 2026-10-24
+
+- Initial CI failed two newly added tests because they used asynchronous `assert.rejects` for synchronous permission exceptions. The expected permission checks were reached.
+- Updated the assertions to `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- [ ] Re-run CI on the corrected test commit and verify the full browser smoke stage before closing this item.
