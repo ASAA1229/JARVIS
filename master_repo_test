@@ -100,3 +100,32 @@ Build/install on physical devices. Verify enrollment proof-of-possession, TLS tr
 ## Rules
 
 Never remove tests just to make a suite green. Never replace real behavior with production mocks. Label simulated tests honestly. Run all checks against the exact commit being accepted. Preserve unique acceptance criteria and source tests until the complete inventory is reviewed. Do not release or promote to `main` automatically.
+
+
+## Hosted CI on the consolidated baseline (2026-10-24)
+
+Exact source commit: `1add4dd60da8bfdfdbdf4db6966b2460fd088bf5`.
+
+| Branch/event | Hosted run | Result |
+|---|---|---|
+| `fix` push | [40086575134](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086575134) | PASS |
+| `fix` pull request to `dev` | [40086577025](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577025) | PASS |
+| `new` push | [40086577872](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577872) | PASS |
+| `test` push | [40086580489](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086580489) | PASS |
+
+The configured workflow passes clean dependency installation, build, TypeScript checking, automated tests, and browser smoke tests on this exact commit. The earlier local browser smoke timeout recorded above is historical evidence from a dirty worktree and does not describe the current hosted run. The current pass is still a browser harness result, not physical microphone/voice acceptance.
+
+## Branch inventory and source-test preservation
+
+A non-truncated recursive tree inventory was retrieved for `main`, `dev`, `new`, `fix`, `test`, `lovable`, `enhancement`, and `Jarvis-Abhi`. The `new`, `fix`, `test`, and `enhancement` test files are aligned on the consolidated baseline. Older `dev`/`lovable` variants of tests (including core, hardening, browser smoke, voice HUD, audit and recovery tests) differ from the consolidated versions; they were not blindly copied over newer regression coverage. Their different assertions should be reviewed if future regressions indicate a missing case. The `feature/local-neural-tts` branch was not included in this tree query because the connected GitHub fetch wrapper rejected its slash-containing ref name.
+
+The Lovable branch's older POC and master documentation refer to a dirty 2026-10-23 tree and are superseded for current status by the consolidated `POC.md`, `POC2.md`, `master_repo_md.md`, and this register. Its ADRs and milestone audit documents remain historical design/evidence references, not proof of current runtime acceptance.
+
+## Still requiring target-environment evidence
+
+- [ ] Real visible Notepad/app launch through the actual Windows backend and JARVIS UI/voice/text request path.
+- [ ] Windows UI Automation target selection, content entry, cancellation and independent persisted-result verification.
+- [ ] Physical microphone permission, wake-word lifecycle, stop/mute/cancel, recognition recovery, and audible TTS.
+- [ ] Android enrollment and revocation with two physical phones, independent keys/sessions/permissions, and secure transport review.
+- [ ] Security adversarial tests for persistence/audit failure, approval binding and policy non-bypass.
+- [ ] Native iOS agent and universal application-control acceptance remain incomplete.
