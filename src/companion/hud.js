@@ -150,28 +150,6 @@ function setupEventListeners() {
     }
   });
 
-  btnHandsFreeToggle.addEventListener('click', () => {
-    if (!handsFreeEnabled) enableHandsFree(); else disableHandsFree();
-  });
-
-  btnHandsFreePause.addEventListener('click', () => {
-    if (!handsFreeEnabled) {
-      setAssistantState('HANDS-FREE DISABLED', 'Enable hands-free mode before resuming wake detection.');
-      return;
-    }
-    if (handsFreeStandby) {
-      handsFreeStandby = false;
-      stopHandsFreeStandby();
-      setAssistantState('LISTENING PAUSED', 'Wake detection paused. Resume to regain standby listening.');
-      btnHandsFreePause.textContent = 'RESUME LISTENING';
-      btnHandsFreePause.setAttribute('aria-pressed', 'false');
-      return;
-    }
-    handsFreeStandby = true;
-    btnHandsFreePause.textContent = 'PAUSE LISTENING';
-    btnHandsFreePause.setAttribute('aria-pressed', 'true');
-    startHandsFreeStandby();
-  });
 
   btnHandsFreeToggle.addEventListener('click', () => {
     if (!handsFreeEnabled) enableHandsFree(); else disableHandsFree();
@@ -527,29 +505,6 @@ function disableHandsFree() {
   setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'STANDBY', 'Hands-free disabled. Microphone will not listen until you activate voice again.');
 }
 
-function speakResponse(message) {
-  const text = String(message || '').trim();
-  if (!text || !speechOutputEnabled || !speechSynthesisAvailable || !('SpeechSynthesisUtterance' in window)) return;
-  try {
-    window.speechSynthesis.cancel();
-    isSpeaking = true;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.rate = 1;
-    const chooseVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      utterance.voice = voices.find((voice) => /^en(-|_)/i.test(voice.lang) && /natural|neural|english/i.test(voice.name)) || voices.find((voice) => /^en(-|_)/i.test(voice.lang)) || null;
-    };
-    chooseVoice();
-    utterance.onend = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
-    utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
-    window.speechSynthesis.speak(utterance);
-  } catch (error) {
-    isSpeaking = false;
-    console.warn('JARVIS speech output unavailable:', error);
-  }
-}
-
 function startVoiceCapture() {
   if (isMicMuted) {
     setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute only when you want to start voice capture.');
@@ -666,8 +621,6 @@ async function submitDirective(text) {
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
-    if (typeof data.message === 'string' && data.message.trim()) void speakResponse(data.message);
-
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       speakResponse(data.message || 'I need your approval before performing that action.');
@@ -714,7 +667,8 @@ async function submitDirective(text) {
 
 async function speakResponse(message) {
   const text = String(message || '').trim();
-  if (!text || isMicMuted) return;
+  if (!text || isMicMuted || !speechOutputEnabled) return;
+  isSpeaking = false;
   if (currentSession && window.JarvisDeviceCrypto?.signedFetch) {
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
@@ -725,10 +679,18 @@ async function speakResponse(message) {
         if (blob.type.includes('audio/wav') && blob.size > 44) {
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
-          audio.onended = () => URL.revokeObjectURL(url);
-          audio.onerror = () => URL.revokeObjectURL(url);
-          await audio.play();
-          return;
+          const releaseUrl = () => URL.revokeObjectURL(url);
+          audio.addEventListener('ended', releaseUrl, { once: true });
+          audio.addEventListener('error', releaseUrl, { once: true });
+          try {
+            await audio.play();
+            isSpeaking = true;
+            audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
+            return;
+          } catch (playError) {
+            releaseUrl();
+            throw playError;
+          }
         }
       }
     } catch (error) {
@@ -738,9 +700,12 @@ async function speakResponse(message) {
   if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    isSpeaking = true;
     utterance.lang = 'en-GB';
     utterance.rate = 0.92;
     utterance.pitch = 0.9;
+    utterance.onend = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
+    utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
     window.speechSynthesis.speak(utterance);
   }
 }
