@@ -268,7 +268,9 @@ try {
   // The 15-second capture bound stops recognition and remains visible to the user.
   await ptt.click();
   await hud.getByText('VOICE TIME LIMIT').waitFor({ state: 'visible', timeout: 7000 });
-  await ptt.click();
+  if (await ptt.getAttribute('aria-pressed') !== 'false') {
+    throw new Error('Voice time limit did not release the push-to-talk capture state');
+  }
 
   // Browser permission failure is explicit, releases the capture state, and leaves text available.
   const recognizerCount = await hud.evaluate(() => window.__mockRecognizers.length);
