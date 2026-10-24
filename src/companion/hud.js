@@ -257,7 +257,7 @@ function startHandsFreeStandby() {
     }
 
     if (isWakePhrase(normalized)) {
-      const wakePatterns = [/\\bhey jarvis\\b/, /\\bhello jarvis\\b/, /\\bhi jarvis\\b/, /\\bi am here\\b/, /\\bim here\\b/];
+      const wakePatterns = [/\bhey jarvis\b/, /\bhello jarvis\b/, /\bhi jarvis\b/, /\bi am here\b/, /\bim here\b/];
       let command = normalized;
       for (const pattern of wakePatterns) {
         if (pattern.test(command)) { command = command.replace(pattern, ' ').trim(); break; }
