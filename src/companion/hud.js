@@ -666,6 +666,7 @@ async function submitDirective(text) {
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
+    if (typeof data.message === 'string' && data.message.trim()) void speakResponse(data.message);
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
@@ -707,6 +708,40 @@ async function submitDirective(text) {
     transcriptSubmit.disabled = false;
     sendButton.textContent = originalButtonText;
     if (isHandsFreeEnabled && !isSpeaking && !isListening && !isMicMuted) scheduleHandsFreeRestart();
+  }
+}
+
+
+async function speakResponse(message) {
+  const text = String(message || '').trim();
+  if (!text || isMicMuted) return;
+  if (currentSession && window.JarvisDeviceCrypto?.signedFetch) {
+    try {
+      const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
+        method: 'POST', body: { text: text.slice(0, 1200) },
+      });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.type.includes('audio/wav') && blob.size > 44) {
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => URL.revokeObjectURL(url);
+          audio.onerror = () => URL.revokeObjectURL(url);
+          await audio.play();
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('Local neural TTS unavailable; trying browser speech.', error);
+    }
+  }
+  if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-GB';
+    utterance.rate = 0.92;
+    utterance.pitch = 0.9;
+    window.speechSynthesis.speak(utterance);
   }
 }
 
