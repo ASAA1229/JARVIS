@@ -38,6 +38,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:hotkey',
     'desktop:zoom',
     'desktop:copy_selection',
+    'desktop:paste_clipboard',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -163,6 +164,18 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const pasteMatch = requestText.match(/\bpaste\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s+(?:here|there|into\s+(?:this|the\s+current)\s+(?:app|document|note))\s*$/i);
     if (pasteMatch && pasteMatch[1].trim()) {
       return { intent: 'Paste explicit text in the foreground application', operations: [{ operation: 'desktop:paste_text', parameters: { text: pasteMatch[1].trim() }, justification: 'User specified text and destination context' }], confidence: 0.8, explanation: 'Will paste the supplied text into the foreground application after approval.' };
+    }
+    if (/\bcopy\s+(?:this|the selected text)\s+and\s+paste\s+(?:it\s+)?(?:in|into)\s+(?:notepad|notes)\b/i.test(requestText)) {
+      return {
+        intent: 'Copy current selection into Notepad',
+        operations: [
+          { operation: 'desktop:copy_selection', parameters: {}, justification: 'Copy the explicitly referenced current selection' },
+          { operation: 'app:launch', parameters: { appId: 'notepad' }, justification: 'Open Notepad as the requested destination' },
+          { operation: 'desktop:paste_clipboard', parameters: {}, justification: 'Paste the copied selection into the foreground Notepad window' },
+        ],
+        confidence: 0.82,
+        explanation: 'This workflow copies the current selection, opens Notepad, and pastes it. JARVIS will request approval for each state-changing step.',
+      };
     }
     if (/\b(copy|copy this|copy selected text)\b/.test(text)) {
       return { intent: 'Copy selected text from the foreground application', operations: [{ operation: 'desktop:copy_selection', parameters: {}, justification: 'User explicitly requested copying the current selection' }], confidence: 0.82, explanation: 'Will copy the foreground selection after approval; clipboard data may be sensitive.' };
