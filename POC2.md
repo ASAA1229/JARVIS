@@ -57,3 +57,13 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - [x] Hosted CI green on `fix` push/PR, `new` push, `test` push, and `enhancement` PR; all workflow stages completed successfully. Exact run links are in [the audit](docs/repository-audit-2026-10-24.md).
 - [x] Added six focused Windows UI Automation script/validation regression tests.
 - [ ] Live Windows interactive-session acceptance, real microphone/TTS/wake behavior, Android two-phone tests, native iOS, and independent adversarial security review remain blocked on target devices/owner review. These cannot be truthfully completed by hosted CI alone.
+
+## Approval binding and policy input hardening — 2026-10-24
+
+- [x] **Code change:** Task-scoped approval checks now bind approval to task ID, requesting device ID, operation, and parameter hash.
+- [x] **Code change:** Invalid runtime parameter containers fail closed before key enumeration/hashing.
+- [x] **Code change:** Approval rejection checks the same operation-family permissions as approval for memory and desktop actions.
+- [x] **Regression tests added:** `test/policy_gateway_binding.test.ts` covers cross-task replay, cross-device replay, operation substitution, malformed containers, and disallowed parameters.
+- [ ] **CI validation pending:** Confirm PR #11 passes build, typecheck, automated tests, and browser smoke test; do not mark this code accepted until the exact commit is green.
+- [ ] **Further approval contract tests:** expiry, duplicate/concurrent transitions, stale task state, audit persistence failure, and task/device parameter binding through the HTTP API remain open.
+- [ ] **Release gates unchanged:** physical Windows app interaction, microphone/TTS, Android two-phone acceptance, native iOS, remote transport review, and independent adversarial security review remain incomplete.
