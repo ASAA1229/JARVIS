@@ -98,11 +98,14 @@ export class PolicyGateway {
       ['desktop:zoom', ['direction']],
       ['desktop:copy_selection', []],
       ['desktop:paste_clipboard', []],
+      ['desktop:inspect_window', []],
+      ['desktop:click_control', ['name']],
+      ['desktop:set_value', ['name', 'text']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: Permission.APP_LAUNCH,
-      riskTier: RiskTier.HIGH,
-      requiresApproval: true,
+      riskTier: operation === 'desktop:inspect_window' ? RiskTier.LOW : RiskTier.HIGH,
+      requiresApproval: operation !== 'desktop:inspect_window',
       allowedParameters: allowedParameters as string[],
     }] as [string, PolicyRule]),
     ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
