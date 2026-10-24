@@ -91,6 +91,7 @@ export class PolicyGateway {
       },
     ],
     ...[
+      ['desktop:launch_and_type', ['appId', 'text']],
       ['desktop:type_text', ['text']],
       ['desktop:paste_text', ['text']],
       ['desktop:hotkey', ['keys']],
