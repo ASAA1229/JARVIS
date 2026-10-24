@@ -111,7 +111,12 @@ export class PolicyGateway {
   }
 
   private grantIdentity(grant: Pick<RememberedGrant, 'deviceId' | 'operation' | 'parametersHash'>): string {
-    return CryptoUtil.canonicalHash(grant);
+    // Hash only the authorization scope; timestamps are metadata, not identity.
+    return CryptoUtil.canonicalHash({
+      deviceId: grant.deviceId,
+      operation: grant.operation,
+      parametersHash: grant.parametersHash,
+    });
   }
 
   private loadRememberedGrants(): void {
