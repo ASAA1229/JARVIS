@@ -81,3 +81,10 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - Corrected the test to use a valid parameter shape for the alternate operation, preserving the intended replay/binding assertion.
 - Corrected test commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
 - [ ] Re-run/confirm hosted CI for the corrected PR head before marking the new suite PASS.
+
+## Corrected approval-binding CI result — 2026-10-24
+
+- [x] Hosted CI run [40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717) completed successfully for code/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`: locked dependency install, TypeScript build, TypeScript check, automated suite (**101 passed, 0 failed**), and browser security smoke test all passed. The run is code/test evidence for that commit; documentation-only follow-up commits do not change source or tests. It does not establish physical Windows, microphone/TTS, Android/iOS, or independent security acceptance.
+- [ ] Complete broader approval HTTP contract tests (expiry, duplicate/concurrent transitions, stale task state, persistence/audit failure).
+- [ ] Complete route-by-route adapter/API error disclosure review and independent adversarial review.
+- [ ] Complete physical Windows/voice/Android acceptance; native iOS remains incomplete.
