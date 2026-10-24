@@ -14,6 +14,10 @@
 
 The current `fix` work addresses cryptographic session establishment, request signing/replay protection, enrollment proof-of-possession, API authorization and validation, approval-state correctness, persistence failure handling, safe DOM rendering, browser voice lifecycle, and regression tests. The milestone is not complete merely because build/typecheck/tests pass: browser runtime behavior, target Windows 11 behavior, and all remaining high-risk findings must be verified too.
 
+## Current implementation status
+
+See [Cross-Device Implementation Status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md) for the real execution boundaries, security model, supported Windows actions, encrypted personal-memory API, official-store discovery, and the remaining native Android/iOS work. CI passing does not replace real Windows UI or mobile-device acceptance tests.
+
 ## Expanded personalized-assistant vision
 
 The target product requirements and capability status model are documented in [Personalized JARVIS Requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md). The runtime capability catalogue is available at `GET /api/capabilities`; optionally filter it with `?platform=windows`, `android`, `ios`, or `web`. This endpoint describes capability status only and does not authorize actions.
