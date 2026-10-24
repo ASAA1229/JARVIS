@@ -338,6 +338,7 @@ export class JarvisCoreService {
         case 'desktop:hotkey':
         case 'desktop:zoom':
         case 'desktop:copy_selection':
+        case 'desktop:paste_clipboard':
           rawResult = await this.desktopAgent.execute({
             operation: opRequest.operation,
             parameters: opRequest.parameters,
