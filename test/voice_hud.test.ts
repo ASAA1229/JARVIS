@@ -121,7 +121,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /MICROPHONE UNAVAILABLE/);
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
-    assert.match(jsText, /finalized segments from interim hypotheses/);
+    assert.match(jsText, /finalized segments separate from interim hypotheses/);
     assert.match(jsText, /Analyzing the recognized command through the policy gateway/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
