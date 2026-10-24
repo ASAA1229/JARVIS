@@ -142,8 +142,8 @@ function setupEventListeners() {
     updateMuteControl();
     if (isMicMuted) {
       disableHandsFree();
+      disableWakeDetection();
       cancelVoiceCapture();
-      disableHandsFree();
       setAssistantState('PRIVACY MODE — MIC MUTED', 'Microphone hardware access disabled.');
     } else {
       setAssistantState('STANDBY', 'Microphone armed. Enable hands-free or use push-to-talk.');
@@ -152,7 +152,7 @@ function setupEventListeners() {
 
 
   btnHandsFreeToggle.addEventListener('click', () => {
-    if (!handsFreeEnabled) enableHandsFree(); else disableHandsFree();
+    if (!handsFreeEnabled) enableWakeDetection(); else disableWakeDetection();
   });
 
   btnHandsFreePause.addEventListener('click', () => {
@@ -234,7 +234,7 @@ function stopHandsFreeStandby() {
   }
 }
 
-function enableHandsFree() {
+function enableWakeDetection() {
   if (isMicMuted) {
     setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute before enabling hands-free listening.');
     return;
@@ -249,7 +249,7 @@ function enableHandsFree() {
   startHandsFreeStandby();
 }
 
-function disableHandsFree() {
+function disableWakeDetection() {
   handsFreeEnabled = false;
   handsFreeStandby = false;
   stopHandsFreeStandby();
@@ -296,7 +296,7 @@ function startHandsFreeStandby() {
     if (!handsFreeEnabled) return;
     if (event.error === 'not-allowed') {
       setAssistantState('MICROPHONE DENIED', 'Permission denied. Re-enable microphone access to use hands-free mode.');
-      disableHandsFree();
+      disableWakeDetection();
       return;
     }
     if (handsFreeStandby) {
