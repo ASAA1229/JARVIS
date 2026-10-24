@@ -117,6 +117,10 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.strictEqual(jsRes.status, 200);
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
+    assert.match(jsText, /NO SPEECH DETECTED/);
+    assert.match(jsText, /MICROPHONE UNAVAILABLE/);
+    assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
+    assert.match(jsText, /describeSpeechRecognitionError/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);

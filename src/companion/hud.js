@@ -405,7 +405,8 @@ function createSpeechRecognizer(captureGeneration) {
       return;
     }
     cancelVoiceCapture();
-    setAssistantState('SPEECH ENGINE ERROR', `Recognition failed: ${event.error}`);
+    const failure = describeSpeechRecognitionError(event.error);
+    setAssistantState(failure.title, failure.detail);
   };
 
   recognizer.onend = () => {
@@ -427,6 +428,41 @@ function createSpeechRecognizer(captureGeneration) {
   };
 
   return recognizer;
+}
+
+/**
+ * Explain browser speech-recognition failures in actionable terms.
+ * Adapted from the legacy JARVIS_ABHI voice-input pattern: distinguish
+ * silence, missing devices, and service/network failures instead of
+ * reporting every failure as a generic engine error.
+ */
+function describeSpeechRecognitionError(error) {
+  const messages = {
+    'no-speech': {
+      title: 'NO SPEECH DETECTED',
+      detail: 'No speech was detected. Check your microphone input level, then press the voice button and try again.'
+    },
+    'audio-capture': {
+      title: 'MICROPHONE UNAVAILABLE',
+      detail: 'No usable microphone was found. Check Windows microphone settings, the selected input device, and whether another app is using it.'
+    },
+    'network': {
+      title: 'SPEECH SERVICE UNAVAILABLE',
+      detail: 'The browser speech service could not be reached. Check internet access or use the text input; this does not indicate that the local JARVIS core is offline.'
+    },
+    'aborted': {
+      title: 'VOICE CAPTURE STOPPED',
+      detail: 'The browser stopped voice capture before a transcript was ready. Press the voice button to try again.'
+    },
+    'language-not-supported': {
+      title: 'SPEECH LANGUAGE UNAVAILABLE',
+      detail: 'The browser does not support the configured English recognition language. Try a supported browser or use text input.'
+    }
+  };
+  return messages[error] || {
+    title: 'SPEECH RECOGNITION ERROR',
+    detail: `Browser recognition failed (${String(error || 'unknown error')}). Check microphone permissions and retry, or use text input.`
+  };
 }
 
 function normalizeVoiceText(value) {
