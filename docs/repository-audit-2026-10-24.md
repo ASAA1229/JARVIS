@@ -141,3 +141,9 @@ Source changes in this branch:
 Validation status at report update: source and tests are committed on `gap-closure`; PR CI must be checked for the final head before claiming automated validation. The new test file has not been represented as passing until hosted CI confirms it. This change addresses one concrete security gap, not the entire approval/API lifecycle.
 
 Still open: approval expiry and concurrency API tests, persistence/audit-failure cases, error-redaction review, independent adversarial review, Windows interactive-session acceptance, physical voice acceptance, Android two-phone enrollment/revocation, secure remote transport, and native iOS.
+
+## Addendum — adapter exception disclosure hardening (2026-10-24)
+
+The `gap-closure` branch additionally changes the core execution catch path to return a generic failure message instead of surfacing arbitrary adapter exception text. Audit evidence includes only the exception class, not the exception message. Regression test `test/adapter_error_redaction.test.ts` injects a path-like diagnostic and asserts that the private path does not appear in the task result or public audit records.
+
+This is a targeted fix for the core adapter exception path. Some adapters may still return their own authored error messages, so a full route-by-route and adapter-by-adapter disclosure review remains open. Exact-head CI validation is pending at this documentation update; do not claim the newly added tests pass until the PR check reports success.
