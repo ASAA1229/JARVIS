@@ -1,155 +1,118 @@
 # JARVIS — Master Repository Documentation
 
-**Snapshot date:** 2026-10-24
-**Current feature branch:** `new` (device security workflow + M12 gesture foundation)
-**Disposition:** POC implementation exists; integrated acceptance remains BLOCKED / NOT RELEASE-READY.
+**Snapshot date:** 2026-10-24  
+**Current planning baseline:** JARVIS Gap Closure Rounds 1–15  
+**Disposition:** POC foundation exists; universal assistant acceptance remains **BLOCKED / NOT RELEASE-READY**.
 
-> This file consolidates the currently reviewed project facts, architecture, branch policy, milestone status, security invariants, and known limitations. It is not a claim that every Markdown file on every branch has been read. Repository-wide file enumeration for every ref is not exposed by the current connected GitHub actions; existing documentation must not be deleted until a complete branch-by-branch inventory and preservation check can be performed.
+This is the current summary of product scope, implementation evidence, branch policy and acceptance blockers. Historical source-document consolidation is retained in Mast_repo_md2.md; this file is not a claim that every historical item has been revalidated.
 
 ## 1. Product goal
 
-JARVIS is a privacy-conscious personal AI assistant intended to start with a secure Windows desktop POC and browser companion/HUD, then expand to Android companion devices and additional capabilities. The initial supported actions are read-only system information and selected installed-application launching. The project must prioritize security, truthful outcomes, explicit approval, and incremental evidence-based delivery over feature breadth.
+JARVIS is a security-first, voice-driven personal AI operating assistant intended to do work end-to-end across supported applications and devices. Initial devices are the Windows 11 MSI laptop and two Android phones. The goal includes Windows application control, email, WhatsApp and other messaging, SMS, supported normal/online calls, Microsoft Teams, Microsoft 365, documents, calendars, reminders, recurring schedules and multi-step workflows.
 
-## 2. Current source and status
+The universal application goal is capability-based discovery and automation, not an unsupported promise of unrestricted control. JARVIS must identify the safest permitted API/UI adapter, verify the outcome, and report unsupported operations honestly.
+
+## 2. Current repository and branch state
+
+At the start of the 2026-10-24 audit, remote branches were main, dev and new. PR #12 (new → dev) was already merged at commit d061216b2a007992e4ddae912d8e88c812934bd1. The new head was 6222e1964774c78e6853d6113335b1a3f0284881. Both refs pointed to the same Git tree; dev was one merge commit ahead of new.
+
+Missing role branches fix, test and enhancement were recreated from dev. They now exist as separate working branches. main was not modified.
+
+- main: production/release; owner-controlled final release only.
+- dev: integration target; non-main changes arrive through PR.
+- fix: bug fixes and regression work.
+- test: test, audit and evidence work.
+- new: staged feature development.
+- enhancement: broader feature enhancements.
+
+Never force-push, rewrite history, discard dirty work, or delete branches without explicit authorization. Do not commit/push directly to dev. PRs target dev only. Never automate a merge into main; the owner performs any eventual dev → main release merge manually.
+
+## 3. Current source status
 
 - Runtime: Node.js 24 + TypeScript modular monolith.
-- Host: Windows 11 target; backend currently loopback-only at `127.0.0.1:3000`.
-- Companion: browser-based HUD with text fallback and push-to-talk / Web Speech integration. Browser speech recognition remains browser/vendor-dependent and is not proven local/offline.
-- M12 gesture foundation: opt-in browser webcam, same-origin MediaPipe hand landmarks in a worker, HUD-only cursor/gesture previews. It cannot call backend actions. Physical webcam accuracy and target-laptop performance remain unverified; see [M12 status](docs/m12-gesture-spatial-interaction.md).
-- Android: separate M9 prototype exists on `new`; it is not integrated with the backend and has not passed physical-device acceptance.
-- Overall release status: **BLOCKED — NOT READY**.
-- Current remediation evidence is documented in `docs/security-api-feature-audit-2026-10-23.md`, `docs/final-integration-acceptance-2026-10-23.md`, and `docs/traceability-matrix.md`.
+- Server: currently loopback-bound; this does not enable secure remote phone access.
+- Security: Ed25519 device/session foundation, signed requests, replay checks, enrollment proof-of-possession, owner approval/TOTP step-up, revocation, default-deny policy gateway, task-bound approvals, and hash-chained audit logging.
+- Windows: selected read-only system queries, small static app allowlist plus constrained Start-menu discovery, and bounded foreground-window UI Automation for text, clipboard, hotkeys, zoom and named controls.
+- Companion: browser HUD with text fallback and explicit push-to-talk; optional Piper TTS and browser speech synthesis.
+- Memory: encrypted local categorized store with TTL/integrity foundations.
+- Store: official-store search destinations only, not silent installation.
+- Capability registry distinguishes implemented, partial, planned and restricted.
 
-## 3. Branch policy
+See POC.md for the evidence-backed current baseline, POC2.md for the acceptance register, docs/PERSONALIZED_JARVIS_REQUIREMENTS.md for the 15 discovery decisions, and docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md for cross-device limits.
 
-- `main`: production/release; never commit, push, merge, or automate promotion into it. Owner performs any promotion manually from `dev`.
-- `dev`: integration branch. Feature/fix/audit branches reach it through pull requests.
-- `new`: feature development / historical baseline and separate Android prototype.
-- `fix`: current security remediation and regression work.
-- `test`: audit baseline and testing evidence.
-- `lovable`: partial UI candidate; do not wholesale merge the scaffold.
+## 4. Hosted CI evidence
 
-Do not force-push, rewrite history, discard dirty changes, or delete branches/worktrees without inspection and explicit authorization. PRs from `new`, `fix`, `test`, or other work branches target `dev`, never `main` automatically.
+- new commit 6222e1964774c78e6853d6113335b1a3f0284881: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500
+- dev merge commit d061216b2a007992e4ddae912d8e88c812934bd1: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606
 
-## 4. Architecture and execution flow
+The new commit message records the final 103-test security CI pass. These results cover configured CI only. They do not prove real Windows UI acceptance, physical audio, native Android, messaging/call integrations, or universal app control. npm audit remains unverified in the current baseline.
 
-Expected lifecycle:
+## 5. Architecture and execution flow
 
-`Request → Device/session authentication → Intent/planner → PolicyGateway → Task-scoped approval when required → Allowlisted adapter → Outcome verification → Audit → User-visible result`
+Request → device/session authentication → bounded intent/planner → PolicyGateway → task-scoped approval when required → authorized adapter → outcome verification → audit → user-visible result.
 
-Core areas include `src/core/identity.ts`, `src/core/service.ts`, `src/policy/gateway.ts`, `src/planner/planner.ts`, `src/crypto/crypto.ts`, `src/audit/audit.ts`, `src/verification/verifier.ts`, `src/adapters/windowsAppLauncher.ts`, `src/adapters/windowsSystem.ts`, `src/server/server.ts`, `src/companion/hud.*`, and `src/voice/voiceManager.ts`.
+Planner/model output is advisory only and never directly executes an action. Each state-changing operation must pass the central policy gateway and a registered executor. Approval is bound to task, device, operation, canonical parameters and expiry. Unexpected state stops dependent steps; retries and rollback are permitted only when safe.
 
-AI output is advisory only and must never authorize or directly execute actions. Every action must pass through the central policy gateway and its authentication, risk, approval, and allowlist rules.
+## 6. Security invariants
 
-## 5. Security invariants
+1. Default deny; unknown operations are rejected.
+2. No unrestricted shell, administrator elevation or security bypass.
+3. Strict blocks remain for financial/payment automation, credential entry and voice-only high-risk authentication.
+4. Independent device identities, keys, permissions and sessions; replay and expired/revoked requests are rejected.
+5. Audit records are tamper-evident and redacted; security-state failures fail closed.
+6. No success claim based only on command dispatch or a mock.
+7. User-folder/workspace scope, deletion quarantine/recovery, reviewed scripts and risk-based approvals are required before broad file/terminal control.
+8. Local-first memory and private-data handling; cloud sharing must be minimized and authorized according to policy.
+9. Remote operation remains disabled until authenticated transport, device authorization and physical-device acceptance are proven.
+10. Mic/listening state must be visible and controllable. Wake-word listening remains off until the desired local implementation is validated.
 
-1. Default-deny authorization; unknown operations are rejected.
-2. No arbitrary shell execution, unrestricted scripts, or administrator elevation.
-3. Application launching is limited to a fixed allowlist; shell interpolation is prohibited.
-4. Task approvals are bound to the action and parameters, expire appropriately, and cannot be reused.
-5. Device identities, sessions, permissions, and revocation are independent per device.
-6. Revoked/expired sessions cannot authorize new actions; critical actions require stronger confirmation.
-7. Audit records are tamper-evident, redacted, and fail closed when integrity or persistence is unhealthy.
-8. No action is reported as verified success merely because a request was accepted or a mock returned success.
-9. Backend remains loopback-only until remote/mobile transport, enrollment, authorization, and TLS trust are independently implemented and verified.
-10. Microphone capture requires explicit activation, visible status, and reliable cancellation. Wake-word listening is disabled by default.
-11. No secrets, private keys, tokens, or unnecessary sensitive transcripts in logs or committed files.
+## 7. Capability and gap summary
 
-## 6. Milestones 1–12 status
+| Capability | Current status | Main acceptance gap |
+|---|---|---|
+| Build/static checks/tests/browser smoke | CI green on listed commits | Rerun after docs update; check each recreated branch run |
+| Device identity/approval gateway/audit | Implemented foundation | Independent review, complete API edge cases and recovery tests |
+| Windows app launch | Partial | Real target laptop, visible process/window and end-to-end verification |
+| Windows desktop interaction | Partial | Accessibility edge cases, destination verification, foreground safety and recovery |
+| Voice/HUD | Partial | Local always-ready wake phrase, physical mic, actual TTS and privacy validation |
+| Personal memory | Partial | User review/conflict UI, retrieval, retention and verified deletion across backups |
+| Native Android and two phones | Planned/incomplete | Native agent, Android Keystore, secure remote transport and physical-device acceptance |
+| Email, WhatsApp, SMS, calls, Teams, Microsoft 365 | Planned/incomplete | End-to-end app integrations, approval workflow and outcome confirmation |
+| Durable scheduled workflows | Planned/incomplete | Persistent state, recurrence, unattended execution and safe reconnect/recovery |
+| Universal application discovery/control | Partial/planned | Capability inventory and staged adapter coverage |
+| Official app installation | Partial | Current implementation is store-search handoff only |
+| Dependency advisory audit | Unverified | Successful npm registry advisory check |
+| Physical/independent security acceptance | Open | Target devices and independent adversarial review |
 
-Status labels: PASS, PARTIAL, BLOCKED, UNVERIFIED, FAIL. Historical reports are not a substitute for current evidence.
+## 8. Voice and gesture boundaries
 
-| Milestone | Scope | Current status | Evidence / next gate |
-|---|---|---|---|
-| M1 | Foundation and project setup | PASS (historical/local evidence) | Revalidate against current committed tree and clean CI. |
-| M2 | Secure Windows core | PARTIAL | Verify real target-Windows app launch and all adapter outcomes. |
-| M3 | Android enrollment/channel | BLOCKED | Physical Android enrollment and secure transport not accepted. |
-| M4 | Approval/task lifecycle | PARTIAL | Local regression evidence exists; finish API contract, owner permissions, and external acceptance. |
-| M5 | AI planner integration | PARTIAL | Planner must remain schema-validated and advisory; verify full runtime path. |
-| M6 | Verification, hardening, release | PARTIAL | Local checks pass on a dirty tree; exact-commit CI and external gates outstanding. |
-| M7 | Security remediation/completion | BLOCKED | Hosted CI, owner Windows acceptance, physical microphone behavior, and remaining security/API gates. |
-| M8 | Approved scope unknown | UNVERIFIED / BLOCKED | Approved specification and discovery decisions were not found in reviewed checkout. Do not invent scope. |
-| M9 | Android prototype/integration | PARTIAL / BLOCKED | Prototype is separate, unbuilt/unintegrated; backend APIs and device acceptance are missing. |
-| M10 | Approved scope unknown | UNVERIFIED / BLOCKED | Find authoritative specification in repository history/branches before implementation. |
-| M11 | Approved scope unknown | UNVERIFIED / BLOCKED | Find authoritative specification in repository history/branches before implementation. |
-| M12 | Gesture & spatial interaction | PARTIAL | Same-origin local camera/tracking foundation on `new`; 7/7 gesture unit tests and fake-camera Edge lifecycle/local-inference smoke passed. Physical precision/latency, voice arbitration, safe action integration, and hardware acceptance remain open. See [M12 ADR](docs/adr/ADR-006-local-gesture-tracking.md) and [acceptance plan](docs/m12-gesture-spatial-interaction.md). |
+The current companion uses explicit push-to-talk and text fallback. Browser recognition may be vendor/cloud-dependent; local/offline recognition is not proven. The voice manager defaults wake-word listening off. Optional Piper TTS needs target-laptop command-line and audible playback acceptance.
 
-## 7. Current local verification evidence (2026-10-23)
+The gesture preview is local/opt-in and does not authorize backend actions. Physical precision, false activation, latency, sustained resource use and policy-routed action integration require separate acceptance.
 
-Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`:
+## 9. Android and remote access
 
-- `npm ci`: PASS.
-- `npm run build`: PASS.
-- `npm run lint`: PASS (TypeScript no-emit check).
-- `npm test`: PASS, 51 tests, 0 failures, 0 skipped.
-- `npm run test:browser`: PASS after harness timeout correction; speech recognition simulated.
-- `npm audit --audit-level=low`: PASS, 0 reported vulnerabilities.
-- `npm ls --depth=0`: PASS.
-- Android build/device acceptance: BLOCKED (SDK/tooling and physical devices unavailable).
-- Hosted CI for exact tested tree: UNVERIFIED; authenticated CI evidence unavailable, and the harness timing correction was uncommitted in the report.
-- Real target-MSI and visible Notepad acceptance: not proven by the above test results; must be verified on the actual Windows runtime.
+The current source tree has no complete native Android agent. A browser PWA does not provide Android Keystore authority or unrestricted background telephony. Do not expose the loopback server to LAN/public clients until secure transport, enrollment, signed requests, replay resistance, endpoint authorization, session revocation and task-scoped approval are reviewed and tested. Test both phones independently; revoking one must not affect the other.
 
-See `master_repo_test` for the test evidence matrix and limitations.
+## 10. POC documentation convention
 
-## 8. Voice/audio status
+- POC.md contains implemented behavior supported by evidence.
+- POC2.md contains incomplete criteria, blockers, unverified behavior and required acceptance evidence.
+- Move an item from POC2 to POC only after the actual action and outcome-verification path passes.
+- Update existing documents; do not create duplicate Markdown status/requirements files.
+- Mast_repo_md2.md is the historical consolidated source archive and should not be mistaken for a fresh test run.
 
-The `fix` branch now adds an opt-in hands-free wake/command loop, configured wake and stop phrases, browser speech-synthesis responses, and recognition-error recovery to the HUD. The existing push-to-talk and text fallbacks remain. This is not yet accepted: run build/lint/tests and verify real microphone capture, same-utterance and separate-utterance commands, actual audible playback, recognizer restart behavior, and privacy behavior on the target Windows browser. Browser Web Speech behavior is browser/vendor-dependent and is not proven local/offline or reliably continuous in every environment. Automated/simulated recognition is not physical acceptance. Keep visible microphone state, immediate mute/disable, transcript disposal, duplicate prevention, timeout cleanup, and truthful execution outcomes.
+## 11. Required next steps
 
-## 9. Command execution / Notepad regression
+1. Re-run exact-commit CI after the current documentation updates and check recreated branch runs.
+2. Close security/approval/API/transport blockers before broad automation.
+3. Validate the Windows desktop agent and physical voice behavior on the target MSI.
+4. Implement and test native Android agents on both phones.
+5. Add communication/calendar/application adapters incrementally, with official integrations where possible.
+6. Implement durable workflow/scheduler, local/cloud privacy routing and full user-controlled memory lifecycle.
+7. Run failure-injection, performance, privacy, memory deletion and independent security acceptance.
+8. Keep main untouched; integrate non-main work through PRs to dev.
 
-A passing unit test or mock is not proof that Notepad visibly opened. Verify the full route from UI/text/voice input through command parsing, session authentication, `PolicyGateway`, approval, the Windows app-launch adapter, OS process start, outcome verification, audit, and response. The Windows backend must be running in the supported Windows environment. WSL/Linux must not silently claim it launched a Windows process. Report `requested`, `awaiting_approval`, `denied`, `failed`, `started`, and `verified` distinctly. A process PID does not alone prove a visible window is ready.
+## Overall assessment
 
-## 10. Android and remote access
-
-The M9 Android prototype is not integrated. It expects security capabilities/task APIs absent from the current backend and must fail closed. Do not expose the loopback backend to LAN or remote clients until authenticated TLS transport, endpoint authorization, enrollment proof-of-possession, request signing/replay prevention, session revocation, role enforcement, and approval contracts are implemented and reviewed. Two-phone isolation requires real two-device testing.
-
-## 11. Lovable candidate
-
-`experiments/lovable-ui-candidate/` is a partial design candidate. Port components selectively only. Do not replace the actual backend, API contracts, security gateway, or production HUD wholesale. UI states must reflect authoritative runtime results.
-
-## 12. POC and POC2 update convention
-
-- `POC.md` records only work implemented and supported by evidence. Distinguish locally tested, committed, and externally accepted work; do not label the overall POC complete while acceptance gates remain blocked.
-- `POC2.md` records all incomplete criteria, blockers, unverified behavior, future work already approved, and the exact acceptance evidence required to move an item into POC.
-- On every future POC update, re-evaluate both files together, move an item to POC only after evidence supports completion, and keep unresolved work in POC2.
-
-## 13. Documentation consolidation / preservation rule
-
-This master document is intended to be the consolidated project reference. The separate `master_repo_test` file contains test and acceptance evidence. The complete all-branch Markdown/test-file inventory has not yet been retrieved through the connected GitHub actions. Therefore, no broad deletion is claimed or performed by this commit. Do not delete source test code or unique milestone requirements until they have been consolidated and the complete file inventory is verified.
-
-## 14. Future milestone template
-
-Each future milestone requires an approved scope, non-goals, prerequisites, affected modules, security/privacy review, acceptance criteria, unit/integration/E2E/hardware tests, required environment, rollback, documentation, evidence, and a dependency map. A worktree existing is not evidence of milestone completion.
-
-## 15. Device enrollment and owner authentication (implemented locally, 2026-10-24)
-
-- First-owner bootstrap remains a one-time local action authorized by `JARVIS_OWNER_CONTROL_TOKEN`; it is disabled once an active device exists. The bootstrap identity receives the existing management permission to operate owner controls.
-- Later enrollment uses a signed, `DEVICE_MANAGE` session and fresh TOTP step-up to create a 120-second transaction. The QR carries a `jarvis://enroll` reference and a 256-bit one-time code. Only the SHA-256 hash is held in transaction state; the raw code is returned to the creator for QR/manual fallback and is never audited.
-- The enrolling browser creates an Ed25519 identity and signs a proof bound to transaction id, device name, platform, public-key hash, server-selected permissions, expiry, and the one-time code. Exchange creates a pending request only. A management device must approve the matching request hash with a fresh TOTP step before the identity is created. Reject/cancel/expiry are terminal states.
-- Google Authenticator-compatible TOTP uses RFC-style SHA-1, six digits, and 30-second periods through `otpauth`. Validation accepts at most one adjacent step and prevents accepted-step reuse. Five failed codes within 15 minutes lock verification until the window passes. The seed, accepted counter, and failure timestamps are AES-256-GCM encrypted at rest; the encryption key is HKDF-derived from the configured owner control token. Rotating that token makes existing encrypted TOTP state unreadable and requires owner recovery/reset.
-- `PolicyGateway` authorizes security controls; `DeviceIdentityManager` remains the source of device/session identity and immediate revocation. The UI lists device/session state, pending requests, least-privilege permissions, QR/manual code, cancellation, approval, rejection, and revocation.
-- Enrollment transactions are process-local and expire on access/sweep; restart invalidates in-flight transactions. TOTP state is persisted. Network binding remains `127.0.0.1`; this does not enable Android over LAN or the public internet. Remote phone scanning/approval is blocked pending HTTPS/remote transport design. Manual same-origin browser entry and automated HTTP tests are supported.
-- Current local evidence: `npm run build` PASS; `npm run lint` PASS; `npm test` PASS 75/75 when using the temporary Windows `os.userInfo()` compatibility shim; `npm run test:browser` FAILS at the existing voice-recognition timing wait in `test/browser-smoke.mjs:290`; the new TOTP/QR approval workflow is not covered by this browser harness; `npm audit` could not reach the npm advisory endpoint. See `master_repo_test`.
-- This implementation is **PARTIAL**, not device-accepted: physical Android/second-browser enrollment, authenticator app scan on a phone, browser camera QR scanning, session expiry/revocation across restart, and hosted CI are not proven by local unit/HTTP tests.
-
-
-## 16. Final branch/documentation reconciliation — 2026-10-24
-
-A recursive, non-truncated Git tree inventory was completed for all repository branches found in the branch list: `main`, `dev`, `enhancement`, `fix`, `new`, `test`, `lovable`, `Jarvis-Abhi`, and `feature/local-neural-tts` (the last was queried by its resolved commit SHA because its slash-containing branch name was rejected by the connector's tree URL parser).
-
-- The `fix`, `new`, `test`, and `enhancement` heads are aligned on the same consolidated implementation and current test/docs set.
-- `dev` is an ancestor of the consolidated baseline; its changes are represented in that ancestry, and its historical test/docs snapshots differ where the current remediation added newer coverage and status.
-- `main` remains untouched.
-- `lovable` contains older POC/master-doc snapshots plus design decisions and milestone reports. Those older snapshots cite a dirty 2026-10-23 tree and are not current acceptance evidence. The current POC/status/test registers above are the authoritative current summary; historical Lovable documents remain on their original branch for traceability and were not allowed to overwrite newer implementation or tests.
-- Relevant cross-cutting decisions carried into this master summary: Node.js 24/TypeScript modular monolith; AI/vision proposals have no execution authority; default-deny PolicyGateway and task-bound approvals; independent device identity/session/revocation; canonical signed requests and replay resistance; persistent revocation and fail-closed audit recovery; browser speech is vendor-dependent until proven local; native Android is preferred for production device-key security; camera/gesture input remains opt-in, visibly indicated, and non-authoritative.
-
-No source test or branch was deleted. Divergent older test variants were retained on their historical refs rather than blindly replacing newer tests. The current canonical suite, including the UI Automation control-count regression tests, is hosted-CI green on commit `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`. The exact CI runs and the correction to the earlier variable-binding audit are recorded in `master_repo_test` and `docs/repository-audit-2026-10-24.md`.
-
-**Open acceptance gate:** repository consolidation does not equal product acceptance. Real Windows runtime, physical audio, Android/two-phone, native iOS, and adversarial security verification remain open.
-
-
-## 17. Final automated baseline — 2026-10-24
-
-The final reviewed test/source baseline is `9a40f95528d32aaed63626a1c48ae1ef4e1cda51`. Hosted CI passed all configured stages on `fix` push and PR, `new` push, `test` push, and `enhancement` PR. It includes focused tests for Windows UI Automation control collection binding, quoting, sensitive-field guard construction, value read-back, and invalid input rejection. See `docs/repository-audit-2026-10-24.md` and `master_repo_test` for exact run links.
-
-This is a green automated baseline, not a release acceptance. The owner’s interactive Windows desktop, physical microphone/TTS, two Android phones, native iOS, dependency advisory audit, and independent adversarial security review are not available to this hosted CI session. No claim of full product completion should be made until these gates have evidence.
+JARVIS has a useful security-oriented foundation and a green automated baseline, but it is **not yet the planned universal personal assistant**. Native Android and remote operation, local always-ready voice, real Windows acceptance, end-to-end communications, durable scheduling, and full memory lifecycle are the largest gaps. The next implementation phase should follow POC2's acceptance register and the staged security-first delivery plan.
