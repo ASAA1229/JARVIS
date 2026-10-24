@@ -40,9 +40,21 @@ export class WindowsDesktopAgent {
     if (!this.isSupportedHost()) throw new Error('Windows desktop agent can run only on Windows.');
   }
 
+  private foregroundWindowGuard(): string {
+    return [
+      "$ErrorActionPreference = \"Stop\"",
+      "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class JarvisForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId); }' -ErrorAction SilentlyContinue",
+      "$foregroundPid = [uint32]0",
+      "[void][JarvisForeground]::GetWindowThreadProcessId([JarvisForeground]::GetForegroundWindow(), [ref]$foregroundPid)",
+      "$foreground = Get-Process -Id $foregroundPid -ErrorAction Stop",
+      "if ($foreground.ProcessName -match '(?i)phonepe|paytm|googlepay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications.' }",
+    ].join('; ');
+  }
+
   private async runPowerShell(script: string, signal?: AbortSignal): Promise<string> {
     this.assertWindows();
-    const encoded = encodePowerShell(script);
+    const guardedScript = this.foregroundWindowGuard() + '; ' + script;
+    const encoded = encodePowerShell(guardedScript);
     const result = await execFileAsync(
       'powershell.exe',
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', encoded],
