@@ -169,3 +169,15 @@ New test file: `test/policy_gateway_binding.test.ts` on branch `gap-closure` / [
 | Disallowed parameter | Unexpected `shell` parameter is denied before approval | Test added; CI pending |
 
 Source changes additionally enforce permission checks when rejecting approvals, matching the checks already performed when approving. Do not mark these tests PASS until the exact PR commit's hosted CI has completed successfully. The broader approval HTTP contract and physical-device acceptance are still open.
+
+## Adapter exception redaction regression — 2026-10-24
+
+New test file: `test/adapter_error_redaction.test.ts` on `gap-closure` / [PR #11](https://github.com/Guda-Abhishek/JARVIS/pull/11).
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Adapter throws private path-like diagnostic | User-facing task result contains generic failure only | Test added; CI pending |
+| Audit disclosure | Public audit records do not contain the injected diagnostic | Test added; CI pending |
+| Diagnostic usefulness | Completion audit records exception class only | Test added; CI pending |
+
+The core catches adapter exceptions and emits a bounded failure message plus the non-sensitive error class. Adapter-authored errors returned normally by other code paths still need a comprehensive disclosure review. Do not mark this test PASS until the exact PR commit CI completes.
