@@ -544,7 +544,12 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
-    if (approval.operation === 'app:launch' && !approver.permissions.includes(Permission.APP_LAUNCH)) {
+    if (approval.operation.startsWith('memory:') && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
+      throw new Error('Approver lacks DEVICE_MANAGE permission for personal memory');
+    }
+    if ((approval.operation === 'app:launch' || approval.operation.startsWith('desktop:')) &&
+        !approver.permissions.includes(Permission.APP_LAUNCH)) {
       this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error('Approver lacks permission for this action');
     }
