@@ -155,3 +155,17 @@ Final source/test commit `9a40f95528d32aaed63626a1c48ae1ef4e1cda51` passed all c
 The new Windows adapter tests verify the generated PowerShell control lookup uses the same collection for uniqueness checking and indexing, escapes single-quoted control/text values, includes password/financial-like field guards, compares the resulting value independently, and rejects missing text or invalid control names. These are code/script-generation tests, not live UI Automation acceptance.
 
 Historical dirty-worktree results above are retained as historical evidence and are not superseded silently: exact-commit hosted CI is green now, while real Windows interactive session, physical audio, Android/two-phone, native iOS, and independent security review remain release blockers. `npm audit` was not part of the configured workflow and remains unverified.
+
+## Approval-binding regression suite — 2026-10-24
+
+New test file: `test/policy_gateway_binding.test.ts` on branch `gap-closure` / [PR #11](https://github.com/Guda-Abhishek/JARVIS/pull/11).
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Cross-task approval replay | Same parameters cannot authorize a different task | Test added; CI pending |
+| Cross-device approval replay | Approval cannot be consumed by a different requesting device | Test added; CI pending |
+| Operation substitution | Approval for app launch cannot authorize desktop text entry | Test added; CI pending |
+| Malformed parameter container | Null, array, primitive values are denied without throwing | Test added; CI pending |
+| Disallowed parameter | Unexpected `shell` parameter is denied before approval | Test added; CI pending |
+
+Source changes additionally enforce permission checks when rejecting approvals, matching the checks already performed when approving. Do not mark these tests PASS until the exact PR commit's hosted CI has completed successfully. The broader approval HTTP contract and physical-device acceptance are still open.
