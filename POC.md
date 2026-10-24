@@ -89,3 +89,8 @@ The overall POC must remain **NOT COMPLETE** until the POC2 blockers are closed 
 - The core execution service no longer returns raw adapter exception strings to the user or includes them in audit evidence. It returns a bounded failure message and records only the non-sensitive exception class in completion audit metadata.
 - Added `test/adapter_error_redaction.test.ts` to inject a path-like private diagnostic and assert it is absent from the task result and public audit records.
 - These tests are committed on `gap-closure`; their status remains pending until the exact PR CI run completes. This does not yet constitute a full API error-redaction review across every route and adapter.
+
+## Approval and error-redaction regression CI — 2026-10-24
+
+- Hosted CI run [40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717) completed successfully for code/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`: locked dependency install, TypeScript build, TypeScript check, automated suite (**101 passed, 0 failed**), and browser security smoke test all passed. The run is code/test evidence for that commit; documentation-only follow-up commits do not change source or tests. It does not establish physical Windows, microphone/TTS, Android/iOS, or independent security acceptance.
+- Overall POC remains INCOMPLETE / BLOCKED because real Windows desktop, physical voice, two-phone Android, secure remote transport, native iOS, and independent security-review gates are still open.
