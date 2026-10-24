@@ -88,3 +88,8 @@ For each item, record: acceptance criterion; exact commit SHA; implementation pa
 - [ ] Complete broader approval HTTP contract tests (expiry, duplicate/concurrent transitions, stale task state, persistence/audit failure).
 - [ ] Complete route-by-route adapter/API error disclosure review and independent adversarial review.
 - [ ] Complete physical Windows/voice/Android acceptance; native iOS remains incomplete.
+
+## Approval rejection authorization tests — 2026-10-24
+
+- [x] Added `test/rejection_permissions.test.ts` to verify a read-only device cannot reject desktop or personal-memory approvals without the matching permission.
+- [ ] Run and verify hosted CI on the latest branch head; the previous 101-test green run predates this new test file.
