@@ -1,17 +1,17 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
 **Updated:** 2026-10-24  
-**Baseline:** new source tree 6222e1964774c78e6853d6113335b1a3f0284881; dev merge commit d061216b2a007992e4ddae912d8e88c812934bd1  
+**Baseline:** source tree 6222e1964774c78e6853d6113335b1a3f0284881; documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c; dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc  
 **Rule:** A capability does not move to POC.md as accepted until its acceptance criteria pass with recorded evidence. No new requirements document is needed for this gap closure; update this file and the existing project docs.
 
 ## Confirmed repository/branch state
 
-- PR #12, new → dev, is already merged: https://github.com/Guda-Abhishek/JARVIS/pull/12
-- dev and new currently have the same Git tree. dev is one merge commit ahead of new; they are not the same commit.
-- fix, test, and enhancement were missing and have been recreated from dev.
-- main remains unchanged and is not a target for automated commits, pushes, or merges.
-- Hosted CI completed successfully on new commit 6222e1964774c78e6853d6113335b1a3f0284881: https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500
-- Hosted CI completed successfully on dev commit d061216b2a007992e4ddae912d8e88c812934bd1: https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606
+- PR #12 (new → dev feature integration) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/12
+- PR #13 (documentation reconciliation) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/13
+- dev is at 29df6b8699a8145f2163efee0c0ac306af2e7adc. The new branch contains the same tree as dev at the PR #13 merge; its head differs by the merge commit.
+- fix, test and enhancement were recreated from dev and fast-forwarded to the current integration commit. The exact same commit passed CI on dev, fix and test; enhancement points to that same commit.
+- main remains at 5c7d8d303862de6ac730db9e15855b5f6a70af59 and has not been modified.
+- CI for the follow-up status-refresh PR is required before that documentation-only follow-up is merged.
 - CI success is not physical-device acceptance. npm audit is not confirmed by these runs.
 
 ## P0 — Security and execution foundation

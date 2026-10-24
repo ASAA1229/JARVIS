@@ -1,7 +1,7 @@
 # JARVIS POC — Current Implemented Baseline
 
 **Updated:** 2026-10-24  
-**Source reviewed:** new at 6222e1964774c78e6853d6113335b1a3f0284881  
+**Source reviewed:** application source baseline 6222e1964774c78e6853d6113335b1a3f0284881; documentation reconciliation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c. The follow-up status refresh is tracked in PR #14.  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 This document records repository-visible implementation and hosted CI evidence. A green CI run does not establish real Windows, microphone, telephony, or Android-device acceptance.
@@ -24,13 +24,11 @@ This document records repository-visible implementation and hosted CI evidence. 
 
 ## Current hosted CI evidence
 
-- new commit: 6222e1964774c78e6853d6113335b1a3f0284881.
-- [JARVIS CI run 40098158500](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500): completed successfully for this commit.
-- [JARVIS CI run 40098105606](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606): completed successfully for the dev merge commit d061216b2a007992e4ddae912d8e88c812934bd1.
-- The latest branch commit message records the final 103-test security CI pass. Consult the exact run for its job-level evidence.
-- npm audit is not established by these CI results; prior registry advisory endpoint access was unavailable.
-
-CI covers repository automation. It does not prove physical-device behavior or unrestricted application control.
+- new documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c: [CI run 40099231737](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737) completed successfully.
+- dev integration head 29df6b8699a8145f2163efee0c0ac306af2e7adc: [CI run 40099365008](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008) completed successfully.
+- The same integration commit passed CI on fix ([run 40099378785](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785)) and test ([run 40099381517](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517)).
+- PR #13 documentation reconciliation merged to dev at 29df6b8699a8145f2163efee0c0ac306af2e7adc.
+- These are repository automation results, not physical-device acceptance. npm audit remains unverified.
 
 ## Capability boundaries — do not overstate
 

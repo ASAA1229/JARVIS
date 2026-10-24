@@ -8,8 +8,8 @@
 
 - main: production/release branch; automated work must not commit, push, or merge to it.
 - dev: integration branch. PR #12 from new was merged on 2026-10-24.
-- new: feature/gap-closure branch; its current tree matches dev, though dev is one merge commit ahead.
-- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list.
+- new: feature/gap-closure branch. Its documentation reconciliation was integrated through PR #13.
+- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list; all three were fast-forwarded to the current dev integration commit.
 - PRs from non-main branches target dev. The owner performs any eventual dev → main merge manually.
 
 ## Product goal
@@ -79,11 +79,14 @@ WSL/Linux equivalent for copying the template: `cp .env.example .env`.
 
 ## Validation
 
-Latest observed hosted CI:
-- [new commit 6222e196 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500)
-- [dev merge commit d061216b — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606)
+Verified hosted CI evidence for the gap-closure baseline:
+- [new documentation head 6dd9d8d6 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737)
+- [dev integration commit 29df6b86 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008)
+- [fix branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785)
+- [test branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517)
+- Documentation PR #13 merged into dev: https://github.com/Guda-Abhishek/JARVIS/pull/13
 
-These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. See POC2.md for the acceptance register.
+These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. npm audit remains unverified; see POC2.md for acceptance criteria.
 
 ## Branch and release policy
 

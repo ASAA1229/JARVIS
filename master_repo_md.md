@@ -14,15 +14,15 @@ The universal application goal is capability-based discovery and automation, not
 
 ## 2. Current repository and branch state
 
-At the start of the 2026-10-24 audit, remote branches were main, dev and new. PR #12 (new → dev) was already merged at commit d061216b2a007992e4ddae912d8e88c812934bd1. The new head was 6222e1964774c78e6853d6113335b1a3f0284881. Both refs pointed to the same Git tree; dev was one merge commit ahead of new.
+At the start of the 2026-10-24 audit, remote branches were main, dev and new. PR #12 (new → dev feature integration) merged at d061216b2a007992e4ddae912d8e88c812934bd1. PR #13 (documentation reconciliation) merged at 29df6b8699a8145f2163efee0c0ac306af2e7adc.
 
-Missing role branches fix, test and enhancement were recreated from dev. They now exist as separate working branches. main was not modified.
+Missing role branches fix, test and enhancement were recreated from dev and fast-forwarded to the current dev integration commit. main remains unchanged at 5c7d8d303862de6ac730db9e15855b5f6a70af59.
 
 - main: production/release; owner-controlled final release only.
 - dev: integration target; non-main changes arrive through PR.
 - fix: bug fixes and regression work.
 - test: test, audit and evidence work.
-- new: staged feature development.
+- new: staged feature development; its tree matched dev at the PR #13 merge.
 - enhancement: broader feature enhancements.
 
 Never force-push, rewrite history, discard dirty work, or delete branches without explicit authorization. Do not commit/push directly to dev. PRs target dev only. Never automate a merge into main; the owner performs any eventual dev → main release merge manually.
@@ -42,8 +42,11 @@ See POC.md for the evidence-backed current baseline, POC2.md for the acceptance 
 
 ## 4. Hosted CI evidence
 
-- new commit 6222e1964774c78e6853d6113335b1a3f0284881: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098158500
-- dev merge commit d061216b2a007992e4ddae912d8e88c812934bd1: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40098105606
+- new documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737
+- dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008
+- fix at the same integration commit: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785
+- test at the same integration commit: successful CI run https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517
+- PR #13 documentation reconciliation is merged: https://github.com/Guda-Abhishek/JARVIS/pull/13
 
 The new commit message records the final 103-test security CI pass. These results cover configured CI only. They do not prove real Windows UI acceptance, physical audio, native Android, messaging/call integrations, or universal app control. npm audit remains unverified in the current baseline.
 
