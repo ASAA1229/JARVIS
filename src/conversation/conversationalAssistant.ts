@@ -64,6 +64,9 @@ async function generateWithConfiguredModel(text: string, context: string): Promi
   const baseUrl = (process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, '');
   const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
   const apiKey = process.env.JARVIS_AI_API_KEY;
+  const isLocalEndpoint = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(baseUrl + '/');
+  if (!isLocalEndpoint && process.env.JARVIS_AI_ALLOW_REMOTE !== 'true') return null;
+  const safeContext = isLocalEndpoint ? context : '';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {

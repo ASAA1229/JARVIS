@@ -677,6 +677,7 @@ async function submitDirective(text) {
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
+    if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       speakResponse(data.message || 'I need your approval before performing that action.');
@@ -769,6 +770,32 @@ async function speakResponse(message) {
     utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
     window.speechSynthesis.speak(utterance);
   }
+}
+
+function normalizeUserFacingMessage(value) {
+  if (typeof value !== 'string') return '';
+  let text = value.trim();
+  if (!text) return '';
+  // Only unwrap JSON-looking strings; normal prose remains untouched.
+  if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(text);
+      const extract = (candidate, depth = 0) => {
+        if (depth > 4 || candidate == null) return '';
+        if (typeof candidate === 'string') return normalizeUserFacingMessage(candidate);
+        if (Array.isArray(candidate)) return candidate.map(item => extract(item, depth + 1)).filter(Boolean).join('\n');
+        if (typeof candidate === 'object') {
+          for (const key of ['answer', 'response', 'message', 'text', 'content', 'explanation']) {
+            if (typeof candidate[key] === 'string' && candidate[key].trim()) return extract(candidate[key], depth + 1);
+          }
+        }
+        return '';
+      };
+      const extracted = extract(parsed);
+      if (extracted) return extracted;
+    } catch { /* Leave malformed or non-response JSON readable as a safe string. */ }
+  }
+  return text;
 }
 
 async function readApiResponse(response) {
