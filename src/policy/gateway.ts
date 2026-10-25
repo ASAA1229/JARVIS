@@ -37,7 +37,17 @@ export class PolicyGateway {
   private readonly grantPath: string;
   private readonly grantKey?: Buffer;
   private grantStateHealthy = true;
-  private readonly rememberedGrantTtlMs = 30 * 24 * 60 * 60 * 1000;
+  // Remembered app-launch approvals are DISABLED by default: every launch needs a
+  // fresh, single-use approval bound to its exact parameters. An owner can opt in
+  // with JARVIS_REMEMBER_LAUNCH_MINUTES (1-240); a remembered grant is still bound
+  // to the exact device, operation and app, and never lasts longer than 4 hours.
+  private readonly rememberedGrantTtlMs = PolicyGateway.readRememberTtlMs();
+
+  private static readRememberTtlMs(): number {
+    const raw = Number(process.env.JARVIS_REMEMBER_LAUNCH_MINUTES ?? '0');
+    if (!Number.isFinite(raw) || raw < 1) return 0;
+    return Math.min(Math.floor(raw), 240) * 60 * 1000;
+  }
 
   // Explicit default-deny allowlist of supported operations
   private readonly rules: Map<string, PolicyRule> = new Map([
@@ -95,21 +105,45 @@ export class PolicyGateway {
       ['memory:list', []],
       ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],
-      ['desktop:type_text', ['text']],
-      ['desktop:paste_text', ['text']],
-      ['desktop:hotkey', ['keys']],
-      ['desktop:zoom', ['direction']],
-      ['desktop:copy_selection', []],
-      ['desktop:paste_clipboard', []],
-      ['desktop:inspect_window', []],
-      ['desktop:click_control', ['name']],
-      ['desktop:set_value', ['name', 'text']],
+      ['desktop:type_text', ['text', 'expectProcess']],
+      ['desktop:paste_text', ['text', 'expectProcess']],
+      ['desktop:hotkey', ['keys', 'expectProcess']],
+      ['desktop:zoom', ['direction', 'expectProcess']],
+      ['desktop:copy_selection', ['expectProcess']],
+      ['desktop:paste_clipboard', ['expectProcess']],
+      ['desktop:inspect_window', ['expectProcess']],
+      ['desktop:click_control', ['name', 'expectProcess']],
+      ['desktop:set_value', ['name', 'text', 'expectProcess']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: (operation as string).startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
       riskTier: operation === 'desktop:inspect_window' || operation === 'memory:list' ? RiskTier.LOW : RiskTier.HIGH,
       requiresApproval: !['desktop:inspect_window', 'memory:list'].includes(operation as string),
       allowedParameters: allowedParameters as string[],
+    }] as [string, PolicyRule]),
+    // Window discovery/focus, workspace files, terminal, and scheduling. Read-only
+    // name listings need no approval; everything that reads content, changes state,
+    // runs a process, or schedules future work requires a fresh single-use approval.
+    ...([
+      ['desktop:list_windows', Permission.APP_LAUNCH, RiskTier.LOW, false, []],
+      ['desktop:focus_window', Permission.APP_LAUNCH, RiskTier.MEDIUM, true, ['processName', 'titleContains']],
+      ['file:list', Permission.APP_LAUNCH, RiskTier.LOW, false, ['path']],
+      ['file:search', Permission.APP_LAUNCH, RiskTier.LOW, false, ['query', 'path']],
+      ['file:read', Permission.APP_LAUNCH, RiskTier.MEDIUM, true, ['path']],
+      ['file:write', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'content']],
+      ['file:edit', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'find', 'replace']],
+      ['file:delete', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path']],
+      ['file:restore', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['quarantineId']],
+      ['terminal:run', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['command', 'args', 'cwd']],
+      ['schedule:create', Permission.DEVICE_MANAGE, RiskTier.HIGH, true, ['requestText', 'runAt', 'everyMinutes']],
+      ['schedule:list', Permission.DEVICE_MANAGE, RiskTier.LOW, false, []],
+      ['schedule:cancel', Permission.DEVICE_MANAGE, RiskTier.MEDIUM, true, ['id']],
+    ] as Array<[string, Permission, RiskTier, boolean, string[]]>).map(([operation, requiredPermission, riskTier, requiresApproval, allowedParameters]) => [operation, {
+      operation,
+      requiredPermission,
+      riskTier,
+      requiresApproval,
+      allowedParameters,
     }] as [string, PolicyRule]),
     ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
       operation,
@@ -267,7 +301,7 @@ export class PolicyGateway {
 
     // A prior owner approval may be remembered for this exact app/device/parameter
     // tuple. It never authorizes a different app or a different device.
-    if (req.operation === 'app:launch' && !existingApprovalId) {
+    if (req.operation === 'app:launch' && !existingApprovalId && this.rememberedGrantTtlMs > 0) {
       if (!this.grantStateHealthy) {
         return { allowed: false, requiresApproval: true, riskTier: rule.riskTier, reason: 'Remembered approval state is unhealthy; fresh approval required' };
       }
@@ -455,7 +489,7 @@ export class PolicyGateway {
 
     // App launch approval is remembered for this exact requesting device and
     // exact parameter hash for 30 days. Persist it before reporting success.
-    if (approved && approval.operation === 'app:launch') {
+    if (approved && approval.operation === 'app:launch' && this.rememberedGrantTtlMs > 0) {
       const grant: RememberedGrant = {
         deviceId: approval.deviceId,
         operation: approval.operation,
@@ -502,6 +536,31 @@ export class PolicyGateway {
       }
     }
     return removed;
+  }
+
+  /**
+   * Immediately invalidate every unconsumed approval for a task (cancellation) or a
+   * device (revocation). Invalidated approvals are marked rejected so they can never
+   * authorize anything later, and each invalidation is audited.
+   */
+  public invalidateApprovals(filter: { taskId?: TaskId; deviceId?: DeviceId }, reason: string): number {
+    let invalidated = 0;
+    for (const approval of this.pendingApprovals.values()) {
+      if (approval.consumed || approval.rejected) continue;
+      if (filter.taskId !== undefined && approval.taskId !== filter.taskId) continue;
+      if (filter.deviceId !== undefined && approval.deviceId !== filter.deviceId) continue;
+      approval.rejected = true;
+      approval.approved = false;
+      invalidated++;
+      this.audit.record('APPROVAL_INVALIDATED', { approvalId: approval.id, operation: approval.operation, reason }, approval.deviceId, approval.taskId);
+    }
+    if (filter.deviceId !== undefined) {
+      for (const [key, grant] of this.rememberedGrants) {
+        if (grant.deviceId === filter.deviceId) this.rememberedGrants.delete(key);
+      }
+      this.persistRememberedGrants();
+    }
+    return invalidated;
   }
 
   public getApproval(approvalId: string): ApprovalRecord | undefined {

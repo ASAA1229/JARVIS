@@ -46,6 +46,19 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:inspect_window',
     'desktop:click_control',
     'desktop:set_value',
+    'desktop:list_windows',
+    'desktop:focus_window',
+    'file:list',
+    'file:search',
+    'file:read',
+    'file:write',
+    'file:edit',
+    'file:delete',
+    'file:restore',
+    'terminal:run',
+    'schedule:create',
+    'schedule:list',
+    'schedule:cancel',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -105,6 +118,71 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (rememberAnything && rememberAnything[1].trim()) {
       return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
     }
+    // Scheduling. Each run is re-planned and re-authorized when it fires; nothing is pre-approved.
+    const scheduleOnce = requestText.match(/\bschedule\s+(?:in\s+)?(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
+    if (scheduleOnce && scheduleOnce[3].trim()) {
+      const delayMs = Number(scheduleOnce[1]) * (/^hour/i.test(scheduleOnce[2]) ? 3_600_000 : 60_000);
+      return { intent: 'Schedule a one-time request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleOnce[3].trim(), runAt: context.timestamp + delayMs }, justification: 'Owner asked for a delayed request' }], confidence: 0.85, explanation: 'Will create the schedule after approval. When it fires it is planned and authorized again, and state-changing steps will need fresh approval.' };
+    }
+    const scheduleEvery = requestText.match(/\bevery\s+(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
+    if (scheduleEvery && scheduleEvery[3].trim()) {
+      const everyMinutes = Number(scheduleEvery[1]) * (/^hour/i.test(scheduleEvery[2]) ? 60 : 1);
+      return { intent: 'Schedule a recurring request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleEvery[3].trim(), runAt: context.timestamp + everyMinutes * 60_000, everyMinutes }, justification: 'Owner asked for a recurring request' }], confidence: 0.85, explanation: 'Will create the recurring schedule after approval. Every run is authorized again and state-changing steps need fresh approval.' };
+    }
+    if (/\b(list|show)\s+(?:my\s+)?schedules\b/i.test(requestText)) {
+      return { intent: 'List scheduled requests', operations: [{ operation: 'schedule:list', parameters: {}, justification: 'Owner asked to review schedules' }], confidence: 0.9, explanation: 'Will list this device\'s scheduled requests.' };
+    }
+    const cancelSchedule = requestText.match(/\bcancel\s+schedule\s+(job-[a-f0-9]+)\b/i);
+    if (cancelSchedule) {
+      return { intent: 'Cancel a scheduled request', operations: [{ operation: 'schedule:cancel', parameters: { id: cancelSchedule[1] }, justification: 'Owner asked to cancel a schedule' }], confidence: 0.92, explanation: 'Will cancel that schedule after approval.' };
+    }
+
+    // Workspace files. Paths are resolved inside approved workspace folders only; deletes are recoverable quarantine moves.
+    const restoreFile = requestText.match(/\brestore\s+(?:quarantined\s+)?(?:file\s+)?(q-[a-f0-9]{16})\b/i);
+    if (restoreFile) {
+      return { intent: 'Restore a quarantined file', operations: [{ operation: 'file:restore', parameters: { quarantineId: restoreFile[1] }, justification: 'Owner asked to undo a file deletion' }], confidence: 0.92, explanation: 'Will move the quarantined file back after approval, without overwriting anything.' };
+    }
+    const deleteFile = requestText.match(/\b(?:delete|remove|trash)\s+(?:the\s+)?file\s+["“]?([^\s"”]+)["”]?\s*$/i);
+    if (deleteFile) {
+      return { intent: 'Move one workspace file to quarantine', operations: [{ operation: 'file:delete', parameters: { path: deleteFile[1] }, justification: 'Owner named a single file to delete' }], confidence: 0.85, explanation: 'Will move that one file to a recoverable quarantine after approval. Folders and bulk deletes are not supported.' };
+    }
+    const editFile = requestText.match(/\bin\s+file\s+["“]?([^\s"”]+)["”]?\s+replace\s+["“](.+?)["”]\s+with\s+["“](.*?)["”]\s*$/i);
+    if (editFile) {
+      return { intent: 'Edit text in a workspace file', operations: [{ operation: 'file:edit', parameters: { path: editFile[1], find: editFile[2], replace: editFile[3] }, justification: 'Owner specified the exact text to replace' }], confidence: 0.85, explanation: 'Will replace that exact text once (after saving a backup) following approval.' };
+    }
+    const createFile = requestText.match(/\b(?:create|make|write|save)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named|called)\s+["“]?([^\s"”]+)["”]?\s+(?:with|containing)\s+(?:the\s+)?(?:text\s+|content\s+)?["“]?(.+?)["”]?\s*$/i);
+    if (createFile) {
+      return { intent: 'Create a new workspace file', operations: [{ operation: 'file:write', parameters: { path: createFile[1], content: createFile[2] }, justification: 'Owner supplied the file name and content' }], confidence: 0.85, explanation: 'Will create the file after approval. An existing file is never overwritten.' };
+    }
+    const searchFiles = requestText.match(/\b(?:find|search\s+for)\s+(?:a\s+)?files?\s+(?:named|called|matching)\s+["“]?(.+?)["”]?\s*$/i);
+    if (searchFiles) {
+      return { intent: 'Search workspace file names', operations: [{ operation: 'file:search', parameters: { query: searchFiles[1].trim() }, justification: 'Owner asked for files by name' }], confidence: 0.85, explanation: 'Will search file names (not contents) inside the approved workspace.' };
+    }
+    const readFile = requestText.match(/\b(?:read|show\s+me|open)\s+(?:the\s+)?file\s+["“]?([^\s"”]+)["”]?\s*$/i);
+    if (readFile) {
+      return { intent: 'Read a workspace text file', operations: [{ operation: 'file:read', parameters: { path: readFile[1] }, justification: 'Owner named a file to read' }], confidence: 0.85, explanation: 'Will read that text file after approval; credential-like files are always refused.' };
+    }
+    const listFiles = requestText.match(/\b(?:list|show)\s+(?:the\s+|my\s+)?files(?:\s+(?:in|under)\s+(?:folder\s+)?["“]?([^\s"”]+)["”]?)?\s*$/i);
+    if (listFiles) {
+      return { intent: 'List workspace files', operations: [{ operation: 'file:list', parameters: { path: listFiles[1] || '.' }, justification: 'Owner asked to list files' }], confidence: 0.85, explanation: 'Will list names in the approved workspace folder.' };
+    }
+
+    // Allowlisted, non-shell commands only (see terminalRunner.ts). Shell metacharacters never match.
+    const runCommand = requestText.match(/\brun\s+(?:the\s+command\s+)?(git|node|python|hostname)((?:\s+[^\s;&|<>`$"']+){0,8})\s*$/i);
+    if (runCommand) {
+      const args = runCommand[2].trim() ? runCommand[2].trim().split(/\s+/) : [];
+      return { intent: 'Run an allowlisted read-only command', operations: [{ operation: 'terminal:run', parameters: { command: runCommand[1].toLowerCase(), args }, justification: 'Owner named an allowlisted command' }], confidence: 0.85, explanation: 'Will run that command without a shell, inside the workspace, after approval. Only read-only commands are allowlisted.' };
+    }
+
+    // Window discovery and focus.
+    if (/\b(?:what|which)\s+(?:apps?|windows|applications|programs)\s+(?:are\s+)?(?:open|running)\b|\b(?:list|show)\s+(?:my\s+)?(?:open\s+)?windows\b/i.test(requestText)) {
+      return { intent: 'List open application windows', operations: [{ operation: 'desktop:list_windows', parameters: {}, justification: 'Owner asked what is open' }], confidence: 0.88, explanation: 'Will list open window titles; payment and financial apps are excluded.' };
+    }
+    const focusWindow = requestText.match(/\b(?:switch\s+to|focus(?:\s+on)?|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._-]{0,40}?)(?:\s+window)?\s*$/i);
+    if (focusWindow && focusWindow[1].trim()) {
+      return { intent: 'Bring an application window to the foreground', operations: [{ operation: 'desktop:focus_window', parameters: { titleContains: focusWindow[1].trim() }, justification: 'Owner named the window to focus' }], confidence: 0.8, explanation: 'Will focus exactly one matching window after approval and confirm Windows granted focus.' };
+    }
+
     // Reject destructive language before broad system-information matching.
     if (/\b(format|delete|wipe|destroy|remove|drop)\b/.test(text)) {
       return {

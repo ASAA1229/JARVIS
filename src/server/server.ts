@@ -36,6 +36,7 @@ export class JarvisServer {
     return new Promise((resolve, reject) => {
       const onListening = () => {
         this.server.off('error', onError);
+        this.jarvis.startBackgroundServices();
         resolve(this.port);
       };
       const onError = (error: Error) => {
@@ -56,6 +57,7 @@ export class JarvisServer {
   }
 
   public stop(): Promise<void> {
+    this.jarvis.stopBackgroundServices();
     if (!this.server.listening) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -510,7 +512,56 @@ export class JarvisServer {
         if (!success) {
           return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
         }
+        // Immediately invalidate that device's approvals, schedules and running tasks.
+        this.jarvis.onDeviceRevoked(deviceId);
         return this.jsonResponse(res, 200, { success: true });
+      }
+
+      // Notifications for approvals, blocked actions, failures, uncertain outcomes and completions.
+      if (req.method === 'GET' && url.pathname === '/api/notifications') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const manager = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        const all = this.jarvis.notifications.list(manager ? {} : { deviceId: auth.device.id });
+        return this.jsonResponse(res, 200, { notifications: all.slice(-50) });
+      }
+
+      // Measured service and host health for owner devices.
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view health details' });
+        return this.jsonResponse(res, 200, this.jarvis.getHealthSnapshot());
+      }
+
+      // Task list with per-step status. Parameters and results are not exposed here.
+      if (req.method === 'GET' && url.pathname === '/api/tasks') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const manager = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        const tasks = this.jarvis.listTasks()
+          .filter((task) => manager || task.deviceId === auth.device!.id)
+          .slice(-30)
+          .map((task) => ({ id: task.id, state: task.state, operation: task.operation, origin: task.origin, createdAt: task.createdAt, updatedAt: task.updatedAt, steps: task.steps || [] }));
+        return this.jsonResponse(res, 200, { tasks });
+      }
+
+      // Cancel a waiting task (invalidating its approval) or interrupt a running one.
+      if (req.method === 'POST' && url.pathname === '/api/task/cancel') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.taskId !== 'string' || !body.taskId) return this.jsonResponse(res, 400, { error: 'taskId is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const result = this.jarvis.cancelTask(body.taskId, sessionId);
+        return this.jsonResponse(res, result.success ? 200 : 409, result);
       }
 
       // Audit logs (for dashboard monitoring)
@@ -555,7 +606,7 @@ export class JarvisServer {
       if (/invalid enrollment details/i.test(message)) return this.jsonResponse(res, 400, { error: 'Enrollment details are invalid' });
       if (/denied by security policy/i.test(message)) return this.jsonResponse(res, 403, { error: 'Enrollment request denied by security policy' });
       if (/Enrollment code is invalid|Enrollment request expired or changed/i.test(message)) return this.jsonResponse(res, 409, { error: 'Enrollment transaction is invalid, expired, or no longer available' });
-      if (/not registered or revoked|lacks permission/i.test(message)) {
+      if (/not registered or revoked|lacks permission|only the requesting device/i.test(message)) {
         return this.jsonResponse(res, 403, { error: message });
       }
       if (message.startsWith('Authentication failed')) {

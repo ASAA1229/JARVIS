@@ -2,6 +2,7 @@ import { ExecutionResult, VerificationOutcome } from '../core/types.js';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
+import { WindowInfo, WindowsWindowManager } from './windowsWindows.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -10,9 +11,13 @@ export interface AllowlistedApp {
   name: string;
   executable: string;
   processName: string;
+  /** How to recognise this app's window when verifying a launch. */
+  windowMatch?: { processNames: string[]; titleContains?: string };
 }
 
 export class WindowsAppLauncherAdapter {
+  private readonly windows = new WindowsWindowManager();
+
   // Explicit allowlist of launchable applications
   private readonly allowlist: Map<string, AllowlistedApp> = new Map([
     [
@@ -22,6 +27,7 @@ export class WindowsAppLauncherAdapter {
         name: 'Notepad',
         executable: 'notepad.exe',
         processName: 'Notepad.exe',
+        windowMatch: { processNames: ['notepad'], titleContains: 'Notepad' },
       },
     ],
     [
@@ -31,6 +37,7 @@ export class WindowsAppLauncherAdapter {
         name: 'Calculator',
         executable: 'calc.exe',
         processName: 'CalculatorApp.exe',
+        windowMatch: { processNames: ['calculatorapp', 'calc'], titleContains: 'Calculator' },
       },
     ],
     [
@@ -40,6 +47,7 @@ export class WindowsAppLauncherAdapter {
         name: 'Paint',
         executable: 'mspaint.exe',
         processName: 'mspaint.exe',
+        windowMatch: { processNames: ['mspaint'], titleContains: 'Paint' },
       },
     ],
   ]);
@@ -75,6 +83,12 @@ export class WindowsAppLauncherAdapter {
           interrupted: true,
         };
       }
+      // Snapshot existing windows so a launch can be verified by a window that did not
+      // exist before. Failure here (for example a locked desktop) only lowers the
+      // verification level; it never turns into a claimed success.
+      let knownPids = new Set<number>();
+      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
+
       // Spawn process detached, WITHOUT shell: true (preventing shell injection attacks)
       const child = spawn(app.executable, [], {
         detached: true,
@@ -99,14 +113,24 @@ export class WindowsAppLauncherAdapter {
         };
       }
 
-      // Verification step: verify running state via tasklist
-      await delay(600, undefined, { signal });
+      // Verification step: prefer a real window that appeared after the launch.
+      const appWindow = await this.waitForAppWindow(app, knownPids, signal);
+      if (appWindow) {
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: { appId: app.id, name: app.name, pid, status: 'Running', windowPid: appWindow.pid, windowProcess: appWindow.processName, windowTitle: appWindow.title },
+          evidence: { pid, processName: app.processName, newWindowDetected: true, windowPid: appWindow.pid, mechanism: 'window snapshot before/after launch', timestamp: Date.now() },
+        };
+      }
+      // No new window: a process check alone cannot prove a usable window exists.
+      await delay(300, undefined, { signal });
       const isRunning = await this.verifyProcessRunning(app.processName, pid, signal);
 
       if (isRunning) {
         return {
           success: true,
-          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          outcome: VerificationOutcome.PARTIAL_SUCCESS,
           data: {
             appId: app.id,
             name: app.name,
@@ -151,6 +175,24 @@ export class WindowsAppLauncherAdapter {
     }
   }
 
+  /** Wait for a window of this app that did not exist before the launch. */
+  private async waitForAppWindow(app: AllowlistedApp, knownPids: ReadonlySet<number>, signal?: AbortSignal): Promise<WindowInfo | undefined> {
+    const match = app.windowMatch;
+    if (!match) return undefined;
+    const deadline = Date.now() + 6_000;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) return undefined;
+      let windows: WindowInfo[];
+      try { windows = await this.windows.snapshot(signal); } catch { return undefined; }
+      const found = windows.find((window) => !knownPids.has(window.pid) &&
+        (match.processNames.includes(window.processName.toLowerCase().replace(/\.exe$/, '')) ||
+          (match.titleContains !== undefined && window.title.toLowerCase().includes(match.titleContains.toLowerCase()))));
+      if (found) return found;
+      await delay(400, undefined, { signal }).catch(() => undefined);
+    }
+    return undefined;
+  }
+
   private isFinancialAppName(name: string): boolean {
     return /\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(name);
   }
@@ -185,9 +227,22 @@ export class WindowsAppLauncherAdapter {
         return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: "Multiple applications matched '" + query + "'. Ask for the exact app name.", evidence: { query, candidates: matches.map((candidate) => candidate.Name) } };
       }
       const selected = matches[0];
+      let knownPids = new Set<number>();
+      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
       await execFileAsync('explorer.exe', ['shell:AppsFolder\\' + selected.AppID], {
         timeout: 8_000, windowsHide: true, signal,
       });
+      let newWindow: WindowInfo | undefined;
+      try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
+      const firstWord = query.toLowerCase().split(/\s+/)[0] || '';
+      if (newWindow && firstWord && (newWindow.title + ' ' + newWindow.processName).toLowerCase().includes(firstWord)) {
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: { name: selected.Name, appId: selected.AppID, status: 'Running', windowPid: newWindow.pid, windowProcess: newWindow.processName, windowTitle: newWindow.title },
+          evidence: { discovery: 'Get-StartApps', launcher: 'explorer.exe shell:AppsFolder', newWindowDetected: true, targetWindowVerified: true },
+        };
+      }
       return {
         success: true,
         outcome: VerificationOutcome.PARTIAL_SUCCESS,
