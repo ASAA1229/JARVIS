@@ -98,3 +98,19 @@ The target is capability-based discovery for all installed and built-in apps on 
 4. Unexpected state stops dependent steps. Retry or rollback only when safe; ask for approval for risky recovery.
 5. The user must be able to cancel. The system must report partial/uncertain outcomes honestly.
 6. Keep main untouched by automated work. Feature/documentation changes go to non-main branches; PRs target dev. The owner performs any eventual dev → main release merge manually.
+
+
+## Conversational response and wake greeting follow-up — 2026-10-25
+
+- [x] Add a bounded conversational response layer for identity, creator, owner-memory summaries, and a small set of common AI definitions.
+- [x] Add an opt-in/configurable OpenAI-compatible chat-completions client with a local Ollama default and a 12-second timeout.
+- [x] Route conversational answers separately from state-changing actions; action directives still enter the existing planner and PolicyGateway.
+- [x] Add an explicit HUD response branch for conversational answers so JSON metadata is not displayed as the answer.
+- [x] Change the wake response to the requested exact greeting: "Hii sir, I am ready to work."
+- [ ] Run repository build, lint, unit tests, and browser smoke tests on this exact commit.
+- [ ] Verify wake-word behavior, microphone privacy indicator, greeting playback, and follow-on command capture on the target Windows laptop.
+- [ ] Verify a configured local model end-to-end. No foundation model is trained by this change; model inference is delegated to the configured endpoint.
+- [ ] Add broader automated tests for the conversational router and response formatting.
+- [ ] Implement semantic embeddings/vector retrieval in a later, separately tested stage; current memory context is bounded text retrieval, not embedding-based retrieval.
+
+Acceptance note: browser-based wake recognition is not guaranteed to be local. Hands-free remains an explicit user-enabled feature. Do not describe the wake phrase as hardware-verified until a real-device test is recorded.

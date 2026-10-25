@@ -12,6 +12,7 @@ import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
+import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -441,6 +442,20 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        // Conversation requests are handled only after signed-session authentication.
+        // Action-like directives continue through the existing planner and PolicyGateway.
+        const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
+          ? this.personalMemory.list().slice(0, 8).map((record) => ({ content: record.content, category: record.category }))
+          : [];
+        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
+        if (conversationalAnswer) {
+          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
+          return this.jsonResponse(res, 200, {
+            state: 'ANSWERED',
+            message: conversationalAnswer,
+            data: { kind: 'conversation' },
+          });
         }
         const result = await this.jarvis.submitRequest(sessionId, text.trim());
         return this.jsonResponse(res, 200, result);

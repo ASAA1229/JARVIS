@@ -70,3 +70,14 @@ This document records repository-visible implementation and hosted CI evidence. 
 ## POC completion gate
 
 The POC remains **NOT COMPLETE** until the blockers in [POC2.md](POC2.md) have acceptance evidence, target Windows interaction and voice behavior are verified, both Android devices pass required security tests, the application-integration boundaries are demonstrated, and exact-source CI is green. Move a capability to accepted status only after its real action and verification path pass.
+
+
+## Conversational response layer — 2026-10-25
+
+- Added an authenticated conversational route before the action planner. It handles stable identity answers and selected common AI questions in natural English.
+- General questions can use an OpenAI-compatible chat-completions endpoint. The default endpoint is local Ollama at `http://127.0.0.1:11434/v1`; model defaults to `llama3.2`. Configure `JARVIS_AI_BASE_URL`, `JARVIS_AI_MODEL`, and optionally `JARVIS_AI_API_KEY` as appropriate.
+- No cloud endpoint is selected by default. If the local/configured endpoint is unavailable, JARVIS returns a clear fallback instead of pretending that an AI answer was generated.
+- Owner memories are supplied only when the authenticated device has device-management permission, and only a bounded set of records is included.
+- The HUD now handles `state: ANSWERED` separately from action execution outcomes, displays the conversational message, and sends that message to speech output.
+- The existing hands-free wake detector now speaks `Hii sir, I am ready to work.` after detecting a wake phrase and attempts to enter command capture afterward.
+- **Not yet verified on physical hardware:** browser wake-word recognition, audible TTS timing, and end-to-end local model inference. Browser speech recognition may depend on the browser's remote recognition service; this is not a claim of local wake-word detection.
