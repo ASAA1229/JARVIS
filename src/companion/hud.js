@@ -21,6 +21,7 @@ let handsFreeEnabled = false;
 let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
+let localTtsUnavailable = false;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
 const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop jarvis', 'jarvis stop', 'goodbye jarvis', 'go to sleep jarvis'];
@@ -287,7 +288,14 @@ function startHandsFreeStandby() {
     if (event.error === 'audio-capture') {
       setAssistantState('MICROPHONE UNAVAILABLE', 'Another app may be using the microphone, or no input device is available.');
     } else if (event.error === 'network') {
-      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'Browser speech recognition could not reach its recognition service. Check internet access or use text input.');
+      // Browser speech recognition commonly depends on a remote service. Do not
+      // restart it in a tight loop when that service is unreachable.
+      disableWakeDetection();
+      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'The browser recognition service is unreachable. Hands-free has been paused to prevent repeated failures. Use text input, or retry voice after the connection is restored.');
+      return;
+    } else if (event.error === 'aborted') {
+      // A deliberate stop/restart can emit "aborted"; it is not a user-facing fault.
+      return;
     } else if (event.error === 'no-speech') {
       setAssistantState('NO SPEECH DETECTED', 'I did not hear speech. Check the selected microphone and try again.');
     } else {
@@ -400,7 +408,21 @@ function createSpeechRecognizer(captureGeneration) {
 
   recognizer.onerror = (event) => {
     if (captureGeneration !== voiceCaptureGeneration) return;
-    console.error('Speech recognition error:', event.error);
+    if (event.error === 'aborted') {
+      // Expected when capture is cancelled or a recognizer is replaced.
+      return;
+    }
+    if (event.error === 'network') {
+      isListening = false;
+      if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
+      document.getElementById('reactor-container').classList.remove('listening');
+      document.getElementById('btn-ptt').classList.remove('active');
+      if (isHandsFreeEnabled) disableHandsFree();
+      else cancelVoiceCapture();
+      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'The browser speech-recognition service could not be reached. Your microphone may still be working. Use the text box, or retry voice when the browser service is available.');
+      return;
+    }
+    console.warn('Speech recognition error:', event.error);
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       cancelVoiceCapture();
       disableHandsFree();
@@ -731,32 +753,38 @@ async function speakResponse(message) {
   const text = String(message || '').trim();
   if (!text || isMicMuted || !speechOutputEnabled) return;
   isSpeaking = false;
-  if (currentSession && window.JarvisDeviceCrypto?.signedFetch) {
+  if (!localTtsUnavailable && currentSession && window.JarvisDeviceCrypto?.signedFetch) {
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
         method: 'POST', body: { text: text.slice(0, 1200) },
       });
-      if (response.ok) {
-        const blob = await response.blob();
-        if (blob.type.includes('audio/wav') && blob.size > 44) {
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          const releaseUrl = () => URL.revokeObjectURL(url);
-          audio.addEventListener('ended', releaseUrl, { once: true });
-          audio.addEventListener('error', releaseUrl, { once: true });
-          try {
-            await audio.play();
-            isSpeaking = true;
-            audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
-            return;
-          } catch (playError) {
-            releaseUrl();
-            throw playError;
-          }
+      if (!response.ok) {
+        // A failing local provider will not be retried for every response.
+        // Browser speech synthesis is the graceful fallback for this session.
+        if (response.status === 502 || response.status === 503) localTtsUnavailable = true;
+        throw new Error(`Local TTS returned HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      if (blob.type.includes('audio/wav') && blob.size > 44) {
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        const releaseUrl = () => URL.revokeObjectURL(url);
+        audio.addEventListener('ended', releaseUrl, { once: true });
+        audio.addEventListener('error', releaseUrl, { once: true });
+        try {
+          await audio.play();
+          isSpeaking = true;
+          audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
+          return;
+        } catch (playError) {
+          releaseUrl();
+          throw playError;
         }
       }
+      localTtsUnavailable = true;
+      throw new Error('Local TTS returned an invalid audio response');
     } catch (error) {
-      console.warn('Local neural TTS unavailable; trying browser speech.', error);
+      console.warn('Local neural TTS unavailable; using browser speech synthesis.', error);
     }
   }
   if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
