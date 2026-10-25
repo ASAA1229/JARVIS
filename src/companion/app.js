@@ -362,6 +362,7 @@ async function handleSendRequest() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
   addFeedItem('user', text);
+  setPipeline({ sent: 'active' }, 'Request sent; waiting for the policy gateway.');
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
@@ -376,14 +377,18 @@ async function handleSendRequest() {
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       addApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('system-pending', `Requires approval: ${data.message}`, data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Waiting for your explicit approval. It is single-use and bound to this exact action.');
     } else if (data.state === 'COMPLETED' &&
         data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       addFeedItem('system-success', `Outcome verified: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'done' }, 'Allowed by policy without approval and verified by the host.');
     } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
         data.outcome === 'UNCERTAIN' || data.verified === false) {
       addFeedItem('system-pending', `Outcome not fully verified: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'warn' }, 'The outcome could not be confirmed. Check the laptop before retrying.');
     } else {
       addFeedItem('system-failed', `Request denied or failed: ${data.message || data.error}`, data);
+      setPipeline({ sent: 'done', policy: 'bad' }, 'Denied or failed at the policy gateway. Nothing was executed.');
     }
 
     fetchAuditLogs();
@@ -392,6 +397,7 @@ async function handleSendRequest() {
       ? 'Request timed out; the server may have received it. Check task state before retrying.'
       : (err instanceof Error ? err.message : 'Request failed');
     addFeedItem('system-failed', message);
+    setPipeline({ sent: 'bad' }, 'The request did not complete. Its server-side state is unknown.');
   } finally {
     clearTimeout(timeoutId);
     isRequestSubmitting = false;
@@ -472,7 +478,11 @@ function addApprovalCard(approvalId, taskId, requestText, message) {
   reject.addEventListener('click', () => resolveApproval(approvalId, false));
   actions.append(approve, reject);
 
-  card.append(request, description, actions);
+  card.append(request, description);
+  const risk = document.createElement('div');
+  risk.className = 'approval-risk';
+  risk.textContent = 'This approval is single-use, expires after a short time, and is bound to this exact action. Approving lets the laptop run it once; any change to the action needs a new approval.';
+  card.append(risk, actions);
   container.appendChild(card);
   updateApprovalCount();
 }
@@ -501,23 +511,28 @@ async function resolveApproval(approvalId, approved) {
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'The server confirmed the action was rejected.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
     } else if (result.state === 'COMPLETED' && result.success === true &&
         result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'Approval was processed but the task did not complete: ' + String(result.message || result.state), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
     } else {
       addFeedItem('system-pending', 'Approval processed; task state remains ' + String(result.state || 'UNKNOWN') + '. Verify before retrying.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified.');
     }
     fetchAuditLogs();
   } catch (err) {
     addFeedItem('system-failed', 'Approval state unknown; refresh server state before retrying.');
+    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify before retrying.');
   }
 }
 
@@ -529,15 +544,60 @@ function updateApprovalCount() {
   }
 }
 
+let linkFailures = 0;
+
+function setLinkState(state, label, banner) {
+  document.body.dataset.link = state;
+  const dot = document.getElementById('status-dot');
+  if (dot) dot.className = 'pulse-indicator ' + state;
+  const text = document.getElementById('link-label');
+  if (text) text.textContent = label;
+  const bannerElement = document.getElementById('link-banner');
+  if (bannerElement) bannerElement.textContent = banner || '';
+}
+
+const PIPELINE_STAGES = ['sent', 'policy', 'approval', 'verify'];
+
+// Stage states: idle | active | done | warn | bad | skip. Set only from real
+// server responses or real request failures.
+function setPipeline(states, note) {
+  for (const stage of PIPELINE_STAGES) {
+    const item = document.querySelector('#task-pipeline [data-stage="' + stage + '"]');
+    if (item) item.dataset.state = states[stage] || 'idle';
+  }
+  const noteElement = document.getElementById('pipeline-note');
+  if (noteElement && note) noteElement.textContent = note;
+}
+
 async function pollStatus() {
+  if (document.hidden) return;
   try {
     const res = await fetch('/api/status');
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data.status !== 'ONLINE' && data.status !== 'DEGRADED')) throw new Error('Unexpected status response');
+    linkFailures = 0;
+    const hostName = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[data.platform] || 'Unknown';
+    const foot = document.getElementById('foot-host');
+    if (foot) foot.textContent = hostName;
+    const chain = document.getElementById('info-audit-integrity');
+    if (chain && data.checks) {
+      const valid = data.checks.auditIntegrity === true;
+      chain.textContent = valid ? 'VALID' : 'BROKEN';
+      chain.classList.toggle('success', valid);
+      chain.classList.toggle('danger', !valid);
+    }
     if (data.status === 'ONLINE') {
-      document.getElementById('status-dot').className = 'pulse-indicator online';
+      setLinkState('online', 'LAPTOP ONLINE', '');
+    } else {
+      setLinkState('degraded', 'LAPTOP DEGRADED', 'The laptop core reports a failed security health check. State-changing requests may be refused until it recovers.');
     }
   } catch {
-    document.getElementById('status-dot').className = 'pulse-indicator offline';
+    linkFailures += 1;
+    if (linkFailures < 3) {
+      setLinkState('connecting', 'RECONNECTING…', 'Lost contact with the JARVIS laptop core. Retrying…');
+    } else {
+      setLinkState('offline', 'LAPTOP UNREACHABLE', 'The laptop may be asleep, off, or off the network. Requests cannot be delivered right now, and nothing is queued for later execution.');
+    }
   }
 }
 

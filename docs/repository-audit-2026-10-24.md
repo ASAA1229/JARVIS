@@ -103,3 +103,82 @@ After the initial source audit, the following existing files were updated on the
 The documentation now distinguishes current repository implementation from the broader target: local always-ready wake-word voice, native Android/Android Keystore, two-phone remote control, email/WhatsApp/SMS/call/Teams/Microsoft 365 integrations, durable scheduling, full memory lifecycle, and universal app control remain incomplete until implemented and accepted.
 
 The branch update/reconciliation itself is scoped to non-main refs. PR #12 (feature integration) and PR #13 (documentation reconciliation) were merged into dev; PR #13 merge commit is 29df6b8699a8145f2163efee0c0ac306af2e7adc. main remains untouched. CI passed for new documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c (run 40099231737) and dev merge commit 29df6b8699a8145f2163efee0c0ac306af2e7adc (run 40099365008), with the same integration commit also passing on fix and test (runs 40099378785 and 40099381517).
+
+
+## Addendum — source hardening and HUD honesty pass (2026-10-24, uncommitted working-tree changes)
+
+**Verification status: NOT RUN.** This pass was made through file-level edit access only. No terminal, Git, build, type-check, test, browser or device was available, so `npm run lint`, `npm run build`, `npm test` and `npm run test:browser` have **not** been executed against these changes. Treat every item below as *implemented in source, unverified* until those commands pass on the owner's machine. The reference images (HUD.png, HUD2.png, companion.png) were not visually inspected in this pass.
+
+### Changes made
+
+| Area | Prior state (from source inspection) | Change | Verification |
+|---|---|---|---|
+| Policy gateway auditing | Replay of a consumed approval, reuse of a rejected or expired approval, and use of an unknown approval id were denied but left no audit event. | `src/policy/gateway.ts` now records `POLICY_DENIED_APPROVAL_NOT_FOUND` (identifier truncated to 12 characters) and `POLICY_DENIED_APPROVAL_UNUSABLE` (`ALREADY_CONSUMED`, `REJECTED` or `EXPIRED`). Denial reasons and decisions are unchanged. | New tests in `test/approval_lifecycle.test.ts`; not run |
+| Approval table growth | `pendingApprovals` was never pruned. | Added `PolicyGateway.pruneApprovals()`, called on each new approval request. Only records expired more than 1 hour ago are removed; a pruned approval is reported as not found, so it can never authorize anything. | Test in `test/approval_lifecycle.test.ts`; not run |
+| Status endpoint | `/api/status` returned only `status`. | Now also returns `platform`, `uptimeSeconds` and `checks` (`auditIntegrity`, `identityState`). Values are measured at request time. No device, key, token, session or audit content is exposed. | `test/hud_telemetry.test.ts`; not run |
+| HUD telemetry | `SYSTEM: WINDOWS 11` and `HOST LINK: LOCAL 127.0.0.1` were hard-coded. After an outage the host indicator stayed `OFFLINE` forever and the banner never recovered. | `src/companion/hud.html` and `hud.js`: values now come from `/api/status`; hard-coded text replaced with `CHECKING`; recovery from an outage is detected and reported; failed health checks are named when degraded. | Static-content tests; not run in a browser |
+| HUD voice display | The listening waveform was a synthetic sine wave presented as voice activity. | `hud.js` now reads real microphone samples through a local `AnalyserNode` during user-started capture. If no level data is available it draws a flat dashed line labelled `CAPTURING - NO LEVEL DATA` instead of simulating input. Audio is not recorded, stored, uploaded or played. The meter is stopped on stop, cancel, recognizer end, mute and by a 1-second backstop timer. The idle ambient line remains decorative and is not telemetry. | Static-content tests only; **real microphone behavior is unverified** |
+| HUD resource use | Waveform ran at display refresh rate; status/audit polling continued while the tab was hidden. | Waveform limited to about 30 fps; status and audit polling skip while `document.hidden`. | Not measured |
+
+### Files changed
+
+`src/policy/gateway.ts`, `src/server/server.ts`, `src/companion/hud.html`, `src/companion/hud.js`, `test/approval_lifecycle.test.ts` (new), `test/hud_telemetry.test.ts` (new), and this report. `data/`, `.env` and the reference images were not read or modified.
+
+### Behavioral risks to check when tests are run
+
+- The new tests assume a fresh identity-state path reports `identityState: true`; if `JarvisServer`'s third constructor argument has different semantics, `test/hud_telemetry.test.ts` may need adjusting.
+- The new audit events call `AuditLogger.record`, which already throws when the log is unhealthy. This is intentional fail-closed behavior, but it means a corrupted log now also stops denial paths that were previously silent.
+- `hud.js` opens a second, level-only microphone stream while capturing. Confirm in Chrome/Edge on the target laptop that this does not interfere with `SpeechRecognition` and that the microphone indicator clears when capture ends. `test/browser-smoke.mjs` launches Edge with a fake media device, so the meter will start there too; that run is the first thing to check for regressions (it mocks `SpeechRecognition`, so it does not prove real recognition).
+
+### Findings from this inspection (not fixed in this pass)
+
+1. **Remembered approval for `app:launch` (design decision, review recommended):** an approved launch is remembered per device and parameter set for 30 days and later runs without a prompt. It is device- and parameter-bound and persisted with an HMAC only when an owner control token is configured; otherwise it is session-local. Confirm 30 days is the intended window.
+2. **Hard-coded companion elements:** the HUD's POLICY RISK MATRIX and `POLICY: DEFAULT-DENY` label are static descriptions of design intent, not live measurements. They are accurate to the current gateway but are not computed from it.
+3. **Approval state is in memory only.** A restart discards pending approvals, which fails safe, but there is no durable workflow recovery.
+4. **Voice:** recognition still depends on the browser speech service; there is no local wake-word or local speech-to-text engine. Hands-free wake phrases are matched against browser transcripts.
+5. **Not addressed here:** Windows desktop agent hardening, native Android, communications, scheduler, memory review UI, file/terminal scope, and the larger companion redesign. The earlier gap list in this report still applies to all of them.
+
+### Manual acceptance still required
+
+1. Run `npm run lint`, `npm run build`, `npm test`, `npm run test:browser` and record the real results.
+2. Open `/hud`: confirm SYSTEM and HOST LINK populate from the server, stop the server and confirm `OFFLINE`/`UNREACHABLE`, restart it and confirm `HOST RECONNECTED`.
+3. With a physical microphone, press the voice button and speak: the line should follow real input; deny microphone permission and confirm the `NO LEVEL DATA` label; confirm the browser microphone indicator clears after capture ends.
+4. Trigger an approval, let it expire, and confirm a `POLICY_DENIED_APPROVAL_UNUSABLE` audit entry appears.
+
+
+## Addendum 2 — HUD and companion visual redesign (2026-10-25, uncommitted working-tree changes)
+
+**Verification status: NOT RUN in a real browser against the live server; tests not executed.** The three reference images were viewed. The redesigned markup and CSS were rendered as static pages in headless Chromium (no scripts, no backend) at 1440x900 (HUD), 1280x900 and 390x844 (companion) and compared by eye with the references; the 820 px HUD layout was rendered but not reviewed. Script behavior (state colours, pipeline, status nodes, link banner, microphone meter) was **not** exercised in a browser. `npm run lint`, `npm run build`, `npm test` and `npm run test:browser` have not been run.
+
+### Reference analysis (HUD.png, HUD2.png, companion.png)
+
+Deep navy field with a faint city-night glow; cyan line-work with amber used for alerts and green for success; bracketed glass panels; a title plate with a ruler across the top; a large central reactor made of tick rings, thick arc segments and crosshairs around a cyan-to-amber particle swirl; a status line with three circular nodes at the bottom; hazard-striped headings on security panels in the companion reference; a terminal-style audit log. Decorative values in the references (temperature, munitions, threat level, coordinates) were deliberately **not** reproduced because JARVIS has no such data.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `src/companion/hud.css` | Full rewrite. Palette and tokens, bracketed `.frame` panels, title plate, SVG reactor styling, swirl core, state-driven colour/speed, status nodes, pipeline, chamfered controls, responsive breakpoints at 1180/760 px, reduced-motion support (manual toggle and OS preference). CSS only; animations use transform/opacity; no `backdrop-filter`. Camera/gesture rules were carried over unchanged. |
+| `src/companion/hud.html` | Restructured: header plate and measured-readout panel, SVG reactor with accessible core button (`role=button`, `tabindex`, Enter key), waveform under the reactor, status nodes, directive pipeline, control bar (mic, wake phrase, pause, hands-free, voice, motion). All previous element ids kept. No inline styles or scripts. |
+| `src/companion/hud.js` | `setAssistantState` now sets `body[data-state]` (idle / listening / processing / attention / error / muted) derived from the real status label; speaking is mirrored from `isSpeaking`. Real-state status nodes (core, host, session). A directive pipeline (sent, policy, consent, verified) that advances only from actual server responses or request failures, with a distinct skipped-consent state. Waveform line recoloured to the new palette. |
+| `src/companion/index.html`, `style.css` | Companion restyled to the same language: title plate, laptop link banner, request pipeline, hazard-striped security headings, two-column desktop layout and mobile-first single column (requests, approvals, outcomes, device, audit). Hard-coded `Audit Chain: VALID` and `Host: Windows 11 Home` removed. |
+| `src/companion/app.js` | `pollStatus` now drives a three-stage link state (online / reconnecting / unreachable after 3 failed polls) with an honest banner that says nothing is queued while the laptop is unreachable; audit-chain validity and host OS come from `/api/status`; request pipeline; approval cards now state that approvals are single-use, short-lived and bound to the exact action. |
+| `test/hud_telemetry.test.ts` | Added structural tests (required ids, no inline style/script, state and pipeline wiring, companion link state). Static checks only. |
+
+No security, authentication, device-identity or policy logic was changed in this pass. The reference PNGs were not copied into the repository's runtime assets.
+
+### Known limits of this UI pass
+
+- No Stop/Cancel-task control was added to either UI: the server has no task-cancellation endpoint, and a button that did nothing would be misleading. Escape still cancels voice capture only.
+- The idle reactor swirl and ambient waveform are decorative; the label and nodes carry the real state.
+- Two separate hands-free controls remain (wake phrase detection and continuous capture). That duplication predates this pass and is confusing; it should be merged in a follow-up.
+- Android and iOS were not addressed; the companion is still a web page, not a native agent.
+
+### Manual visual acceptance
+
+1. Run the checks listed above, then open `/` and `/companion` at 1440, 1024, 820 and 390 px widths and compare with the three references.
+2. Confirm the reactor changes colour for listening, processing, error, and muted states, and pulses while a spoken reply plays.
+3. Stop the server: the HUD host node should show OFFLINE and the companion should move from RECONNECTING to LAPTOP UNREACHABLE after about 9 seconds; restart it and confirm both recover.
+4. Submit a read-only directive and a launch directive and confirm the pipeline shows a skipped consent stage for the first and a waiting consent stage for the second.
+5. Turn on reduced motion (and, separately, the OS setting) and confirm the rings stop spinning.
+6. On the target laptop, check CPU use of the HUD tab while idle.

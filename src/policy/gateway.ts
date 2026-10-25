@@ -285,6 +285,10 @@ export class PolicyGateway {
     if (existingApprovalId) {
       const approval = this.pendingApprovals.get(existingApprovalId);
       if (!approval) {
+        // Unknown approval identifiers are untrusted input: record a bounded, non-secret trace.
+        this.audit.record('POLICY_DENIED_APPROVAL_NOT_FOUND', { operation: req.operation, approvalIdPrefix: String(existingApprovalId).slice(0, 12) }, device.id, taskId);
+      }
+      if (!approval) {
         return {
           allowed: false,
           requiresApproval: true,
@@ -312,6 +316,12 @@ export class PolicyGateway {
           riskTier: rule.riskTier,
           reason: 'Approval token is not bound to this task, device, and operation',
         };
+      }
+
+      if (approval.consumed || approval.rejected || Date.now() > approval.expiresAt) {
+        // Replay, rejected-approval reuse, and expired-approval reuse attempts must be auditable.
+        const denialReason = approval.consumed ? 'ALREADY_CONSUMED' : approval.rejected ? 'REJECTED' : 'EXPIRED';
+        this.audit.record('POLICY_DENIED_APPROVAL_UNUSABLE', { approvalId: approval.id, operation: req.operation, denialReason }, device.id, taskId);
       }
 
       if (approval.consumed) {
@@ -406,6 +416,7 @@ export class PolicyGateway {
       approved: false,
     };
 
+    this.pruneApprovals();
     this.pendingApprovals.set(approvalId, record);
 
     this.audit.record('APPROVAL_REQUESTED', {
@@ -473,6 +484,24 @@ export class PolicyGateway {
     );
 
     return { success: true };
+  }
+
+  /**
+   * Drops approval records that expired more than one hour ago so the in-memory
+   * table stays bounded. Recently expired, consumed, or rejected records are kept
+   * so replay attempts still receive an accurate denial reason and audit event.
+   * A pruned approval is never usable: evaluate() reports it as not found.
+   */
+  public pruneApprovals(now: number = Date.now()): number {
+    const retentionMs = 60 * 60 * 1000;
+    let removed = 0;
+    for (const [id, approval] of this.pendingApprovals) {
+      if (approval.expiresAt + retentionMs < now) {
+        this.pendingApprovals.delete(id);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   public getApproval(approvalId: string): ApprovalRecord | undefined {

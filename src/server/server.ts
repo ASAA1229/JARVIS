@@ -169,8 +169,12 @@ export class JarvisServer {
         // material, task content, or audit internals without an authorized session.
         const integrityHealthy = this.jarvis.audit.verifyIntegrity().valid;
         const stateHealthy = this.jarvis.identity.isStateHealthy();
+        // Only coarse, measured, non-identifying runtime facts are exposed here.
         return this.jsonResponse(res, 200, {
           status: integrityHealthy && stateHealthy ? 'ONLINE' : 'DEGRADED',
+          platform: process.platform,
+          uptimeSeconds: Math.round(process.uptime()),
+          checks: { auditIntegrity: integrityHealthy, identityState: stateHealthy },
         });
       }
 
