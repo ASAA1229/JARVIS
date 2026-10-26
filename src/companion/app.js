@@ -625,15 +625,17 @@ async function fetchNotifications() {
     } else {
       for (const notification of notifications) {
         const entry = document.createElement('div');
-        entry.className = 'task-entry ' + (notification.level === 'error' ? 'failed' : notification.level === 'warning' ? 'pending' : 'success');
+        entry.className = 'task-item ' + (notification.level === 'error' ? 'failed' : notification.level === 'warning' ? 'pending' : 'success');
+        const header = document.createElement('div');
+        header.className = 'task-header';
         const time = document.createElement('span');
-        time.className = 'task-time';
-        time.textContent = '[' + new Date(Number(notification.at)).toLocaleString() + '] ';
+        time.textContent = new Date(Number(notification.at)).toLocaleString();
         const kind = document.createElement('strong');
-        kind.textContent = String(notification.kind || 'notification').replaceAll('_', ' ').toUpperCase() + ': ';
-        const message = document.createElement('span');
+        kind.textContent = String(notification.kind || 'notification').replaceAll('_', ' ').toUpperCase();
+        header.append(time, kind);
+        const message = document.createElement('div');
         message.textContent = String(notification.message || 'No details provided.');
-        entry.append(time, kind, message);
+        entry.append(header, message);
         feed.appendChild(entry);
       }
     }
