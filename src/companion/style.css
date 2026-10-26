@@ -232,6 +232,10 @@ input::placeholder { color: #7e9bb0; }
 .task-header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; font: 11px var(--font-mono); letter-spacing: 0.06em; }
 .task-data { margin-top: 6px; padding: 8px; font: 11px var(--font-mono); white-space: pre-wrap; color: #c9d9e3; background: rgba(0, 0, 0, 0.4); user-select: text; }
 .tasks-feed { max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--cyan-soft) transparent; }
+.notification-status { margin-bottom: 8px; }
+#notifications-feed .task-item { font-size: 12px; }
+#notifications-feed .task-header { color: var(--text-dim); }
+#notifications-feed .task-header strong { color: var(--cyan); }
 
 /* Audit terminal */
 .audit-stream { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 10px; font: 11px/1.5 var(--font-mono); color: var(--text-dim); background: rgba(0, 6, 12, 0.7); border: 1px solid var(--cyan-faint); scrollbar-width: thin; scrollbar-color: var(--cyan-soft) transparent; }
