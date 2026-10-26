@@ -137,3 +137,12 @@ Added regression coverage in `test/remembered_approval.test.ts` for three author
 ### Approval lifecycle test expansion — 2026-10-26
 
 Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject resolution attempts, cross-device replay, and expiry (including a delayed resolution attempt). Together with the earlier tests, the new coverage exercises task/parameter binding, single-use consumption, corrupt persisted grant state, and fail-closed grant persistence. All are committed on `new`; **execution is pending** until the hosted workflow reports results for the updated head.
+
+
+## Next security slice — session lifecycle hardening (2026-10-26)
+
+- Added a hard session TTL boundary: session lifetimes must be integer seconds from 1 through 86,400; zero, negative, fractional, non-finite and over-one-day values are rejected.
+- Session activation now fails closed if the `SESSION_CREATED` audit event cannot be durably recorded. The just-created session is deactivated and removed; the signed nonce remains consumed, which is safe and forces a fresh client request.
+- Added `test/session_lifecycle_security.test.ts` covering invalid TTL values and an audit-write failure during session creation.
+
+**Evidence status:** changes are committed on `new`, but no completed CI result has yet confirmed these tests. Do not call this slice verified until the build, typecheck, full suite, and browser smoke pass on the exact head.
