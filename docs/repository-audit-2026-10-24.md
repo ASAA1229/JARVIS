@@ -247,3 +247,10 @@ The status endpoint exposes only platform, uptime, and two coarse health boolean
 - [ ] Confirm hosted build, typecheck, complete automated suite, and browser smoke on the corrected source commit.
 - [ ] Run `npm audit` against the locked dependency tree and record the exact result; the previous report did not verify this.
 - [ ] Perform target Windows 11 interactive desktop, microphone/TTS, and both Android-device acceptance. Hosted CI cannot substitute for these checks.
+
+
+## Audit addendum — approval replay and corrupt-state coverage (2026-10-26)
+
+Added tests in `test/remembered_approval.test.ts` for parameter-scope tampering, cross-task replay, single-use consumption, and corrupted remembered-grant state. The corrupt-state test verifies that the policy gateway requires a fresh approval and refuses to report a remembered grant as safely persisted when the integrity envelope is invalid.
+
+These tests are committed to branch `new`; **no execution result has been observed for this commit yet**. Do not mark this control verified until the hosted test suite passes. Remaining P0 test gaps include concurrent/duplicate resolution, wrong-device binding, approval expiry boundaries, audit-chain failure, and session/device revocation behavior.
