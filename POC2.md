@@ -125,3 +125,10 @@ Acceptance note: browser-based wake recognition is not guaranteed to be local. H
 - [ ] Verify all checks on a completed hosted CI run for the corrected commit. Do not mark the POC release-ready until it passes.
 - [ ] Run and record dependency audit; previous hosted results do not prove `npm audit` status.
 - [ ] Complete physical Windows voice/UI and both Android-device acceptance; source and CI evidence alone are insufficient.
+
+
+## P0 security regression tests added — 2026-10-26
+
+Added regression coverage in `test/remembered_approval.test.ts` for three authorization invariants: an approval cannot be reused for changed parameters, cannot be replayed against another task, and can authorize only one execution. Added a tampered remembered-grant-state case to verify the gateway fails closed and does not report a remembered grant as successfully persisted.
+
+**Status: code committed; tests not yet executed on the updated commit.** The prior CI result is not evidence for these newly added tests. The next gate is a fresh hosted run of build, typecheck, all tests, and browser smoke. Continue with explicit tests for concurrent approval resolution, wrong-device binding, approval expiry, audit-chain failure, and device/session revocation after this run is green.
