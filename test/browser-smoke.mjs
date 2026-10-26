@@ -117,7 +117,7 @@ try {
   await page.waitForFunction(() => {
     const feed = document.getElementById('notifications-feed');
     return Boolean(feed && /TASK COMPLETED/.test(feed.innerText) && /system:get_os_info/.test(feed.innerText));
-  }, { timeout: 10000 });
+  }, undefined, { timeout: 10000 });
 
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
