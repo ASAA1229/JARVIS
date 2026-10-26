@@ -114,3 +114,14 @@ The target is capability-based discovery for all installed and built-in apps on 
 - [ ] Implement semantic embeddings/vector retrieval in a later, separately tested stage; current memory context is bounded text retrieval, not embedding-based retrieval.
 
 Acceptance note: browser-based wake recognition is not guaranteed to be local. Hands-free remains an explicit user-enabled feature. Do not describe the wake phrase as hardware-verified until a real-device test is recorded.
+
+
+## Regression triage — 2026-10-26
+
+- [x] Inspected hosted run [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796): TypeScript build PASS, typecheck PASS, tests 127 PASS / 3 FAIL, browser smoke skipped after test failure.
+- [x] Corrected stale `/api/status` schema expectations in the lifecycle and security tests. The tests now assert the exact non-sensitive measured fields and health-check types.
+- [x] Corrected the expired-approval test to expect `TaskState.EXPIRED`; an expired approval must not remain pending or execute.
+- [x] Confirmed both remembered-approval tests passed in the failed run, including the boundary that remembered launch grants do not authorize text entry.
+- [ ] Verify all checks on a completed hosted CI run for the corrected commit. Do not mark the POC release-ready until it passes.
+- [ ] Run and record dependency audit; previous hosted results do not prove `npm audit` status.
+- [ ] Complete physical Windows voice/UI and both Android-device acceptance; source and CI evidence alone are insufficient.
