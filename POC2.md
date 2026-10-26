@@ -146,3 +146,12 @@ Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject re
 - Added `test/session_lifecycle_security.test.ts` covering invalid TTL values and an audit-write failure during session creation.
 
 **Evidence status:** changes are committed on `new`, but no completed CI result has yet confirmed these tests. Do not call this slice verified until the build, typecheck, full suite, and browser smoke pass on the exact head.
+
+
+## Companion notifications panel — 2026-10-26
+
+- Added a Notifications & Alerts panel to the browser companion.
+- The panel polls the existing authenticated `GET /api/notifications` endpoint using the device's signed request flow, displays a bounded recent list, and uses text-only DOM rendering for notification content.
+- Added a browser smoke assertion that a completed read-only request appears in the authenticated notification feed.
+- This UI addition does not establish native Android push notifications; it is a polling feed in the browser companion.
+- Validation is pending for the exact latest head. Do not treat this as accepted until the complete CI workflow, including browser smoke, passes.
