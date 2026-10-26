@@ -37,14 +37,14 @@ export class PolicyGateway {
   private readonly grantPath: string;
   private readonly grantKey?: Buffer;
   private grantStateHealthy = true;
-  // Remembered app-launch approvals are DISABLED by default: every launch needs a
-  // fresh, single-use approval bound to its exact parameters. An owner can opt in
-  // with JARVIS_REMEMBER_LAUNCH_MINUTES (1-240); a remembered grant is still bound
-  // to the exact device, operation and app, and never lasts longer than 4 hours.
+  // Remembered approvals are enabled for app launches only, for 30 minutes by
+  // default. Set JARVIS_REMEMBER_LAUNCH_MINUTES=0 to disable or 1-240 to choose
+  // a duration. Grants are bound to the exact device, operation and app parameters.
+  // All other state-changing operations continue to require fresh task-scoped approval.
   private readonly rememberedGrantTtlMs = PolicyGateway.readRememberTtlMs();
 
   private static readRememberTtlMs(): number {
-    const raw = Number(process.env.JARVIS_REMEMBER_LAUNCH_MINUTES ?? '0');
+    const raw = Number(process.env.JARVIS_REMEMBER_LAUNCH_MINUTES ?? '30');
     if (!Number.isFinite(raw) || raw < 1) return 0;
     return Math.min(Math.floor(raw), 240) * 60 * 1000;
   }

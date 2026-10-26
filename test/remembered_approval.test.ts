@@ -45,3 +45,18 @@ test('approved app launch is remembered across gateway restarts for the same dev
   assert.equal(differentApp.allowed, false);
   assert.equal(differentApp.requiresApproval, true);
 });
+
+test('remembered approval never bypasses fresh approval for other state-changing operations', () => {
+  const first = new PolicyGateway(new AuditLogger(auditPath), grantPath, ownerToken);
+  const launch = { operation: 'app:launch', parameters: { appId: 'notepad' } };
+  const pending = first.createApprovalRequest('task-launch', device.id, launch.operation, launch.parameters, RiskTier.MEDIUM);
+  assert.deepEqual(first.resolveApproval(pending.id, true, device.id), { success: true });
+
+  const typedText = first.evaluate(
+    { operation: 'desktop:type_text', parameters: { text: 'hello', expectProcess: 'notepad' } },
+    device,
+    'task-type-text',
+  );
+  assert.equal(typedText.allowed, false);
+  assert.equal(typedText.requiresApproval, true);
+});
