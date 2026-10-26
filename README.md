@@ -26,6 +26,7 @@ The universal goal is capability-based: discover installed/built-in applications
 - Selected read-only Windows system queries and limited Windows app launch.
 - Foreground-window UI Automation for selected text/control/clipboard/zoom interactions.
 - Browser companion/HUD with push-to-talk and text fallback.
+- Browser companion notification feed backed by signed, device-scoped `/api/notifications` polling.
 - Optional local Piper TTS, with browser speech synthesis fallback.
 - Encrypted local personal-memory foundation and official-store search-link generation.
 - Capability registry with implemented/partial/planned/restricted status.
