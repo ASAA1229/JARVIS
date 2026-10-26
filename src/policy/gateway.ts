@@ -488,9 +488,9 @@ export class PolicyGateway {
       return { success: false, error: 'Approval request is no longer pending' };
     }
 
-    // A remembered app-launch approval exists only when the owner opted in with
-    // JARVIS_REMEMBER_LAUNCH_MINUTES (default off, max 4 hours), bound to this exact
-    // device and parameter hash. Persist it before reporting success.
+    // Remembered app-launch approvals default to 30 minutes (0 disables; 1-240
+    // configures the duration), bound to this exact device and parameter hash.
+    // Persist the grant before reporting approval success.
     if (approved && approval.operation === 'app:launch' && this.rememberedGrantTtlMs > 0) {
       const grant: RememberedGrant = {
         deviceId: approval.deviceId,
