@@ -60,7 +60,12 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const statusRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
     const statusData = await statusRes.json();
     assert.strictEqual(statusData.status, 'ONLINE');
-    assert.deepStrictEqual(Object.keys(statusData).sort(), ['status']);
+    assert.deepStrictEqual(Object.keys(statusData).sort(), ['checks', 'platform', 'status', 'uptimeSeconds']);
+    assert.equal(typeof statusData.platform, 'string');
+    assert.equal(typeof statusData.uptimeSeconds, 'number');
+    assert.deepStrictEqual(Object.keys(statusData.checks).sort(), ['auditIntegrity', 'identityState']);
+    assert.equal(typeof statusData.checks.auditIntegrity, 'boolean');
+    assert.equal(typeof statusData.checks.identityState, 'boolean');
 
     // 2. Generate Enrollment Challenge
     const challengeRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/enrollment/challenge`, { method: 'POST', headers: { 'x-owner-control-token': 'test-owner-control-token-0123456789abcdef' } });
@@ -238,8 +243,13 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
     assert.strictEqual(response.status, 200);
     const body = await response.json();
-    assert.deepStrictEqual(Object.keys(body), ['status']);
+    assert.deepStrictEqual(Object.keys(body).sort(), ['checks', 'platform', 'status', 'uptimeSeconds']);
     assert.strictEqual(body.status, 'ONLINE');
+    assert.equal(typeof body.platform, 'string');
+    assert.equal(Number.isFinite(body.uptimeSeconds) && body.uptimeSeconds >= 0, true);
+    assert.deepStrictEqual(Object.keys(body.checks).sort(), ['auditIntegrity', 'identityState']);
+    assert.equal(typeof body.checks.auditIntegrity, 'boolean');
+    assert.equal(typeof body.checks.identityState, 'boolean');
   });
 
   test('SEC-API-03: Audit endpoint denies unauthenticated access', async () => {
@@ -395,7 +405,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual(response.status, 409);
     assert.match((await response.json()).error, /expired/i);
     assert.strictEqual(approval.approved, false);
-    assert.strictEqual(server.getService().getTask(task.taskId)?.state, TaskState.AWAITING_APPROVAL);
+    assert.strictEqual(server.getService().getTask(task.taskId)?.state, TaskState.EXPIRED);
   });
 
   test('SEC-API-06: Authenticated ordinary device cannot read privileged audit records', async () => {
