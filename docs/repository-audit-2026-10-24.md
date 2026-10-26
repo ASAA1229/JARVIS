@@ -254,3 +254,8 @@ The status endpoint exposes only platform, uptime, and two coarse health boolean
 Added tests in `test/remembered_approval.test.ts` for parameter-scope tampering, cross-task replay, single-use consumption, and corrupted remembered-grant state. The corrupt-state test verifies that the policy gateway requires a fresh approval and refuses to report a remembered grant as safely persisted when the integrity envelope is invalid.
 
 These tests are committed to branch `new`; **no execution result has been observed for this commit yet**. Do not mark this control verified until the hosted test suite passes. Remaining P0 test gaps include concurrent/duplicate resolution, wrong-device binding, approval expiry boundaries, audit-chain failure, and session/device revocation behavior.
+
+
+### Approval lifecycle test expansion — 2026-10-26
+
+Added explicit tests for duplicate resolution, cross-device replay, and approval expiry. These complement parameter-scope mutation, cross-task replay, single-use consumption, and corrupted remembered-grant persistence coverage. These are source changes only until a completed CI run confirms the tests pass; they are not yet marked verified.
