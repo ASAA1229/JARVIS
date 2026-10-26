@@ -259,3 +259,14 @@ These tests are committed to branch `new`; **no execution result has been observ
 ### Approval lifecycle test expansion — 2026-10-26
 
 Added explicit tests for duplicate resolution, cross-device replay, and approval expiry. These complement parameter-scope mutation, cross-task replay, single-use consumption, and corrupted remembered-grant persistence coverage. These are source changes only until a completed CI run confirms the tests pass; they are not yet marked verified.
+
+
+## Companion notification UI addendum — 2026-10-26
+
+Implemented on `new`:
+- Browser companion now renders the authenticated device-scoped notification feed using `GET /api/notifications`.
+- Notifications refresh on demand and poll every 10 seconds while the page is visible.
+- Rendered notification content uses `textContent` rather than HTML injection.
+- Browser smoke coverage now expects a verified read-only request to appear in the notification feed.
+
+**Not yet verified:** the workflow triggered by these changes has not been confirmed green at the time of this documentation update. Browser polling is not native push delivery, and this change does not complete Android notifications or background delivery.
