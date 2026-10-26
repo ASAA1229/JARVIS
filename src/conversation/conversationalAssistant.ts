@@ -25,7 +25,7 @@ function normalized(text: string): string {
 }
 
 function isActionRequest(text: string): boolean {
-  return /\b(open|launch|close|start|stop|click|type|paste|copy|zoom|press|run|execute|delete|remove|restore|create file|write file|edit file|read file|list files|search files|schedule|cancel schedule|remember|forget|save|send|call|message|install|shutdown|restart)\b/i.test(text);
+  return /\b(open|launch|close|start|stop|click|type|paste|copy|zoom|press|run|execute|delete|remove|restore|create file|write file|edit file|read file|list files|search files|schedule|cancel schedule|remember|forget|save|send|call|message|install|shutdown|restart|list windows|show windows|show my windows|(?:what|which) (?:apps?|windows|applications|programs) (?:are )?(?:open|running)|switch to|focus|bring up|(?:list|show) (?:my )?schedules|every \d+ (?:minutes?|hours?)|find (?:a )?files?|(?:create|make|write|save) (?:a )?(?:new )?file|in file|(?:update|correct) memory|show (?:me )?(?:the |my )?files?|show me file)\b/i.test(text);
 }
 
 function identityAnswer(text: string, memory: ConversationMemory[]): string | null {

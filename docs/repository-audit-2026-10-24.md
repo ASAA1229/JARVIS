@@ -182,3 +182,45 @@ No security, authentication, device-identity or policy logic was changed in this
 4. Submit a read-only directive and a launch directive and confirm the pipeline shows a skipped consent stage for the first and a waiting consent stage for the second.
 5. Turn on reduced motion (and, separately, the OS setting) and confirm the rings stop spinning.
 6. On the target laptop, check CPU use of the HUD tab while idle.
+
+
+## Addendum 3 — Functional gap closure (2026-10-26, uncommitted working-tree changes)
+
+**Verification status: NOT COMPILED, NOT RUN.** This pass was made with file-edit access only, at the owner's instruction not to run or write tests. Expect to fix compile errors on first `npm run build`; existing tests that assumed the old behavior (see Behavior changes) need updating.
+
+### New modules
+
+| Module | What it does | Limits |
+|---|---|---|
+| `src/adapters/windowsWindows.ts` | Window discovery (`Get-Process` main windows), exactly-one-match focus with `GetForegroundWindow` readback, new-window detection, shared PowerShell error classification (timeout, cancelled, locked session, target mismatch, blocked, unavailable). | Windows only; untested on a real desktop. Focus can be refused by Windows focus-lock, which is reported as a failure. |
+| `src/adapters/workspaceFiles.ts` | list / name-search / read / create-new / single-edit (with backup) / delete-to-quarantine / restore inside configured roots. Symlinks, junctions, reserved device names and credential-like file names refused; every mutation verified by read-back or checksum. | Roots from `JARVIS_WORKSPACE_ROOTS` (default `~/Documents/JARVIS Workspace`). Text files up to 256 KB. Name search only. Quarantine is never purged automatically. |
+| `src/adapters/terminalRunner.ts` | Non-shell execution of allowlisted read-only programs (`git` status/log/diff/branch/rev-parse/show/ls-files with a flag allowlist, `node --version`, `python --version`, `hostname`), 15 s timeout, 64 KB output cap, process-tree kill, scrubbed environment, workspace-only working directory. | Not a general shell. No package scripts. No elevation path exists. |
+| `src/scheduler/scheduler.ts` | Scheduled and recurring requests stored as owner + request text only; at-most-once delivery; missed one-shots are never replayed; HMAC-protected persistence when an owner token is set. | Each run re-enters the normal pipeline, so state-changing steps wait for a fresh approval (approvals expire after 5 minutes). Unattended state-changing automation is deliberately not possible. |
+| `src/core/notifications.ts` | Bounded feed for approvals needed, blocked, failed, uncertain, completed, expired, cancelled, schedule and revocation events. | In memory only; short non-sensitive summaries. |
+| `src/voice/providers.ts` | Speech-to-text / wake-phrase provider interfaces, a real local `whisper.cpp` provider, a configurable transcript wake-phrase matcher, privacy settings (cloud speech off unless `JARVIS_ALLOW_CLOUD_SPEECH=1`). | Needs whisper.cpp and a model installed (`JARVIS_WHISPER_CLI`, `JARVIS_WHISPER_MODEL`). No audio-level wake-word engine exists. The HUD is **not yet wired** to the local engine and still uses browser recognition. |
+
+### Changes to existing code
+
+- **Verifier / types:** an UNCERTAIN adapter result is no longer reported as a clean failure; tasks move to `AWAITING_RECOVERY` and are never auto-retried. `ExecutionResult.failureKind` added.
+- **Desktop agent:** timeouts and cancellation after input was sent are UNCERTAIN; locked-desktop guard; optional `expectProcess` pins input to the intended foreground process; new `desktop:list_windows` and `desktop:focus_window`.
+- **App launcher:** a launch is VERIFIED only when a new window of the app appears (before/after window snapshot); a process check alone is now PARTIAL. `desktop:launch_and_type` types only into the verified window, after focusing it and pinning `expectProcess`; otherwise it refuses to type.
+- **Policy gateway:** rules for window focus/list, `file:*`, `terminal:run`, `schedule:*`, `memory:update`; `invalidateApprovals()` for task cancellation and device revocation.
+- **Core service:** all new operations dispatch only from the post-policy execution path; 60 s ceiling per execution; one bounded retry for read-only operations after a timeout; per-step records (completed / failed / uncertain / blocked / skipped / awaiting approval / cancelled); `cancelTask`, `onDeviceRevoked`, `getHealthSnapshot`; scheduled jobs run through the same pipeline; approval expiry marks the task EXPIRED.
+- **Server:** `GET /api/notifications`, `GET /api/health` (owner devices), `GET /api/tasks`, `POST /api/task/cancel`, `GET /api/voice/capabilities`, `POST /api/voice/transcribe`; revocation now cancels that device's approvals, schedules and running tasks; the scheduler starts and stops with the server.
+- **Planner:** natural-language mappings for the new operations (shell metacharacters never match).
+- **Memory:** correction (`memory:update`), instruction-like text refused as untrusted, relevance-based retrieval for planning, deletion verified by decrypting the stored file again.
+- **Conversation layer:** its action-verb detector was extended so the new commands reach the planner instead of the chat model.
+
+### Behavior changes that may break existing tests or habits
+
+1. **Remembered app-launch approvals are now OFF by default.** Previously one approval allowed that app/device launch without prompting for 30 days. Now every launch needs a fresh single-use approval; the owner may opt in with `JARVIS_REMEMBER_LAUNCH_MINUTES` (1-240). Tests in `test/remembered_approval*.test.ts` that assume the old behavior need that variable set or updating.
+2. A launch with no detectable new window is PARTIAL, not VERIFIED (for example Notepad reusing an existing window).
+3. UNCERTAIN results now surface as `AWAITING_RECOVERY` instead of FAILED.
+
+### Still not implemented (needs more than this iteration)
+
+- HUD/companion wiring to local speech-to-text, always-on local wake word, interruptible speech and approval-aware spoken flow beyond what existed.
+- UIA/accessibility-tree control (named-control clicks from the earlier agent are unchanged); zoom/clipboard improvements beyond the target-pinning guard.
+- Queueing of harmless requests while the laptop is asleep (the companion reports unreachable and queues nothing), secure remote access away from home, native Android agent with Keystore keys.
+- Email/SMS/WhatsApp/Teams adapters, UI for notifications, schedules and memory review/correction (APIs exist, screens do not).
+- Multi-step plans still come only from the local heuristic planner; no dependency graph beyond ordered steps; no LLM planner provider.

@@ -12,6 +12,7 @@ import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
+import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
 
 export class JarvisServer {
@@ -20,6 +21,7 @@ export class JarvisServer {
   private port: number;
   private readonly ownerControlToken: string | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
+  private readonly voiceProviders = new VoiceProviderRegistry();
 
   constructor(
     port: number = 3000,
@@ -425,6 +427,35 @@ export class JarvisServer {
         }
       }
 
+      // Voice provider status: which speech engines are really available, and their privacy properties.
+      if (req.method === 'GET' && url.pathname === '/api/voice/capabilities') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        return this.jsonResponse(res, 200, await this.voiceProviders.describe());
+      }
+
+      // Local speech-to-text. The result is only text: it must still be submitted as a normal
+      // request and pass the planner and PolicyGateway. Audio is processed locally and not stored.
+      if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req, 4 * 1024 * 1024);
+        if (!this.isJsonObject(body) || typeof body.audioBase64 !== 'string' || !body.audioBase64) return this.jsonResponse(res, 400, { error: 'audioBase64 (16 kHz mono 16-bit WAV) is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const provider = await this.voiceProviders.pickLocalStt();
+        if (!provider) return this.jsonResponse(res, 503, { error: 'No local speech recognition engine is installed', code: 'LOCAL_STT_NOT_CONFIGURED' });
+        try {
+          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'));
+          this.jarvis.audit.record('VOICE_TRANSCRIBED_LOCALLY', { provider: result.provider, textLength: result.text.length }, auth.device.id);
+          return this.jsonResponse(res, 200, { text: result.text, provider: result.provider, local: result.local });
+        } catch (error) {
+          return this.jsonResponse(res, 422, { error: error instanceof Error ? error.message : 'Local speech recognition failed' });
+        }
+      }
+
       // Submit user request
       if (req.method === 'POST' && url.pathname === '/api/request') {
         const sessionId = req.headers['x-session-id'] as string;
@@ -696,7 +727,7 @@ export class JarvisServer {
     res.end(JSON.stringify(data));
   }
 
-  private readJsonBody(req: IncomingMessage): Promise<unknown> {
+  private readJsonBody(req: IncomingMessage, maxBytes: number = 1024 * 64): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const contentType = req.headers['content-type'] || '';
       const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
@@ -715,7 +746,7 @@ export class JarvisServer {
       req.on('data', (chunk: Buffer | string) => {
         if (settled) return;
         body += chunk.toString();
-        if (Buffer.byteLength(body, 'utf8') > 1024 * 64) {
+        if (Buffer.byteLength(body, 'utf8') > maxBytes) {
           fail(new Error('Payload too large'));
           // Drain the rest without buffering it so the connection can finish cleanly.
           req.resume();

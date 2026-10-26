@@ -208,7 +208,7 @@ export class JarvisCoreService {
     const context: MinimizedContext = {
       requesterName: device.name,
       timestamp: Date.now(),
-      memory: this.personalMemory?.list().slice(0, 20).map((record) => record.content),
+      memory: this.personalMemory?.relevant(requestText, 5).map((record) => record.content),
     };
     let plan: PlanProposal;
     try {
@@ -424,12 +424,22 @@ export class JarvisCoreService {
           this.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, taskRecord.deviceId, taskId);
           return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: record.id, category: record.category, createdAt: record.createdAt, expiresAt: record.expiresAt }, evidence: { encryptedAtRest: true, memoryId: record.id } };
         }
+        case 'memory:update': {
+          if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          const updated = this.personalMemory.update(parameters.id as string, parameters.content as string);
+          if (!updated) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Memory entry not found.', evidence: { memoryId: parameters.id } };
+          this.audit.record('PERSONAL_MEMORY_UPDATED', { memoryId: updated.id, category: updated.category }, taskRecord.deviceId, taskId);
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: updated.id, category: updated.category, updatedAt: updated.updatedAt }, evidence: { encryptedAtRest: true, memoryId: updated.id } };
+        }
         case 'memory:delete': {
           if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
           const id = parameters.id as string;
           const deleted = this.personalMemory.delete(id);
-          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted }, taskRecord.deviceId, taskId);
-          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted } };
+          // Prove deletion by re-reading and decrypting the stored file, not by trusting memory.
+          const diskVerified = deleted ? this.personalMemory.verifyAbsentOnDisk(id) : false;
+          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified }, taskRecord.deviceId, taskId);
+          if (deleted && !diskVerified) return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified } };
+          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified } };
         }
         case 'system:get_os_info':
           return this.systemAdapter.getOsInfo();

@@ -102,6 +102,7 @@ export class PolicyGateway {
     ],
     ...[
       ['memory:save', ['category', 'content', 'ttlDays']],
+      ['memory:update', ['id', 'content']],
       ['memory:list', []],
       ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],
@@ -487,8 +488,9 @@ export class PolicyGateway {
       return { success: false, error: 'Approval request is no longer pending' };
     }
 
-    // App launch approval is remembered for this exact requesting device and
-    // exact parameter hash for 30 days. Persist it before reporting success.
+    // A remembered app-launch approval exists only when the owner opted in with
+    // JARVIS_REMEMBER_LAUNCH_MINUTES (default off, max 4 hours), bound to this exact
+    // device and parameter hash. Persist it before reporting success.
     if (approved && approval.operation === 'app:launch' && this.rememberedGrantTtlMs > 0) {
       const grant: RememberedGrant = {
         deviceId: approval.deviceId,

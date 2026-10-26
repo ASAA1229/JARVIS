@@ -47,6 +47,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:click_control',
     'desktop:set_value',
     'desktop:list_windows',
+    'memory:update',
     'desktop:focus_window',
     'file:list',
     'file:search',
@@ -119,6 +120,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
     }
     // Scheduling. Each run is re-planned and re-authorized when it fires; nothing is pre-approved.
+    const updateMemory = requestText.match(/\b(?:update|correct)\s+memory\s+([a-f0-9]{32})\s+(?:to|with)\s+(.+)$/i);
+    if (updateMemory && updateMemory[2].trim()) {
+      return { intent: 'Correct a saved memory', operations: [{ operation: 'memory:update', parameters: { id: updateMemory[1], content: updateMemory[2].trim() }, justification: 'Owner asked to correct a memory' }], confidence: 0.88, explanation: 'Will replace that memory\'s text after approval, unless it contains credentials or instruction-like text.' };
+    }
     const scheduleOnce = requestText.match(/\bschedule\s+(?:in\s+)?(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
     if (scheduleOnce && scheduleOnce[3].trim()) {
       const delayMs = Number(scheduleOnce[1]) * (/^hour/i.test(scheduleOnce[2]) ? 3_600_000 : 60_000);

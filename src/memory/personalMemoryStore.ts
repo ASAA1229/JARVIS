@@ -18,6 +18,10 @@ interface EncryptedEnvelope { version: 1; salt: string; iv: string; tag: string;
 
 const DENIED_CONTENT = /\b(password|passphrase|private key|api key|access token|refresh token|cvv|pin code|bank account|card number|payment credential|seed phrase|recovery phrase)\b/i;
 const DENIED_CATEGORIES = new Set(['credential', 'secret', 'financial', 'payment', 'biometric', 'medical', 'health']);
+// Text that tries to act as an instruction to the assistant is data from an untrusted source,
+// not a fact about the owner, and must never be stored as trusted memory.
+const INSTRUCTION_LIKE = /(ignore (?:all |any |the )?(?:previous|prior|above|earlier) (?:instructions|rules)|disregard (?:your|the) (?:instructions|rules|policy)|you (?:must|should) now |system prompt|<\/?(?:system|assistant|tool)>|act as (?:an? )?(?:administrator|root)|bypass (?:the )?(?:policy|approval|security))/i;
+const STOP_WORDS = new Set(['the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'is', 'are', 'what', 'my', 'me', 'i', 'you', 'it', 'do', 'does', 'with', 'about', 'tell']);
 
 export class PersonalMemoryStore {
   private readonly key: Buffer;
@@ -110,6 +114,7 @@ export class PersonalMemoryStore {
       throw new Error('Memory content must contain 1–4000 characters.');
     }
     if (DENIED_CONTENT.test(content)) throw new Error('This content appears to contain credentials or sensitive financial data and cannot be stored.');
+    if (INSTRUCTION_LIKE.test(content)) throw new Error('This content reads like an instruction to the assistant, so it cannot be stored as trusted memory.');
     if (ttlDays !== undefined && (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > 3650)) {
       throw new Error('Memory TTL must be an integer from 1 to 3650 days.');
     }
@@ -122,6 +127,52 @@ export class PersonalMemoryStore {
     this.records.set(record.id, record);
     try { this.persist(); } catch (error) { this.records.delete(record.id); throw error; }
     return { ...record };
+  }
+
+  /** Correct an existing memory's text. Same content rules as save; category, id and expiry are unchanged. */
+  public update(id: string, content: string): PersonalMemory | undefined {
+    if (!this.healthy) throw new Error('Memory store is unhealthy.');
+    const existing = this.records.get(id);
+    if (!existing) return undefined;
+    if (typeof content !== 'string' || !content.trim() || content.length > 4000) throw new Error('Memory content must contain 1–4000 characters.');
+    if (DENIED_CONTENT.test(content)) throw new Error('This content appears to contain credentials or sensitive financial data and cannot be stored.');
+    if (INSTRUCTION_LIKE.test(content)) throw new Error('This content reads like an instruction to the assistant, so it cannot be stored as trusted memory.');
+    const updated: PersonalMemory = { ...existing, content: content.trim(), updatedAt: Date.now() };
+    this.records.set(id, updated);
+    try { this.persist(); } catch (error) { this.records.set(id, existing); throw error; }
+    return { ...updated };
+  }
+
+  /**
+   * Retrieve only memories that share meaningful words with the request, so planning and
+   * conversation receive relevant context instead of the owner's whole memory.
+   */
+  public relevant(query: string, limit = 5): PersonalMemory[] {
+    if (!this.healthy) return [];
+    const words = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !STOP_WORDS.has(word)));
+    if (words.size === 0) return [];
+    return [...this.records.values()]
+      .filter((record) => record.expiresAt === undefined || record.expiresAt > Date.now())
+      .map((record) => ({ record, score: record.content.toLowerCase().split(/[^a-z0-9]+/).filter((word) => words.has(word)).length }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
+      .slice(0, limit)
+      .map((entry) => ({ ...entry.record }));
+  }
+
+  /** Re-read and decrypt the file from disk to prove a deleted record is really gone. */
+  public verifyAbsentOnDisk(id: string): boolean {
+    try {
+      const envelope = JSON.parse(readFileSync(this.filePath, 'utf8')) as EncryptedEnvelope;
+      const key = scryptSync(this.key, Buffer.from(envelope.salt, 'base64'), 32);
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
+      decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+      const plain = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, 'base64')), decipher.final()]).toString('utf8');
+      const payload = JSON.parse(plain) as MemoryPayload;
+      return Array.isArray(payload.records) && !payload.records.some((record) => record.id === id);
+    } catch {
+      return false;
+    }
   }
 
   public delete(id: string): boolean {
