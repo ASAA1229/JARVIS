@@ -91,3 +91,10 @@ These runs validate configured repository automation only. They do not prove phy
 ## Branch and release policy
 
 Use fix for debugging/regressions, test for test/audit work, new for features and staged development, enhancement for broader enhancements, and dev for integration. Create non-main PRs to dev. Do not automate changes to main; the owner performs the final dev → main merge manually.
+
+
+## Validation status refresh — 2026-10-26
+
+The latest reviewed hosted run, [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796), passed build and TypeScript checks but failed 3 of 130 automated tests (127 passed); browser smoke was skipped. The failures were stale assertions for the current measured `/api/status` schema and the intended terminal `EXPIRED` state after approval expiry. Those assertions have been corrected on `new`; the corrected commit still needs a completed CI run before it can be called green. Both remembered-approval tests passed in the reviewed run.
+
+Remembered app-launch approvals default to 30 minutes and are limited to the exact same app/device/parameters. Set `JARVIS_REMEMBER_LAUNCH_MINUTES=0` to disable them. Other state-changing operations still require fresh approval. Hosted CI is not physical-device acceptance, and `npm audit` remains unverified until run and recorded.
