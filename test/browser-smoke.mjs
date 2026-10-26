@@ -112,6 +112,13 @@ try {
     'Outcome verified: Operation outcome successfully verified (system:get_os_info)',
   ));
 
+  // Notifications are fetched through the authenticated, signed companion API.
+  await page.locator('#btn-refresh-notifications').click();
+  await page.waitForFunction(() => {
+    const feed = document.getElementById('notifications-feed');
+    return Boolean(feed && /TASK COMPLETED/.test(feed.innerText) && /system:get_os_info/.test(feed.innerText));
+  }, { timeout: 10000 });
+
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
