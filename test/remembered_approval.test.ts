@@ -120,3 +120,49 @@ test('corrupted remembered-approval state fails closed and cannot create a remem
     else process.env.JARVIS_REMEMBER_LAUNCH_MINUTES = previousTtl;
   }
 });
+
+
+test('approval cannot be resolved twice or replayed by another device', () => {
+  const previousTtl = process.env.JARVIS_REMEMBER_LAUNCH_MINUTES;
+  process.env.JARVIS_REMEMBER_LAUNCH_MINUTES = '0';
+  try {
+    const gateway = new PolicyGateway(new AuditLogger(auditPath), grantPath, ownerToken);
+    const request = { operation: 'app:launch', parameters: { appId: 'notepad' } };
+    const pending = gateway.createApprovalRequest('task-device-bound', device.id, request.operation, request.parameters, RiskTier.MEDIUM);
+
+    assert.deepEqual(gateway.resolveApproval(pending.id, true, device.id), { success: true });
+    assert.equal(gateway.resolveApproval(pending.id, true, device.id).success, false);
+    assert.equal(gateway.resolveApproval(pending.id, false, device.id).success, false);
+
+    const otherDevice: DeviceRecord = { ...device, id: 'dev-another-device' };
+    const crossDevice = gateway.evaluate(request, otherDevice, 'task-device-bound', pending.id);
+    assert.equal(crossDevice.allowed, false);
+    assert.match(crossDevice.reason || '', /not bound to this task/i);
+  } finally {
+    if (previousTtl === undefined) delete process.env.JARVIS_REMEMBER_LAUNCH_MINUTES;
+    else process.env.JARVIS_REMEMBER_LAUNCH_MINUTES = previousTtl;
+  }
+});
+
+test('expired approval cannot be resolved or authorize an operation', async () => {
+  const previousTtl = process.env.JARVIS_REMEMBER_LAUNCH_MINUTES;
+  process.env.JARVIS_REMEMBER_LAUNCH_MINUTES = '0';
+  try {
+    const gateway = new PolicyGateway(new AuditLogger(auditPath), grantPath, ownerToken);
+    const request = { operation: 'app:launch', parameters: { appId: 'notepad' } };
+    const pending = gateway.createApprovalRequest('task-expiry-boundary', device.id, request.operation, request.parameters, RiskTier.MEDIUM, 1);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const resolution = gateway.resolveApproval(pending.id, true, device.id);
+    assert.equal(resolution.success, false);
+    assert.match(resolution.error || '', /expired/i);
+
+    const evaluation = gateway.evaluate(request, device, 'task-expiry-boundary', pending.id);
+    assert.equal(evaluation.allowed, false);
+    assert.equal(evaluation.requiresApproval, true);
+    assert.match(evaluation.reason || '', /expired/i);
+  } finally {
+    if (previousTtl === undefined) delete process.env.JARVIS_REMEMBER_LAUNCH_MINUTES;
+    else process.env.JARVIS_REMEMBER_LAUNCH_MINUTES = previousTtl;
+  }
+});
