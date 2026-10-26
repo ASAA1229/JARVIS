@@ -86,6 +86,20 @@
         </div>
       </section>
 
+      <!-- Device-scoped notifications from the authenticated JARVIS core -->
+      <section class="card frame" id="card-notifications" aria-labelledby="notifications-title">
+        <div class="card-header">
+          <h2 id="notifications-title">Notifications & Alerts</h2>
+          <button id="btn-refresh-notifications" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted" id="notifications-status" role="status" aria-live="polite">Notifications appear after the device is authenticated.</p>
+          <div id="notifications-feed" class="tasks-feed" aria-label="Recent JARVIS notifications">
+            <p class="muted">No notifications loaded.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Device identity, security, enrollment -->
       <section class="card frame" id="card-enrollment">
         <div class="card-header">
