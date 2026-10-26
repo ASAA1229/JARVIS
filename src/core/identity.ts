@@ -212,6 +212,9 @@ export class DeviceIdentityManager {
     ttlSeconds: number = 3600
   ): { success: boolean; sessionId?: SessionId; expiresAt?: number; error?: string } {
     if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; session creation is blocked' };
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 86400) {
+      return { success: false, error: 'Session TTL must be an integer between 1 and 86400 seconds' };
+    }
     const device = this.devices.get(deviceId);
     if (!device) {
       this.audit.record('SESSION_CREATION_FAILED', { reason: 'DEVICE_NOT_FOUND', deviceId });
@@ -267,11 +270,19 @@ export class DeviceIdentityManager {
       active: true,
     };
 
+    // Do not leave a usable in-memory session behind if its creation cannot be
+    // durably audited. The nonce remains consumed, which is safe and requires a
+    // fresh signed session request from the client.
     this.sessions.set(sessionId, session);
+    try {
+      this.audit.record('SESSION_CREATED', { sessionId, expiresAt }, deviceId);
+    } catch {
+      session.active = false;
+      this.sessions.delete(sessionId);
+      return { success: false, error: 'Session creation could not be durably audited; session was not activated' };
+    }
+
     device.lastSeenAt = Date.now();
-
-    this.audit.record('SESSION_CREATED', { sessionId, expiresAt }, deviceId);
-
     return { success: true, sessionId, expiresAt };
   }
 
