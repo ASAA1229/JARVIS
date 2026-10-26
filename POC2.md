@@ -132,3 +132,8 @@ Acceptance note: browser-based wake recognition is not guaranteed to be local. H
 Added regression coverage in `test/remembered_approval.test.ts` for three authorization invariants: an approval cannot be reused for changed parameters, cannot be replayed against another task, and can authorize only one execution. Added a tampered remembered-grant-state case to verify the gateway fails closed and does not report a remembered grant as successfully persisted.
 
 **Status: code committed; tests not yet executed on the updated commit.** The prior CI result is not evidence for these newly added tests. The next gate is a fresh hosted run of build, typecheck, all tests, and browser smoke. Continue with explicit tests for concurrent approval resolution, wrong-device binding, approval expiry, audit-chain failure, and device/session revocation after this run is green.
+
+
+### Approval lifecycle test expansion — 2026-10-26
+
+Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject resolution attempts, cross-device replay, and expiry (including a delayed resolution attempt). Together with the earlier tests, the new coverage exercises task/parameter binding, single-use consumption, corrupt persisted grant state, and fail-closed grant persistence. All are committed on `new`; **execution is pending** until the hosted workflow reports results for the updated head.
