@@ -239,7 +239,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     assert.strictEqual('sessionId' in body, false);
   });
 
-  test('SEC-API-02: Public status endpoint exposes only minimal health state', async () => {
+  test('SEC-API-02: Public status endpoint exposes only minimal non-sensitive health telemetry', async () => {
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
     assert.strictEqual(response.status, 200);
     const body = await response.json();
