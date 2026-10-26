@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   pollStatus();
   setInterval(pollStatus, 3000);
   setInterval(fetchAuditLogs, 4000);
+  setInterval(fetchNotifications, 10000);
 });
 
 function setupEventListeners() {
@@ -19,6 +20,7 @@ function setupEventListeners() {
   document.getElementById('btn-revoke-device').addEventListener('click', handleRevokeDevice);
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
+  document.getElementById('btn-refresh-notifications').addEventListener('click', fetchNotifications);
   document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
   document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
   document.getElementById('btn-totp-disable').addEventListener('click', handleTotpDisable);
@@ -159,6 +161,7 @@ function updateUIWithDevice() {
   const canManage = Boolean(currentDevice?.permissions?.includes('device:manage:execute'));
   document.getElementById('owner-security').classList.toggle('hidden', !canManage);
   if (canManage) refreshSecurityPanels();
+  void fetchNotifications();
 }
 
 function qrData(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
@@ -598,6 +601,47 @@ async function pollStatus() {
     } else {
       setLinkState('offline', 'LAPTOP UNREACHABLE', 'The laptop may be asleep, off, or off the network. Requests cannot be delivered right now, and nothing is queued for later execution.');
     }
+  }
+}
+
+async function fetchNotifications() {
+  const feed = document.getElementById('notifications-feed');
+  const status = document.getElementById('notifications-status');
+  if (!feed || !status) return;
+  if (document.hidden) return;
+  if (!currentSession) {
+    status.textContent = 'Authenticate this device to view its notifications.';
+    return;
+  }
+  try {
+    const result = await signedJson('/api/notifications');
+    const notifications = Array.isArray(result.notifications) ? result.notifications.slice(-30).reverse() : [];
+    feed.replaceChildren();
+    if (!notifications.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = 'No recent notifications.';
+      feed.appendChild(empty);
+    } else {
+      for (const notification of notifications) {
+        const entry = document.createElement('div');
+        entry.className = 'task-entry ' + (notification.level === 'error' ? 'failed' : notification.level === 'warning' ? 'pending' : 'success');
+        const time = document.createElement('span');
+        time.className = 'task-time';
+        time.textContent = '[' + new Date(Number(notification.at)).toLocaleString() + '] ';
+        const kind = document.createElement('strong');
+        kind.textContent = String(notification.kind || 'notification').replaceAll('_', ' ').toUpperCase() + ': ';
+        const message = document.createElement('span');
+        message.textContent = String(notification.message || 'No details provided.');
+        entry.append(time, kind, message);
+        feed.appendChild(entry);
+      }
+    }
+    status.textContent = 'Showing ' + notifications.length + ' recent notification(s) for this device.';
+  } catch (error) {
+    status.textContent = error instanceof Error
+      ? 'Notifications unavailable: ' + error.message
+      : 'Notifications unavailable. Check the authenticated connection.';
   }
 }
 
