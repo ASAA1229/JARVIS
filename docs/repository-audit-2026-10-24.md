@@ -224,3 +224,26 @@ No security, authentication, device-identity or policy logic was changed in this
 - Queueing of harmless requests while the laptop is asleep (the companion reports unreachable and queues nothing), secure remote access away from home, native Android agent with Keystore keys.
 - Email/SMS/WhatsApp/Teams adapters, UI for notifications, schedules and memory review/correction (APIs exist, screens do not).
 - Multi-step plans still come only from the local heuristic planner; no dependency graph beyond ordered steps; no LLM planner provider.
+
+
+## Audit addendum — 2026-10-26 regression triage
+
+### Hosted CI result reviewed
+
+Workflow run [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796) completed with **build PASS, TypeScript check PASS, automated tests FAIL (127 passed, 3 failed), browser smoke SKIPPED**. The failure was not a remembered-approval regression: both remembered-approval tests passed.
+
+The three failures were stale assertions in `test/e2e_recovery.test.ts`:
+1. The public `/api/status` response tests expected only `status`, while the current handler also emits coarse runtime fields (`platform`, `uptimeSeconds`, and boolean health checks). The assertions now validate the exact non-secret schema and types.
+2. The expired-approval HTTP test expected the task to remain `AWAITING_APPROVAL`, while the current lifecycle deliberately transitions it to `EXPIRED`. The test now checks `TaskState.EXPIRED`.
+
+These test-only corrections were pushed to `new` in commit `4909abf4e2a44fdf14a1c874d0348a9ebd80db7b`. A follow-up source-comment correction was pushed in `679630345ec40f8584f8454bdc74375b3983789c` to align the remembered-grant comment with the implemented 30-minute default. **The corrected commit has not yet been confirmed by a completed hosted CI run in this report.**
+
+### Security interpretation
+
+The status endpoint exposes only platform, uptime, and two coarse health booleans in addition to status; it does not expose device records, keys, tokens, task content, or audit internals. Keep the schema assertion strict so future additions are reviewed. Approval expiry must remain terminal and must not execute the operation.
+
+### Remaining validation
+
+- [ ] Confirm hosted build, typecheck, complete automated suite, and browser smoke on the corrected source commit.
+- [ ] Run `npm audit` against the locked dependency tree and record the exact result; the previous report did not verify this.
+- [ ] Perform target Windows 11 interactive desktop, microphone/TTS, and both Android-device acceptance. Hosted CI cannot substitute for these checks.
