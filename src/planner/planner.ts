@@ -124,6 +124,12 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (updateMemory && updateMemory[2].trim()) {
       return { intent: 'Correct a saved memory', operations: [{ operation: 'memory:update', parameters: { id: updateMemory[1], content: updateMemory[2].trim() }, justification: 'Owner asked to correct a memory' }], confidence: 0.88, explanation: 'Will replace that memory\'s text after approval, unless it contains credentials or instruction-like text.' };
     }
+    const scheduleDelayedRepeat = requestText.match(/\\bschedule\\s+in\\s+(\\d{1,4})\\s+(minutes?|hours?)\\s+then\\s+every\\s+(\\d{1,4})\\s+(minutes?|hours?)\\s+(?:to\\s+|:\\s*)(.+)$/i);
+    if (scheduleDelayedRepeat && scheduleDelayedRepeat[5].trim()) {
+      const delayMs = Number(scheduleDelayedRepeat[1]) * (/^hour/i.test(scheduleDelayedRepeat[2]) ? 3_600_000 : 60_000);
+      const everyMinutes = Number(scheduleDelayedRepeat[3]) * (/^hour/i.test(scheduleDelayedRepeat[4]) ? 60 : 1);
+      return { intent: 'Schedule a delayed recurring request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleDelayedRepeat[5].trim(), runAt: context.timestamp + delayMs, everyMinutes }, justification: 'Owner requested a recurring request with a specific initial delay' }], confidence: 0.86, explanation: 'Will create the delayed recurring schedule after approval. Every run is planned and authorized again; state-changing steps need fresh approval.' };
+    }
     const scheduleOnce = requestText.match(/\bschedule\s+(?:in\s+)?(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
     if (scheduleOnce && scheduleOnce[3].trim()) {
       const delayMs = Number(scheduleOnce[1]) * (/^hour/i.test(scheduleOnce[2]) ? 3_600_000 : 60_000);
