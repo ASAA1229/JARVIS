@@ -199,4 +199,4 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 
 - Hosted run [40542914662](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40542914662) passed TypeScript build, TypeScript check, and all 144 automated tests. The browser smoke reached its final runtime-error assertion and failed because the environment emitted zero optional speech-recognition `not-allowed` console events, while the test required exactly one.
 - Updated the browser smoke assertion to allow zero or one expected optional speech-permission event while continuing to fail on any page error, unexpected console error, or repeated permission error.
-- The updated browser-smoke change requires a fresh hosted run; run 40542914662 is not evidence that the current head passes browser smoke.
+- Follow-up CI run 40543314073 passed TypeScript build, typecheck, all 144 automated tests, and browser security smoke on commit `9371ed3dba6a416cbd03ac5da105bc60a3a0fee9`. Physical Windows and Android-device acceptance remains outstanding.
