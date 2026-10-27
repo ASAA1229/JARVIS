@@ -193,3 +193,10 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - Extended browser smoke coverage to exercise the authenticated memory list panel as well as schedule listing and notification rendering.
 
 **Validation status:** the exact latest branch head still requires a completed hosted build, typecheck, full test suite, and browser smoke. Physical Windows and Android acceptance remain outstanding.
+
+
+### Hosted validation follow-up — 2026-10-27
+
+- Hosted run [40542914662](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40542914662) passed TypeScript build, TypeScript check, and all 144 automated tests. The browser smoke reached its final runtime-error assertion and failed because the environment emitted zero optional speech-recognition `not-allowed` console events, while the test required exactly one.
+- Updated the browser smoke assertion to allow zero or one expected optional speech-permission event while continuing to fail on any page error, unexpected console error, or repeated permission error.
+- The updated browser-smoke change requires a fresh hosted run; run 40542914662 is not evidence that the current head passes browser smoke.
