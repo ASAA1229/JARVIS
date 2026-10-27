@@ -46,3 +46,10 @@ test('routes schedule-management requests to the action planner', async () => {
   assert.equal(await answerConversationalMessage('List my schedules'), null);
   assert.equal(await answerConversationalMessage('Schedule in 10 minutes then every 30 minutes to check system memory'), null);
 });
+
+test('routes personal memory review and correction to the action planner', async () => {
+  assert.equal(await answerConversationalMessage('List my memories'), null);
+  assert.equal(await answerConversationalMessage('Remember project: JARVIS'), null);
+  assert.equal(await answerConversationalMessage('Update memory aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to corrected content'), null);
+  assert.equal(await answerConversationalMessage('Forget memory aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), null);
+});
