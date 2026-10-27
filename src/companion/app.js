@@ -164,7 +164,7 @@ function updateUIWithDevice() {
   document.getElementById('owner-security').classList.toggle('hidden', !canManage);
   if (canManage) refreshSecurityPanels();
   void fetchNotifications();
-  void requestScheduleList();
+  // Schedule listing is user-triggered to avoid competing with a newly submitted request.
 }
 
 function qrData(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
