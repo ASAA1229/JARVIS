@@ -35,3 +35,14 @@ test('routes action requests to the existing planner', async () => {
 test('answers common AI definitions without a model provider', async () => {
   assert.match(await answerConversationalMessage('What is artificial intelligence?') || '', /field of computing/);
 });
+
+test('routes system fact queries to the deterministic action planner', async () => {
+  assert.equal(await answerConversationalMessage('What is the OS version?'), null);
+  assert.equal(await answerConversationalMessage('Check system memory and RAM'), null);
+  assert.equal(await answerConversationalMessage('Show disk space'), null);
+});
+
+test('routes schedule-management requests to the action planner', async () => {
+  assert.equal(await answerConversationalMessage('List my schedules'), null);
+  assert.equal(await answerConversationalMessage('Schedule in 10 minutes then every 30 minutes to check system memory'), null);
+});
