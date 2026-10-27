@@ -180,3 +180,15 @@ Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject re
 ### Conversational router follow-up — 2026-10-27
 
 The first CI attempt for the new routing tests exposed an escaped-regex defect in the action classifier (the pattern contained literal double backslashes). The classifier has been corrected to use regex word-boundary and digit escapes, so OS/system facts and schedule commands can route to the deterministic planner. The previous CI result predates this correction and the updated expired-session test; a fresh green run is still required.
+
+
+## Companion personal memory review — 2026-10-27
+
+- Added a companion panel to review the encrypted local memory list, showing category, update time, content, and record ID.
+- Added category-aware save controls for general, preference, project, and routine entries.
+- Added correction and deletion request controls. They submit an explicit record ID and content through the signed `/api/request` path; existing policy and owner-approval rules remain authoritative.
+- Saved content and identifiers use safe DOM text rendering, not HTML.
+- Corrected the delayed-recurring schedule parser's escaped regular expression.
+- Added planner coverage for category-aware save and memory listing, plus conversational-router coverage for memory commands.
+
+**Validation status:** the exact latest branch head still requires a completed hosted build, typecheck, full test suite, and browser smoke. Physical Windows and Android acceptance remain outstanding.
