@@ -27,6 +27,7 @@ The universal goal is capability-based: discover installed/built-in applications
 - Foreground-window UI Automation for selected text/control/clipboard/zoom interactions.
 - Browser companion/HUD with push-to-talk and text fallback.
 - Browser companion notification feed backed by signed, device-scoped `/api/notifications` polling.
+- Browser companion schedule manager for owner-scoped one-time/recurring requests, listing, and cancellation through the signed policy-gated request path.
 - Optional local Piper TTS, with browser speech synthesis fallback.
 - Encrypted local personal-memory foundation and official-store search-link generation.
 - Capability registry with implemented/partial/planned/restricted status.
