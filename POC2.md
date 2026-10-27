@@ -175,3 +175,8 @@ Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject re
 - Added conversational-router regression tests for OS version, system memory, disk space, schedule listing, and delayed recurring schedule requests.
 - Added schedule-planner tests for initial delay plus recurring interval in minutes/hours.
 - A subsequent hosted run is required to verify these fixes together with the schedule UI and session-lifecycle tests. The previous run is not evidence that the current head passes.
+
+
+### Conversational router follow-up — 2026-10-27
+
+The first CI attempt for the new routing tests exposed an escaped-regex defect in the action classifier (the pattern contained literal double backslashes). The classifier has been corrected to use regex word-boundary and digit escapes, so OS/system facts and schedule commands can route to the deterministic planner. The previous CI result predates this correction and the updated expired-session test; a fresh green run is still required.
