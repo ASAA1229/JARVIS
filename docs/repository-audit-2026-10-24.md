@@ -281,3 +281,14 @@ Implemented on `new`:
 - Scheduling remains service-dependent; the browser companion is not native Android push delivery.
 
 **Validation status:** implementation and tests are committed on `new`; full CI and browser smoke on the exact latest head remain required. Do not treat as accepted before the hosted workflow passes.
+
+
+## Personal memory review controls — 2026-10-27
+
+- Browser companion now exposes review, category-aware save, correction, and deletion request controls for encrypted local personal memory.
+- Mutations use the signed `/api/request` pipeline and remain subject to policy/approval. The UI uses text-only DOM insertion for stored content.
+- Planner routing was extended for explicit memory categories and the conversational layer recognizes memory management commands.
+- Delayed recurring schedule parsing was corrected to use regular expression escapes rather than literal backslash characters.
+- A new planner test file covers category-aware saving and listing; conversation tests cover review, correction, and deletion routing.
+
+**Acceptance gate:** hosted CI on the latest branch head, including browser smoke, has not yet been confirmed green. Do not accept these changes based solely on source edits. Physical Windows and Android device validation remains outstanding.
