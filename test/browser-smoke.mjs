@@ -119,6 +119,13 @@ try {
     return Boolean(feed && /TASK COMPLETED/.test(feed.innerText) && /system:get_os_info/.test(feed.innerText));
   }, undefined, { timeout: 10000 });
 
+  // Schedule listing is read-only and remains inside the normal signed request pipeline.
+  await page.locator('#btn-refresh-schedules').click();
+  await page.waitForFunction(() => {
+    const status = document.getElementById('schedules-status')?.innerText || '';
+    return /Schedule list verified|Showing \\d+ schedule/.test(status);
+  }, undefined, { timeout: 10000 });
+
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
