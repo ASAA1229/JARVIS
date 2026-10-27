@@ -155,3 +155,15 @@ Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject re
 - Added a browser smoke assertion that a completed read-only request appears in the authenticated notification feed.
 - This UI addition does not establish native Android push notifications; it is a polling feed in the browser companion.
 - Validation is pending for the exact latest head. Do not treat this as accepted until the complete CI workflow, including browser smoke, passes.
+
+
+## Companion schedule management — 2026-10-27
+
+- Added a schedule-management panel in the browser companion for one-time and recurring requests, schedule listing, and owner-scoped cancellation.
+- Schedule creation, listing, and cancellation are submitted through the existing signed request path and therefore remain subject to the normal policy and approval gateway.
+- Added planner support for a recurring request with a separate initial delay (for example, `schedule in 10 minutes then every 30 minutes to check system memory`) and unit tests for minute/hour parsing.
+- Schedule listing is user-triggered rather than automatic on enrollment to avoid competing with the first owner request.
+- Schedule persistence and execution remain governed by the existing scheduler: jobs are re-authorized at run time, missed one-shot jobs are not replayed, and schedules stop when the owner device is revoked.
+- The companion is a polling/browser interface; this does not implement native Android push notifications or guarantee execution while the JARVIS service is stopped.
+
+**Validation status:** implementation and test additions are committed on `new`; latest exact-head CI and browser smoke must pass before acceptance. Physical Windows and Android-device testing remain outstanding.
