@@ -21,6 +21,8 @@ function setupEventListeners() {
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
   document.getElementById('btn-refresh-notifications').addEventListener('click', fetchNotifications);
+  document.getElementById('btn-refresh-schedules').addEventListener('click', requestScheduleList);
+  document.getElementById('schedule-form').addEventListener('submit', handleCreateSchedule);
   document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
   document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
   document.getElementById('btn-totp-disable').addEventListener('click', handleTotpDisable);
@@ -162,6 +164,7 @@ function updateUIWithDevice() {
   document.getElementById('owner-security').classList.toggle('hidden', !canManage);
   if (canManage) refreshSecurityPanels();
   void fetchNotifications();
+  void requestScheduleList();
 }
 
 function qrData(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
@@ -375,6 +378,9 @@ async function handleSendRequest() {
     });
 
     const data = await readApiResponse(res);
+    if (/^list (?:my )?schedules$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
+      renderSchedules(Array.isArray(data.data) ? data.data : []);
+    }
     input.value = '';
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
@@ -407,6 +413,110 @@ async function handleSendRequest() {
     sendButton.disabled = false;
     sendButton.textContent = originalButtonText;
   }
+}
+
+async function handleCreateSchedule(event) {
+  event.preventDefault();
+  const request = document.getElementById('schedule-request').value.trim();
+  const delayValue = Number(document.getElementById('schedule-delay').value);
+  const delayUnit = document.getElementById('schedule-delay-unit').value;
+  const repeatRaw = document.getElementById('schedule-repeat').value.trim();
+  const repeatUnit = document.getElementById('schedule-repeat-unit').value;
+  const status = document.getElementById('schedules-status');
+  if (!request || !Number.isInteger(delayValue) || delayValue < 1) {
+    status.textContent = 'Enter a request and a positive whole-number delay.';
+    return;
+  }
+  let phrase;
+  if (repeatRaw) {
+    const repeatValue = Number(repeatRaw);
+    if (!Number.isInteger(repeatValue) || repeatValue < 1) {
+      status.textContent = 'Repeat interval must be a positive whole number.';
+      return;
+    }
+    const repeatMinutes = repeatValue * (repeatUnit === 'hours' ? 60 : 1);
+    if (repeatMinutes < 5 || repeatMinutes > 10080) {
+      status.textContent = 'Repeat interval must be between 5 minutes and 7 days.';
+      return;
+    }
+    phrase = 'every ' + repeatValue + ' ' + repeatUnit + ' to ' + request;
+  } else {
+    phrase = 'schedule in ' + delayValue + ' ' + delayUnit + ' to ' + request;
+  }
+  if (repeatRaw) {
+    // The heuristic planner defines a recurring schedule by its repeat interval;
+    // the initial delay field is not represented in that grammar.
+    status.textContent = 'Submitting recurring schedule through JARVIS policy and approval checks.';
+  } else {
+    status.textContent = 'Submitting one-time schedule through JARVIS policy and approval checks.';
+  }
+  const input = document.getElementById('input-request');
+  input.value = phrase;
+  await handleSendRequest();
+  if (!isRequestSubmitting) status.textContent = 'Request submitted. Refresh schedules after approval or completion to verify the stored job.';
+}
+
+async function requestScheduleList() {
+  const status = document.getElementById('schedules-status');
+  if (!currentSession) {
+    if (status) status.textContent = 'Authenticate this device to view its schedules.';
+    return;
+  }
+  const input = document.getElementById('input-request');
+  input.value = 'list my schedules';
+  await handleSendRequest();
+}
+
+function renderSchedules(jobs) {
+  const feed = document.getElementById('schedules-feed');
+  const status = document.getElementById('schedules-status');
+  if (!feed || !status) return;
+  feed.replaceChildren();
+  const ownedJobs = Array.isArray(jobs) ? jobs : [];
+  if (!ownedJobs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No schedules belong to this device.';
+    feed.appendChild(empty);
+    status.textContent = 'Schedule list verified; no jobs found for this device.';
+    return;
+  }
+  for (const job of ownedJobs) {
+    const row = document.createElement('div');
+    row.className = 'task-item ' + (job.active ? 'pending' : 'success');
+    const header = document.createElement('div');
+    header.className = 'task-header';
+    const id = document.createElement('strong');
+    id.textContent = String(job.id || 'Unknown schedule');
+    const state = document.createElement('span');
+    state.textContent = job.active ? 'ACTIVE' : String(job.lastState || 'INACTIVE');
+    header.append(id, state);
+    const request = document.createElement('div');
+    request.textContent = String(job.requestText || '');
+    const meta = document.createElement('p');
+    meta.className = 'muted';
+    meta.textContent = 'Next run: ' + (Number.isFinite(Number(job.runAt)) ? new Date(Number(job.runAt)).toLocaleString() : 'unknown')
+      + (job.everyMinutes ? ' · repeats every ' + job.everyMinutes + ' min' : ' · one-time')
+      + ' · runs: ' + Number(job.runCount || 0)
+      + (job.lastState ? ' · last result: ' + String(job.lastState) : '');
+    row.append(header, request, meta);
+    if (job.active && typeof job.id === 'string' && /^job-[a-f0-9]+$/i.test(job.id)) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-danger';
+      cancel.textContent = 'Cancel schedule';
+      cancel.addEventListener('click', async () => {
+        const input = document.getElementById('input-request');
+        input.value = 'cancel schedule ' + job.id;
+        status.textContent = 'Submitting cancellation through JARVIS policy and approval checks.';
+        await handleSendRequest();
+        status.textContent = 'Cancellation request submitted. Refresh to verify the current schedule state.';
+      });
+      row.appendChild(cancel);
+    }
+    feed.appendChild(row);
+  }
+  status.textContent = 'Showing ' + ownedJobs.length + ' schedule(s) owned by this device. Sensitive actions still require fresh approval at run time.';
 }
 
 async function readApiResponse(response) {
