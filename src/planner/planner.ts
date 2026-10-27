@@ -124,7 +124,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (updateMemory && updateMemory[2].trim()) {
       return { intent: 'Correct a saved memory', operations: [{ operation: 'memory:update', parameters: { id: updateMemory[1], content: updateMemory[2].trim() }, justification: 'Owner asked to correct a memory' }], confidence: 0.88, explanation: 'Will replace that memory\'s text after approval, unless it contains credentials or instruction-like text.' };
     }
-    const scheduleDelayedRepeat = requestText.match(/\\bschedule\\s+in\\s+(\\d{1,4})\\s+(minutes?|hours?)\\s+then\\s+every\\s+(\\d{1,4})\\s+(minutes?|hours?)\\s+(?:to\\s+|:\\s*)(.+)$/i);
+    const scheduleDelayedRepeat = requestText.match(/\bschedule\s+in\s+(\d{1,4})\s+(minutes?|hours?)\s+then\s+every\s+(\d{1,4})\s+(minutes?|hours?)\s+(?:to\s+|:\s*)(.+)$/i);
     if (scheduleDelayedRepeat && scheduleDelayedRepeat[5].trim()) {
       const delayMs = Number(scheduleDelayedRepeat[1]) * (/^hour/i.test(scheduleDelayedRepeat[2]) ? 3_600_000 : 60_000);
       const everyMinutes = Number(scheduleDelayedRepeat[3]) * (/^hour/i.test(scheduleDelayedRepeat[4]) ? 60 : 1);
