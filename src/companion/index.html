@@ -86,6 +86,47 @@
         </div>
       </section>
 
+      <!-- Owner-scoped scheduler controls; all requests still pass through the normal policy gateway -->
+      <section class="card frame" id="card-schedules" aria-labelledby="schedules-title">
+        <div class="card-header">
+          <h2 id="schedules-title">Scheduled Tasks</h2>
+          <button id="btn-refresh-schedules" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted">Schedules store the request, not an approval. Each run is re-planned and re-authorized; state-changing steps require fresh approval.</p>
+          <form id="schedule-form" class="schedule-form">
+            <label for="schedule-request">What should JARVIS do?</label>
+            <input id="schedule-request" type="text" maxlength="400" required placeholder="e.g., check system memory">
+            <div class="schedule-grid">
+              <div>
+                <label for="schedule-delay">Run after</label>
+                <input id="schedule-delay" type="number" min="1" max="720" value="5" required>
+              </div>
+              <div>
+                <label for="schedule-delay-unit">Delay unit</label>
+                <select id="schedule-delay-unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select>
+              </div>
+              <div>
+                <label for="schedule-repeat">Repeat every (optional)</label>
+                <input id="schedule-repeat" type="number" min="5" max="10080" placeholder="One-time">
+              </div>
+              <div>
+                <label for="schedule-repeat-unit">Repeat unit</label>
+                <select id="schedule-repeat-unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select>
+              </div>
+            </div>
+            <p class="muted">Recurring interval must be at least 5 minutes. Schedules run only while the JARVIS service is available.</p>
+            <div class="action-row">
+              <button class="btn btn-primary" id="btn-create-schedule" type="submit">Create Schedule</button>
+            </div>
+          </form>
+          <p class="muted" id="schedules-status" role="status" aria-live="polite">Authenticate this device to manage its schedules.</p>
+          <div id="schedules-feed" class="tasks-feed" aria-label="Schedules owned by this device">
+            <p class="muted">No schedules loaded.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Device-scoped notifications from the authenticated JARVIS core -->
       <section class="card frame" id="card-notifications" aria-labelledby="notifications-title">
         <div class="card-header">
