@@ -23,6 +23,8 @@ function setupEventListeners() {
   document.getElementById('btn-refresh-notifications').addEventListener('click', fetchNotifications);
   document.getElementById('btn-refresh-schedules').addEventListener('click', requestScheduleList);
   document.getElementById('schedule-form').addEventListener('submit', handleCreateSchedule);
+  document.getElementById('btn-refresh-memories').addEventListener('click', requestMemoryList);
+  document.getElementById('memory-form').addEventListener('submit', handleSaveMemory);
   document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
   document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
   document.getElementById('btn-totp-disable').addEventListener('click', handleTotpDisable);
@@ -381,6 +383,15 @@ async function handleSendRequest() {
     if (/^list (?:my )?schedules$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
       renderSchedules(Array.isArray(data.data) ? data.data : []);
     }
+    if (/^(?:list|show) my memories$|^what do you remember\??$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
+      renderMemories(Array.isArray(data.data) ? data.data : []);
+    }
+    if (/^remember (?:preference|project|routine|general):/i.test(text) ||
+        /^update memory [a-f0-9]{32} to /i.test(text) ||
+        /^forget memory [a-f0-9]{32}$/i.test(text)) {
+      const memoryStatus = document.getElementById('memories-status');
+      if (memoryStatus) memoryStatus.textContent = 'Memory request submitted. Refresh after approval/completion to verify the saved state.';
+    }
     input.value = '';
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
@@ -413,6 +424,104 @@ async function handleSendRequest() {
     sendButton.disabled = false;
     sendButton.textContent = originalButtonText;
   }
+}
+
+async function handleSaveMemory(event) {
+  event.preventDefault();
+  const content = document.getElementById('memory-content').value.trim();
+  const category = document.getElementById('memory-category').value;
+  const status = document.getElementById('memories-status');
+  if (!content) {
+    status.textContent = 'Enter the memory text first.';
+    return;
+  }
+  document.getElementById('input-request').value = 'remember ' + category + ': ' + content;
+  status.textContent = 'Submitting memory save through JARVIS policy and approval checks.';
+  await handleSendRequest();
+}
+
+async function requestMemoryList() {
+  const status = document.getElementById('memories-status');
+  if (!currentSession) {
+    if (status) status.textContent = 'Authenticate this device to review memories.';
+    return;
+  }
+  document.getElementById('input-request').value = 'list my memories';
+  await handleSendRequest();
+}
+
+function renderMemories(records) {
+  const feed = document.getElementById('memories-feed');
+  const status = document.getElementById('memories-status');
+  if (!feed || !status) return;
+  feed.replaceChildren();
+  const memories = Array.isArray(records) ? records : [];
+  if (!memories.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No saved memories were returned for this device.';
+    feed.appendChild(empty);
+    status.textContent = 'Memory list verified. No saved entries were found.';
+    return;
+  }
+  for (const memory of memories) {
+    if (!memory || typeof memory.id !== 'string' || !/^[a-f0-9]{32}$/i.test(memory.id)) continue;
+    const card = document.createElement('article');
+    card.className = 'task-item';
+    const header = document.createElement('div');
+    header.className = 'task-header';
+    const category = document.createElement('strong');
+    category.textContent = String(memory.category || 'general').toUpperCase();
+    const updated = document.createElement('span');
+    updated.textContent = Number.isFinite(Number(memory.updatedAt)) ? new Date(Number(memory.updatedAt)).toLocaleString() : 'Date unavailable';
+    header.append(category, updated);
+    const content = document.createElement('p');
+    content.textContent = String(memory.content || '');
+    const id = document.createElement('code');
+    id.className = 'muted memory-id';
+    id.textContent = memory.id;
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'btn btn-secondary';
+    edit.textContent = 'Correct';
+    edit.addEventListener('click', () => {
+      const editor = document.createElement('textarea');
+      editor.rows = 3;
+      editor.maxLength = 4000;
+      editor.value = String(memory.content || '');
+      editor.setAttribute('aria-label', 'Correct memory content');
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn-primary';
+      save.textContent = 'Submit correction';
+      save.addEventListener('click', async () => {
+        if (!editor.value.trim()) {
+          status.textContent = 'Memory text cannot be empty.';
+          return;
+        }
+        document.getElementById('input-request').value = 'update memory ' + memory.id + ' to ' + editor.value.trim();
+        status.textContent = 'Submitting correction through JARVIS policy and approval checks.';
+        await handleSendRequest();
+      });
+      card.append(editor, save);
+      edit.disabled = true;
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-danger';
+    remove.textContent = 'Request deletion';
+    remove.addEventListener('click', async () => {
+      status.textContent = 'Submitting deletion through JARVIS policy and approval checks.';
+      document.getElementById('input-request').value = 'forget memory ' + memory.id;
+      await handleSendRequest();
+    });
+    actions.append(edit, remove);
+    card.append(header, content, id, actions);
+    feed.appendChild(card);
+  }
+  status.textContent = 'Showing ' + feed.children.length + ' saved memory item(s). Review or request changes below; mutations may require approval.';
 }
 
 async function handleCreateSchedule(event) {
