@@ -126,6 +126,13 @@ try {
     return /Schedule list verified|Showing \d+ schedule/.test(status);
   }, undefined, { timeout: 10000 });
 
+  // Personal memory review is read-only and must return a verified list or an explicit failure.
+  await page.locator('#btn-refresh-memories').click();
+  await page.waitForFunction(() => {
+    const status = document.getElementById('memories-status')?.innerText || '';
+    return /Memory list verified|Showing \d+ saved memory/.test(status);
+  }, undefined, { timeout: 10000 });
+
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
