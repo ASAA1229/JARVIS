@@ -263,3 +263,11 @@ input::placeholder { color: #7e9bb0; }
   .pulse-indicator { animation: none !important; }
   .btn { transition: none; }
 }
+
+#memory-form textarea { width: 100%; min-width: 0; padding: 10px; color: var(--text); background: rgba(0, 7, 14, 0.85); border: 1px solid var(--cyan-faint); border-radius: 4px; resize: vertical; }
+#memories-feed .task-item { font-size: 12px; }
+#memories-feed .task-item p { overflow-wrap: anywhere; white-space: pre-wrap; }
+#memories-feed .memory-id { display: block; overflow-wrap: anywhere; margin: 6px 0; }
+#memories-feed .task-header { gap: 8px; }
+#memories-feed .task-header span { text-align: right; }
+#memories-feed textarea { width: 100%; margin-top: 10px; padding: 10px; color: var(--text); background: rgba(0, 7, 14, 0.85); border: 1px solid var(--cyan-faint); border-radius: 4px; }
