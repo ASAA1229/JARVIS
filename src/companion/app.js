@@ -439,7 +439,7 @@ async function handleCreateSchedule(event) {
       status.textContent = 'Repeat interval must be between 5 minutes and 7 days.';
       return;
     }
-    phrase = 'every ' + repeatValue + ' ' + repeatUnit + ' to ' + request;
+    phrase = 'schedule in ' + delayValue + ' ' + delayUnit + ' then every ' + repeatValue + ' ' + repeatUnit + ' to ' + request;
   } else {
     phrase = 'schedule in ' + delayValue + ' ' + delayUnit + ' to ' + request;
   }
