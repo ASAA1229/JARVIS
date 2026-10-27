@@ -123,7 +123,7 @@ try {
   await page.locator('#btn-refresh-schedules').click();
   await page.waitForFunction(() => {
     const status = document.getElementById('schedules-status')?.innerText || '';
-    return /Schedule list verified|Showing \\d+ schedule/.test(status);
+    return /Schedule list verified|Showing \d+ schedule/.test(status);
   }, undefined, { timeout: 10000 });
 
   // Verify untrusted markup stays text-only inside a real approval card.
