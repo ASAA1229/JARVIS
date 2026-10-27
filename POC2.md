@@ -167,3 +167,11 @@ Extended `test/remembered_approval.test.ts` to cover duplicate approve/reject re
 - The companion is a polling/browser interface; this does not implement native Android push notifications or guarantee execution while the JARVIS service is stopped.
 
 **Validation status:** implementation and test additions are committed on `new`; latest exact-head CI and browser smoke must pass before acceptance. Physical Windows and Android-device testing remain outstanding.
+
+
+## Regression follow-up — 2026-10-27
+
+- Reviewed hosted run [40364512541](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40364512541): build/typecheck passed, but tests exposed two follow-ups. The expired-session test was still creating a session with an invalid negative TTL after TTL validation was added; it now creates a valid one-second session and verifies expiry after waiting. The HTTP lifecycle test's deterministic OS-info request was being intercepted by the conversational fallback when no local model was configured; system-fact questions are now routed to the action planner.
+- Added conversational-router regression tests for OS version, system memory, disk space, schedule listing, and delayed recurring schedule requests.
+- Added schedule-planner tests for initial delay plus recurring interval in minutes/hours.
+- A subsequent hosted run is required to verify these fixes together with the schedule UI and session-lifecycle tests. The previous run is not evidence that the current head passes.
