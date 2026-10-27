@@ -25,9 +25,8 @@ function normalized(text: string): string {
 }
 
 function isActionRequest(text: string): boolean {
-  return /\\b(open|launch|close|start|stop|click|type|paste|copy|zoom|press|run|execute|delete|remove|restore|create file|write file|edit file|read file|list files|search files|schedule|cancel schedule|remember|forget|save|send|call|message|install|shutdown|restart|list windows|show windows|show my windows|(?:what|which) (?:apps?|windows|applications|programs) (?:are )?(?:open|running)|(?:what|which|tell me|get|check|show) (?:is |me )?(?:the )?(?:os version|windows version|system memory|memory usage|ram usage|battery status|disk space)|switch to|focus|bring up|(?:list|show) (?:my )?schedules|every \\d+ (?:minutes?|hours?)|find (?:a )?files?|(?:create|make|write|save) (?:a )?(?:new )?file|in file|(?:update|correct) memory|show (?:me )?(?:the |my )?files?|show me file)\\b/i.test(text);
-}
-function identityAnswer(text: string, memory: ConversationMemory[]): string | null {
+  return /\b(open|launch|close|start|stop|click|type|paste|copy|zoom|press|run|execute|delete|remove|restore|create file|write file|edit file|read file|list files|search files|schedule|cancel schedule|remember|forget|save|send|call|message|install|shutdown|restart|list windows|show windows|show my windows|(?:what|which) (?:apps?|windows|applications|programs) (?:are )?(?:open|running)|(?:what|which|tell me|get|check|show) (?:is |me )?(?:the )?(?:os version|windows version|system memory|memory usage|ram usage|battery status|disk space)|switch to|focus|bring up|(?:list|show) (?:my )?schedules|every \d+ (?:minutes?|hours?)|find (?:a )?files?|(?:create|make|write|save) (?:a )?(?:new )?file|in file|(?:update|correct) memory|show (?:me )?(?:the |my )?files?|show me file)\b/i.test(text);
+}function identityAnswer(text: string, memory: ConversationMemory[]): string | null {
   const value = normalized(text);
   if (/^(hi|hello|hey|good morning|good afternoon|good evening)( jarvis)?$/.test(value)) {
     return 'Hello, sir. How can I help you today?';
