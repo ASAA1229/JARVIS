@@ -222,7 +222,7 @@ No security, authentication, device-identity or policy logic was changed in this
 - HUD/companion wiring to local speech-to-text, always-on local wake word, interruptible speech and approval-aware spoken flow beyond what existed.
 - UIA/accessibility-tree control (named-control clicks from the earlier agent are unchanged); zoom/clipboard improvements beyond the target-pinning guard.
 - Queueing of harmless requests while the laptop is asleep (the companion reports unreachable and queues nothing), secure remote access away from home, native Android agent with Keystore keys.
-- Email/SMS/WhatsApp/Teams adapters, UI for notifications, schedules and memory review/correction (APIs exist, screens do not).
+- Email/SMS/WhatsApp/Teams adapters and memory review/correction UI remain outstanding. Browser UI now exists for notifications and schedules, but it is polling-based and still needs hosted CI plus physical-device acceptance.
 - Multi-step plans still come only from the local heuristic planner; no dependency graph beyond ordered steps; no LLM planner provider.
 
 
@@ -270,3 +270,14 @@ Implemented on `new`:
 - Browser smoke coverage now expects a verified read-only request to appear in the notification feed.
 
 **Not yet verified:** the workflow triggered by these changes has not been confirmed green at the time of this documentation update. Browser polling is not native push delivery, and this change does not complete Android notifications or background delivery.
+
+
+## Companion schedule manager addendum — 2026-10-27
+
+- Added schedule controls in the browser companion for one-time and recurring requests, owner-scoped listing, and cancellation.
+- All schedule actions are sent through the signed `/api/request` path; no direct scheduler endpoint bypass was introduced.
+- Added planner grammar for a separate initial delay and repeat interval, with tests for minute/hour parsing and read-only schedule listing.
+- Added browser smoke coverage for schedule listing alongside notification rendering.
+- Scheduling remains service-dependent; the browser companion is not native Android push delivery.
+
+**Validation status:** implementation and tests are committed on `new`; full CI and browser smoke on the exact latest head remain required. Do not treat as accepted before the hosted workflow passes.
