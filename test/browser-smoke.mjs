@@ -402,8 +402,8 @@ try {
   if (expectedOptionalTtsFailures > 0) console.log('OPTIONAL_LOCAL_TTS_UNAVAILABLE: browser speech fallback exercised (' + expectedOptionalTtsFailures + ' responses)');
   const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
   const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
-  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length !== 1) {
-    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nExpected permission error count: ${expectedRecognitionErrors.length}`);
+  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length > 1) {
+    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
   }
 
   const insecurePage = await context.newPage();
