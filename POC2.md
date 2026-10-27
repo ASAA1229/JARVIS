@@ -190,5 +190,6 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - Saved content and identifiers use safe DOM text rendering, not HTML.
 - Corrected the delayed-recurring schedule parser's escaped regular expression.
 - Added planner coverage for category-aware save and memory listing, plus conversational-router coverage for memory commands.
+- Extended browser smoke coverage to exercise the authenticated memory list panel as well as schedule listing and notification rendering.
 
 **Validation status:** the exact latest branch head still requires a completed hosted build, typecheck, full test suite, and browser smoke. Physical Windows and Android acceptance remain outstanding.
