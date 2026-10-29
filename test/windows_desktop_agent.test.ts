@@ -35,7 +35,29 @@ test('set_value script keeps sensitive-field checks and independent value verifi
   const script = buildControlActionScript('desktop:set_value', 'Account name', 'demo');
 
   assert.match(script, /Current\.IsPassword/);
-  assert.match(script, /password\|passcode\|pin\|otp\|one[- ]time password\|recovery code\|cvv\|card number\|credit card\|debit card\|card expiry\|expiration date\|bank account\|account number\|routing number\|iban\|swift code\|sort code\|security code/);
+  for (const term of [
+    'password',
+    'passcode',
+    'pin',
+    'otp',
+    'one[- ]time password',
+    'recovery code',
+    'cvv',
+    'card number',
+    'credit card',
+    'debit card',
+    'card expiry',
+    'expiration date',
+    'bank account',
+    'account number',
+    'routing number',
+    'iban',
+    'swift code',
+    'sort code',
+    'security code',
+  ]) {
+    assert.ok(script.includes(term), `Sensitive-field guard is missing: ${term}`);
+  }
   assert.match(script, /\$actual = \$pattern\.Current\.Value/);
   assert.match(script, /\$actual -cne 'demo'/);
   assert.match(script, /VALUE_VERIFIED/);
