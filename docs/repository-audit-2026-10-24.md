@@ -329,3 +329,8 @@ This automated verification does not prove real Windows desktop interaction, mic
 - **Tests:** added coverage for a title-only lookalike process and for no observed window.
 - **Limitations:** this avoids a false success claim but does not yet implement trusted AppID-to-process discovery. Real MSI acceptance remains required.
 
+
+
+## Windows desktop field-protection gap closure — 2026-10-30
+
+The Windows UI Automation `desktop:set_value` path now blocks additional sensitive-field name patterns, including one-time passwords (OTP), recovery codes, credit/debit card fields, card expiry/expiration date, account and routing numbers, IBAN, SWIFT code, and sort code. This complements the existing password/PIN/CVV/security-code checks and the financial-app process/window block. Regression coverage asserts that the generated UI Automation script retains the expanded denylist. This is defense-in-depth, not a substitute for classifying every form semantically; fields with misleading or missing accessibility names remain a limitation. Hosted CI for the latest source and test commits must complete before this change is called validated, and physical MSI acceptance remains outstanding.
