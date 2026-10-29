@@ -229,3 +229,8 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - Regression tests cover a title-only lookalike window and a launch with no observed new window.
 - Acceptance remains open for Windows MSI interactive testing and full hosted CI on the latest branch head.
 
+
+
+## Windows desktop field-protection gap closure — 2026-10-30
+
+The Windows UI Automation `desktop:set_value` path now blocks additional sensitive-field name patterns, including one-time passwords (OTP), recovery codes, credit/debit card fields, card expiry/expiration date, account and routing numbers, IBAN, SWIFT code, and sort code. This complements the existing password/PIN/CVV/security-code checks and the financial-app process/window block. Regression coverage asserts that the generated UI Automation script retains the expanded denylist. This is defense-in-depth, not a substitute for classifying every form semantically; fields with misleading or missing accessibility names remain a limitation. Hosted CI for the latest source and test commits must complete before this change is called validated, and physical MSI acceptance remains outstanding.
