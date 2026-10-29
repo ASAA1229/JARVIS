@@ -214,3 +214,11 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - [ ] Run and record a separate `npm audit`; `npm ci` reporting zero vulnerabilities is useful evidence but does not replace a recorded dedicated audit.
 
 **Scope note:** these changes improve two concrete defects; they do not close the broader product gaps documented above. JARVIS remains not release-ready.
+
+## Windows app launch verification guard — 2026-10-30
+
+- Fixed a false-positive in the allowlisted app launch adapter: matching a new window by title substring alone could attribute another application's window to the requested app.
+- The matcher now requires an expected process name; a configured title substring is an additional check.
+- Added regression coverage for title-only false positives, mismatched titles, .exe normalization, and missing matcher configuration.
+- Hosted validation is running on the latest new branch commit. Physical MSI acceptance remains required, and universal Windows application control is still partial.
+
