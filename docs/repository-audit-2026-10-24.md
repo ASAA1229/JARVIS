@@ -313,3 +313,12 @@ Implemented on `new`:
 ### Remaining acceptance limits
 
 This automated verification does not prove real Windows desktop interaction, microphone/wake/TTS behavior, local model inference, native Android control, two-phone authorization/revocation, or communication integrations. Those remain blocked or unverified until the target hardware, required services, and supported integrations are exercised. The overall project remains **NOT RELEASE-READY**.
+
+## Follow-up audit — 2026-10-30 (Windows launch identity)
+
+### Finding and correction
+- **Finding:** The app-window polling logic accepted a new window if either its process name matched the allowlist or its title contained a configured substring. The title-only branch could falsely verify an unrelated process as the requested application.
+- **Correction:** launch verification now fails closed unless the process name matches an expected process. A configured title substring is checked as an additional condition, not an alternative identity.
+- **Regression coverage:** tests assert expected-process success, unrelated-process/title false positive rejection, title mismatch rejection, .exe normalization, and fail-closed behavior when matcher metadata is missing.
+- **Acceptance limit:** this is deterministic unit coverage of matching logic, not proof of actual Windows launch behavior on the MSI laptop. Hosted CI must pass on the latest new branch head; interactive Windows acceptance remains open.
+
