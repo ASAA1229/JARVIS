@@ -387,6 +387,12 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Memory access requires device-management permission' });
+        const memoryPolicy = this.jarvis.policy.evaluate(
+          { operation: 'memory:list', parameters: {} },
+          auth.device,
+          `memory-${CryptoUtil.randomToken(8)}`,
+        );
+        if (!memoryPolicy.allowed) return this.jsonResponse(res, 403, { error: memoryPolicy.reason || 'Memory listing is not authorized' });
 
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });

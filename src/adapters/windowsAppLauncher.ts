@@ -60,6 +60,72 @@ export class WindowsAppLauncherAdapter {
   }
 
   /**
+   * Capability inventory for allowlisted apps plus, on Windows, unique Start-menu
+   * names. This never launches an application and never claims UI automation works
+   * for a discovered name.
+   */
+  public async inventory(signal?: AbortSignal): Promise<ExecutionResult> {
+    const allowlisted = this.getAllowlist().map((app) => ({
+      applicationId: app.id,
+      name: app.name,
+      installationStatus: process.platform === 'win32' ? 'allowlisted' : 'allowlisted-not-windows',
+      officialApi: 'none',
+      uiAutomation: 'foreground-only-if-accessible',
+      supportedOperations: ['app:launch'],
+      requiredPermission: 'app:launch:execute',
+      risk: 'MEDIUM',
+      verificationMethod: 'new-window snapshot after launch',
+      limitations: 'Launch acknowledgement is not proof the user-visible document was saved.',
+      testStatus: app.id === 'notepad' ? 'automated-partial; interactive-laptop-acceptance-required' : 'allowlisted-unverified-on-target-hardware',
+    }));
+    let discovered: Array<{ applicationId: string; name: string; installationStatus: string; supportedOperations: string[]; risk: string; testStatus: string; limitations: string }> = [];
+    if (process.platform === 'win32' && process.env.JARVIS_ENABLE_START_MENU_INVENTORY === '1') {
+      try {
+        const script = [
+          '$ErrorActionPreference = "Stop"',
+          'Get-StartApps | Select-Object -First 80 Name, AppID | ConvertTo-Json -Depth 3 -Compress',
+        ].join('; ');
+        const encoded = Buffer.from(script, 'utf16le').toString('base64');
+        const { stdout } = await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+          timeout: 8_000, maxBuffer: 256 * 1024, windowsHide: true, signal,
+        });
+        const parsed = stdout.trim() ? JSON.parse(stdout) as Array<{ Name: string; AppID: string }> | { Name: string; AppID: string } : [];
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        discovered = rows
+          .filter((row) => typeof row?.Name === 'string' && typeof row?.AppID === 'string' && !this.isFinancialAppName(row.Name))
+          .map((row) => ({
+            applicationId: row.AppID,
+            name: row.Name,
+            installationStatus: 'start-menu',
+            supportedOperations: ['app:launch-if-unique-name'],
+            risk: 'MEDIUM',
+            testStatus: 'discovered-untested',
+            limitations: 'No official API inventory; UI automation is not implied.',
+          }));
+      } catch (error) {
+        return {
+          success: true,
+          outcome: VerificationOutcome.PARTIAL_SUCCESS,
+          data: { allowlisted, discovered: [] },
+          evidence: { startMenuInventory: false, error: error instanceof Error ? error.name : 'UnknownError' },
+          error: 'Allowlisted inventory is available; Start-menu discovery failed.',
+        };
+      }
+    }
+    return {
+      success: true,
+      outcome: VerificationOutcome.VERIFIED_SUCCESS,
+      data: { allowlisted, discovered, startMenuQueried: discovered.length > 0 },
+      evidence: {
+        allowlistedCount: allowlisted.length,
+        discoveredCount: discovered.length,
+        startMenuQueried: process.env.JARVIS_ENABLE_START_MENU_INVENTORY === '1',
+        financialAppsExcluded: true,
+      },
+    };
+  }
+
+  /**
    * Launches an allowlisted Windows application and captures evidence.
    */
   public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {

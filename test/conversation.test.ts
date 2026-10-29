@@ -53,3 +53,8 @@ test('routes personal memory review and correction to the action planner', async
   assert.equal(await answerConversationalMessage('Update memory aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to corrected content'), null);
   assert.equal(await answerConversationalMessage('Forget memory aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), null);
 });
+
+test('routes email drafts and installed-app inventory to the action planner', async () => {
+  assert.equal(await answerConversationalMessage('Draft email to owner@example.com subject "Hello" body "Please review"'), null);
+  assert.equal(await answerConversationalMessage('List installed apps'), null);
+});

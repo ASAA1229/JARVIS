@@ -60,6 +60,9 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'schedule:create',
     'schedule:list',
     'schedule:cancel',
+    'app:inventory',
+    'comms:handoff_email',
+    'comms:unsupported',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -151,6 +154,42 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const cancelSchedule = requestText.match(/\bcancel\s+schedule\s+(job-[a-f0-9]+)\b/i);
     if (cancelSchedule) {
       return { intent: 'Cancel a scheduled request', operations: [{ operation: 'schedule:cancel', parameters: { id: cancelSchedule[1] }, justification: 'Owner asked to cancel a schedule' }], confidence: 0.92, explanation: 'Will cancel that schedule after approval.' };
+    }
+
+    if (/\b(?:what|which|list|show)\s+(?:installed\s+)?(?:apps|applications)\b/i.test(requestText)) {
+      return { intent: 'List application capabilities', operations: [{ operation: 'app:inventory', parameters: {}, justification: 'Owner asked which applications JARVIS can see' }], confidence: 0.88, explanation: 'Will list allowlisted applications and, if enabled, Start-menu names. Presence in the list is not a claim that every operation works in that app.' };
+    }
+
+    const emailDraft = requestText.match(/\b(?:draft|prepare|compose)\s+(?:an?\s+)?email\s+to\s+(\S+)\s+(?:cc\s+(\S+)\s+)?(?:with\s+)?subject\s+["“](.+?)["”]\s+(?:body|saying)\s+["“](.+?)["”]\s*$/i);
+    if (emailDraft) {
+      return {
+        intent: 'Prepare an email draft for owner-approved local handoff',
+        operations: [{
+          operation: 'comms:handoff_email',
+          parameters: { to: emailDraft[1], cc: emailDraft[2] || '', subject: emailDraft[3], body: emailDraft[4] },
+          justification: 'Owner supplied recipient, subject and body for review',
+        }],
+        confidence: 0.9,
+        explanation: 'Will bind approval to this exact recipient and message, then prepare a local mail compose handoff. JARVIS will not send the email or claim delivery.',
+      };
+    }
+    if (/\b(?:send|write|compose)\s+(?:an?\s+)?e-?mail\b|\bsend\b.+\be-?mail\b/i.test(requestText) && !emailDraft) {
+      return {
+        intent: 'Email send is blocked until a complete reviewed draft exists',
+        operations: [],
+        confidence: 0.95,
+        explanation: 'I can prepare an email after you give the exact To address, subject, and body (for example: draft email to name@example.com subject "Hello" body "Please review"). I will not send mail because a draft was generated. Approval is bound to that exact content.',
+        uncertainty: 'Complete recipient, subject and body are required before an email handoff can be approved.',
+      };
+    }
+    if (/\b(whatsapp|sms|text message|cellular call|phone call|voip|teams meeting|teams message)\b/i.test(requestText)) {
+      const channel = /\bwhatsapp\b/i.test(requestText) ? 'whatsapp' : /\bsms|text message\b/i.test(requestText) ? 'sms' : /\bteams\b/i.test(requestText) ? 'teams' : /\bvoip\b/i.test(requestText) ? 'voip' : 'cellular-call';
+      return {
+        intent: 'Unsupported communications channel',
+        operations: [{ operation: 'comms:unsupported', parameters: { channel, reason: 'No authorized ' + channel + ' adapter is implemented. JARVIS will not claim this communication was sent or connected.' }, justification: 'Owner asked for a channel that has no safe adapter' }],
+        confidence: 0.97,
+        explanation: 'This communications path is not implemented. I will not open an unofficial client or report success. Use the native app yourself if you need to send or call.',
+      };
     }
 
     // Workspace files. Paths are resolved inside approved workspace folders only; deletes are recoverable quarantine moves.

@@ -106,6 +106,9 @@ export class DeviceIdentityManager {
     permissions: Permission[] = [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH],
     ttlSeconds: number = 120
   ): { challengeToken: string; expiresAt: number; uri: string } {
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 3600) {
+      throw new Error('Enrollment challenge TTL must be an integer between 1 and 3600 seconds');
+    }
     const challengeToken = CryptoUtil.randomToken(16);
     const expiresAt = Date.now() + ttlSeconds * 1000;
     const uri = `jarvis://enroll?challengeToken=${encodeURIComponent(challengeToken)}`;
@@ -114,7 +117,7 @@ export class DeviceIdentityManager {
       challengeToken,
       expiresAt,
       redeemed: false,
-      assignedPermissions: permissions,
+      assignedPermissions: [...permissions],
     });
 
     this.audit.record('ENROLLMENT_CHALLENGE_CREATED', {
@@ -151,7 +154,7 @@ export class DeviceIdentityManager {
       return { success: false, error: 'Challenge already redeemed' };
     }
 
-    if (Date.now() > challenge.expiresAt) {
+    if (Date.now() >= challenge.expiresAt) {
       this.audit.record('ENROLLMENT_FAILED', { reason: 'CHALLENGE_EXPIRED' });
       return { success: false, error: 'Challenge has expired' };
     }
@@ -178,7 +181,7 @@ export class DeviceIdentityManager {
       platform,
       publicKey: publicKeyPem,
       status: DeviceStatus.ACTIVE,
-      permissions: challenge.assignedPermissions,
+      permissions: [...challenge.assignedPermissions],
       enrolledAt: now,
       lastSeenAt: now,
     };
@@ -214,6 +217,9 @@ export class DeviceIdentityManager {
     if (!this.stateHealthy) return { success: false, error: 'Device state is unhealthy; session creation is blocked' };
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 86400) {
       return { success: false, error: 'Session TTL must be an integer between 1 and 86400 seconds' };
+    }
+    for (const [id, existing] of this.sessions) {
+      if (!existing.active || existing.expiresAt <= Date.now()) this.sessions.delete(id);
     }
     const device = this.devices.get(deviceId);
     if (!device) {
@@ -295,7 +301,7 @@ export class DeviceIdentityManager {
       return { valid: false, error: 'Session does not exist or is inactive' };
     }
 
-    if (Date.now() > session.expiresAt) {
+    if (Date.now() >= session.expiresAt) {
       session.active = false;
       return { valid: false, error: 'Session expired' };
     }

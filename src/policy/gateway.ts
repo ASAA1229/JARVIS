@@ -139,6 +139,9 @@ export class PolicyGateway {
       ['schedule:create', Permission.DEVICE_MANAGE, RiskTier.HIGH, true, ['requestText', 'runAt', 'everyMinutes']],
       ['schedule:list', Permission.DEVICE_MANAGE, RiskTier.LOW, false, []],
       ['schedule:cancel', Permission.DEVICE_MANAGE, RiskTier.MEDIUM, true, ['id']],
+      ['app:inventory', Permission.APP_LAUNCH, RiskTier.LOW, false, []],
+      ['comms:handoff_email', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['to', 'cc', 'subject', 'body']],
+      ['comms:unsupported', Permission.SYSTEM_INFO_READ, RiskTier.LOW, false, ['channel', 'reason']],
     ] as Array<[string, Permission, RiskTier, boolean, string[]]>).map(([operation, requiredPermission, riskTier, requiresApproval, allowedParameters]) => [operation, {
       operation,
       requiredPermission,
@@ -353,7 +356,7 @@ export class PolicyGateway {
         };
       }
 
-      if (approval.consumed || approval.rejected || Date.now() > approval.expiresAt) {
+      if (approval.consumed || approval.rejected || Date.now() >= approval.expiresAt) {
         // Replay, rejected-approval reuse, and expired-approval reuse attempts must be auditable.
         const denialReason = approval.consumed ? 'ALREADY_CONSUMED' : approval.rejected ? 'REJECTED' : 'EXPIRED';
         this.audit.record('POLICY_DENIED_APPROVAL_UNUSABLE', { approvalId: approval.id, operation: req.operation, denialReason }, device.id, taskId);
@@ -377,7 +380,7 @@ export class PolicyGateway {
         };
       }
 
-      if (Date.now() > approval.expiresAt) {
+      if (Date.now() >= approval.expiresAt) {
         return {
           allowed: false,
           requiresApproval: true,
@@ -478,7 +481,7 @@ export class PolicyGateway {
       return { success: false, error: 'Approval request not found' };
     }
 
-    if (Date.now() > approval.expiresAt) {
+    if (Date.now() >= approval.expiresAt) {
       return { success: false, error: 'Approval request has expired' };
     }
 

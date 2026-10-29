@@ -26,6 +26,7 @@ import { DeviceSecurityService } from './deviceSecurity.js';
 import { NotificationCenter } from './notifications.js';
 import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
 import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { CommunicationsAdapter } from '../adapters/communications.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
 
@@ -86,6 +87,7 @@ const RETRYABLE_READ_ONLY = new Set([
   'file:list',
   'file:search',
   'file:read',
+  'app:inventory',
 ]);
 
 export class JarvisCoreService {
@@ -98,6 +100,7 @@ export class JarvisCoreService {
   public readonly desktopAgent: WindowsDesktopAgent;
   public readonly fileAdapter: WorkspaceFileAdapter;
   public readonly terminal: TerminalRunner;
+  public readonly communications: CommunicationsAdapter;
   public readonly verifier: OutcomeVerifier;
   public readonly notifications: NotificationCenter;
   public readonly scheduler: Scheduler;
@@ -124,6 +127,7 @@ export class JarvisCoreService {
     this.desktopAgent = new WindowsDesktopAgent();
     this.fileAdapter = new WorkspaceFileAdapter();
     this.terminal = new TerminalRunner(this.fileAdapter);
+    this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
     this.notifications = new NotificationCenter();
     this.scheduler = new Scheduler(
@@ -451,6 +455,12 @@ export class JarvisCoreService {
           return this.systemAdapter.getDiskSpace((parameters.drive as string) || 'C:', signal);
         case 'app:launch':
           return this.appAdapter.launchApp(parameters.appId as string, signal);
+        case 'app:inventory':
+          return this.appAdapter.inventory(signal);
+        case 'comms:handoff_email':
+          return this.communications.handoffEmail(parameters, signal);
+        case 'comms:unsupported':
+          return this.communications.unsupported(parameters.channel, parameters.reason);
         case 'desktop:launch_and_type': {
           const launch = await this.appAdapter.launchApp(parameters.appId as string, signal);
           if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
@@ -665,7 +675,8 @@ export class JarvisCoreService {
     const isMemory = approval.operation.startsWith('memory:');
     const needsManage = isMemory || approval.operation.startsWith('schedule:');
     const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
-      approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:');
+      approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
+      approval.operation.startsWith('comms:');
     if (needsManage && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
       this.audit.record(failureEvent, { approvalId, operation: approval.operation }, approver.id, approval.taskId);
       throw new Error(isMemory ? 'Approver lacks DEVICE_MANAGE permission for personal memory' : 'Approver lacks permission for this action');
@@ -695,7 +706,7 @@ export class JarvisCoreService {
 
     this.#assertApproverPermission(approval, approver, 'APPROVAL_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
-    if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() > approval.expiresAt) {
+    if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
       const expiredTask = this.tasks.get(approval.taskId);
       if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
         expiredTask.state = TaskState.EXPIRED;
