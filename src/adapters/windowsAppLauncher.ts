@@ -19,6 +19,36 @@ export interface AllowlistedApp {
  * A launch is verified only when the new window belongs to an expected process.
  * A title substring is an additional constraint, never an alternative identity.
  */
+/**
+ * Start-menu AppIDs are not mapped to expected process identities yet. A new
+ * window is useful evidence that something opened, but cannot independently
+ * prove that it belongs to the selected app; keep the result partial.
+ */
+export function discoveredLaunchResult(
+  selected: { Name: string; AppID: string },
+  newWindow?: WindowInfo,
+): ExecutionResult {
+  return {
+    success: true,
+    outcome: VerificationOutcome.PARTIAL_SUCCESS,
+    data: {
+      name: selected.Name,
+      appId: selected.AppID,
+      status: newWindow ? 'Launch requested; a new window appeared' : 'Launch requested',
+      ...(newWindow ? { observedWindow: { pid: newWindow.pid, processName: newWindow.processName, title: newWindow.title } } : {}),
+    },
+    evidence: {
+      discovery: 'Get-StartApps',
+      launcher: 'explorer.exe shell:AppsFolder',
+      exactOrUniqueMatch: true,
+      newWindowDetected: Boolean(newWindow),
+      targetWindowVerified: false,
+      verificationLimitation: 'No trusted AppID-to-process identity mapping is available.',
+    },
+    error: 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
+  };
+}
+
 export function matchesExpectedAppWindow(
   window: WindowInfo,
   app: Pick<AllowlistedApp, 'windowMatch'>,
@@ -317,22 +347,7 @@ export class WindowsAppLauncherAdapter {
       });
       let newWindow: WindowInfo | undefined;
       try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
-      const firstWord = query.toLowerCase().split(/\s+/)[0] || '';
-      if (newWindow && firstWord && (newWindow.title + ' ' + newWindow.processName).toLowerCase().includes(firstWord)) {
-        return {
-          success: true,
-          outcome: VerificationOutcome.VERIFIED_SUCCESS,
-          data: { name: selected.Name, appId: selected.AppID, status: 'Running', windowPid: newWindow.pid, windowProcess: newWindow.processName, windowTitle: newWindow.title },
-          evidence: { discovery: 'Get-StartApps', launcher: 'explorer.exe shell:AppsFolder', newWindowDetected: true, targetWindowVerified: true },
-        };
-      }
-      return {
-        success: true,
-        outcome: VerificationOutcome.PARTIAL_SUCCESS,
-        data: { name: selected.Name, appId: selected.AppID, status: 'Launch requested' },
-        evidence: { discovery: 'Get-StartApps', launcher: 'explorer.exe shell:AppsFolder', exactOrUniqueMatch: true, targetWindowVerified: false },
-        error: 'Windows accepted the launch request, but the target application window was not independently verified.',
-      };
+      return discoveredLaunchResult(selected, newWindow);
     } catch (error) {
       return {
         success: false,
