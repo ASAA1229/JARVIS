@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildControlActionScript } from '../src/adapters/windowsDesktopAgent.js';
+import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 
 test('desktop:click_control validates and indexes the same UI Automation collection', () => {
   const script = buildControlActionScript('desktop:click_control', 'Save');
@@ -64,4 +65,16 @@ test('desktop action validation rejects empty or oversized control names before 
   });
   assert.equal(longName.success, false);
   assert.match(longName.error || '', /Control name must contain 1–120 characters/);
+});
+
+test('app launch verification requires expected process identity, not title alone', () => {
+  const app = { windowMatch: { processNames: ['mspaint'], titleContains: 'Paint' } };
+  assert.equal(matchesExpectedAppWindow({ pid: 10, processName: 'mspaint.exe', title: 'Untitled - Paint' }, app), true);
+  assert.equal(matchesExpectedAppWindow({ pid: 11, processName: 'notepad.exe', title: 'Paint - Notes' }, app), false);
+  assert.equal(matchesExpectedAppWindow({ pid: 12, processName: 'mspaint.exe', title: 'Untitled - Drawing' }, app), false);
+  assert.equal(matchesExpectedAppWindow({ pid: 13, processName: 'MSPAINT', title: 'Paint' }, app), true);
+});
+
+test('app launch verification fails closed when no process matcher is configured', () => {
+  assert.equal(matchesExpectedAppWindow({ pid: 10, processName: 'mspaint.exe', title: 'Paint' }, {}), false);
 });
