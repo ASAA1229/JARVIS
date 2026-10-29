@@ -356,7 +356,7 @@ The Windows UI Automation `desktop:set_value` path now blocks additional sensiti
 - Updated the sensitive-field test assertion to check each expected credential/financial-field pattern independently.
 - Added an explicit dependency audit step to `.github/workflows/ci.yml`.
 - Hosted CI is running against the updated `new` commits. Do not mark the baseline green until build, typecheck, dependency audit, the complete test suite, and browser security smoke all pass on the same exact head.
-- The next acceptance gate is to merge these changes to `dev) only after the pull request review and green exact-head CI. No PR is to be merged automatically.
+- The next acceptance gate is to merge these changes to `dev` only after the pull request review and green exact-head CI. No PR is to be merged automatically.
 
 ### Phase 1 remaining blockers
 
