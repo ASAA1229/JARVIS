@@ -115,7 +115,7 @@ export class Scheduler {
     if (!allowAnyOwner && job.ownerDeviceId !== requesterDeviceId) return false;
     job.active = false;
     job.lastState = 'CANCELLED';
-    this.persist();
+    if (!this.persist()) return false;
     this.audit.record('SCHEDULE_CANCELLED', { jobId: id }, requesterDeviceId);
     return true;
   }
@@ -150,6 +150,9 @@ export class Scheduler {
 
   /** Run every due job once. Exposed so the owner service (and callers) can drive it deterministically. */
   public async tick(now: number = Date.now()): Promise<void> {
+    // Persistence failure disables all scheduled execution until the service is restarted
+    // and the owner has repaired/revalidated the persisted schedule state.
+    if (!this.persistHealthy) return;
     for (const job of Array.from(this.jobs.values())) {
       if (!job.active || job.runAt > now || this.inFlight.has(job.id)) continue;
       this.inFlight.add(job.id);
@@ -166,7 +169,9 @@ export class Scheduler {
         job.lastRunAt = now;
         job.runCount += 1;
         if (job.everyMinutes) job.runAt = now + job.everyMinutes * 60_000; else job.active = false;
-        this.persist();
+        // Never execute a scheduled task unless the at-most-once advance is durable.
+        // If persistence fails, fail closed; the runner must not be invoked.
+        if (!this.persist()) return;
         let result: JobRunResult;
         try {
           result = await this.runner({ ...job });
