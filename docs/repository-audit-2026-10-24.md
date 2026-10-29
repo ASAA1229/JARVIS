@@ -292,3 +292,24 @@ Implemented on `new`:
 - A new planner test file covers category-aware saving and listing; conversation tests cover review, correction, and deletion routing.
 
 **Acceptance gate:** hosted CI on the latest branch head, including browser smoke, has not yet been confirmed green. Do not accept these changes based solely on source edits. Physical Windows and Android device validation remains outstanding.
+
+
+## Follow-up audit — 2026-10-29
+
+### Changes verified on branch `new`
+
+1. **Conversation routing regression:** CI run [40923859884](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40923859884) failed because `List installed apps` returned the conversational model-unavailable response instead of routing to the action planner. Added installed-app inventory phrasings to the action-request matcher. The existing `test/conversation.test.ts` case now passes in the final successful suite.
+2. **Scheduler persistence fail-closed behavior:** inspection found that `Scheduler.tick()` ignored the return value from the durable pre-execution state write and could invoke the runner even when the at-most-once advance had failed to persist. The scheduler now returns without invoking the runner on that failure, stops scheduled execution after persistence health becomes unhealthy, and reports cancellation as failed if cancellation state cannot be persisted.
+3. **Regression test:** added `test/scheduler_persistence_security.test.ts`, which simulates a persistence failure and asserts that the runner is not called and the persistence failure is audited.
+
+### Verification
+
+- Final code/test commit: `405b2eb233f08dfa0dde022a781cc34c611acd97`.
+- Successful push CI: [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275).
+- Successful PR CI: [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217).
+- Both runs passed TypeScript build, TypeScript check, automated test suite, and browser security smoke.
+- The dependency installation step reported zero vulnerabilities during `npm ci`; a separate `npm audit` command has not yet been recorded.
+
+### Remaining acceptance limits
+
+This automated verification does not prove real Windows desktop interaction, microphone/wake/TTS behavior, local model inference, native Android control, two-phone authorization/revocation, or communication integrations. Those remain blocked or unverified until the target hardware, required services, and supported integrations are exercised. The overall project remains **NOT RELEASE-READY**.

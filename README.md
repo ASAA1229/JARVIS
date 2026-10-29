@@ -101,3 +101,12 @@ Use fix for debugging/regressions, test for test/audit work, new for features an
 The latest reviewed hosted run, [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796), passed build and TypeScript checks but failed 3 of 130 automated tests (127 passed); browser smoke was skipped. The failures were stale assertions for the current measured `/api/status` schema and the intended terminal `EXPIRED` state after approval expiry. Those assertions have been corrected on `new`; the corrected commit still needs a completed CI run before it can be called green. Both remembered-approval tests passed in the reviewed run.
 
 Remembered app-launch approvals default to 30 minutes and are limited to the exact same app/device/parameters. Set `JARVIS_REMEMBER_LAUNCH_MINUTES=0` to disable them. Other state-changing operations still require fresh approval. Hosted CI is not physical-device acceptance, and `npm audit` remains unverified until run and recorded.
+
+
+## Validation refresh — 2026-10-29
+
+The initial CI run for Cursor's latest change (`033daffcb528432accbfc23a423db1001fa9d82d`) exposed one routing regression: the natural-language request `List installed apps` fell through to conversational-model fallback instead of reaching the policy-controlled planner. The action-request matcher was corrected on `new`.
+
+The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure.
+
+Exact final code/test revision `405b2eb233f08dfa0dde022a781cc34c611acd97` passed hosted CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275): TypeScript build, TypeScript check, automated test suite, and browser security smoke. The PR-triggered run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217) also passed on that revision. These results do not establish physical Windows voice/UI acceptance or native Android acceptance. A separate `npm audit` command and real-device tests remain outstanding.

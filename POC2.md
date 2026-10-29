@@ -200,3 +200,17 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - Hosted run [40542914662](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40542914662) passed TypeScript build, TypeScript check, and all 144 automated tests. The browser smoke reached its final runtime-error assertion and failed because the environment emitted zero optional speech-recognition `not-allowed` console events, while the test required exactly one.
 - Updated the browser smoke assertion to allow zero or one expected optional speech-permission event while continuing to fail on any page error, unexpected console error, or repeated permission error.
 - Follow-up CI run 40543314073 passed TypeScript build, typecheck, all 144 automated tests, and browser security smoke on commit `9371ed3dba6a416cbd03ac5da105bc60a3a0fee9`. Physical Windows and Android-device acceptance remains outstanding.
+
+
+## Regression and scheduler persistence follow-up — 2026-10-29
+
+- [x] Investigated hosted CI run [40923859884](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40923859884). Build and TypeScript checks passed; the test suite exposed one routing regression in the existing test for email drafting and installed-app inventory. The failing assertion was the `List installed apps` case, which incorrectly returned the unavailable-model conversational fallback rather than passing to the action planner.
+- [x] Updated the conversational action-request matcher to route “list installed apps”, “show installed apps”, and “discover installed apps” through the existing planner and policy gateway.
+- [x] Fixed a scheduler fail-closed gap: a failed durable pre-execution state write previously did not prevent the scheduled runner from being called. Scheduled execution now stops when persistence health is bad and does not invoke the runner if the at-most-once state advance cannot be persisted. Cancellation returns failure when its durable state update fails.
+- [x] Added `test/scheduler_persistence_security.test.ts` to simulate a persistence failure and assert that scheduled work is not executed, scheduler health becomes unhealthy, and the failure is audited.
+- [x] Verified exact code/test head `405b2eb233f08dfa0dde022a781cc34c611acd97` in successful push CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275) and PR CI run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217). Build, typecheck, automated tests, and browser security smoke all passed.
+- [ ] Physical Windows microphone, wake/TTS and desktop acceptance remains outstanding.
+- [ ] Native Android and two-phone acceptance remains outstanding.
+- [ ] Run and record a separate `npm audit`; `npm ci` reporting zero vulnerabilities is useful evidence but does not replace a recorded dedicated audit.
+
+**Scope note:** these changes improve two concrete defects; they do not close the broader product gaps documented above. JARVIS remains not release-ready.
