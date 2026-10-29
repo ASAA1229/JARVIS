@@ -78,3 +78,23 @@ test('app launch verification requires expected process identity, not title alon
 test('app launch verification fails closed when no process matcher is configured', () => {
   assert.equal(matchesExpectedAppWindow({ pid: 10, processName: 'mspaint.exe', title: 'Paint' }, {}), false);
 });
+
+test('discovered Start-menu launch never claims verified success without process identity mapping', async () => {
+  const { discoveredLaunchResult } = await import('../src/adapters/windowsAppLauncher.js');
+  const selected = { Name: 'Paint', AppID: 'Microsoft.Paint_8wekyb3d8bbwe!App' };
+  const titleOnlyLookalike = discoveredLaunchResult(selected, {
+    pid: 22,
+    processName: 'notepad',
+    title: 'Paint - Notes',
+  });
+  assert.equal(titleOnlyLookalike.success, true);
+  assert.equal(titleOnlyLookalike.outcome, 'PARTIAL_SUCCESS');
+  assert.equal((titleOnlyLookalike.evidence as Record<string, unknown>).targetWindowVerified, false);
+  assert.equal((titleOnlyLookalike.evidence as Record<string, unknown>).newWindowDetected, true);
+  assert.match(titleOnlyLookalike.error || '', /cannot independently verify/i);
+
+  const noWindow = discoveredLaunchResult(selected);
+  assert.equal(noWindow.outcome, 'PARTIAL_SUCCESS');
+  assert.equal((noWindow.evidence as Record<string, unknown>).newWindowDetected, false);
+  assert.equal((noWindow.evidence as Record<string, unknown>).targetWindowVerified, false);
+});
