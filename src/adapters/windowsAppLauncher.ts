@@ -15,6 +15,24 @@ export interface AllowlistedApp {
   windowMatch?: { processNames: string[]; titleContains?: string };
 }
 
+/**
+ * A launch is verified only when the new window belongs to an expected process.
+ * A title substring is an additional constraint, never an alternative identity.
+ */
+export function matchesExpectedAppWindow(
+  window: WindowInfo,
+  app: Pick<AllowlistedApp, 'windowMatch'>,
+): boolean {
+  const match = app.windowMatch;
+  if (!match) return false;
+  const processName = window.processName.toLowerCase().replace(/\.exe$/, '');
+  if (!match.processNames.some((name) => name.toLowerCase().replace(/\.exe$/, '') === processName)) {
+    return false;
+  }
+  return match.titleContains === undefined ||
+    window.title.toLowerCase().includes(match.titleContains.toLowerCase());
+}
+
 export class WindowsAppLauncherAdapter {
   private readonly windows = new WindowsWindowManager();
 
@@ -250,9 +268,8 @@ export class WindowsAppLauncherAdapter {
       if (signal?.aborted) return undefined;
       let windows: WindowInfo[];
       try { windows = await this.windows.snapshot(signal); } catch { return undefined; }
-      const found = windows.find((window) => !knownPids.has(window.pid) &&
-        (match.processNames.includes(window.processName.toLowerCase().replace(/\.exe$/, '')) ||
-          (match.titleContains !== undefined && window.title.toLowerCase().includes(match.titleContains.toLowerCase()))));
+      const found = windows.find((window) =>
+        !knownPids.has(window.pid) && matchesExpectedAppWindow(window, app));
       if (found) return found;
       await delay(400, undefined, { signal }).catch(() => undefined);
     }
