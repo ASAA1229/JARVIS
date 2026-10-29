@@ -322,3 +322,10 @@ This automated verification does not prove real Windows desktop interaction, mic
 - **Regression coverage:** tests assert expected-process success, unrelated-process/title false positive rejection, title mismatch rejection, .exe normalization, and fail-closed behavior when matcher metadata is missing.
 - **Acceptance limit:** this is deterministic unit coverage of matching logic, not proof of actual Windows launch behavior on the MSI laptop. Hosted CI must pass on the latest new branch head; interactive Windows acceptance remains open.
 
+## Follow-up audit — 2026-10-30 (dynamic Start-menu launch)
+
+- **Finding:** dynamically discovered Start-menu apps were considered verified if a newly visible window's title or process text contained the first word of the request. No trusted mapping connected the selected Start-menu AppID to that process.
+- **Correction:** dynamic launches now report partial success even when a new window appears. Evidence distinguishes newWindowDetected from targetWindowVerified; the latter remains false until process identity can be independently established.
+- **Tests:** added coverage for a title-only lookalike process and for no observed window.
+- **Limitations:** this avoids a false success claim but does not yet implement trusted AppID-to-process discovery. Real MSI acceptance remains required.
+
