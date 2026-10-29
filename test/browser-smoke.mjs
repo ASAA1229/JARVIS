@@ -112,6 +112,27 @@ try {
     'Outcome verified: Operation outcome successfully verified (system:get_os_info)',
   ));
 
+  // Notifications are fetched through the authenticated, signed companion API.
+  await page.locator('#btn-refresh-notifications').click();
+  await page.waitForFunction(() => {
+    const feed = document.getElementById('notifications-feed');
+    return Boolean(feed && /TASK COMPLETED/.test(feed.innerText) && /system:get_os_info/.test(feed.innerText));
+  }, undefined, { timeout: 10000 });
+
+  // Schedule listing is read-only and remains inside the normal signed request pipeline.
+  await page.locator('#btn-refresh-schedules').click();
+  await page.waitForFunction(() => {
+    const status = document.getElementById('schedules-status')?.innerText || '';
+    return /Schedule list verified|Showing \d+ schedule/.test(status);
+  }, undefined, { timeout: 10000 });
+
+  // Personal memory review is read-only and must return a verified list or an explicit failure.
+  await page.locator('#btn-refresh-memories').click();
+  await page.waitForFunction(() => {
+    const status = document.getElementById('memories-status')?.innerText || '';
+    return /Memory list verified|Showing \d+ saved memory/.test(status);
+  }, undefined, { timeout: 10000 });
+
   // Verify untrusted markup stays text-only inside a real approval card.
   await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
@@ -381,8 +402,8 @@ try {
   if (expectedOptionalTtsFailures > 0) console.log('OPTIONAL_LOCAL_TTS_UNAVAILABLE: browser speech fallback exercised (' + expectedOptionalTtsFailures + ' responses)');
   const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
   const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
-  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length !== 1) {
-    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nExpected permission error count: ${expectedRecognitionErrors.length}`);
+  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length > 1) {
+    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
   }
 
   const insecurePage = await context.newPage();

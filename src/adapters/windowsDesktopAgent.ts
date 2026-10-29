@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { ExecutionResult, VerificationOutcome } from '../core/types.js';
+import { LOCKED_DESKTOP_GUARD, WindowTarget, WindowsWindowManager, classifyPowerShellError, failureResult } from './windowsWindows.js';
+
+// Per-call expected foreground process, carried through async calls so concurrent
+// desktop actions cannot overwrite each other's target.
+const expectedProcessStore = new AsyncLocalStorage<string | undefined>();
 
 const execFileAsync = promisify(execFile);
 
@@ -13,7 +19,9 @@ export type DesktopAction =
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
   | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
   | { operation: 'desktop:click_control'; parameters: { name: string } }
-  | { operation: 'desktop:set_value'; parameters: { name: string; text: string } };
+  | { operation: 'desktop:set_value'; parameters: { name: string; text: string } }
+  | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
+  | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
 const HOTKEYS: Record<string, string> = {
   CTRL: '^', ALT: '%', SHIFT: '+', ENTER: '{ENTER}', TAB: '{TAB}',
@@ -63,7 +71,7 @@ export function buildControlActionScript(
     'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
     '$element = $matches.Item(0)',
     '$actualName = $element.Current.Name',
-    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|cvv|card number|bank account|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
+    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|otp|one[- ]time password|recovery code|cvv|card number|credit card|debit card|card expiry|expiration date|bank account|account number|routing number|iban|swift code|sort code|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
     '$pattern = $null',
     'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Value action." }',
     "$pattern.SetValue('" + safeText + "')",
@@ -78,6 +86,8 @@ export function buildControlActionScript(
  * only. The caller must authorize each action through PolicyGateway first.
  */
 export class WindowsDesktopAgent {
+  private readonly windows = new WindowsWindowManager();
+
   public isSupportedHost(): boolean {
     return process.platform === 'win32';
   }
@@ -86,7 +96,7 @@ export class WindowsDesktopAgent {
     if (!this.isSupportedHost()) throw new Error('Windows desktop agent can run only on Windows.');
   }
 
-  private foregroundWindowGuard(): string {
+  private foregroundWindowGuard(expectProcess?: string): string {
     return [
       "$ErrorActionPreference = \"Stop\"",
       "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class JarvisForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId); }' -ErrorAction SilentlyContinue",
@@ -94,19 +104,27 @@ export class WindowsDesktopAgent {
       "[void][JarvisForeground]::GetWindowThreadProcessId([JarvisForeground]::GetForegroundWindow(), [ref]$foregroundPid)",
       "$foreground = Get-Process -Id $foregroundPid -ErrorAction Stop",
       "if (($foreground.ProcessName + ' ' + $foreground.MainWindowTitle) -match '(?i)phonepe|paytm|google\\s*pay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications or windows.' }",
+      LOCKED_DESKTOP_GUARD,
+      ...(expectProcess ? ["if ($foreground.ProcessName -ne '" + expectProcess + "') { throw 'TARGET_MISMATCH' }"] : []),
     ].join('; ');
   }
 
   private async runPowerShell(script: string, signal?: AbortSignal): Promise<string> {
     this.assertWindows();
-    const guardedScript = this.foregroundWindowGuard() + '; ' + script;
+    const guardedScript = this.foregroundWindowGuard(expectedProcessStore.getStore()) + '; ' + script;
     const encoded = encodePowerShell(guardedScript);
-    const result = await execFileAsync(
-      'powershell.exe',
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', encoded],
-      { timeout: 10_000, maxBuffer: 64 * 1024, windowsHide: true, signal },
-    );
-    return result.stdout.trim();
+    try {
+      const result = await execFileAsync(
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', encoded],
+        { timeout: 10_000, maxBuffer: 64 * 1024, windowsHide: true, signal },
+      );
+      return result.stdout.trim();
+    } catch (error) {
+      // Strips the encoded script from the message and tags timeouts, locked
+      // sessions, target mismatches and policy blocks with a machine-readable kind.
+      throw classifyPowerShellError(error, signal);
+    }
   }
 
   private validateText(text: unknown): asserts text is string {
@@ -140,7 +158,32 @@ export class WindowsDesktopAgent {
     };
   }
 
+  /**
+   * Public entry point. Window discovery and focus go to the window manager; every
+   * other action acts on the foreground window and may be pinned to an expected
+   * process (`expectProcess`) so input is never sent to the wrong application.
+   */
   public async execute(action: DesktopAction, signal?: AbortSignal): Promise<ExecutionResult> {
+    if (action.operation === 'desktop:list_windows') return this.windows.listWindows(signal);
+    if (action.operation === 'desktop:focus_window') return this.windows.focusWindow(action.parameters, signal);
+    const rawExpect = (action.parameters as { expectProcess?: unknown } | undefined)?.expectProcess;
+    let expect: string | undefined;
+    if (rawExpect !== undefined) {
+      if (typeof rawExpect !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(rawExpect)) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.VERIFIED_FAILURE,
+          error: 'expectProcess must be a plain process name.',
+          failureKind: 'unsupported',
+          evidence: { host: 'windows', operation: action.operation },
+        };
+      }
+      expect = rawExpect.replace(/\.exe$/i, '');
+    }
+    return expectedProcessStore.run(expect, () => this.executeInner(action, signal));
+  }
+
+  private async executeInner(action: DesktopAction, signal?: AbortSignal): Promise<ExecutionResult> {
     try {
       if (signal?.aborted) throw new Error('Desktop action cancelled before execution.');
       if (action.operation === 'desktop:type_text' || action.operation === 'desktop:paste_text') {
@@ -303,13 +346,9 @@ export class WindowsDesktopAgent {
         evidence: { operation: (action as { operation?: string }).operation },
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: signal?.aborted ? VerificationOutcome.UNCERTAIN : VerificationOutcome.VERIFIED_FAILURE,
-        error: error instanceof Error ? error.message : String(error),
-        evidence: { host: 'windows', operation: action.operation },
-        interrupted: signal?.aborted,
-      };
+      // Input may already have been delivered when a timeout or cancellation hits, so
+      // those cases are reported as UNCERTAIN rather than a clean failure.
+      return failureResult(error, { operation: action.operation }, action.operation !== 'desktop:inspect_window', signal);
     }
   }
 }

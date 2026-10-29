@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   pollStatus();
   setInterval(pollStatus, 3000);
   setInterval(fetchAuditLogs, 4000);
+  setInterval(fetchNotifications, 10000);
 });
 
 function setupEventListeners() {
@@ -19,6 +20,11 @@ function setupEventListeners() {
   document.getElementById('btn-revoke-device').addEventListener('click', handleRevokeDevice);
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
+  document.getElementById('btn-refresh-notifications').addEventListener('click', fetchNotifications);
+  document.getElementById('btn-refresh-schedules').addEventListener('click', requestScheduleList);
+  document.getElementById('schedule-form').addEventListener('submit', handleCreateSchedule);
+  document.getElementById('btn-refresh-memories').addEventListener('click', requestMemoryList);
+  document.getElementById('memory-form').addEventListener('submit', handleSaveMemory);
   document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
   document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
   document.getElementById('btn-totp-disable').addEventListener('click', handleTotpDisable);
@@ -159,6 +165,8 @@ function updateUIWithDevice() {
   const canManage = Boolean(currentDevice?.permissions?.includes('device:manage:execute'));
   document.getElementById('owner-security').classList.toggle('hidden', !canManage);
   if (canManage) refreshSecurityPanels();
+  void fetchNotifications();
+  // Schedule listing is user-triggered to avoid competing with a newly submitted request.
 }
 
 function qrData(svg) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
@@ -362,6 +370,7 @@ async function handleSendRequest() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
   addFeedItem('user', text);
+  setPipeline({ sent: 'active' }, 'Request sent; waiting for the policy gateway.');
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
@@ -371,19 +380,35 @@ async function handleSendRequest() {
     });
 
     const data = await readApiResponse(res);
+    if (/^list (?:my )?schedules$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
+      renderSchedules(Array.isArray(data.data) ? data.data : []);
+    }
+    if (/^(?:list|show) my memories$|^what do you remember\??$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
+      renderMemories(Array.isArray(data.data) ? data.data : []);
+    }
+    if (/^remember (?:preference|project|routine|general):/i.test(text) ||
+        /^update memory [a-f0-9]{32} to /i.test(text) ||
+        /^forget memory [a-f0-9]{32}$/i.test(text)) {
+      const memoryStatus = document.getElementById('memories-status');
+      if (memoryStatus) memoryStatus.textContent = 'Memory request submitted. Refresh after approval/completion to verify the saved state.';
+    }
     input.value = '';
 
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       addApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('system-pending', `Requires approval: ${data.message}`, data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Waiting for your explicit approval. It is single-use and bound to this exact action.');
     } else if (data.state === 'COMPLETED' &&
         data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       addFeedItem('system-success', `Outcome verified: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'done' }, 'Allowed by policy without approval and verified by the host.');
     } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
         data.outcome === 'UNCERTAIN' || data.verified === false) {
       addFeedItem('system-pending', `Outcome not fully verified: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'warn' }, 'The outcome could not be confirmed. Check the laptop before retrying.');
     } else {
       addFeedItem('system-failed', `Request denied or failed: ${data.message || data.error}`, data);
+      setPipeline({ sent: 'done', policy: 'bad' }, 'Denied or failed at the policy gateway. Nothing was executed.');
     }
 
     fetchAuditLogs();
@@ -392,12 +417,215 @@ async function handleSendRequest() {
       ? 'Request timed out; the server may have received it. Check task state before retrying.'
       : (err instanceof Error ? err.message : 'Request failed');
     addFeedItem('system-failed', message);
+    setPipeline({ sent: 'bad' }, 'The request did not complete. Its server-side state is unknown.');
   } finally {
     clearTimeout(timeoutId);
     isRequestSubmitting = false;
     sendButton.disabled = false;
     sendButton.textContent = originalButtonText;
   }
+}
+
+async function handleSaveMemory(event) {
+  event.preventDefault();
+  const content = document.getElementById('memory-content').value.trim();
+  const category = document.getElementById('memory-category').value;
+  const status = document.getElementById('memories-status');
+  if (!content) {
+    status.textContent = 'Enter the memory text first.';
+    return;
+  }
+  document.getElementById('input-request').value = 'remember ' + category + ': ' + content;
+  status.textContent = 'Submitting memory save through JARVIS policy and approval checks.';
+  await handleSendRequest();
+}
+
+async function requestMemoryList() {
+  const status = document.getElementById('memories-status');
+  if (!currentSession) {
+    if (status) status.textContent = 'Authenticate this device to review memories.';
+    return;
+  }
+  document.getElementById('input-request').value = 'list my memories';
+  await handleSendRequest();
+}
+
+function renderMemories(records) {
+  const feed = document.getElementById('memories-feed');
+  const status = document.getElementById('memories-status');
+  if (!feed || !status) return;
+  feed.replaceChildren();
+  const memories = Array.isArray(records) ? records : [];
+  if (!memories.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No saved memories were returned for this device.';
+    feed.appendChild(empty);
+    status.textContent = 'Memory list verified. No saved entries were found.';
+    return;
+  }
+  for (const memory of memories) {
+    if (!memory || typeof memory.id !== 'string' || !/^[a-f0-9]{32}$/i.test(memory.id)) continue;
+    const card = document.createElement('article');
+    card.className = 'task-item';
+    const header = document.createElement('div');
+    header.className = 'task-header';
+    const category = document.createElement('strong');
+    category.textContent = String(memory.category || 'general').toUpperCase();
+    const updated = document.createElement('span');
+    updated.textContent = Number.isFinite(Number(memory.updatedAt)) ? new Date(Number(memory.updatedAt)).toLocaleString() : 'Date unavailable';
+    header.append(category, updated);
+    const content = document.createElement('p');
+    content.textContent = String(memory.content || '');
+    const id = document.createElement('code');
+    id.className = 'muted memory-id';
+    id.textContent = memory.id;
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'btn btn-secondary';
+    edit.textContent = 'Correct';
+    edit.addEventListener('click', () => {
+      const editor = document.createElement('textarea');
+      editor.rows = 3;
+      editor.maxLength = 4000;
+      editor.value = String(memory.content || '');
+      editor.setAttribute('aria-label', 'Correct memory content');
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn-primary';
+      save.textContent = 'Submit correction';
+      save.addEventListener('click', async () => {
+        if (!editor.value.trim()) {
+          status.textContent = 'Memory text cannot be empty.';
+          return;
+        }
+        document.getElementById('input-request').value = 'update memory ' + memory.id + ' to ' + editor.value.trim();
+        status.textContent = 'Submitting correction through JARVIS policy and approval checks.';
+        await handleSendRequest();
+      });
+      card.append(editor, save);
+      edit.disabled = true;
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-danger';
+    remove.textContent = 'Request deletion';
+    remove.addEventListener('click', async () => {
+      status.textContent = 'Submitting deletion through JARVIS policy and approval checks.';
+      document.getElementById('input-request').value = 'forget memory ' + memory.id;
+      await handleSendRequest();
+    });
+    actions.append(edit, remove);
+    card.append(header, content, id, actions);
+    feed.appendChild(card);
+  }
+  status.textContent = 'Showing ' + feed.children.length + ' saved memory item(s). Review or request changes below; mutations may require approval.';
+}
+
+async function handleCreateSchedule(event) {
+  event.preventDefault();
+  const request = document.getElementById('schedule-request').value.trim();
+  const delayValue = Number(document.getElementById('schedule-delay').value);
+  const delayUnit = document.getElementById('schedule-delay-unit').value;
+  const repeatRaw = document.getElementById('schedule-repeat').value.trim();
+  const repeatUnit = document.getElementById('schedule-repeat-unit').value;
+  const status = document.getElementById('schedules-status');
+  if (!request || !Number.isInteger(delayValue) || delayValue < 1) {
+    status.textContent = 'Enter a request and a positive whole-number delay.';
+    return;
+  }
+  let phrase;
+  if (repeatRaw) {
+    const repeatValue = Number(repeatRaw);
+    if (!Number.isInteger(repeatValue) || repeatValue < 1) {
+      status.textContent = 'Repeat interval must be a positive whole number.';
+      return;
+    }
+    const repeatMinutes = repeatValue * (repeatUnit === 'hours' ? 60 : 1);
+    if (repeatMinutes < 5 || repeatMinutes > 10080) {
+      status.textContent = 'Repeat interval must be between 5 minutes and 7 days.';
+      return;
+    }
+    phrase = 'schedule in ' + delayValue + ' ' + delayUnit + ' then every ' + repeatValue + ' ' + repeatUnit + ' to ' + request;
+  } else {
+    phrase = 'schedule in ' + delayValue + ' ' + delayUnit + ' to ' + request;
+  }
+  if (repeatRaw) {
+    // The heuristic planner defines a recurring schedule by its repeat interval;
+    // the initial delay field is not represented in that grammar.
+    status.textContent = 'Submitting recurring schedule through JARVIS policy and approval checks.';
+  } else {
+    status.textContent = 'Submitting one-time schedule through JARVIS policy and approval checks.';
+  }
+  const input = document.getElementById('input-request');
+  input.value = phrase;
+  await handleSendRequest();
+  if (!isRequestSubmitting) status.textContent = 'Request submitted. Refresh schedules after approval or completion to verify the stored job.';
+}
+
+async function requestScheduleList() {
+  const status = document.getElementById('schedules-status');
+  if (!currentSession) {
+    if (status) status.textContent = 'Authenticate this device to view its schedules.';
+    return;
+  }
+  const input = document.getElementById('input-request');
+  input.value = 'list my schedules';
+  await handleSendRequest();
+}
+
+function renderSchedules(jobs) {
+  const feed = document.getElementById('schedules-feed');
+  const status = document.getElementById('schedules-status');
+  if (!feed || !status) return;
+  feed.replaceChildren();
+  const ownedJobs = Array.isArray(jobs) ? jobs : [];
+  if (!ownedJobs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No schedules belong to this device.';
+    feed.appendChild(empty);
+    status.textContent = 'Schedule list verified; no jobs found for this device.';
+    return;
+  }
+  for (const job of ownedJobs) {
+    const row = document.createElement('div');
+    row.className = 'task-item ' + (job.active ? 'pending' : 'success');
+    const header = document.createElement('div');
+    header.className = 'task-header';
+    const id = document.createElement('strong');
+    id.textContent = String(job.id || 'Unknown schedule');
+    const state = document.createElement('span');
+    state.textContent = job.active ? 'ACTIVE' : String(job.lastState || 'INACTIVE');
+    header.append(id, state);
+    const request = document.createElement('div');
+    request.textContent = String(job.requestText || '');
+    const meta = document.createElement('p');
+    meta.className = 'muted';
+    meta.textContent = 'Next run: ' + (Number.isFinite(Number(job.runAt)) ? new Date(Number(job.runAt)).toLocaleString() : 'unknown')
+      + (job.everyMinutes ? ' · repeats every ' + job.everyMinutes + ' min' : ' · one-time')
+      + ' · runs: ' + Number(job.runCount || 0)
+      + (job.lastState ? ' · last result: ' + String(job.lastState) : '');
+    row.append(header, request, meta);
+    if (job.active && typeof job.id === 'string' && /^job-[a-f0-9]+$/i.test(job.id)) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-danger';
+      cancel.textContent = 'Cancel schedule';
+      cancel.addEventListener('click', async () => {
+        const input = document.getElementById('input-request');
+        input.value = 'cancel schedule ' + job.id;
+        status.textContent = 'Submitting cancellation through JARVIS policy and approval checks.';
+        await handleSendRequest();
+        status.textContent = 'Cancellation request submitted. Refresh to verify the current schedule state.';
+      });
+      row.appendChild(cancel);
+    }
+    feed.appendChild(row);
+  }
+  status.textContent = 'Showing ' + ownedJobs.length + ' schedule(s) owned by this device. Sensitive actions still require fresh approval at run time.';
 }
 
 async function readApiResponse(response) {
@@ -472,7 +700,11 @@ function addApprovalCard(approvalId, taskId, requestText, message) {
   reject.addEventListener('click', () => resolveApproval(approvalId, false));
   actions.append(approve, reject);
 
-  card.append(request, description, actions);
+  card.append(request, description);
+  const risk = document.createElement('div');
+  risk.className = 'approval-risk';
+  risk.textContent = 'This approval is single-use, expires after a short time, and is bound to this exact action. Approving lets the laptop run it once; any change to the action needs a new approval.';
+  card.append(risk, actions);
   container.appendChild(card);
   updateApprovalCount();
 }
@@ -501,23 +733,28 @@ async function resolveApproval(approvalId, approved) {
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'The server confirmed the action was rejected.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
     } else if (result.state === 'COMPLETED' && result.success === true &&
         result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-success', 'Task state: COMPLETED — ' + String(result.message || 'Review result evidence.'), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('card-appr-' + approvalId);
       if (card) card.remove();
       updateApprovalCount();
       addFeedItem('system-failed', 'Approval was processed but the task did not complete: ' + String(result.message || result.state), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
     } else {
       addFeedItem('system-pending', 'Approval processed; task state remains ' + String(result.state || 'UNKNOWN') + '. Verify before retrying.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified.');
     }
     fetchAuditLogs();
   } catch (err) {
     addFeedItem('system-failed', 'Approval state unknown; refresh server state before retrying.');
+    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify before retrying.');
   }
 }
 
@@ -529,15 +766,103 @@ function updateApprovalCount() {
   }
 }
 
+let linkFailures = 0;
+
+function setLinkState(state, label, banner) {
+  document.body.dataset.link = state;
+  const dot = document.getElementById('status-dot');
+  if (dot) dot.className = 'pulse-indicator ' + state;
+  const text = document.getElementById('link-label');
+  if (text) text.textContent = label;
+  const bannerElement = document.getElementById('link-banner');
+  if (bannerElement) bannerElement.textContent = banner || '';
+}
+
+const PIPELINE_STAGES = ['sent', 'policy', 'approval', 'verify'];
+
+// Stage states: idle | active | done | warn | bad | skip. Set only from real
+// server responses or real request failures.
+function setPipeline(states, note) {
+  for (const stage of PIPELINE_STAGES) {
+    const item = document.querySelector('#task-pipeline [data-stage="' + stage + '"]');
+    if (item) item.dataset.state = states[stage] || 'idle';
+  }
+  const noteElement = document.getElementById('pipeline-note');
+  if (noteElement && note) noteElement.textContent = note;
+}
+
 async function pollStatus() {
+  if (document.hidden) return;
   try {
     const res = await fetch('/api/status');
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data.status !== 'ONLINE' && data.status !== 'DEGRADED')) throw new Error('Unexpected status response');
+    linkFailures = 0;
+    const hostName = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[data.platform] || 'Unknown';
+    const foot = document.getElementById('foot-host');
+    if (foot) foot.textContent = hostName;
+    const chain = document.getElementById('info-audit-integrity');
+    if (chain && data.checks) {
+      const valid = data.checks.auditIntegrity === true;
+      chain.textContent = valid ? 'VALID' : 'BROKEN';
+      chain.classList.toggle('success', valid);
+      chain.classList.toggle('danger', !valid);
+    }
     if (data.status === 'ONLINE') {
-      document.getElementById('status-dot').className = 'pulse-indicator online';
+      setLinkState('online', 'LAPTOP ONLINE', '');
+    } else {
+      setLinkState('degraded', 'LAPTOP DEGRADED', 'The laptop core reports a failed security health check. State-changing requests may be refused until it recovers.');
     }
   } catch {
-    document.getElementById('status-dot').className = 'pulse-indicator offline';
+    linkFailures += 1;
+    if (linkFailures < 3) {
+      setLinkState('connecting', 'RECONNECTING…', 'Lost contact with the JARVIS laptop core. Retrying…');
+    } else {
+      setLinkState('offline', 'LAPTOP UNREACHABLE', 'The laptop may be asleep, off, or off the network. Requests cannot be delivered right now, and nothing is queued for later execution.');
+    }
+  }
+}
+
+async function fetchNotifications() {
+  const feed = document.getElementById('notifications-feed');
+  const status = document.getElementById('notifications-status');
+  if (!feed || !status) return;
+  if (document.hidden) return;
+  if (!currentSession) {
+    status.textContent = 'Authenticate this device to view its notifications.';
+    return;
+  }
+  try {
+    const result = await signedJson('/api/notifications');
+    const notifications = Array.isArray(result.notifications) ? result.notifications.slice(-30).reverse() : [];
+    feed.replaceChildren();
+    if (!notifications.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = 'No recent notifications.';
+      feed.appendChild(empty);
+    } else {
+      for (const notification of notifications) {
+        const entry = document.createElement('div');
+        entry.className = 'task-item ' + (notification.level === 'error' ? 'failed' : notification.level === 'warning' ? 'pending' : 'success');
+        const header = document.createElement('div');
+        header.className = 'task-header';
+        const time = document.createElement('span');
+        time.textContent = new Date(Number(notification.at)).toLocaleString();
+        const kind = document.createElement('strong');
+        kind.textContent = String(notification.kind || 'notification').replaceAll('_', ' ').toUpperCase();
+        header.append(time, kind);
+        const message = document.createElement('div');
+        message.textContent = String(notification.message || 'No details provided.');
+        entry.append(header, message);
+        feed.appendChild(entry);
+      }
+    }
+    status.textContent = 'Showing ' + notifications.length + ' recent notification(s) for this device.';
+  } catch (error) {
+    status.textContent = error instanceof Error
+      ? 'Notifications unavailable: ' + error.message
+      : 'Notifications unavailable. Check the authenticated connection.';
   }
 }
 

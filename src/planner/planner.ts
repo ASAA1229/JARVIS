@@ -46,6 +46,23 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:inspect_window',
     'desktop:click_control',
     'desktop:set_value',
+    'desktop:list_windows',
+    'memory:update',
+    'desktop:focus_window',
+    'file:list',
+    'file:search',
+    'file:read',
+    'file:write',
+    'file:edit',
+    'file:delete',
+    'file:restore',
+    'terminal:run',
+    'schedule:create',
+    'schedule:list',
+    'schedule:cancel',
+    'app:inventory',
+    'comms:handoff_email',
+    'comms:unsupported',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -101,10 +118,126 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (forgetMemory) {
       return { intent: 'Delete a personal memory', operations: [{ operation: 'memory:delete', parameters: { id: forgetMemory[1] }, justification: 'Owner requested deletion of a specific memory id' }], confidence: 0.94, explanation: 'Will request approval before deleting this memory entry.' };
     }
+    const memoryCategory = ['preference', 'project', 'routine', 'general'].find((category) => text.startsWith('remember ' + category + ':'));
+    if (memoryCategory) {
+      const memoryContent = requestText.slice(('remember ' + memoryCategory + ':').length).trim();
+      if (memoryContent) return { intent: 'Save a categorized personal memory', operations: [{ operation: 'memory:save', parameters: { category: memoryCategory, content: memoryContent }, justification: 'Owner explicitly requested saving a categorized memory' }], confidence: 0.9, explanation: 'Will save this categorized memory in encrypted local storage after approval.' };
+    }
     const rememberAnything = requestText.match(/\bremember\s+(?:that\s+)?(.+?)\s*$/i);
     if (rememberAnything && rememberAnything[1].trim()) {
       return { intent: 'Save an owner-approved memory', operations: [{ operation: 'memory:save', parameters: { category: 'general', content: rememberAnything[1].trim() }, justification: 'Owner explicitly requested remembering this fact' }], confidence: 0.84, explanation: 'Will store this in encrypted personal memory after approval, unless it contains credentials or sensitive financial data.' };
     }
+    // Scheduling. Each run is re-planned and re-authorized when it fires; nothing is pre-approved.
+    const updateMemory = requestText.match(/\b(?:update|correct)\s+memory\s+([a-f0-9]{32})\s+(?:to|with)\s+(.+)$/i);
+    if (updateMemory && updateMemory[2].trim()) {
+      return { intent: 'Correct a saved memory', operations: [{ operation: 'memory:update', parameters: { id: updateMemory[1], content: updateMemory[2].trim() }, justification: 'Owner asked to correct a memory' }], confidence: 0.88, explanation: 'Will replace that memory\'s text after approval, unless it contains credentials or instruction-like text.' };
+    }
+    const scheduleDelayedRepeat = requestText.match(/\bschedule\s+in\s+(\d{1,4})\s+(minutes?|hours?)\s+then\s+every\s+(\d{1,4})\s+(minutes?|hours?)\s+(?:to\s+|:\s*)(.+)$/i);
+    if (scheduleDelayedRepeat && scheduleDelayedRepeat[5].trim()) {
+      const delayMs = Number(scheduleDelayedRepeat[1]) * (/^hour/i.test(scheduleDelayedRepeat[2]) ? 3_600_000 : 60_000);
+      const everyMinutes = Number(scheduleDelayedRepeat[3]) * (/^hour/i.test(scheduleDelayedRepeat[4]) ? 60 : 1);
+      return { intent: 'Schedule a delayed recurring request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleDelayedRepeat[5].trim(), runAt: context.timestamp + delayMs, everyMinutes }, justification: 'Owner requested a recurring request with a specific initial delay' }], confidence: 0.86, explanation: 'Will create the delayed recurring schedule after approval. Every run is planned and authorized again; state-changing steps need fresh approval.' };
+    }
+    const scheduleOnce = requestText.match(/\bschedule\s+(?:in\s+)?(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
+    if (scheduleOnce && scheduleOnce[3].trim()) {
+      const delayMs = Number(scheduleOnce[1]) * (/^hour/i.test(scheduleOnce[2]) ? 3_600_000 : 60_000);
+      return { intent: 'Schedule a one-time request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleOnce[3].trim(), runAt: context.timestamp + delayMs }, justification: 'Owner asked for a delayed request' }], confidence: 0.85, explanation: 'Will create the schedule after approval. When it fires it is planned and authorized again, and state-changing steps will need fresh approval.' };
+    }
+    const scheduleEvery = requestText.match(/\bevery\s+(\d{1,4})\s+(minutes?|hours?)\s*(?:to\s+|:\s*)(.+)$/i);
+    if (scheduleEvery && scheduleEvery[3].trim()) {
+      const everyMinutes = Number(scheduleEvery[1]) * (/^hour/i.test(scheduleEvery[2]) ? 60 : 1);
+      return { intent: 'Schedule a recurring request', operations: [{ operation: 'schedule:create', parameters: { requestText: scheduleEvery[3].trim(), runAt: context.timestamp + everyMinutes * 60_000, everyMinutes }, justification: 'Owner asked for a recurring request' }], confidence: 0.85, explanation: 'Will create the recurring schedule after approval. Every run is authorized again and state-changing steps need fresh approval.' };
+    }
+    if (/\b(list|show)\s+(?:my\s+)?schedules\b/i.test(requestText)) {
+      return { intent: 'List scheduled requests', operations: [{ operation: 'schedule:list', parameters: {}, justification: 'Owner asked to review schedules' }], confidence: 0.9, explanation: 'Will list this device\'s scheduled requests.' };
+    }
+    const cancelSchedule = requestText.match(/\bcancel\s+schedule\s+(job-[a-f0-9]+)\b/i);
+    if (cancelSchedule) {
+      return { intent: 'Cancel a scheduled request', operations: [{ operation: 'schedule:cancel', parameters: { id: cancelSchedule[1] }, justification: 'Owner asked to cancel a schedule' }], confidence: 0.92, explanation: 'Will cancel that schedule after approval.' };
+    }
+
+    if (/\b(?:what|which|list|show)\s+(?:installed\s+)?(?:apps|applications)\b/i.test(requestText)) {
+      return { intent: 'List application capabilities', operations: [{ operation: 'app:inventory', parameters: {}, justification: 'Owner asked which applications JARVIS can see' }], confidence: 0.88, explanation: 'Will list allowlisted applications and, if enabled, Start-menu names. Presence in the list is not a claim that every operation works in that app.' };
+    }
+
+    const emailDraft = requestText.match(/\b(?:draft|prepare|compose)\s+(?:an?\s+)?email\s+to\s+(\S+)\s+(?:cc\s+(\S+)\s+)?(?:with\s+)?subject\s+["“](.+?)["”]\s+(?:body|saying)\s+["“](.+?)["”]\s*$/i);
+    if (emailDraft) {
+      return {
+        intent: 'Prepare an email draft for owner-approved local handoff',
+        operations: [{
+          operation: 'comms:handoff_email',
+          parameters: { to: emailDraft[1], cc: emailDraft[2] || '', subject: emailDraft[3], body: emailDraft[4] },
+          justification: 'Owner supplied recipient, subject and body for review',
+        }],
+        confidence: 0.9,
+        explanation: 'Will bind approval to this exact recipient and message, then prepare a local mail compose handoff. JARVIS will not send the email or claim delivery.',
+      };
+    }
+    if (/\b(?:send|write|compose)\s+(?:an?\s+)?e-?mail\b|\bsend\b.+\be-?mail\b/i.test(requestText) && !emailDraft) {
+      return {
+        intent: 'Email send is blocked until a complete reviewed draft exists',
+        operations: [],
+        confidence: 0.95,
+        explanation: 'I can prepare an email after you give the exact To address, subject, and body (for example: draft email to name@example.com subject "Hello" body "Please review"). I will not send mail because a draft was generated. Approval is bound to that exact content.',
+        uncertainty: 'Complete recipient, subject and body are required before an email handoff can be approved.',
+      };
+    }
+    if (/\b(whatsapp|sms|text message|cellular call|phone call|voip|teams meeting|teams message)\b/i.test(requestText)) {
+      const channel = /\bwhatsapp\b/i.test(requestText) ? 'whatsapp' : /\bsms|text message\b/i.test(requestText) ? 'sms' : /\bteams\b/i.test(requestText) ? 'teams' : /\bvoip\b/i.test(requestText) ? 'voip' : 'cellular-call';
+      return {
+        intent: 'Unsupported communications channel',
+        operations: [{ operation: 'comms:unsupported', parameters: { channel, reason: 'No authorized ' + channel + ' adapter is implemented. JARVIS will not claim this communication was sent or connected.' }, justification: 'Owner asked for a channel that has no safe adapter' }],
+        confidence: 0.97,
+        explanation: 'This communications path is not implemented. I will not open an unofficial client or report success. Use the native app yourself if you need to send or call.',
+      };
+    }
+
+    // Workspace files. Paths are resolved inside approved workspace folders only; deletes are recoverable quarantine moves.
+    const restoreFile = requestText.match(/\brestore\s+(?:quarantined\s+)?(?:file\s+)?(q-[a-f0-9]{16})\b/i);
+    if (restoreFile) {
+      return { intent: 'Restore a quarantined file', operations: [{ operation: 'file:restore', parameters: { quarantineId: restoreFile[1] }, justification: 'Owner asked to undo a file deletion' }], confidence: 0.92, explanation: 'Will move the quarantined file back after approval, without overwriting anything.' };
+    }
+    const deleteFile = requestText.match(/\b(?:delete|remove|trash)\s+(?:the\s+)?file\s+["“]?([^\s"”]+)["”]?\s*$/i);
+    if (deleteFile) {
+      return { intent: 'Move one workspace file to quarantine', operations: [{ operation: 'file:delete', parameters: { path: deleteFile[1] }, justification: 'Owner named a single file to delete' }], confidence: 0.85, explanation: 'Will move that one file to a recoverable quarantine after approval. Folders and bulk deletes are not supported.' };
+    }
+    const editFile = requestText.match(/\bin\s+file\s+["“]?([^\s"”]+)["”]?\s+replace\s+["“](.+?)["”]\s+with\s+["“](.*?)["”]\s*$/i);
+    if (editFile) {
+      return { intent: 'Edit text in a workspace file', operations: [{ operation: 'file:edit', parameters: { path: editFile[1], find: editFile[2], replace: editFile[3] }, justification: 'Owner specified the exact text to replace' }], confidence: 0.85, explanation: 'Will replace that exact text once (after saving a backup) following approval.' };
+    }
+    const createFile = requestText.match(/\b(?:create|make|write|save)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named|called)\s+["“]?([^\s"”]+)["”]?\s+(?:with|containing)\s+(?:the\s+)?(?:text\s+|content\s+)?["“]?(.+?)["”]?\s*$/i);
+    if (createFile) {
+      return { intent: 'Create a new workspace file', operations: [{ operation: 'file:write', parameters: { path: createFile[1], content: createFile[2] }, justification: 'Owner supplied the file name and content' }], confidence: 0.85, explanation: 'Will create the file after approval. An existing file is never overwritten.' };
+    }
+    const searchFiles = requestText.match(/\b(?:find|search\s+for)\s+(?:a\s+)?files?\s+(?:named|called|matching)\s+["“]?(.+?)["”]?\s*$/i);
+    if (searchFiles) {
+      return { intent: 'Search workspace file names', operations: [{ operation: 'file:search', parameters: { query: searchFiles[1].trim() }, justification: 'Owner asked for files by name' }], confidence: 0.85, explanation: 'Will search file names (not contents) inside the approved workspace.' };
+    }
+    const readFile = requestText.match(/\b(?:read|show\s+me|open)\s+(?:the\s+)?file\s+["“]?([^\s"”]+)["”]?\s*$/i);
+    if (readFile) {
+      return { intent: 'Read a workspace text file', operations: [{ operation: 'file:read', parameters: { path: readFile[1] }, justification: 'Owner named a file to read' }], confidence: 0.85, explanation: 'Will read that text file after approval; credential-like files are always refused.' };
+    }
+    const listFiles = requestText.match(/\b(?:list|show)\s+(?:the\s+|my\s+)?files(?:\s+(?:in|under)\s+(?:folder\s+)?["“]?([^\s"”]+)["”]?)?\s*$/i);
+    if (listFiles) {
+      return { intent: 'List workspace files', operations: [{ operation: 'file:list', parameters: { path: listFiles[1] || '.' }, justification: 'Owner asked to list files' }], confidence: 0.85, explanation: 'Will list names in the approved workspace folder.' };
+    }
+
+    // Allowlisted, non-shell commands only (see terminalRunner.ts). Shell metacharacters never match.
+    const runCommand = requestText.match(/\brun\s+(?:the\s+command\s+)?(git|node|python|hostname)((?:\s+[^\s;&|<>`$"']+){0,8})\s*$/i);
+    if (runCommand) {
+      const args = runCommand[2].trim() ? runCommand[2].trim().split(/\s+/) : [];
+      return { intent: 'Run an allowlisted read-only command', operations: [{ operation: 'terminal:run', parameters: { command: runCommand[1].toLowerCase(), args }, justification: 'Owner named an allowlisted command' }], confidence: 0.85, explanation: 'Will run that command without a shell, inside the workspace, after approval. Only read-only commands are allowlisted.' };
+    }
+
+    // Window discovery and focus.
+    if (/\b(?:what|which)\s+(?:apps?|windows|applications|programs)\s+(?:are\s+)?(?:open|running)\b|\b(?:list|show)\s+(?:my\s+)?(?:open\s+)?windows\b/i.test(requestText)) {
+      return { intent: 'List open application windows', operations: [{ operation: 'desktop:list_windows', parameters: {}, justification: 'Owner asked what is open' }], confidence: 0.88, explanation: 'Will list open window titles; payment and financial apps are excluded.' };
+    }
+    const focusWindow = requestText.match(/\b(?:switch\s+to|focus(?:\s+on)?|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._-]{0,40}?)(?:\s+window)?\s*$/i);
+    if (focusWindow && focusWindow[1].trim()) {
+      return { intent: 'Bring an application window to the foreground', operations: [{ operation: 'desktop:focus_window', parameters: { titleContains: focusWindow[1].trim() }, justification: 'Owner named the window to focus' }], confidence: 0.8, explanation: 'Will focus exactly one matching window after approval and confirm Windows granted focus.' };
+    }
+
     // Reject destructive language before broad system-information matching.
     if (/\b(format|delete|wipe|destroy|remove|drop)\b/.test(text)) {
       return {

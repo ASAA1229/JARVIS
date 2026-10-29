@@ -12,6 +12,8 @@ import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
+import { VoiceProviderRegistry } from '../voice/providers.js';
+import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -19,6 +21,7 @@ export class JarvisServer {
   private port: number;
   private readonly ownerControlToken: string | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
+  private readonly voiceProviders = new VoiceProviderRegistry();
 
   constructor(
     port: number = 3000,
@@ -36,6 +39,7 @@ export class JarvisServer {
     return new Promise((resolve, reject) => {
       const onListening = () => {
         this.server.off('error', onError);
+        this.jarvis.startBackgroundServices();
         resolve(this.port);
       };
       const onError = (error: Error) => {
@@ -56,6 +60,7 @@ export class JarvisServer {
   }
 
   public stop(): Promise<void> {
+    this.jarvis.stopBackgroundServices();
     if (!this.server.listening) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -169,8 +174,12 @@ export class JarvisServer {
         // material, task content, or audit internals without an authorized session.
         const integrityHealthy = this.jarvis.audit.verifyIntegrity().valid;
         const stateHealthy = this.jarvis.identity.isStateHealthy();
+        // Only coarse, measured, non-identifying runtime facts are exposed here.
         return this.jsonResponse(res, 200, {
           status: integrityHealthy && stateHealthy ? 'ONLINE' : 'DEGRADED',
+          platform: process.platform,
+          uptimeSeconds: Math.round(process.uptime()),
+          checks: { auditIntegrity: integrityHealthy, identityState: stateHealthy },
         });
       }
 
@@ -378,6 +387,12 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Memory access requires device-management permission' });
+        const memoryPolicy = this.jarvis.policy.evaluate(
+          { operation: 'memory:list', parameters: {} },
+          auth.device,
+          `memory-${CryptoUtil.randomToken(8)}`,
+        );
+        if (!memoryPolicy.allowed) return this.jsonResponse(res, 403, { error: memoryPolicy.reason || 'Memory listing is not authorized' });
 
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
@@ -418,6 +433,35 @@ export class JarvisServer {
         }
       }
 
+      // Voice provider status: which speech engines are really available, and their privacy properties.
+      if (req.method === 'GET' && url.pathname === '/api/voice/capabilities') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        return this.jsonResponse(res, 200, await this.voiceProviders.describe());
+      }
+
+      // Local speech-to-text. The result is only text: it must still be submitted as a normal
+      // request and pass the planner and PolicyGateway. Audio is processed locally and not stored.
+      if (req.method === 'POST' && url.pathname === '/api/voice/transcribe') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req, 4 * 1024 * 1024);
+        if (!this.isJsonObject(body) || typeof body.audioBase64 !== 'string' || !body.audioBase64) return this.jsonResponse(res, 400, { error: 'audioBase64 (16 kHz mono 16-bit WAV) is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const provider = await this.voiceProviders.pickLocalStt();
+        if (!provider) return this.jsonResponse(res, 503, { error: 'No local speech recognition engine is installed', code: 'LOCAL_STT_NOT_CONFIGURED' });
+        try {
+          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'));
+          this.jarvis.audit.record('VOICE_TRANSCRIBED_LOCALLY', { provider: result.provider, textLength: result.text.length }, auth.device.id);
+          return this.jsonResponse(res, 200, { text: result.text, provider: result.provider, local: result.local });
+        } catch (error) {
+          return this.jsonResponse(res, 422, { error: error instanceof Error ? error.message : 'Local speech recognition failed' });
+        }
+      }
+
       // Submit user request
       if (req.method === 'POST' && url.pathname === '/api/request') {
         const sessionId = req.headers['x-session-id'] as string;
@@ -435,6 +479,20 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        }
+        // Conversation requests are handled only after signed-session authentication.
+        // Action-like directives continue through the existing planner and PolicyGateway.
+        const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
+          ? this.personalMemory.list().slice(0, 8).map((record) => ({ content: record.content, category: record.category }))
+          : [];
+        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
+        if (conversationalAnswer) {
+          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
+          return this.jsonResponse(res, 200, {
+            state: 'ANSWERED',
+            message: conversationalAnswer,
+            data: { kind: 'conversation' },
+          });
         }
         const result = await this.jarvis.submitRequest(sessionId, text.trim());
         return this.jsonResponse(res, 200, result);
@@ -506,7 +564,56 @@ export class JarvisServer {
         if (!success) {
           return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
         }
+        // Immediately invalidate that device's approvals, schedules and running tasks.
+        this.jarvis.onDeviceRevoked(deviceId);
         return this.jsonResponse(res, 200, { success: true });
+      }
+
+      // Notifications for approvals, blocked actions, failures, uncertain outcomes and completions.
+      if (req.method === 'GET' && url.pathname === '/api/notifications') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const manager = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        const all = this.jarvis.notifications.list(manager ? {} : { deviceId: auth.device.id });
+        return this.jsonResponse(res, 200, { notifications: all.slice(-50) });
+      }
+
+      // Measured service and host health for owner devices.
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view health details' });
+        return this.jsonResponse(res, 200, this.jarvis.getHealthSnapshot());
+      }
+
+      // Task list with per-step status. Parameters and results are not exposed here.
+      if (req.method === 'GET' && url.pathname === '/api/tasks') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const manager = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        const tasks = this.jarvis.listTasks()
+          .filter((task) => manager || task.deviceId === auth.device!.id)
+          .slice(-30)
+          .map((task) => ({ id: task.id, state: task.state, operation: task.operation, origin: task.origin, createdAt: task.createdAt, updatedAt: task.updatedAt, steps: task.steps || [] }));
+        return this.jsonResponse(res, 200, { tasks });
+      }
+
+      // Cancel a waiting task (invalidating its approval) or interrupt a running one.
+      if (req.method === 'POST' && url.pathname === '/api/task/cancel') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.taskId !== 'string' || !body.taskId) return this.jsonResponse(res, 400, { error: 'taskId is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const result = this.jarvis.cancelTask(body.taskId, sessionId);
+        return this.jsonResponse(res, result.success ? 200 : 409, result);
       }
 
       // Audit logs (for dashboard monitoring)
@@ -551,7 +658,7 @@ export class JarvisServer {
       if (/invalid enrollment details/i.test(message)) return this.jsonResponse(res, 400, { error: 'Enrollment details are invalid' });
       if (/denied by security policy/i.test(message)) return this.jsonResponse(res, 403, { error: 'Enrollment request denied by security policy' });
       if (/Enrollment code is invalid|Enrollment request expired or changed/i.test(message)) return this.jsonResponse(res, 409, { error: 'Enrollment transaction is invalid, expired, or no longer available' });
-      if (/not registered or revoked|lacks permission/i.test(message)) {
+      if (/not registered or revoked|lacks permission|only the requesting device/i.test(message)) {
         return this.jsonResponse(res, 403, { error: message });
       }
       if (message.startsWith('Authentication failed')) {
@@ -626,7 +733,7 @@ export class JarvisServer {
     res.end(JSON.stringify(data));
   }
 
-  private readJsonBody(req: IncomingMessage): Promise<unknown> {
+  private readJsonBody(req: IncomingMessage, maxBytes: number = 1024 * 64): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const contentType = req.headers['content-type'] || '';
       const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
@@ -645,7 +752,7 @@ export class JarvisServer {
       req.on('data', (chunk: Buffer | string) => {
         if (settled) return;
         body += chunk.toString();
-        if (Buffer.byteLength(body, 'utf8') > 1024 * 64) {
+        if (Buffer.byteLength(body, 'utf8') > maxBytes) {
           fail(new Error('Payload too large'));
           // Drain the rest without buffering it so the connection can finish cleanly.
           req.resume();

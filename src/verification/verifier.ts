@@ -17,6 +17,17 @@ export class OutcomeVerifier {
       };
     }
 
+    if (!result.success && result.outcome === VerificationOutcome.UNCERTAIN) {
+      // The adapter could not tell whether the side effect happened (for example a
+      // timeout after keystrokes were sent). Reporting a clean failure would invite
+      // a duplicate retry, so surface the uncertainty instead.
+      return {
+        honestOutcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+        message: (result.error || 'The outcome could not be confirmed') + ' Check the target before retrying.',
+      };
+    }
+
     if (!result.success) {
       return {
         honestOutcome: VerificationOutcome.VERIFIED_FAILURE,

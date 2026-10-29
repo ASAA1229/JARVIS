@@ -6,56 +6,53 @@
   <title>JARVIS — Cinematic Autonomous HUD</title>
   <link rel="stylesheet" href="/hud/hud.css">
 </head>
-<body class="hud-body">
-  <!-- Scanlines & Ambient Grid Overlay -->
+<body class="hud-body" data-state="idle" data-speaking="false">
+  <!-- Ambient layers: static CSS only, no images and no per-frame work -->
   <div class="hud-grid-overlay" aria-hidden="true"></div>
   <div class="hud-scanlines" aria-hidden="true"></div>
   <svg id="gesture-trail" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline id="gesture-trail-line" points="" /></svg>
   <div id="gesture-reticle" aria-hidden="true"></div>
 
   <div class="hud-wrapper">
-    <!-- Top Bar: Telemetry & Security State -->
+    <!-- Top: link status, title plate, measured system readout -->
     <header class="hud-header">
-      <div class="hud-brand">
-        <div class="hud-core-dot" id="core-status-dot"></div>
-        <span class="hud-title">J.A.R.V.I.S.</span>
-        <span class="hud-version">ZERO-TRUST // <a class="hud-nav-link" href="/companion">DEVICE ENROLLMENT</a></span>
+      <div class="hud-header-left">
+        <div class="hud-brand">
+          <div class="hud-core-dot" id="core-status-dot"></div>
+          <span class="hud-version">ZERO-TRUST // <a class="hud-nav-link" href="/companion">DEVICE ENROLLMENT</a></span>
+        </div>
       </div>
 
-      <div class="hud-telemetry">
+      <div class="hud-plate">
+        <h1 class="hud-title">J.A.R.V.I.S.</h1>
+        <p class="hud-subtitle">// ZERO-TRUST PERSONAL ASSISTANT HUB</p>
+        <div class="hud-ruler" aria-hidden="true"></div>
+      </div>
+
+      <div class="hud-telemetry frame" aria-label="Measured system readout">
         <div class="telemetry-item">
-          <span class="tel-label">SYSTEM:</span>
-          <span class="tel-val" id="tel-system">WINDOWS 11</span>
+          <span class="tel-label">SYSTEM</span>
+          <span class="tel-val" id="tel-system">CHECKING</span>
         </div>
         <div class="telemetry-item">
-          <span class="tel-label">POLICY:</span>
+          <span class="tel-label">POLICY</span>
           <span class="tel-val success" id="tel-policy">DEFAULT-DENY</span>
         </div>
         <div class="telemetry-item">
-          <span class="tel-label">CORE STATE:</span>
+          <span class="tel-label">CORE STATE</span>
           <span class="tel-val" id="tel-audit">CHECKING</span>
         </div>
         <div class="telemetry-item">
-          <span class="tel-label">HOST LINK:</span>
-          <span class="tel-val" id="tel-host">LOCAL 127.0.0.1</span>
+          <span class="tel-label">HOST LINK</span>
+          <span class="tel-val" id="tel-host">CHECKING</span>
         </div>
-      </div>
-
-      <div class="hud-controls">
-        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation" aria-pressed="false">REDUCED MOTION: OFF</button>
-        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false" data-gesture-target="mic-toggle" data-gesture-label="Microphone privacy control">MIC: ARMED</button>
-<button id="btn-hands-free-toggle" class="hud-btn-mini" title="Enable or disable wake phrase detection" aria-pressed="false">ENABLE WAKE DETECTION</button>
-        <button id="btn-hands-free-pause" class="hud-btn-mini" title="Pause or resume wake phrase detection" aria-pressed="false" disabled>PAUSE LISTENING</button>
-        <button id="btn-hands-free" class="hud-btn-mini" type="button" aria-pressed="false">HANDS-FREE CAPTURE: OFF</button>
-        <button id="btn-speech-output" class="hud-btn-mini" type="button" aria-pressed="true">VOICE: ON</button>
-        <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
       </div>
     </header>
 
     <!-- Main Panoramic Workspace -->
     <main class="hud-main">
-      <!-- Left Panel: Device Identity & Security Status -->
-      <aside class="hud-panel hud-panel-left glass" data-gesture-target="device-authentication" data-gesture-label="Device authentication panel">
+      <!-- Left: device identity, policy matrix, audit stream, local camera -->
+      <aside class="hud-panel hud-panel-left frame" data-gesture-target="device-authentication" data-gesture-label="Device authentication panel">
         <div class="panel-header">
           <h3>DEVICE AUTHENTICATION</h3>
           <span class="panel-tag" id="enclave-tag">STANDBY</span>
@@ -100,28 +97,36 @@
         </div>
       </aside>
 
-      <!-- Center Stage: Arc Reactor Visualization & Push-To-Talk -->
+      <!-- Center: reactor, waveform, state, push-to-talk -->
       <section class="hud-center-stage" data-gesture-target="center-stage" data-gesture-label="Assistant center stage">
-        <!-- Visual Reactor Ring -->
         <div class="reactor-container" id="reactor-container">
-          <div class="reactor-outer-ring"></div>
-          <div class="reactor-middle-ring"></div>
-          <div class="reactor-inner-core" id="reactor-core">
+          <svg class="reactor-svg" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
+            <g class="r-spin r-spin-slow"><circle class="r-tick" cx="200" cy="200" r="192"/></g>
+            <g class="r-spin r-spin-rev"><circle class="r-arc r-arc-a" cx="200" cy="200" r="176"/></g>
+            <circle class="r-line" cx="200" cy="200" r="154"/>
+            <g class="r-spin r-spin-mid"><circle class="r-arc r-arc-b" cx="200" cy="200" r="138"/></g>
+            <circle class="r-line r-line-faint" cx="200" cy="200" r="112"/>
+            <path class="r-cross" d="M200 8V70M200 330V392M8 200H70M330 200H392"/>
+            <path class="r-diag" d="M64 64L120 120M336 64L280 120M64 336L120 280M336 336L280 280"/>
+          </svg>
+          <div class="reactor-inner-core" id="reactor-core" role="button" tabindex="0" aria-label="Toggle voice capture">
+            <div class="core-swirl"></div>
+            <div class="core-swirl core-swirl-dots"></div>
             <div class="core-glow"></div>
-            <div class="core-symbol">⚡</div>
+            <div class="core-symbol" aria-hidden="true">⚡</div>
           </div>
-          <!-- Waveform Canvas -->
-          <canvas id="waveform-canvas" width="320" height="80" class="waveform-canvas"></canvas>
         </div>
 
-        <!-- Assistant Status Display -->
+        <div class="waveform-wrap">
+          <canvas id="waveform-canvas" width="320" height="80" class="waveform-canvas" role="img" aria-label="Microphone level display. Shows real input level only while voice capture is active and a level meter is available."></canvas>
+        </div>
+
         <div class="hud-status-banner">
           <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
           <p class="hud-state-sub" id="hud-state-sub">Enable hands-free to say “Hey JARVIS, open Notepad”. Disable hands-free to release the microphone.</p>
         </div>
 
-        <!-- Transcript Review & Confirmation Box -->
-        <div class="transcript-box glass hidden" id="transcript-box">
+        <div class="transcript-box frame hidden" id="transcript-box">
           <div class="transcript-header">
             <span>VOICE TRANSCRIPTION (VERIFY BEFORE EXECUTION)</span>
             <span class="transcript-badge">EDITABLE</span>
@@ -136,16 +141,21 @@
           </div>
         </div>
 
-        <!-- Voice Interaction Bar -->
         <div class="ptt-controls">
           <button id="btn-ptt" class="btn-arc-ptt" aria-label="Push to Talk Voice Activation" aria-pressed="false" data-gesture-target="ptt" data-gesture-label="Push to talk control">
-            <span class="ptt-icon">🎙️</span>
+            <span class="ptt-icon" aria-hidden="true">🎙️</span>
             <span class="ptt-text" id="ptt-text">HOLD TO TALK</span>
           </button>
           <div class="keyboard-hint">HOLD <code>SPACE</code> OR TOGGLE <code>CTRL+M</code> | <code>ESC</code> TO CANCEL</div>
         </div>
 
-        <div class="gesture-proposal glass" id="gesture-proposal" aria-live="polite">
+        <div class="hud-nodes" role="group" aria-label="Runtime status nodes">
+          <div class="hud-node" id="node-core" data-state="unknown"><span class="node-ring"></span><span class="node-name">CORE</span><span class="node-val" id="node-core-val">CHECKING</span></div>
+          <div class="hud-node" id="node-host" data-state="unknown"><span class="node-ring"></span><span class="node-name">HOST</span><span class="node-val" id="node-host-val">CHECKING</span></div>
+          <div class="hud-node" id="node-session" data-state="unknown"><span class="node-ring"></span><span class="node-name">SESSION</span><span class="node-val" id="node-session-val">CHECKING</span></div>
+        </div>
+
+        <div class="gesture-proposal frame" id="gesture-proposal" aria-live="polite">
           <div class="gesture-proposal-title">GESTURE PROPOSAL // PREVIEW ONLY</div>
           <div><span id="gesture-name">NO GESTURE</span><span id="gesture-confidence">--</span></div>
           <p>Target: <strong id="gesture-target">None</strong></p>
@@ -154,19 +164,28 @@
         </div>
       </section>
 
-      <!-- Right Panel: Pending Approvals & Task Lifecycle Evidence -->
-      <aside class="hud-panel hud-panel-right glass" data-gesture-target="governance" data-gesture-label="Task governance panel">
+      <!-- Right: directive pipeline, approvals, execution evidence -->
+      <aside class="hud-panel hud-panel-right frame" data-gesture-target="governance" data-gesture-label="Task governance panel">
         <div class="panel-header">
           <h3>TASK GOVERNANCE</h3>
           <span class="panel-tag warning" id="hud-pending-badge">0 APPROVALS</span>
         </div>
         <div class="panel-content">
-          <!-- Pending Approval Card Slot -->
+          <div class="stat-card pipeline-card">
+            <span class="stat-title">DIRECTIVE PIPELINE</span>
+            <ol class="pipeline" id="task-pipeline" aria-label="Directive pipeline stages">
+              <li data-stage="sent" data-state="idle"><span class="pl-dot"></span><span class="pl-name">SENT</span></li>
+              <li data-stage="policy" data-state="idle"><span class="pl-dot"></span><span class="pl-name">POLICY</span></li>
+              <li data-stage="approval" data-state="idle"><span class="pl-dot"></span><span class="pl-name">CONSENT</span></li>
+              <li data-stage="verify" data-state="idle"><span class="pl-dot"></span><span class="pl-name">VERIFIED</span></li>
+            </ol>
+            <p class="stat-sub" id="pipeline-note">No directive submitted yet.</p>
+          </div>
+
           <div id="hud-approvals-slot" class="hud-approvals-slot">
             <div class="no-tasks-hint" id="hud-no-approvals-hint">No actions awaiting human consent.</div>
           </div>
 
-          <!-- Active / Completed Tasks Feed -->
           <div class="tasks-timeline-header">
             <span>EXECUTION EVIDENCE FEED</span>
           </div>
@@ -180,8 +199,8 @@
       </aside>
     </main>
 
-    <!-- Bottom Command Deck: Quick Allowlisted Directives & Fallback Input -->
-    <footer class="hud-footer glass" data-gesture-target="command-deck" data-gesture-label="Command deck">
+    <!-- Command deck: quick directives and text fallback -->
+    <footer class="hud-footer frame" data-gesture-target="command-deck" data-gesture-label="Command deck">
       <div class="command-deck">
         <div class="directive-chips">
           <span class="chips-title">DIRECTIVES:</span>
@@ -204,6 +223,21 @@
         </div>
       </div>
     </footer>
+
+    <!-- Control bar: voice and display controls -->
+    <section class="hud-controlbar" aria-label="Voice and display controls">
+      <div class="hud-controls hud-controls-left">
+        <button id="btn-toggle-mic-mute" class="hud-btn-mini hud-btn-mic" title="Privacy Mute Control" aria-pressed="false" data-gesture-target="mic-toggle" data-gesture-label="Microphone privacy control">MIC: ARMED</button>
+        <button id="btn-hands-free-toggle" class="hud-btn-mini" title="Enable or disable wake phrase detection" aria-pressed="false">ENABLE WAKE DETECTION</button>
+        <button id="btn-hands-free-pause" class="hud-btn-mini" title="Pause or resume wake phrase detection" aria-pressed="false" disabled>PAUSE LISTENING</button>
+      </div>
+      <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
+      <div class="hud-controls hud-controls-right">
+        <button id="btn-hands-free" class="hud-btn-mini" type="button" aria-pressed="false">HANDS-FREE CAPTURE: OFF</button>
+        <button id="btn-speech-output" class="hud-btn-mini" type="button" aria-pressed="true">VOICE: ON</button>
+        <button id="btn-toggle-motion" class="hud-btn-mini" title="Toggle Motion Animation" aria-pressed="false">REDUCED MOTION: OFF</button>
+      </div>
+    </section>
   </div>
 
   <script src="/deviceCrypto.js"></script>

@@ -21,6 +21,7 @@ let handsFreeEnabled = false;
 let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
+let localTtsUnavailable = false;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
 const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop jarvis', 'jarvis stop', 'goodbye jarvis', 'go to sleep jarvis'];
@@ -57,6 +58,9 @@ function setupEventListeners() {
   };
   btnPtt.addEventListener('click', toggleVoiceCapture);
   reactorCore.addEventListener('click', toggleVoiceCapture);
+  reactorCore.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); toggleVoiceCapture(); }
+  });
 
   // Keyboard shortcuts use the same toggle behavior as the on-screen control.
   window.addEventListener('keydown', (e) => {
@@ -284,7 +288,14 @@ function startHandsFreeStandby() {
     if (event.error === 'audio-capture') {
       setAssistantState('MICROPHONE UNAVAILABLE', 'Another app may be using the microphone, or no input device is available.');
     } else if (event.error === 'network') {
-      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'Browser speech recognition could not reach its recognition service. Check internet access or use text input.');
+      // Browser speech recognition commonly depends on a remote service. Do not
+      // restart it in a tight loop when that service is unreachable.
+      disableWakeDetection();
+      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'The browser recognition service is unreachable. Hands-free has been paused to prevent repeated failures. Use text input, or retry voice after the connection is restored.');
+      return;
+    } else if (event.error === 'aborted') {
+      // A deliberate stop/restart can emit "aborted"; it is not a user-facing fault.
+      return;
     } else if (event.error === 'no-speech') {
       setAssistantState('NO SPEECH DETECTED', 'I did not hear speech. Check the selected microphone and try again.');
     } else {
@@ -397,7 +408,21 @@ function createSpeechRecognizer(captureGeneration) {
 
   recognizer.onerror = (event) => {
     if (captureGeneration !== voiceCaptureGeneration) return;
-    console.error('Speech recognition error:', event.error);
+    if (event.error === 'aborted') {
+      // Expected when capture is cancelled or a recognizer is replaced.
+      return;
+    }
+    if (event.error === 'network') {
+      isListening = false;
+      if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
+      document.getElementById('reactor-container').classList.remove('listening');
+      document.getElementById('btn-ptt').classList.remove('active');
+      if (isHandsFreeEnabled) disableHandsFree();
+      else cancelVoiceCapture();
+      setAssistantState('SPEECH SERVICE UNAVAILABLE', 'The browser speech-recognition service could not be reached. Your microphone may still be working. Use the text box, or retry voice when the browser service is available.');
+      return;
+    }
+    console.warn('Speech recognition error:', event.error);
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       cancelVoiceCapture();
       disableHandsFree();
@@ -428,6 +453,7 @@ function createSpeechRecognizer(captureGeneration) {
     }
     document.getElementById('reactor-container').classList.remove('listening');
     document.getElementById('btn-ptt').classList.remove('active');
+    stopAudioMeter();
     if (discardVoiceResult) {
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
@@ -510,7 +536,7 @@ function handleHandsFreeTranscript(rawTranscript) {
       void submitDirective(command);
     } else {
       setAssistantState('JARVIS IS LISTENING', 'Wake phrase detected. Say your command now.');
-      void speakResponse('Yes? I am listening.');
+      void speakResponse('Hii sir, I am ready to work.');
     }
     return;
   }
@@ -574,6 +600,7 @@ function startVoiceCapture() {
   try {
     speechRecognizer = createSpeechRecognizer(captureGeneration);
     speechRecognizer.start();
+    void startAudioMeter();
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
       stopVoiceCapture(isHandsFreeEnabled ? 'HANDS-FREE STANDBY' : 'VOICE TIME LIMIT', isHandsFreeEnabled ? 'Refreshing the browser recognition session.' : 'The 15-second capture limit was reached. Review the transcript before sending.');
@@ -602,6 +629,7 @@ function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit 
   if (speechRecognizer) {
     try {
       speechRecognizer.stop();
+      stopAudioMeter();
     } catch (e) {
       setAssistantState('VOICE STOP UNCERTAIN', 'Check microphone indicator and use Cancel if capture continues.');
     }
@@ -621,6 +649,7 @@ function cancelVoiceCapture() {
   if (speechRecognizer) {
     try {
       speechRecognizer.abort();
+      stopAudioMeter();
     } catch (e) {
       // ignore
     }
@@ -661,6 +690,7 @@ async function submitDirective(text) {
   sendButton.textContent = 'TRANSMITTING…';
   setAssistantState('PROCESSING DIRECTIVE...', 'Evaluating via Policy Gateway...');
   addFeedItem('directive', text);
+  setPipeline({ sent: 'active' }, 'Directive sent; waiting for the policy gateway.');
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
@@ -669,24 +699,29 @@ async function submitDirective(text) {
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
+    if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       speakResponse(data.message || 'I need your approval before performing that action.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Waiting for your explicit approval. It is single-use and bound to this exact action.');
     } else if (data.state === 'COMPLETED' &&
         data.outcome === 'VERIFIED_SUCCESS' && data.verified === true) {
       setAssistantState('DIRECTIVE EXECUTED', data.message);
       addFeedItem('success', `Verified Result: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'done' }, 'Policy allowed it without approval and the host outcome was verified.');
       speakResponse(data.message || 'The action completed successfully.');
     } else if (data.state === 'PARTIAL' || data.state === 'AWAITING_RECOVERY' ||
         data.outcome === 'UNCERTAIN' || data.verified === false) {
       setAssistantState('OUTCOME NOT VERIFIED', data.message);
       addFeedItem('pending', `Outcome not fully verified: ${data.message}`, data.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'warn' }, 'The outcome could not be confirmed. Check the host before retrying.');
       speakResponse(data.message || 'I could not fully verify the outcome.');
     } else {
       setAssistantState('EXECUTION DENIED / FAILED', data.message || data.error);
       addFeedItem('failed', `Denied: ${data.message || data.error}`);
+      setPipeline({ sent: 'done', policy: 'bad' }, 'Denied or failed at the policy gateway. Nothing was executed.');
       speakResponse(data.message || data.error || 'The request was denied or failed.');
     }
     if (textInput.value.trim() === text) textInput.value = '';
@@ -700,6 +735,7 @@ async function submitDirective(text) {
       : (err instanceof Error ? err.message : 'Request failed');
     setAssistantState('COMMUNICATION FAILURE', message);
     addFeedItem('failed', message);
+    setPipeline({ sent: 'bad' }, 'The request did not complete. Its server-side state is unknown.');
     speakResponse(message);
     if (sourceWasTranscript && !textInput.value.trim()) textInput.value = text;
   } finally {
@@ -717,32 +753,38 @@ async function speakResponse(message) {
   const text = String(message || '').trim();
   if (!text || isMicMuted || !speechOutputEnabled) return;
   isSpeaking = false;
-  if (currentSession && window.JarvisDeviceCrypto?.signedFetch) {
+  if (!localTtsUnavailable && currentSession && window.JarvisDeviceCrypto?.signedFetch) {
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
         method: 'POST', body: { text: text.slice(0, 1200) },
       });
-      if (response.ok) {
-        const blob = await response.blob();
-        if (blob.type.includes('audio/wav') && blob.size > 44) {
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          const releaseUrl = () => URL.revokeObjectURL(url);
-          audio.addEventListener('ended', releaseUrl, { once: true });
-          audio.addEventListener('error', releaseUrl, { once: true });
-          try {
-            await audio.play();
-            isSpeaking = true;
-            audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
-            return;
-          } catch (playError) {
-            releaseUrl();
-            throw playError;
-          }
+      if (!response.ok) {
+        // A failing local provider will not be retried for every response.
+        // Browser speech synthesis is the graceful fallback for this session.
+        if (response.status === 502 || response.status === 503) localTtsUnavailable = true;
+        throw new Error(`Local TTS returned HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      if (blob.type.includes('audio/wav') && blob.size > 44) {
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        const releaseUrl = () => URL.revokeObjectURL(url);
+        audio.addEventListener('ended', releaseUrl, { once: true });
+        audio.addEventListener('error', releaseUrl, { once: true });
+        try {
+          await audio.play();
+          isSpeaking = true;
+          audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
+          return;
+        } catch (playError) {
+          releaseUrl();
+          throw playError;
         }
       }
+      localTtsUnavailable = true;
+      throw new Error('Local TTS returned an invalid audio response');
     } catch (error) {
-      console.warn('Local neural TTS unavailable; trying browser speech.', error);
+      console.warn('Local neural TTS unavailable; using browser speech synthesis.', error);
     }
   }
   if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
@@ -756,6 +798,32 @@ async function speakResponse(message) {
     utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
     window.speechSynthesis.speak(utterance);
   }
+}
+
+function normalizeUserFacingMessage(value) {
+  if (typeof value !== 'string') return '';
+  let text = value.trim();
+  if (!text) return '';
+  // Only unwrap JSON-looking strings; normal prose remains untouched.
+  if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(text);
+      const extract = (candidate, depth = 0) => {
+        if (depth > 4 || candidate == null) return '';
+        if (typeof candidate === 'string') return normalizeUserFacingMessage(candidate);
+        if (Array.isArray(candidate)) return candidate.map(item => extract(item, depth + 1)).filter(Boolean).join('\n');
+        if (typeof candidate === 'object') {
+          for (const key of ['answer', 'response', 'message', 'text', 'content', 'explanation']) {
+            if (typeof candidate[key] === 'string' && candidate[key].trim()) return extract(candidate[key], depth + 1);
+          }
+        }
+        return '';
+      };
+      const extracted = extract(parsed);
+      if (extracted) return extracted;
+    } catch { /* Leave malformed or non-response JSON readable as a safe string. */ }
+  }
+  return text;
 }
 
 async function readApiResponse(response) {
@@ -846,6 +914,7 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
       speakResponse('The directive was rejected.');
       return;
     }
@@ -857,6 +926,7 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
       speakResponse(result.message || 'The approved task completed and was verified.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       const card = document.getElementById('hud-appr-' + approvalId);
@@ -864,14 +934,17 @@ async function resolveHudApproval(approvalId, approved) {
       updateApprovalCountBadge();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
       speakResponse(result.message || 'The approved task did not complete.');
     } else {
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified.');
     }
   } catch (err) {
     setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
     addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
+    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify before retrying.');
     speakResponse(err instanceof Error ? err.message : 'Approval status could not be confirmed.');
   }
 }
@@ -888,7 +961,49 @@ function updateApprovalCountBadge() {
 function setAssistantState(mainLabel, subLabel) {
   document.getElementById('hud-state-label').innerText = mainLabel;
   if (subLabel) document.getElementById('hud-state-sub').innerText = subLabel;
+  document.body.dataset.state = deriveVisualState(mainLabel);
 }
+
+// Maps the real status label to a visual state for the reactor core. The label
+// is the source of truth; this only chooses colours and motion speed.
+function deriveVisualState(label) {
+  const text = String(label || '').toUpperCase();
+  if (/MUTED|PRIVACY MODE/.test(text)) return 'muted';
+  if (/PAUSED|DISABLED|STOPPED|REJECTED/.test(text)) return 'idle';
+  if (/FAIL|DENIED|OFFLINE|UNREACHABLE|UNAVAILABLE|DEGRADED|REQUIRED|ERROR|UNKNOWN|NOT COMPLETE|NOT VERIFIED|DID NOT|UNCERTAIN|NO SPEECH/.test(text)) return 'error';
+  if (/CONSENT|RECOVERING/.test(text)) return 'attention';
+  if (/PROCESSING|RESOLVING|RECOGNIZED|COMMAND RECEIVED/.test(text)) return 'processing';
+  if (/LISTENING/.test(text)) return 'listening';
+  return 'idle';
+}
+
+function setNode(name, state, text) {
+  const node = document.getElementById('node-' + name);
+  if (!node) return;
+  node.dataset.state = state;
+  const value = document.getElementById('node-' + name + '-val');
+  if (value) value.textContent = text;
+}
+
+const PIPELINE_STAGES = ['sent', 'policy', 'approval', 'verify'];
+
+// Stage states: idle | active | done | warn | bad | skip. Only call this with
+// states taken from an actual server response or a real request failure.
+function setPipeline(states, note) {
+  for (const stage of PIPELINE_STAGES) {
+    const item = document.querySelector('#task-pipeline [data-stage="' + stage + '"]');
+    if (item) item.dataset.state = states[stage] || 'idle';
+  }
+  const noteElement = document.getElementById('pipeline-note');
+  if (noteElement && note) noteElement.textContent = note;
+}
+
+// Speaking state lives in script variables (browser TTS and local audio); mirror it
+// to the document so the reactor can pulse. Cheap attribute compare, no rendering.
+setInterval(() => {
+  const speaking = String(isSpeaking);
+  if (document.body.dataset.speaking !== speaking) document.body.dataset.speaking = speaking;
+}, 250);
 
 function addFeedItem(type, message, details) {
   const feed = document.getElementById('hud-tasks-feed');
@@ -920,6 +1035,7 @@ async function ensureEnrolledDevice() {
     document.getElementById('hud-device-name').textContent = currentDevice.name;
     document.getElementById('hud-device-id').textContent = currentDevice.id;
     document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
+    setNode('session', 'ok', 'SESSION OK');
     if (speechUnavailableReason) {
       setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED', speechUnavailableReason);
     } else {
@@ -931,35 +1047,65 @@ async function ensureEnrolledDevice() {
     document.getElementById('hud-device-name').textContent = 'Enrollment required';
     document.getElementById('hud-device-id').textContent = '--';
     document.getElementById('enclave-tag').textContent = 'SECURE ENROLLMENT REQUIRED';
+    setNode('session', 'bad', 'NO SESSION');
     setAssistantState('SESSION UNAVAILABLE', err instanceof Error ? err.message : 'Enroll this browser through the companion UI first.');
   }
 }
 
+let hostWasUnreachable = false;
+
+function describePlatform(platform) {
+  const names = { win32: 'WINDOWS', darwin: 'MACOS', linux: 'LINUX' };
+  return names[platform] || (typeof platform === 'string' && platform ? platform.toUpperCase().slice(0, 16) : 'UNKNOWN');
+}
+
 async function pollStatus() {
+  // Skip polling while the tab is hidden; the next visible tick refreshes state.
+  if (document.hidden) return;
   try {
     const res = await fetch('/api/status');
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error('Status request failed');
+    if (data.status !== 'ONLINE' && data.status !== 'DEGRADED') throw new Error('Unknown server status response');
+    // Telemetry shown here comes from the server response, not from constants.
+    document.getElementById('tel-system').innerText = describePlatform(data.platform);
+    document.getElementById('tel-host').innerText = window.location.host || 'LOCAL';
+    if (hostWasUnreachable) {
+      hostWasUnreachable = false;
+      setAssistantState('HOST RECONNECTED', 'The local JARVIS core is reachable again.');
+    }
     if (data.status === 'ONLINE') {
       document.getElementById('core-status-dot').classList.remove('degraded');
       document.getElementById('tel-audit').innerText = 'CORE HEALTHY';
-    } else if (data.status === 'DEGRADED') {
-      document.getElementById('core-status-dot').classList.add('degraded');
-      document.getElementById('tel-audit').innerText = 'DEGRADED';
-      setAssistantState('CORE DEGRADED', 'Security state needs attention. State-changing tasks must remain blocked.');
+      setNode('core', 'ok', 'HEALTHY');
+      setNode('host', 'ok', 'LINKED');
     } else {
-      throw new Error('Unknown server status response');
+      document.getElementById('core-status-dot').classList.add('degraded');
+      const failed = data.checks && typeof data.checks === 'object'
+        ? Object.entries(data.checks).filter(([, ok]) => ok === false).map(([name]) => name)
+        : [];
+      document.getElementById('tel-audit').innerText = 'DEGRADED';
+      setNode('core', 'bad', 'DEGRADED');
+      setNode('host', 'ok', 'LINKED');
+      setAssistantState('CORE DEGRADED', failed.length
+        ? `Failed health checks: ${failed.join(', ')}. State-changing tasks must remain blocked.`
+        : 'Security state needs attention. State-changing tasks must remain blocked.');
     }
   } catch {
+    hostWasUnreachable = true;
     document.getElementById('core-status-dot').classList.add('degraded');
     document.getElementById('tel-host').innerText = 'OFFLINE';
+    document.getElementById('tel-system').innerText = 'UNKNOWN';
+    document.getElementById('tel-audit').innerText = 'UNREACHABLE';
+    setNode('core', 'unknown', 'UNKNOWN');
+    setNode('host', 'bad', 'OFFLINE');
     setAssistantState('HOST OFFLINE / UNREACHABLE', 'Reconnection in progress...');
   }
 }
 
 async function pollAudit() {
   try {
-    if (!currentSession) return;
+    if (!currentSession || document.hidden) return;
     const stream = document.getElementById('hud-audit-stream');
     if (!currentDevice?.permissions?.includes('device:manage:execute')) {
       stream.replaceChildren();
@@ -984,37 +1130,110 @@ async function pollAudit() {
   }
 }
 
+// Real microphone level metering. The analyser only reads levels locally for the
+// display: audio is never recorded, stored, uploaded, or routed to speakers.
+// The meter runs only while a user-started voice capture is active and the mic
+// is not muted; if it cannot start, the canvas says so instead of faking a level.
+let audioMeter = null;
+let audioMeterToken = 0;
+
+async function startAudioMeter() {
+  if (audioMeter || isMicMuted || document.body.classList.contains('reduced-motion')) return;
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') return;
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return;
+  const token = ++audioMeterToken;
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    if (token !== audioMeterToken || !isListening || isMicMuted) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    const context = new AudioContextCtor();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    context.createMediaStreamSource(stream).connect(analyser);
+    audioMeter = { stream, context, analyser, samples: new Uint8Array(analyser.fftSize) };
+  } catch {
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    audioMeter = null;
+  }
+}
+
+function stopAudioMeter() {
+  audioMeterToken++;
+  if (!audioMeter) return;
+  const meter = audioMeter;
+  audioMeter = null;
+  meter.stream.getTracks().forEach((track) => track.stop());
+  meter.context.close().catch(() => { /* already closed */ });
+}
+
+// Backstop: release the microphone meter whenever capture is no longer active,
+// including recognizer error paths and reduced-motion mode (which halts drawing).
+setInterval(() => { if (!isListening || isMicMuted) stopAudioMeter(); }, 1000);
+
 function initWaveformCanvas() {
   const canvas = document.getElementById('waveform-canvas');
   if (!canvas) return;
   if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
   const ctx = canvas.getContext('2d');
   let step = 0;
+  let lastFrame = 0;
 
-  function draw() {
+  function draw(now) {
     if (document.body.classList.contains('reduced-motion')) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      stopAudioMeter();
       animationFrameId = null;
       return;
     }
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isListening ? '#ff0055' : 'rgba(0, 229, 255, 0.4)';
+    animationFrameId = requestAnimationFrame(draw);
+    if (now - lastFrame < 33) return; // ~30 fps is enough and keeps CPU low on the laptop
+    lastFrame = now;
+    if (!isListening) stopAudioMeter();
 
-    ctx.beginPath();
     const width = canvas.width;
     const height = canvas.height;
     const mid = height / 2;
+    ctx.clearRect(0, 0, width, height);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
 
-    for (let x = 0; x < width; x += 4) {
-      const amp = isListening ? 18 : 6;
-      const y = mid + Math.sin((x + step) * 0.05) * Math.cos((x - step) * 0.03) * amp;
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    if (isListening && audioMeter) {
+      // Real input: plot the actual time-domain samples from the microphone analyser.
+      ctx.strokeStyle = '#ffb347';
+      audioMeter.analyser.getByteTimeDomainData(audioMeter.samples);
+      const samples = audioMeter.samples;
+      for (let i = 0; i < samples.length; i++) {
+        const x = (i / (samples.length - 1)) * width;
+        const y = mid + ((samples[i] - 128) / 128) * (mid - 4);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    } else if (isListening) {
+      // Capturing, but no level data is available: show a flat line and say so.
+      ctx.strokeStyle = 'rgba(255, 190, 60, 0.7)';
+      ctx.setLineDash([4, 6]);
+      ctx.moveTo(0, mid);
+      ctx.lineTo(width, mid);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255, 190, 60, 0.85)';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('CAPTURING - NO LEVEL DATA', width / 2, mid - 8);
+    } else {
+      // Idle: a low-amplitude decorative ambient line. It is not telemetry.
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+      for (let x = 0; x < width; x += 4) {
+        const y = mid + Math.sin((x + step) * 0.05) * Math.cos((x - step) * 0.03) * 6;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      step += 1.5;
     }
-    ctx.stroke();
-    step += isListening ? 4 : 1.5;
-    animationFrameId = requestAnimationFrame(draw);
   }
-  draw();
+  animationFrameId = requestAnimationFrame(draw);
 }
