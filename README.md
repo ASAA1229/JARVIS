@@ -110,3 +110,10 @@ The initial CI run for Cursor's latest change (`033daffcb528432accbfc23a423db100
 The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure.
 
 Exact final code/test revision `405b2eb233f08dfa0dde022a781cc34c611acd97` passed hosted CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275): TypeScript build, TypeScript check, automated test suite, and browser security smoke. The PR-triggered run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217) also passed on that revision. These results do not establish physical Windows voice/UI acceptance or native Android acceptance. A separate `npm audit` command and real-device tests remain outstanding.
+
+## Windows launch verification hardening — 2026-10-30
+
+A launch-window matching defect was found during the next Windows desktop reliability pass: a title containing a familiar app name (for example, “Paint”) could be treated as proof of the launched app even when the window belonged to a different process. Launch verification now requires the expected process identity and, when configured, also checks the title. Regression tests cover title-only false positives, title mismatches, process-name normalization, and missing match rules.
+
+Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishek/JARVIS/pull/16). Even after hosted tests pass, actual app launch/focus behavior must still be accepted on the target Windows laptop; this fix does not imply universal app control.
+
