@@ -222,3 +222,10 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 - Added regression coverage for title-only false positives, mismatched titles, .exe normalization, and missing matcher configuration.
 - Hosted validation is running on the latest new branch commit. Physical MSI acceptance remains required, and universal Windows application control is still partial.
 
+## Dynamic app launch verification guard — 2026-10-30
+
+- Removed first-word title/process matching as a basis for claiming a discovered Start-menu application was verified.
+- Dynamic Start-menu launch now returns PARTIAL_SUCCESS until a trusted AppID-to-process mapping can identify the target process. It records whether a new window appeared but marks targetWindowVerified as false.
+- Regression tests cover a title-only lookalike window and a launch with no observed new window.
+- Acceptance remains open for Windows MSI interactive testing and full hosted CI on the latest branch head.
+
