@@ -71,7 +71,7 @@ export function buildControlActionScript(
     'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
     '$element = $matches.Item(0)',
     '$actualName = $element.Current.Name',
-    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|cvv|card number|bank account|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
+    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|otp|one[- ]time password|recovery code|cvv|card number|credit card|debit card|card expiry|expiration date|bank account|account number|routing number|iban|swift code|sort code|security code") { throw "JARVIS policy blocks writing to credential or financial fields." }',
     '$pattern = $null',
     'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Value action." }',
     "$pattern.SetValue('" + safeText + "')",
