@@ -117,3 +117,7 @@ A launch-window matching defect was found during the next Windows desktop reliab
 
 Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishek/JARVIS/pull/16). Even after hosted tests pass, actual app launch/focus behavior must still be accepted on the target Windows laptop; this fix does not imply universal app control.
 
+## Dynamic Windows launch verification — 2026-10-30
+
+The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
+
