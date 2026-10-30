@@ -745,6 +745,19 @@ export class JarvisCoreService {
 
     this.#assertApproverPermission(approval, approver, 'APPROVAL_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
+    const pendingTask = this.tasks.get(approval.taskId);
+    if (!pendingTask) throw new Error('Associated task not found');
+    // An approval record alone is not enough: checkpoint/audit failure or a
+    // concurrent cancellation may have moved the task out of AWAITING_APPROVAL.
+    // Reject before consuming the approval or reaching any adapter.
+    if (pendingTask.state !== TaskState.AWAITING_APPROVAL) {
+      this.audit.record('APPROVAL_FAILED_TASK_NOT_PENDING', {
+        approvalId,
+        taskState: pendingTask.state,
+      }, approver.id, pendingTask.id);
+      throw new Error('Task is no longer awaiting approval');
+    }
+
     if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
       const expiredTask = this.tasks.get(approval.taskId);
       if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
@@ -761,8 +774,7 @@ export class JarvisCoreService {
       throw new Error(resolveRes.error);
     }
 
-    const task = this.tasks.get(approval.taskId);
-    if (!task) throw new Error('Associated task not found');
+    const task = pendingTask;
 
     const opRequest: OperationRequest = {
       operation: approval.operation,
