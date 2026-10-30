@@ -348,3 +348,12 @@ Implemented on `new`:
 **Validation status:** implementation and tests are committed on `new`; exact-head build, lint, full unit suite, browser smoke, and Android build have not yet been confirmed. The GitHub connector currently reports no status checks for the exact head, so this increment must not be called green until a completed workflow provides evidence. These tests have not been executed in this chat environment.
 
 **Remaining workflow gaps:** add crash/fault-injection coverage for audit-write and journal-write failures during reconciliation; exercise partial external side effects with a real application; the companion now has a Recovery Review panel that fetches tasks through the signed session and submits review decisions through the signed request client; verify this interaction in exact-head browser smoke and target-device acceptance; verify cancellation/revocation/expiry transitions across the complete lifecycle. The endpoint is a safe review/closure path, not a generic workflow resume engine.
+
+
+## Security regression follow-up — stale approvals after recovery transitions (2026-10-30)
+
+A code review found that an approval record could remain present after a task moved out of AWAITING_APPROVAL (for example, after checkpoint failure or interruption). The approval handler now checks the current persisted/in-memory task state before resolving or consuming the approval and refuses any task not currently awaiting approval. The denial is audited, and the API maps this stale-state result to HTTP 409.
+
+A regression test seeds a task in AWAITING_RECOVERY, creates an approval record for it, and asserts that approval fails without consuming the approval or changing the recovery state. The test uses an unsupported operation so the test cannot launch or mutate a real application.
+
+**Validation remains pending:** no exact-head build/typecheck/test/browser-smoke result is available yet. Treat this as a security fix with authored regression coverage, not as verified until CI executes on the resulting commit.
