@@ -705,6 +705,7 @@ export class JarvisServer {
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.jarvis.hasDurableTaskJournal()) return this.jsonResponse(res, 503, { error: 'Durable task recovery is not configured', code: 'TASK_JOURNAL_NOT_CONFIGURED' });
         const result = this.jarvis.reconcileTask(
           body.taskId,
           sessionId,
