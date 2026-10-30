@@ -81,6 +81,16 @@ test('task journal fails closed on tampered ciphertext and wrong owner token', (
   assert.throws(() => new TaskJournal(path, 'different-owner-control-token-for-tests-02'), /could not be decrypted or validated/i);
 }));
 
+test('task journal rolls back in-memory checkpoints and fails closed after persistence errors', () => withTempDir((directory) => {
+  const blocker = join(directory, 'not-a-directory');
+  writeFileSync(blocker, 'block parent directory creation');
+  const journal = new TaskJournal(join(blocker, 'tasks.enc'), TOKEN);
+
+  assert.throws(() => journal.save(record()), /persistence failed/i);
+  assert.equal(journal.list().length, 0, 'failed checkpoint must not remain visible in memory');
+  assert.throws(() => journal.save(record({ id: 'task-test-002' })), /unhealthy.*fail-closed/i);
+}));
+
 test('task journal requires a strong owner control token', () => withTempDir((directory) => {
   assert.throws(() => new TaskJournal(join(directory, 'tasks.enc'), 'short'), /at least 32 characters/i);
 }));
