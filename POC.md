@@ -127,3 +127,10 @@ Automated CI covers the planner, policy, script construction, build, and regress
 The read-only cross-device Android app-inventory queue now validates device identifiers, handles non-finite TTL values safely, rejects malformed/control-character app records and inventories above 300 entries, and avoids exposing internal result objects through returned references. Invalid inventory results do not transition a claimed command to completed. Regression tests were added for malformed input, queue expiry, oversize inventories and defensive-copy isolation.
 
 **Acceptance status remains partial:** these are source-level safeguards for the in-memory inventory command path, not proof of secure end-to-end remote operation. The queue is volatile and limited to `android.app.list`; it does not provide durable delivery, background push, arbitrary phone control or physical two-phone acceptance. Exact-head CI and Android device testing remain required before acceptance.
+
+
+## Advanced multi-step execution — encrypted checkpoint foundation (2026-10-30)
+
+Added `src/core/taskJournal.ts` with AES-256-GCM encrypted task checkpoints, authenticated encryption, bounded journal size/count, atomic temporary-file replacement, defensive-copy reads, and fail-closed handling for unreadable/tampered state. On restart, non-terminal records are converted to `AWAITING_RECOVERY`; stale approval IDs are cleared and automatic resume is explicitly disabled. Added focused regression tests in `test/task_journal.test.ts`.
+
+**This is a foundation module, not yet an end-to-end workflow feature.** The core service has not yet been wired to persist every task state transition through this journal. CI must pass on the exact head, then integration tests must verify request/approval/step/final-state checkpoints and recovery from process restart before the capability can be accepted. External side effects must be reconciled before any retry; state-changing operations must never be automatically replayed after an uncertain outcome.
