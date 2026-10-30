@@ -6,10 +6,10 @@ import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
 test('desktop:read_control requires a unique control and redacts sensitive values', () => {
   const script = buildReadControlScript("Account name");
-  assert.match(script, /\\$matches = \\$root\\.FindAll/);
-  assert.match(script, /\\$matches\\.Count -ne 1/);
-  assert.match(script, /Current\\.IsPassword/);
-  assert.match(script, /\\[REDACTED\\]/);
+  assert.match(script, /\$matches = \$root\.FindAll/);
+  assert.match(script, /\$matches\.Count -ne 1/);
+  assert.match(script, /Current\.IsPassword/);
+  assert.match(script, /\[REDACTED\]/);
   assert.match(script, /ValuePattern/);
   assert.match(script, /valueAvailable/);
 });
