@@ -105,7 +105,7 @@ class MainActivity : Activity() {
             text = "Check for laptop command (this phone)"
             setOnClickListener { background {
                 val api = client ?: error("Reconnect the authenticated session first.")
-                api.pollAndroidInventory(buildAppInventory())
+                api.pollAndroidInventory { buildAppInventory() }
             } }
         }, params())
         column.addView(Button(this).apply {
