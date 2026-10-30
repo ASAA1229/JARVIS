@@ -119,44 +119,48 @@ test('manual recovery reconciliation records an owner decision without replaying
   }
 }));
 
-test('a stale approval cannot execute a task already awaiting recovery', async () => withTempDir((directory) => {
+test('a stale approval cannot execute a task already awaiting recovery', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-recovery-approval-'));
   const statePath = join(directory, 'state');
-  new TaskJournal(statePath + '.tasks', TOKEN).save(record({ state: TaskState.AWAITING_RECOVERY, interrupted: true }));
-  const service = new JarvisCoreService({} as IAIPlannerProvider, join(directory, 'audit.log'), statePath, TOKEN);
   try {
-    const keys = CryptoUtil.generateEd25519KeyPair();
-    const challenge = service.identity.createEnrollmentChallenge([Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH, Permission.DEVICE_MANAGE]);
-    const enrolled = service.identity.enrollDevice(challenge.challengeToken, 'Approval owner', keys.publicKey);
-    assert.equal(enrolled.success, true);
-    const timestamp = Date.now();
-    const nonce = 'c'.repeat(32);
-    const session = service.identity.createSession(
-      enrolled.deviceId!,
-      CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, keys.privateKey),
-      timestamp,
-      nonce,
-    );
-    assert.equal(session.success, true);
+    new TaskJournal(statePath + '.tasks', TOKEN).save(record({ state: TaskState.AWAITING_RECOVERY, interrupted: true }));
+    const service = new JarvisCoreService({} as IAIPlannerProvider, join(directory, 'audit.log'), statePath, TOKEN);
+    try {
+      const keys = CryptoUtil.generateEd25519KeyPair();
+      const challenge = service.identity.createEnrollmentChallenge([Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH, Permission.DEVICE_MANAGE]);
+      const enrolled = service.identity.enrollDevice(challenge.challengeToken, 'Approval owner', keys.publicKey);
+      assert.equal(enrolled.success, true);
+      const timestamp = Date.now();
+      const nonce = 'c'.repeat(32);
+      const session = service.identity.createSession(
+        enrolled.deviceId!,
+        CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, keys.privateKey),
+        timestamp,
+        nonce,
+      );
+      assert.equal(session.success, true);
 
-    const approval = service.policy.createApprovalRequest(
-      'task-test-001',
-      enrolled.deviceId!,
-      'unsupported:test',
-      {},
-      RiskTier.HIGH,
-    );
-    await assert.rejects(
-      () => service.approveTask(approval.id, session.sessionId!),
-      /no longer awaiting approval/i,
-    );
-    assert.equal(service.policy.getApproval(approval.id)?.approved, false, 'stale approval must not be consumed');
-    assert.equal(service.getTask('task-test-001' as TaskLifecycleRecord['id'])?.state, TaskState.AWAITING_RECOVERY);
-    assert.equal(service.audit.getRecords().some((entry) => entry.eventType === 'APPROVAL_FAILED_TASK_NOT_PENDING'), true);
+      const approval = service.policy.createApprovalRequest(
+        'task-test-001',
+        enrolled.deviceId!,
+        'unsupported:test',
+        {},
+        RiskTier.HIGH,
+      );
+      await assert.rejects(
+        () => service.approveTask(approval.id, session.sessionId!),
+        /no longer awaiting approval/i,
+      );
+      assert.equal(service.policy.getApproval(approval.id)?.approved, false, 'stale approval must not be consumed');
+      assert.equal(service.getTask('task-test-001' as TaskLifecycleRecord['id'])?.state, TaskState.AWAITING_RECOVERY);
+      assert.equal(service.audit.getRecords().some((entry) => entry.eventType === 'APPROVAL_FAILED_TASK_NOT_PENDING'), true);
+    } finally {
+      service.stopBackgroundServices();
+    }
   } finally {
-    service.stopBackgroundServices();
     rmSync(directory, { recursive: true, force: true });
   }
-}));
+});
 
 test('manual recovery cannot turn a user observation into verified success and preserves unknown outcomes', () => withTempDir((directory) => {
   const statePath = join(directory, 'state');
