@@ -90,7 +90,7 @@ A first native Android application foundation now exists under `android-app/`:
 
 Important limitations and acceptance gates:
 
-- This is an initial native client, not a release-ready or physically verified Android agent. The repository's Node CI does not compile the Android Gradle project yet; Android SDK/Gradle build validation and install tests on both physical phones remain required.
+- This is an initial native client, not a release-ready or physically verified Android agent. A separate Android Gradle assembleDebug CI job has been added; until it passes on the latest branch head, Android compilation is not verified. Install and acceptance tests on both physical phones remain required.
 - The current JARVIS Node server exposes HTTP directly. The Android client deliberately requires a trusted HTTPS endpoint; until a TLS reverse proxy or native TLS server is configured and its certificate is trusted on the phones, remote connection is expected to fail closed.
 - Owner enrollment challenge creation still requires the existing owner-authorized flow. Do not put the owner control token into the Android app.
 - This initial vertical slice submits text requests only. Native notifications, app discovery/control, SMS/call actions, background execution, push notifications, and remote wake are not implemented by this slice.
