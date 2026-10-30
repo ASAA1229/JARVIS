@@ -68,6 +68,7 @@ test('task journal returns defensive copies and rejects malformed checkpoints', 
   assert.equal(journal.get('task-test-001')?.operations?.[0].parameters.appId, 'Notepad');
   assert.notEqual(journal.get('task-test-001')?.steps?.[0].message, 'tampered');
   assert.throws(() => journal.save(record({ id: '' })), /checkpoint is invalid/i);
+  assert.throws(() => journal.save(record({ reconciliation: { disposition: 'confirmed_no_effect', note: 'short', reviewedAt: Number.NaN, reviewedBy: 'owner' } })), /checkpoint is invalid/i);
 }));
 
 test('task journal fails closed on tampered ciphertext and wrong owner token', () => withTempDir((directory) => {
@@ -112,6 +113,7 @@ test('manual recovery reconciliation records an owner decision without replaying
     assert.equal(stored.reconciliation?.disposition, 'confirmed_no_effect');
     assert.match(stored.error || '', /will not be replayed/i);
     assert.equal(service.audit.getRecords().some((entry) => entry.eventType === 'TASK_RECOVERY_RECONCILED'), true);
+    assert.equal(JSON.stringify(service.audit.getRecords()).includes('Checked the target application and confirmed no change occurred.'), false, 'raw recovery notes must not enter audit logs');
     assert.equal(service.listTasks().length, 1, 'reconciliation must not create or execute a replacement task');
   } finally {
     service.stopBackgroundServices();
