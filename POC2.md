@@ -298,3 +298,9 @@ Implemented on `new`:
 - Browser smoke coverage checks that speech does not start without consent and that hands-free cannot start without a local wake engine.
 
 **Remaining:** this does not implement the local wake-word engine, nor does it prove the browser's speech provider is local. Push-to-talk with consent may still send audio to a browser/vendor service. Piper TTS compatibility/audible output, accessibility/responsive behavior, and physical MSI acceptance remain open. Latest exact-head CI must pass before this increment is considered validated.
+
+## Voice/HUD follow-up — consent revocation and hidden-page handling (2026-10-30)
+
+Added immediate capture cancellation when browser-speech consent is revoked, including transcript discard and protection against late recognition results. When the HUD becomes hidden, active capture is cancelled, the audio meter is released, and any standby listener is stopped. Browser smoke coverage verifies mid-capture consent revocation and late-result rejection.
+
+**Still open / not accepted:** a genuine local wake-word engine and model, verified local TTS/Piper installation and audible output, target-MSI microphone/browser testing, and accessibility/responsive/hardware acceptance. Do not describe the current voice path as fully local or always listening. Hands-free remains fail-closed until a real local engine is configured.
