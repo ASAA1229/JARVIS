@@ -46,7 +46,7 @@ export function buildReadControlScript(name: string): string {
     'Add-Type -AssemblyName UIAutomationClient',
     'Add-Type -AssemblyName UIAutomationTypes',
     "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
-    '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
     '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
     'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
     '$element = $matches.Item(0)',
@@ -71,7 +71,7 @@ export function buildControlActionScript(
     'Add-Type -AssemblyName UIAutomationClient',
     'Add-Type -AssemblyName UIAutomationTypes',
     "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
-    '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
   ];
   if (operation === 'desktop:click_control') {
     return [
@@ -122,8 +122,10 @@ export class WindowsDesktopAgent {
     return [
       "$ErrorActionPreference = \"Stop\"",
       "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class JarvisForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId); }' -ErrorAction SilentlyContinue",
+      "$foregroundHwnd = [JarvisForeground]::GetForegroundWindow()",
+      "if ($foregroundHwnd -eq [IntPtr]::Zero) { throw 'NO_FOREGROUND_WINDOW' }",
       "$foregroundPid = [uint32]0",
-      "[void][JarvisForeground]::GetWindowThreadProcessId([JarvisForeground]::GetForegroundWindow(), [ref]$foregroundPid)",
+      "[void][JarvisForeground]::GetWindowThreadProcessId($foregroundHwnd, [ref]$foregroundPid)",
       "$foreground = Get-Process -Id $foregroundPid -ErrorAction Stop",
       "if (($foreground.ProcessName + ' ' + $foreground.MainWindowTitle) -match '(?i)phonepe|paytm|google\\s*pay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications or windows.' }",
       LOCKED_DESKTOP_GUARD,
@@ -264,7 +266,7 @@ export class WindowsDesktopAgent {
         const script = [
           'Add-Type -AssemblyName UIAutomationClient',
           'Add-Type -AssemblyName UIAutomationTypes',
-          '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+          '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
           'if ($null -eq $root) { throw "No foreground window is available." }',
           '$allControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)',
           '$items = New-Object System.Collections.Generic.List[object]',
