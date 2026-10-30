@@ -325,6 +325,51 @@ try {
   await hud.getByText('MICROPHONE PERMISSION REQUIRED').waitFor({ state: 'visible' });
   await hud.getByText('Allow microphone access for this site in browser settings, then retry voice input.').waitFor({ state: 'visible' });
 
+  // Finalized speech must be reviewed and explicitly submitted; recognition
+  // ending alone must not transmit a directive.
+  let explicitVoiceRequestCount = 0;
+  await hud.route('**/api/request', async (route) => {
+    explicitVoiceRequestCount++;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        taskId: 'voice-explicit-submit-test',
+        state: 'COMPLETED',
+        outcome: 'VERIFIED_SUCCESS',
+        verified: true,
+        message: 'Voice directive explicitly submitted',
+      }),
+    });
+  });
+  const explicitSubmitRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, explicitSubmitRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const recognizer = window.__mockRecognizers[index];
+    recognizer.onresult({
+      resultIndex: 0,
+      results: Object.assign([[{ transcript: 'What is the OS version?' }]], {
+        0: Object.assign([{ transcript: 'What is the OS version?' }], { isFinal: true }),
+      }),
+    });
+    recognizer.stop();
+  }, explicitSubmitRecognizerIndex);
+  await hud.getByText('VOICE TRANSCRIPT READY').waitFor({ state: 'visible' });
+  await delay(150);
+  if (explicitVoiceRequestCount !== 0) {
+    throw new Error('Finalized voice recognition auto-submitted without explicit user consent');
+  }
+  if (await hud.locator('#transcript-input').inputValue() !== 'What is the OS version?') {
+    throw new Error('Finalized voice transcript was not made available for review');
+  }
+  await hud.locator('#btn-transcript-submit').click();
+  await hud.getByText('DIRECTIVE EXECUTED').waitFor({ state: 'visible' });
+  if (explicitVoiceRequestCount !== 1) {
+    throw new Error(`Explicit transcript submission sent ${explicitVoiceRequestCount} requests instead of one`);
+  }
+  await hud.unroute('**/api/request');
+
   await hud.locator('#btn-toggle-motion').click();
 
   // The camera remains off until the user explicitly enables it. This uses
