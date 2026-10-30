@@ -108,7 +108,7 @@ try {
 
   // Recovery list is loaded through the authenticated signed-request path.
   await page.locator('#btn-refresh-recovery').click();
-  await page.waitForFunction(() => /Recovery list checked|Showing \\d+ task\\(s\\) requiring manual recovery review/.test(
+  await page.waitForFunction(() => /Recovery list checked|Showing \d+ task\(s\) requiring manual recovery review/.test(
     document.getElementById('recovery-status')?.textContent || '',
   ));
 
