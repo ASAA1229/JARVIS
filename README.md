@@ -1,8 +1,8 @@
 # JARVIS
 
-**Security-first personal AI assistant POC — Windows host and browser-based companion, with native Android agents planned.**
+**Security-first personal AI assistant POC — Windows host, browser HUD/companion, and an initial native Android companion vertical slice.**
 
-> **Current status (2026-10-24): NOT RELEASE-READY.** The repository has a working security-oriented backend foundation and a successful hosted CI run, but the universal assistant vision is not implemented end-to-end. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
+> **Current status (2026-10-30): NOT RELEASE-READY.** The repository has a security-oriented backend foundation, bounded Windows UI Automation, an initial Android Keystore-backed client, and an encrypted task journal/recovery review path. Universal app control, full two-phone operation, local voice acceptance, end-to-end communications integrations, and exact-head CI/device acceptance remain incomplete. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
 
 ## Branch and PR status
 
