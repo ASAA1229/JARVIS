@@ -1,6 +1,7 @@
 package com.jarvis.companion
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
@@ -16,6 +17,8 @@ class MainActivity : Activity() {
     private lateinit var phoneName: EditText
     private lateinit var request: EditText
     private lateinit var status: TextView
+    private lateinit var column: LinearLayout
+    private lateinit var appList: LinearLayout
     private lateinit var keys: DeviceKeyStore
     private var client: JarvisApiClient? = null
 
@@ -23,7 +26,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         keys = DeviceKeyStore(this)
         val prefs = getSharedPreferences("jarvis_ui", MODE_PRIVATE)
-        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 28, 24, 24) }
+        column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 28, 24, 24) }
         val scroll = ScrollView(this).apply { addView(column) }
         column.addView(TextView(this).apply { text = "JARVIS COMPANION"; textSize = 24f }, params())
         column.addView(TextView(this).apply {
@@ -76,7 +79,57 @@ class MainActivity : Activity() {
                 reply.state + ": " + reply.message
             } }
         }, params())
+
+        column.addView(TextView(this).apply {
+            text = "PHONE APPS"; textSize = 18f
+        }, params())
+        column.addView(TextView(this).apply {
+            text = "Local discovery only. Tap an app to open it; JARVIS does not silently control other apps."
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Discover launchable phone apps"
+            setOnClickListener { discoverPhoneApps() }
+        }, params())
+        appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(appList, params())
         setContentView(scroll)
+    }
+
+    private fun discoverPhoneApps() {
+        appList.removeAllViews()
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(launcherIntent, 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        if (apps.isEmpty()) {
+            appList.addView(TextView(this).apply { text = "No launchable apps were returned by Android." }, params())
+            return
+        }
+        appList.addView(TextView(this).apply {
+            text = "Found ${apps.size} launchable apps on this phone."
+        }, params())
+        for (app in apps) {
+            val label = app.loadLabel(packageManager).toString()
+            val packageName = app.activityInfo.packageName
+            appList.addView(Button(this).apply {
+                text = label
+                contentDescription = "Open $label"
+                setOnClickListener {
+                    val launch = packageManager.getLaunchIntentForPackage(packageName)
+                    if (launch == null) {
+                        status.text = "Android did not provide a launch intent for $label."
+                    } else {
+                        try {
+                            startActivity(launch)
+                            status.text = "Opened $label at your request."
+                        } catch (_: Exception) {
+                            status.text = "Android blocked launching $label."
+                        }
+                    }
+                }
+            }, params())
+        }
     }
 
     private fun field(hintText: String, value: String, root: LinearLayout): EditText {
