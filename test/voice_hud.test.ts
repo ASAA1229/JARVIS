@@ -103,6 +103,8 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
     assert.match(hudHtml, /local-only processing is not guaranteed/i);
+    assert.match(hudHtml, /allow-browser-speech/);
+    assert.match(hudHtml, /Continuous hands-free listening remains disabled/i);
     assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
 
