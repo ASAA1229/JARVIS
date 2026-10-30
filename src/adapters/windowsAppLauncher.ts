@@ -178,7 +178,7 @@ export class WindowsAppLauncherAdapter {
    */
   public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {
     if (typeof appId !== 'string' || !appId.trim() || appId.trim().length > 120) {
-      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedApp: String(appId) } };
+      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedType: typeof appId, requestedLength: typeof appId === 'string' ? appId.length : undefined } };
     }
     const requestedName = appId.trim();
     if (this.isFinancialAppName(requestedName)) {
