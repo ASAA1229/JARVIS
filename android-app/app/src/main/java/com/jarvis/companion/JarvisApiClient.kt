@@ -92,6 +92,76 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
             response.optString("message", response.optString("error", "No response message.")))
     }
 
+    /** Ask the laptop to queue a read-only inventory command for an enrolled Android target. */
+    fun requestAndroidInventory(targetDeviceId: String): String {
+        require(targetDeviceId.isNotBlank() && targetDeviceId.length <= 100) { "Target device ID is invalid." }
+        val response = signedPost("/api/android/commands/create",
+            JSONObject().put("operation", "android.app.list").put("targetDeviceId", targetDeviceId))
+        return "Inventory command queued: " + response.getJSONObject("command").getString("id")
+    }
+
+    /** Claim one read-only inventory command and return the app list supplied by the Android UI. */
+    fun pollAndroidInventory(apps: JSONArray): String {
+        val next = signedGet("/api/android/commands/next")
+        val command = next.optJSONObject("command") ?: return "No pending command for this phone."
+        check(command.optString("operation") == "android.app.list") { "Unsupported command was refused." }
+        val payload = JSONObject().put("commandId", command.getString("id")).put("apps", apps)
+        signedPost("/api/android/commands/result", payload)
+        return "Sent ${apps.length()} launchable app records to the laptop."
+    }
+
+    fun androidInventoryResults(): String {
+        val results = signedGet("/api/android/commands/results").optJSONArray("results") ?: JSONArray()
+        if (results.length() == 0) return "No recent phone inventory results."
+        val output = StringBuilder()
+        for (i in 0 until results.length()) {
+            val item = results.getJSONObject(i)
+            output.append(item.optString("targetDeviceId")).append(" — ")
+                .append(item.optString("state"))
+            val apps = item.optJSONArray("apps")
+            if (apps != null) output.append(" (${apps.length()} apps)")
+            output.append("\\n")
+        }
+        return output.toString().trim()
+    }
+
+    private fun signedPost(path: String, body: JSONObject): JSONObject {
+        val session = sessionId ?: error("Reconnect the authenticated session first.")
+        val timestamp = System.currentTimeMillis()
+        val requestNonce = nonce()
+        val signature = keys.sign("POST:" + path + ":" + session + ":" + timestamp + ":" + requestNonce + ":" + sha256(stableJson(body)))
+        return post(path, body, session, timestamp, requestNonce, signature)
+    }
+
+    private fun signedGet(path: String): JSONObject {
+        val session = sessionId ?: error("Reconnect the authenticated session first.")
+        val timestamp = System.currentTimeMillis()
+        val requestNonce = nonce()
+        val signature = keys.sign("GET:" + path + ":" + session + ":" + timestamp + ":" + requestNonce + ":" + sha256(""))
+        val url = URL(baseUrl.trim().trimEnd('/') + path)
+        require(url.protocol.equals("https", true)) { "HTTPS is required." }
+        val connection = url.openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 8000
+            connection.readTimeout = 15000
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("X-Session-Id", session)
+            connection.setRequestProperty("X-Request-Timestamp", timestamp.toString())
+            connection.setRequestProperty("X-Request-Nonce", requestNonce)
+            connection.setRequestProperty("X-Request-Signature", signature)
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val result = try { JSONObject(text) } catch (_: Exception) {
+                JSONObject().put("error", "Invalid server response (HTTP " + status + ").")
+            }
+            if (status !in 200..299) throw IllegalStateException(result.optString("error", "HTTP " + status))
+            return result
+        } finally { connection.disconnect() }
+    }
+
     private fun post(path: String, body: JSONObject, session: String? = null,
         timestamp: Long? = null, nonce: String? = null, signature: String? = null): JSONObject {
         val url = URL(baseUrl.trim().trimEnd('/') + path)
