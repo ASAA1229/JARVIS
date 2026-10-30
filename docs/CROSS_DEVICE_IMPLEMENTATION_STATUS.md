@@ -161,3 +161,10 @@ The HUD now requires explicit, per-page-session consent before push-to-talk star
 - Hiding the HUD cancels capture, stops the microphone level meter, and stops standby recognition.
 - Browser smoke test added for consent revocation and late-result rejection.
 - This does not close the voice epic by itself. A real local wake-word engine/model, validated local TTS/Piper and audible output, and physical MSI/browser/microphone acceptance are still outstanding. Keep wake detection disabled until local inference is actually present and measured.
+
+### Local wake-word runtime integration — 2026-10-30
+
+- Added an optional local-only browser wake-word integration using the open-source onnx-wakeword engine and English “Hey Jarvis” model package. `scripts/setup-local-wake-word.ps1` installs the pinned runtime and downloads assets locally; downloaded model/runtime files are ignored by Git.
+- Server routes expose only a strict allowlist of wake-word asset filenames. Missing runtime/model assets fail closed without falling back to continuous browser speech recognition.
+- Added a separate session-only consent for browser/vendor speech recognition after local wake detection. All recognized commands remain review-only until explicit execution.
+- Still pending: setup/install on the target MSI, validate model asset compatibility and microphone permissions, test false triggers and CPU/memory usage, verify local Piper TTS audible output, and pass exact-head CI. Until those checks pass, do not mark always-ready local wake as accepted.
