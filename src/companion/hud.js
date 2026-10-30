@@ -312,23 +312,24 @@ async function handleLocalWakeDetected(probability) {
   handsFreeStandby = false;
   stopHandsFreeStandby();
   updateHandsFreeButtons();
-  setAssistantState('WAKE PHRASE DETECTED', 'Local “Hey Jarvis” detection succeeded. Preparing command capture.');
-  void speakResponse('Hi sir, I am ready to work.');
+  setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
   const wakeConsent = document.getElementById('allow-wake-browser-speech');
-  if (wakeConsent?.checked) {
-    wakeCaptureAwaitingReview = true;
-    setTimeout(() => {
-      if (handsFreeEnabled && !isMicMuted && !isListening) startVoiceCapture('wake');
-    }, 650);
-  } else {
-    setAssistantState('WAKE PHRASE DETECTED', 'Wake detection is local. To transcribe a spoken command, enable the separate post-wake browser-speech consent; otherwise use push-to-talk or text input.');
-    handsFreeRestartTimer = setTimeout(() => {
-      handsFreeRestartTimer = null;
-      if (handsFreeEnabled && !isMicMuted) {
-        startLocalWakeEngine().catch(() => disableWakeDetection());
-      }
-    }, 1400);
-  }
+  wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
+  void speakResponse('Hi sir, I am ready to work.');
+  const continueAfterGreeting = () => {
+    if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') return;
+    if (isSpeaking) {
+      handsFreeRestartTimer = setTimeout(continueAfterGreeting, 200);
+      return;
+    }
+    if (wakeConsent?.checked) {
+      startVoiceCapture('wake');
+    } else {
+      setAssistantState('WAKE PHRASE DETECTED', 'Wake detection was local. Enable separate post-wake browser-speech consent to speak a command, or use push-to-talk/text input.');
+      scheduleHandsFreeRestart();
+    }
+  };
+  handsFreeRestartTimer = setTimeout(continueAfterGreeting, 150);
 }
 
 function enableWakeDetection() {
