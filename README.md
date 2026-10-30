@@ -26,6 +26,9 @@ The universal goal is capability-based: discover installed/built-in applications
 - Selected read-only Windows system queries and limited Windows app launch.
 - Foreground-window UI Automation for selected text/control/clipboard/zoom interactions.
 - Browser companion/HUD with push-to-talk and text fallback.
+- Browser companion notification feed backed by signed, device-scoped `/api/notifications` polling.
+- Browser companion schedule manager for owner-scoped one-time/recurring requests, listing, and cancellation through the signed policy-gated request path.
+- Browser companion personal-memory review with category-aware save, record correction, and deletion requests through the signed policy-gated request path.
 - Optional local Piper TTS, with browser speech synthesis fallback.
 - Encrypted local personal-memory foundation and official-store search-link generation.
 - Capability registry with implemented/partial/planned/restricted status.
@@ -91,3 +94,30 @@ These runs validate configured repository automation only. They do not prove phy
 ## Branch and release policy
 
 Use fix for debugging/regressions, test for test/audit work, new for features and staged development, enhancement for broader enhancements, and dev for integration. Create non-main PRs to dev. Do not automate changes to main; the owner performs the final dev → main merge manually.
+
+
+## Validation status refresh — 2026-10-26
+
+The latest reviewed hosted run, [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796), passed build and TypeScript checks but failed 3 of 130 automated tests (127 passed); browser smoke was skipped. The failures were stale assertions for the current measured `/api/status` schema and the intended terminal `EXPIRED` state after approval expiry. Those assertions have been corrected on `new`; the corrected commit still needs a completed CI run before it can be called green. Both remembered-approval tests passed in the reviewed run.
+
+Remembered app-launch approvals default to 30 minutes and are limited to the exact same app/device/parameters. Set `JARVIS_REMEMBER_LAUNCH_MINUTES=0` to disable them. Other state-changing operations still require fresh approval. Hosted CI is not physical-device acceptance, and `npm audit` remains unverified until run and recorded.
+
+
+## Validation refresh — 2026-10-29
+
+The initial CI run for Cursor's latest change (`033daffcb528432accbfc23a423db1001fa9d82d`) exposed one routing regression: the natural-language request `List installed apps` fell through to conversational-model fallback instead of reaching the policy-controlled planner. The action-request matcher was corrected on `new`.
+
+The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure.
+
+Exact final code/test revision `405b2eb233f08dfa0dde022a781cc34c611acd97` passed hosted CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275): TypeScript build, TypeScript check, automated test suite, and browser security smoke. The PR-triggered run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217) also passed on that revision. These results do not establish physical Windows voice/UI acceptance or native Android acceptance. A separate `npm audit` command and real-device tests remain outstanding.
+
+## Windows launch verification hardening — 2026-10-30
+
+A launch-window matching defect was found during the next Windows desktop reliability pass: a title containing a familiar app name (for example, “Paint”) could be treated as proof of the launched app even when the window belonged to a different process. Launch verification now requires the expected process identity and, when configured, also checks the title. Regression tests cover title-only false positives, title mismatches, process-name normalization, and missing match rules.
+
+Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishek/JARVIS/pull/16). Even after hosted tests pass, actual app launch/focus behavior must still be accepted on the target Windows laptop; this fix does not imply universal app control.
+
+## Dynamic Windows launch verification — 2026-10-30
+
+The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
+

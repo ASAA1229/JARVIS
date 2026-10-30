@@ -2,7 +2,7 @@
 
 ## Design
 
-JARVIS prefers an optional local Piper neural TTS executable for generated speech. The browser HUD submits text through its existing device-bound signed request mechanism to `POST /api/voice/synthesize`. The server validates the signed session request, caps text at 1,200 characters, runs the configured executable without a shell, validates the returned WAV header, and sends audio with `Cache-Control: no-store`. Text is not written to a voice-specific log. If local TTS is unavailable, the HUD falls back to browser speech synthesis.
+JARVIS prefers an optional local Piper neural TTS executable for generated speech. The browser HUD submits text through its existing device-bound signed request mechanism to `POST /api/voice/synthesize`. The server validates the signed session request, caps text at 1,200 characters, runs the configured executable without a shell, validates the returned WAV header, and sends audio with `Cache-Control: no-store`. Text is not written to a voice-specific log. If local TTS is unavailable or returns a provider failure (HTTP 502/503), the HUD falls back to browser speech synthesis and suppresses repeated calls to the failed local provider for the current page session. Reload the HUD after fixing the Piper configuration to retry local TTS.
 
 The voice profile is an original, calm cinematic assistant style: measured pace, clear articulation, restrained pitch, and professional delivery. The supplied clips are references, not a trained model. Do not use a third-party voice clone unless you have the required rights.
 
@@ -22,4 +22,4 @@ The voice profile is an original, calm cinematic assistant style: measured pace,
 - Input is bounded and subprocess execution uses `shell: false`.
 - Audio generation can be CPU-intensive; a 20-second timeout is enforced.
 - This code path is not yet accepted on the target Windows laptop. Confirm the chosen Piper build's command-line output behavior, WAV playback, browser autoplay permissions, and actual voice quality before marking acceptance complete.
-- Wake-word recognition remains a separate concern and may use browser/vendor processing; local TTS does not make recognition offline.
+- Wake-word recognition remains a separate concern and may use browser/vendor processing; local TTS does not make recognition offline. If browser recognition returns a network error, hands-free mode is paused instead of restarting repeatedly. Text input remains available; an offline speech-recognition engine is still a separate implementation requirement.
