@@ -52,8 +52,18 @@ export class TaskJournal {
     if (!this.records.has(record.id) && this.records.size >= MAX_RECORDS) {
       throw new Error('Task journal is full; prune terminal records before creating more tasks.');
     }
+    const previous = this.records.get(record.id);
     this.records.set(record.id, this.clone(record));
-    this.persist();
+    try {
+      this.persist();
+    } catch {
+      // Keep the in-memory view aligned with the last durable checkpoint. Once
+      // persistence fails, fail closed rather than accepting divergent writes.
+      if (previous) this.records.set(record.id, previous);
+      else this.records.delete(record.id);
+      this.healthy = false;
+      throw new Error('Task journal persistence failed; writes are disabled to avoid diverging from durable checkpoints.');
+    }
   }
 
   get(taskId: string): TaskLifecycleRecord | undefined {
