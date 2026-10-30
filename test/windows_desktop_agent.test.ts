@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildControlActionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
 test('desktop:read_control requires a unique control and redacts sensitive values', () => {
   const script = buildReadControlScript("Account name");
@@ -129,4 +130,12 @@ test('discovered Start-menu launch never claims verified success without process
   assert.equal(noWindow.outcome, 'PARTIAL_SUCCESS');
   assert.equal((noWindow.evidence as Record<string, unknown>).newWindowDetected, false);
   assert.equal((noWindow.evidence as Record<string, unknown>).targetWindowVerified, false);
+});
+
+test('planner routes an explicit named-control read to the guarded desktop operation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('read control Document title', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(plan.operations[0]?.operation, 'desktop:read_control');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
 });
