@@ -14,6 +14,7 @@ import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
+import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
   private jarvis: JarvisCoreService;
@@ -22,6 +23,7 @@ export class JarvisServer {
   private readonly ownerControlToken: string | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
+  private readonly androidCommands = new AndroidCommandQueue();
 
   constructor(
     port: number = 3000,
@@ -548,6 +550,66 @@ export class JarvisServer {
         }
         const result = this.jarvis.rejectTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
+      }
+
+      // Owner-to-Android command channel. Only a read-only app inventory request is
+      // supported here; arbitrary shell/code and remote app launches are deliberately excluded.
+      if (req.method === 'POST' && url.pathname === '/api/android/commands/create') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || body.operation !== 'android.app.list' || typeof body.targetDeviceId !== 'string') {
+          return this.jsonResponse(res, 400, { error: 'Only android.app.list with a targetDeviceId is supported' });
+        }
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Device-management permission is required' });
+        const target = this.jarvis.identity.getDevice(body.targetDeviceId);
+        if (!target || target.status !== 'ACTIVE' || target.platform !== 'Android') return this.jsonResponse(res, 404, { error: 'Active Android target not found' });
+        if (!target.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Target phone lacks read-only inventory permission' });
+        const command = this.androidCommands.create(target.id, auth.device.id, 60_000);
+        this.jarvis.audit.record('ANDROID_COMMAND_QUEUED', { commandId: command.id, operation: command.operation, targetDeviceId: target.id }, auth.device.id);
+        return this.jsonResponse(res, 201, { command });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/android/commands/next') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (auth.device.platform !== 'Android' || !auth.device.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Android read-only agent permission is required' });
+        const command = this.androidCommands.claimNext(auth.device.id);
+        return this.jsonResponse(res, 200, { command });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/android/commands/result') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.commandId !== 'string' || !Array.isArray(body.apps)) {
+          return this.jsonResponse(res, 400, { error: 'commandId and apps array are required' });
+        }
+        if (body.apps.length > 300 || body.apps.some((app) => !this.isJsonObject(app) ||
+            typeof app.label !== 'string' || app.label.length > 120 ||
+            typeof app.packageName !== 'string' || app.packageName.length > 240)) {
+          return this.jsonResponse(res, 400, { error: 'App inventory entries are invalid or exceed limits' });
+        }
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (auth.device.platform !== 'Android') return this.jsonResponse(res, 403, { error: 'Only an Android device can return app inventory' });
+        const completed = this.androidCommands.complete(auth.device.id, body.commandId, body.apps as Array<{label:string; packageName:string}>);
+        if (!completed) return this.jsonResponse(res, 409, { error: 'Command is expired, unknown, already completed, or belongs to another device' });
+        this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
+        return this.jsonResponse(res, 200, { success: true });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/android/commands/results') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Device-management permission is required' });
+        return this.jsonResponse(res, 200, { results: this.androidCommands.resultsForRequester(auth.device.id) });
       }
 
       // Revoke device
