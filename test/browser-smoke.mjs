@@ -258,7 +258,12 @@ try {
   await hud.locator('#btn-hands-free-toggle').click();
   await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
   if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
-    throw new Error('Hands-free started browser recognition without a local wake-word engine');
+    throw new Error('Wake detection started browser recognition without a local wake-word engine');
+  }
+  await hud.locator('#btn-hands-free').click();
+  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Hands-free capture started browser recognition without a local wake-word engine');
   }
   await hud.locator('#allow-browser-speech').check();
 
