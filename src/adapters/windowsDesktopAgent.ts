@@ -19,8 +19,8 @@ export type DesktopAction =
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
   | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
   | { operation: 'desktop:read_control'; parameters: { name: string; expectProcess?: string } }
-  | { operation: 'desktop:click_control'; parameters: { name: string } }
-  | { operation: 'desktop:set_value'; parameters: { name: string; text: string } }
+  | { operation: 'desktop:click_control'; parameters: { name: string; expectProcess?: string } }
+  | { operation: 'desktop:set_value'; parameters: { name: string; text: string; expectProcess?: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
   | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
