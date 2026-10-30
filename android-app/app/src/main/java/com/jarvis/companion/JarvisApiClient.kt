@@ -101,10 +101,11 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
     }
 
     /** Claim one read-only inventory command and return the app list supplied by the Android UI. */
-    fun pollAndroidInventory(apps: JSONArray): String {
+    fun pollAndroidInventory(appsProvider: () -> JSONArray): String {
         val next = signedGet("/api/android/commands/next")
         val command = next.optJSONObject("command") ?: return "No pending command for this phone."
         check(command.optString("operation") == "android.app.list") { "Unsupported command was refused." }
+        val apps = appsProvider()
         val payload = JSONObject().put("commandId", command.getString("id")).put("apps", apps)
         signedPost("/api/android/commands/result", payload)
         return "Sent ${apps.length()} launchable app records to the laptop."
