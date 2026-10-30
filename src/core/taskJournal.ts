@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TaskLifecycleRecord } from './service.js';
 import { TaskState } from './types.js';
@@ -147,13 +147,7 @@ export class TaskJournal {
       writeFileSync(temporary, encoded, { mode: 0o600, flag: 'wx' });
       renameSync(temporary, this.filePath);
     } finally {
-      try { requireUnlink(temporary); } catch { /* Atomic rename already consumed the temporary file. */ }
+      try { unlinkSync(temporary); } catch { /* Atomic rename already consumed the temporary file. */ }
     }
   }
-}
-
-function requireUnlink(path: string): void {
-  // Kept local to avoid exposing a general-purpose file deletion helper.
-  const fs = require('node:fs') as typeof import('node:fs');
-  fs.unlinkSync(path);
 }
