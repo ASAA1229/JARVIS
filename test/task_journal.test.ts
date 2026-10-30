@@ -192,6 +192,40 @@ test('manual recovery cannot turn a user observation into verified success and p
 
 
 
+test('still-unknown recovery disposition leaves the task awaiting recovery without retry', () => withTempDir((directory) => {
+  const statePath = join(directory, 'state');
+  new TaskJournal(statePath + '.tasks', TOKEN).save(record({ state: TaskState.AWAITING_RECOVERY, interrupted: true }));
+  const service = new JarvisCoreService({} as IAIPlannerProvider, join(directory, 'audit.log'), statePath, TOKEN);
+  try {
+    const keys = CryptoUtil.generateEd25519KeyPair();
+    const challenge = service.identity.createEnrollmentChallenge([Permission.SYSTEM_INFO_READ, Permission.DEVICE_MANAGE]);
+    const enrolled = service.identity.enrollDevice(challenge.challengeToken, 'Recovery owner', keys.publicKey);
+    assert.equal(enrolled.success, true);
+    const timestamp = Date.now();
+    const nonce = 'd'.repeat(32);
+    const session = service.identity.createSession(
+      enrolled.deviceId!,
+      CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, keys.privateKey),
+      timestamp,
+      nonce,
+    );
+    assert.equal(session.success, true);
+    const result = service.reconcileTask(
+      'task-test-001' as TaskLifecycleRecord['id'],
+      session.sessionId!,
+      'still_unknown',
+      'Checked available evidence but cannot determine whether the action completed.',
+    );
+    assert.equal(result.success, true);
+    assert.equal(result.state, TaskState.AWAITING_RECOVERY);
+    assert.match(result.message, /no retry/i);
+    assert.equal(service.getTask('task-test-001' as TaskLifecycleRecord['id'])?.reconciliation?.disposition, 'still_unknown');
+    assert.equal(service.listTasks().length, 1);
+  } finally {
+    service.stopBackgroundServices();
+  }
+}));
+
 test('core service restores interrupted journal tasks without resuming them', () => withTempDir((directory) => {
   const statePath = join(directory, 'state');
   new TaskJournal(statePath + '.tasks', TOKEN).save(record());
