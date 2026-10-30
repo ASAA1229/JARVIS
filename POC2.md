@@ -371,3 +371,10 @@ A follow-up source audit enumerated task-state transitions in JarvisCoreService 
 - Require a configured durable encrypted task journal before the HTTP recovery-review endpoint accepts a disposition.
 
 **Status:** these source changes are committed on new, but they do not yet have exact-head CI evidence. Additional fault-injection tests are still required for journal write failure, audit write failure, concurrent cancellation/revocation, and crash/restart after a side effect. Keep the workflow epic open until these tests pass and the MSI application-level recovery checklist is recorded.
+
+
+## Windows launcher error-disclosure hardening — 2026-10-30
+
+The Windows app-launch adapter no longer returns raw process/spawn exception text to the client. Allowlisted and Start-menu launch failures now return bounded generic messages with only the error class retained in evidence. Invalid application-name diagnostics no longer echo an arbitrary oversized or non-string input. A regression test asserts these redaction boundaries at source level.
+
+**Status:** implementation and regression test are committed; exact-head CI is not yet available. This does not prove actual Windows launch success or close the MSI interaction/verification acceptance gate.
