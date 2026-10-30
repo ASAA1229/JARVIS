@@ -44,6 +44,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:copy_selection',
     'desktop:paste_clipboard',
     'desktop:inspect_window',
+    'desktop:read_control',
     'desktop:click_control',
     'desktop:set_value',
     'desktop:list_windows',
@@ -227,6 +228,16 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (runCommand) {
       const args = runCommand[2].trim() ? runCommand[2].trim().split(/\s+/) : [];
       return { intent: 'Run an allowlisted read-only command', operations: [{ operation: 'terminal:run', parameters: { command: runCommand[1].toLowerCase(), args }, justification: 'Owner named an allowlisted command' }], confidence: 0.85, explanation: 'Will run that command without a shell, inside the workspace, after approval. Only read-only commands are allowlisted.' };
+    }
+
+    const readControl = requestText.match(/\b(?:read|inspect|get)\s+(?:the\s+)?(?:value\s+of\s+)?(?:the\s+)?control\s+["“]?(.+?)["”]?\s*$/i);
+    if (readControl && readControl[1].trim()) {
+      return {
+        intent: 'Read a uniquely named foreground UI control',
+        operations: [{ operation: 'desktop:read_control', parameters: { name: readControl[1].trim() }, justification: 'Owner explicitly requested reading one named UI control' }],
+        confidence: 0.82,
+        explanation: 'Will request approval, read only a uniquely named accessible control, and redact password and credential/financial fields. Apps that do not expose a ValuePattern may return no value.',
+      };
     }
 
     // Window discovery and focus.

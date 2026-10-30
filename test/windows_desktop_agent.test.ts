@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildControlActionScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+import { LocalHeuristicPlanner } from '../src/planner/planner.js';
+
+test('desktop:read_control requires a unique control and redacts sensitive values', () => {
+  const script = buildReadControlScript("Account name");
+  assert.match(script, /\$matches = \$root\.FindAll/);
+  assert.match(script, /\$matches\.Count -ne 1/);
+  assert.match(script, /Current\.IsPassword/);
+  assert.match(script, /\[REDACTED\]/);
+  assert.match(script, /ValuePattern/);
+  assert.match(script, /valueAvailable/);
+});
 
 test('desktop:click_control validates and indexes the same UI Automation collection', () => {
   const script = buildControlActionScript('desktop:click_control', 'Save');
@@ -35,7 +46,29 @@ test('set_value script keeps sensitive-field checks and independent value verifi
   const script = buildControlActionScript('desktop:set_value', 'Account name', 'demo');
 
   assert.match(script, /Current\.IsPassword/);
-  assert.match(script, /password\|passcode\|pin\|otp\|one[- ]time password\|recovery code\|cvv\|card number\|credit card\|debit card\|card expiry\|expiration date\|bank account\|account number\|routing number\|iban\|swift code\|sort code\|security code/);
+  for (const term of [
+    'password',
+    'passcode',
+    'pin',
+    'otp',
+    'one[- ]time password',
+    'recovery code',
+    'cvv',
+    'card number',
+    'credit card',
+    'debit card',
+    'card expiry',
+    'expiration date',
+    'bank account',
+    'account number',
+    'routing number',
+    'iban',
+    'swift code',
+    'sort code',
+    'security code',
+  ]) {
+    assert.ok(script.includes(term), `Sensitive-field guard is missing: ${term}`);
+  }
   assert.match(script, /\$actual = \$pattern\.Current\.Value/);
   assert.match(script, /\$actual -cne 'demo'/);
   assert.match(script, /VALUE_VERIFIED/);
@@ -97,4 +130,31 @@ test('discovered Start-menu launch never claims verified success without process
   assert.equal(noWindow.outcome, 'PARTIAL_SUCCESS');
   assert.equal((noWindow.evidence as Record<string, unknown>).newWindowDetected, false);
   assert.equal((noWindow.evidence as Record<string, unknown>).targetWindowVerified, false);
+});
+
+test('planner routes an explicit named-control read to the guarded desktop operation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('read control Document title', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(plan.operations[0]?.operation, 'desktop:read_control');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
+});
+
+
+test('desktop control scripts bind UI Automation to the same guarded foreground window handle', () => {
+  const readScript = buildReadControlScript('Document title');
+  const setScript = buildControlActionScript('desktop:set_value', 'Document title', 'JARVIS');
+
+  assert.match(readScript, /FromHandle\(\$foregroundHwnd\)/);
+  assert.match(setScript, /FromHandle\(\$foregroundHwnd\)/);
+  assert.doesNotMatch(readScript, /FromHandle\(\[JarvisForeground\]::GetForegroundWindow\(\)\)/);
+});
+
+test('planner routes an explicit named-field value change to guarded UI Automation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('set field Document title to JARVIS test', { requesterName: 'owner', timestamp: Date.now() });
+
+  assert.equal(plan.operations[0]?.operation, 'desktop:set_value');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', text: 'JARVIS test' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
 });

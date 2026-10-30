@@ -1,6 +1,6 @@
 # Cross-Device Agent Protocol and Implementation Status
 
-**Updated:** 2026-10-24  
+**Updated:** 2026-10-30  
 **Status:** Windows local POC foundation present; native Android agents and secure remote operation are not yet accepted.
 
 ## Architecture target
@@ -26,7 +26,7 @@ The current source includes:
 - A bounded Windows foreground-window adapter and selected application launch.
 - A browser-based companion/HUD.
 
-The source tree does **not** contain a completed native Android application/agent. The web companion does not provide native Android Keystore, unrestricted app control, or background telephony authority.
+The source tree contains an initial native Android companion under `android-app/`. Hosted Gradle compilation passes, but this is not a complete Android agent and has not passed physical-device acceptance. The web companion does not provide native Android Keystore, unrestricted app control, or background telephony authority.
 
 ## Signed request requirements
 
@@ -35,6 +35,13 @@ Native clients must use the device-bound session and signed-request protocol. Si
 ## Windows agent
 
 The current Windows adapter targets the foreground window and supports bounded actions such as explicit text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, foreground-window inspection, unique-name control invocation and value-setting. The app launcher has a small static allowlist and constrained Start-menu discovery.
+
+Recent Windows desktop-control increment — 2026-10-30:
+- Added an explicit `desktop:read_control` operation through the existing planner → policy → execution pipeline.
+- It resolves an exact, unique UI Automation control name in the foreground app and reads only the control's ValuePattern value when available.
+- Password controls and labels matching credential/payment identifiers return a redacted value instead of content.
+- The operation requires task-scoped approval, uses the existing foreground financial-app guard and optional expected-process binding, and is covered by script-shape and planner-routing tests.
+- This remains accessibility-based automation, not universal control. The newest commit must pass CI and be exercised on the actual Windows laptop before this increment is accepted.
 
 Limitations:
 - It is not universal control of every installed Windows app.
@@ -48,7 +55,7 @@ Limitations:
 - Native companion/agent with Android Keystore-backed device key.
 - Independent enrollment, identity, sessions, permissions and revocation for each phone.
 - Signed requests, replay protection, secure authenticated transport and run-time authorization.
-- App discovery/launch through permitted OS APIs; selected notifications, messaging and telephony only where platform and app capabilities permit.
+- Local launchable-app discovery and user-tap launch are implemented in the Android companion using permitted launcher queries. Remote app discovery/control, notifications, messaging and telephony remain unimplemented.
 - AccessibilityService only after explicit user enablement, with transparent disclosure and narrow permissions.
 - Real two-phone acceptance: enroll both, verify independent keys/permissions, revoke one, and prove the other remains usable.
 - Remote control must remain disabled until transport, authorization and physical-device acceptance are proven.
@@ -76,3 +83,48 @@ Prefer local AI for private data. Before cloud sharing when required, disclose t
 ## Validation boundary
 
 Hosted CI can validate TypeScript, planner/policy behavior, encrypted memory and adapter tests. It cannot prove that an actual Windows application received/saved text, that zoom changed visually, or that native Android controls work on physical devices. Keep universal application control, always-ready local wake-word behavior, two-phone remote operation, communications integrations and recurring unattended workflows marked partial/planned until target acceptance evidence exists.
+
+
+## Native Android companion implementation — 2026-10-30
+
+A first native Android application foundation now exists under `android-app/`:
+
+- Kotlin launcher UI for one-time enrollment transaction/code exchange, explicit owner approval, session reconnect, and signed text requests.
+- Per-install Ed25519 device identity; private-key bytes are encrypted at rest with AES-GCM and a wrapping key held by Android Keystore.
+- Session proof and signed-request payloads follow the existing server canonical protocol, including timestamp, one-time nonce, session binding, and body SHA-256.
+- Enrollment identifies the platform as Android so the server's device list can distinguish native phones from browser companions.
+- Cleartext traffic and Android app backups are disabled. The client refuses non-HTTPS URLs and disables redirects.
+
+Important limitations and acceptance gates:
+
+- This is an initial native client, not a release-ready or physically verified Android agent. A separate Android Gradle assembleDebug CI job has been added; until it passes on the latest branch head, Android compilation is not verified. Install and acceptance tests on both physical phones remain required.
+- The current JARVIS Node server exposes HTTP directly. The Android client deliberately requires a trusted HTTPS endpoint; until a TLS reverse proxy or native TLS server is configured and its certificate is trusted on the phones, remote connection is expected to fail closed.
+- Each phone must use a short-lived enrollment transaction created by an authenticated owner device, then receive explicit owner approval before it can open a session. The app accepts the transaction ID and one-time code from the owner-generated QR/manual copy; never put the owner control token into the Android app.
+- This initial vertical slice submits text requests only. Native notifications, app discovery/control, SMS/call actions, background execution, push notifications, and remote wake are not implemented by this slice.
+- Before enabling remote state-changing actions, add integration tests for two independent Android identities, session replay, request replay, revocation during an active session, TLS failure, and operation-specific permission denial.
+
+No physical-device success is claimed until build, install, and acceptance evidence is recorded for both phones.
+
+
+## Cross-device epic progress — 2026-10-30
+
+- Fixed the authenticated device-list response to report each device's stored platform instead of hardcoding every device as Browser.
+- Added Android local launcher-app discovery and user-tap launching. This intentionally does not silently launch/control apps remotely.
+- Added `deploy/Caddyfile.example` and `docs/SECURE_PHONE_CONNECTIVITY.md` for a loopback-only Node server behind HTTPS, with access restricted to a private network/VPN.
+- CI at commit `b1f6ee11a796b25be5567e54d31f44597fafb6ed` passed the Node audit/build/type-check/tests/browser smoke test and Android `assembleDebug`, and published the debug APK artifact. New changes after that commit require their own CI result.
+- Added a bounded laptop-to-Android command channel for one read-only operation: `android.app.list`. An enrolled owner device with device-management permission can queue an inventory request for an active Android target; only that target can claim it and submit a capped list of app labels/package names. Requests expire after 60 seconds, claim once, are signed with the device session, and produce audit events. The queue is deliberately in-memory: a server restart drops outstanding commands rather than replaying them.
+- The Android UI now has manual controls to request inventory from a target device, check for a command on the current phone, and view recent results. This is a narrow vertical slice, not background push or general remote phone control. It does not remotely launch apps, read notifications, send SMS, place calls, or use AccessibilityService.
+- Automated queue tests cover target isolation, one-time claim/completion, requester result isolation and expiry. Latest CI must pass after this change before treating it as build-verified.
+- Still open: verify TLS connectivity from the actual phones; owner-approved enrollment on both phones; revocation isolation; device-specific Android acceptance; broader policy-bound command/approval integration; laptop reachability/offline recovery; native notifications and selected phone integrations.
+
+
+## Windows application control follow-up (2026-10-30)
+
+A further safety improvement binds UI Automation control inspection/read/write/click scripts to the same foreground-window handle that was captured by the desktop guard before the action. This reduces (but cannot entirely eliminate) focus-race risk. Regression tests cover script construction and natural-language routing for named-field writes.
+
+Current boundaries:
+- Control operations require a unique accessible control name and the corresponding UI Automation pattern.
+- Value writes reject password and heuristic credential/financial labels, then verify the exposed control value.
+- Value readback is not proof that a document was saved or a form submitted.
+- The automated CI run must pass, and actual interactive acceptance on the MSI laptop is still needed before calling the Windows-control epic complete.
+- Applications with custom-rendered or inaccessible controls require app-specific adapters; universal coverage is not claimed.

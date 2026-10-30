@@ -113,6 +113,7 @@ export class PolicyGateway {
       ['desktop:copy_selection', ['expectProcess']],
       ['desktop:paste_clipboard', ['expectProcess']],
       ['desktop:inspect_window', ['expectProcess']],
+      ['desktop:read_control', ['name', 'expectProcess']],
       ['desktop:click_control', ['name', 'expectProcess']],
       ['desktop:set_value', ['name', 'text', 'expectProcess']],
     ].map(([operation, allowedParameters]) => [operation as string, {

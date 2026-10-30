@@ -20,7 +20,8 @@ test('Android companion contract matches laptop enrollment and signed-request ve
   try {
     assert.equal(ANDROID_COMPANION_PROTOCOL_VERSION, 1);
     assert.match(ANDROID_NATIVE_REQUIREMENTS.keystore, /Keystore/);
-    const identity = new DeviceIdentityManager(new AuditLogger(join(directory, 'audit.log')), join(directory, 'devices.json'));
+    const statePath = join(directory, 'devices.json');
+    const identity = new DeviceIdentityManager(new AuditLogger(join(directory, 'audit.log')), statePath);
     const keyPair = CryptoUtil.generateEd25519KeyPair();
     const challenge = identity.createEnrollmentChallenge();
     const proof = signEnrollmentProof(challenge.challengeToken, 'Pixel Test', keyPair.publicKey, keyPair.privateKey);
@@ -30,6 +31,9 @@ test('Android companion contract matches laptop enrollment and signed-request ve
     );
     const enrolled = identity.enrollDevice(proof.challengeToken, proof.deviceName, proof.publicKeyPem, 'Android');
     assert.equal(enrolled.success, true);
+    assert.equal(identity.getDevice(enrolled.deviceId!)?.platform, 'Android');
+    const reloadedIdentity = new DeviceIdentityManager(new AuditLogger(join(directory, 'audit.log')), statePath);
+    assert.equal(reloadedIdentity.getDevice(enrolled.deviceId!)?.platform, 'Android', 'native platform metadata must survive restart');
     const sessionReq = signSessionRequest(enrolled.deviceId!, keyPair.privateKey);
     const session = identity.createSession(sessionReq.deviceId, sessionReq.signature, sessionReq.timestamp, sessionReq.nonce);
     assert.equal(session.success, true);

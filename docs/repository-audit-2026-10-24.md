@@ -334,3 +334,52 @@ This automated verification does not prove real Windows desktop interaction, mic
 ## Windows desktop field-protection gap closure — 2026-10-30
 
 The Windows UI Automation `desktop:set_value` path now blocks additional sensitive-field name patterns, including one-time passwords (OTP), recovery codes, credit/debit card fields, card expiry/expiration date, account and routing numbers, IBAN, SWIFT code, and sort code. This complements the existing password/PIN/CVV/security-code checks and the financial-app process/window block. Regression coverage asserts that the generated UI Automation script retains the expanded denylist. This is defense-in-depth, not a substitute for classifying every form semantically; fields with misleading or missing accessibility names remain a limitation. Hosted CI for the latest source and test commits must complete before this change is called validated, and physical MSI acceptance remains outstanding.
+
+## Phase 1 baseline audit refresh — 2026-10-30
+
+**Audited integration baseline:** `dev` commit `9d1e160c8b4d46ea163a7fc296ff41b064663e70`. This refresh checks the current branch metadata and hosted CI evidence; it does not certify the owner's physical Windows laptop or Android devices.
+
+### Findings from current `dev`
+
+- Hosted run [40953010689](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40953010689) on the exact `dev` commit completed with **failure**.
+- TypeScript build: PASS.
+- TypeScript check: PASS.
+- Automated tests: **158 passed, 1 failed**.
+- Browser security smoke: SKIPPED because the automated suite failed.
+- The failing assertion is in `test/windows_desktop_agent.test.ts`, checking the generated Windows sensitive-field guard. The generated PowerShell expression contains the expected terms, but the test's single compound regular-expression assertion fails. The assertion was changed on `new` to check each required term independently; this is a test correction, not proof of runtime Windows UI behavior.
+- Dependency installation in that run reported `found 0 vulnerabilities`. To make this an explicit CI gate, `npm audit --audit-level=moderate` was added to the workflow on `new`; acceptance depends on its completed result for the exact latest commit.
+- GitHub branch metadata reports `dev` as **not protected**, with no required status checks. This means CI is advisory rather than enforced by branch protection at present; repository settings need owner review.
+- `main` was not changed.
+
+### Phase 1 remediation in progress on `new`
+
+- Updated the sensitive-field test assertion to check each expected credential/financial-field pattern independently.
+- Added an explicit dependency audit step to `.github/workflows/ci.yml`.
+- Hosted CI is running against the updated `new` commits. Do not mark the baseline green until build, typecheck, dependency audit, the complete test suite, and browser security smoke all pass on the same exact head.
+- The next acceptance gate is to merge these changes to `dev` only after the pull request review and green exact-head CI. No PR is to be merged automatically.
+
+### Phase 1 remaining blockers
+
+1. Obtain a green exact-head CI run including the explicit dependency audit and browser smoke.
+2. Review whether branch protection and required checks should be enabled for `dev` without changing `main` or its release policy.
+3. Complete route-by-route policy-gateway and error-redaction review, including adversarial testing and owner recovery review.
+4. Run target-device Windows acceptance and both Android-device acceptance; hosted CI cannot perform these checks.
+5. Record exact commit, environment, test result, expected/actual behavior and limitations for each accepted capability.
+
+**Status:** Phase 1 is **in progress**, not complete. No physical-device acceptance is implied by this report.
+
+## Phase 1 route and error-disclosure review — 2026-10-30
+
+### Finding and remediation on `new`
+
+- **Finding:** The authenticated local voice synthesis endpoint returned exception messages from the Piper process directly to the client. Spawn failures can include configured executable paths, and process diagnostics can include model or filesystem details. The local transcription endpoint also forwarded provider exceptions directly, so future providers could accidentally expose implementation details.
+- **Remediation:** `/api/voice/synthesize` now returns generic configuration/generation errors and `/api/voice/transcribe` returns a generic recognition error. Provider details remain server-side and are not included in the API response.
+- **Regression coverage:** Added `test/voice_endpoint_redaction.test.ts`, which configures a deliberately missing executable with sensitive-looking paths, sends an authenticated signed request, and asserts that the response is a generic failure without those paths.
+- **Validation:** This change is committed to `new`; exact-head CI is required before calling it verified. No physical device behavior is implied.
+- **Route review status:** Initial source inspection found signed-request authentication on the main task, approval, memory, voice, notification, health, task, cancellation and audit routes; owner-management routes additionally apply permission/policy checks. Public enrollment status/details are transaction-code bound; the bootstrap challenge is gated by the owner control token and closes after an active device exists. This is an initial static review, not a complete penetration test. Remaining adversarial coverage should include body-size/content-type abuse, enrollment transaction replay/races, state-file tampering and recovery, concurrent approval resolution, and route-level permission matrix tests.
+
+### Additional HTTP input-boundary coverage — 2026-10-30
+
+- Added `test/http_body_limits.test.ts` to exercise the live HTTP server's shared JSON-body parser for an incorrect media type, malformed JSON, and an oversized payload.
+- Expected outcomes are HTTP 415, 400, and 413 respectively. The test intentionally reaches request parsing before session authorization; it does not imply that the requested operation can execute without a signed session.
+- CI for the exact updated `new` head must pass before this coverage is marked verified.
