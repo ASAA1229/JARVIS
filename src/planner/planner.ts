@@ -230,7 +230,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       return { intent: 'Run an allowlisted read-only command', operations: [{ operation: 'terminal:run', parameters: { command: runCommand[1].toLowerCase(), args }, justification: 'Owner named an allowlisted command' }], confidence: 0.85, explanation: 'Will run that command without a shell, inside the workspace, after approval. Only read-only commands are allowlisted.' };
     }
 
-    const readControl = requestText.match(/\\b(?:read|inspect|get)\\s+(?:the\\s+)?(?:value\\s+of\\s+)?(?:the\\s+)?control\\s+["“]?(.+?)["”]?\\s*$/i);
+    const readControl = requestText.match(/\b(?:read|inspect|get)\s+(?:the\s+)?(?:value\s+of\s+)?(?:the\s+)?control\s+["“]?(.+?)["”]?\s*$/i);
     if (readControl && readControl[1].trim()) {
       return {
         intent: 'Read a uniquely named foreground UI control',
