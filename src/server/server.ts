@@ -219,11 +219,12 @@ export class JarvisServer {
         if (!this.isJsonObject(body)) {
           return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
         }
-        const { challengeToken, deviceName, publicKey, proofSignature } = body as {
+        const { challengeToken, deviceName, publicKey, proofSignature, platform } = body as {
           challengeToken: string;
           deviceName: string;
           publicKey: string;
           proofSignature: string;
+          platform?: string;
         };
         if (typeof challengeToken !== 'string' || typeof deviceName !== 'string' ||
             typeof publicKey !== 'string' || typeof proofSignature !== 'string') {
@@ -234,7 +235,11 @@ export class JarvisServer {
             !CryptoUtil.verifySignature(proofPayload, proofSignature, publicKey)) {
           return this.jsonResponse(res, 401, { error: 'Enrollment proof-of-possession verification failed' });
         }
-        const result = this.jarvis.identity.enrollDevice(challengeToken, deviceName, publicKey);
+        const normalizedPlatform = typeof platform === 'string' ? platform : 'Browser';
+        if (!['Android', 'Browser', 'Windows', 'iOS'].includes(normalizedPlatform)) {
+          return this.jsonResponse(res, 400, { error: 'platform must be Android, Browser, Windows, or iOS' });
+        }
+        const result = this.jarvis.identity.enrollDevice(challengeToken, deviceName, publicKey, normalizedPlatform);
         if (!result.success) {
           return this.jsonResponse(res, 400, { error: result.error });
         }
