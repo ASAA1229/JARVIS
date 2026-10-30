@@ -2,7 +2,7 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { VoiceManager, SpeechState } from '../src/voice/voiceManager.ts';
 import { JarvisServer } from '../src/server/server.ts';
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, readFileSync } from 'node:fs';
 
 const TEST_AUDIT_LOG = './data/test_voice_audit.log';
 const TEST_PORT = 3988;
@@ -108,6 +108,14 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(hudHtml, /allow-wake-browser-speech/);
     assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
+    assert.match(hudHtml, /allow-wake-browser-speech/);
+
+    const setupScript = readFileSync('scripts/setup-local-wake-word.ps1', 'utf8');
+    assert.match(setupScript, /onnxruntime-web@1\.20\.1/);
+    assert.match(setupScript, /multi_jarvis_v9\.3\.zip/);
+    const unapprovedWakeAsset = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/private.env`);
+    assert.strictEqual(unapprovedWakeAsset.status, 404);
+    assert.match(await unapprovedWakeAsset.text(), /asset not found/i);
 
     // 2. Fetch HUD CSS
     const cssRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/hud.css`);
