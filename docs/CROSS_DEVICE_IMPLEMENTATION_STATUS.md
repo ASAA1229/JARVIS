@@ -142,3 +142,10 @@ Named-control reads, clicks, and value updates now accept optional `expectProces
 The `new` branch now hardens the bounded in-memory `android.app.list` command queue: device IDs are checked at create/claim/result lookup; invalid TTLs fall back to a finite default; app inventory entries with empty, oversized or control-character fields are rejected; inventories above 300 entries are rejected; and result snapshots are defensive copies. An invalid result leaves the command claimed rather than marking it complete. Added unit tests cover these cases plus expiry and one-time claim/completion.
 
 This is a narrow safety improvement, not an accepted native Android agent. Hosted CI has not yet been confirmed for the resulting head, and no physical-device test has been performed here. The queue is still volatile and only supports read-only app inventory. Transport, lifecycle/reconnect, per-phone permission/revocation acceptance and two-phone testing remain release blockers.
+
+
+## Advanced workflow checkpoint foundation — 2026-10-30
+
+`src/core/taskJournal.ts` now provides an encrypted, atomic task-checkpoint journal prototype. It uses AES-256-GCM, a per-write random salt/IV, bounded records/file size, validated record shape, defensive-copy reads and fail-closed loading. Non-terminal records encountered on restart are marked `AWAITING_RECOVERY`; stale approval references are removed and automatic replay is prohibited. `test/task_journal.test.ts` adds regression cases for encryption, restart recovery, terminal records, tampering, wrong token, invalid records and copy isolation.
+
+The running core service has not yet been integrated with the journal at every task transition. This module alone must not be represented as durable workflow execution. Integration and exact-head CI remain required; restart recovery must reconcile external state before retrying any side-effecting step.
