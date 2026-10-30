@@ -80,6 +80,7 @@ The POC remains **NOT COMPLETE** until the blockers in [POC2.md](POC2.md) have a
 - Owner memories are supplied only when the authenticated device has device-management permission, and only a bounded set of records is included.
 - The HUD now handles `state: ANSWERED` separately from action execution outcomes, displays the conversational message, and sends that message to speech output.
 - The HUD requires explicit, per-session consent before starting browser speech recognition for push-to-talk. Consent is not persisted between page sessions because the browser recognition provider may process audio remotely.
+- Finalized speech is displayed in the editable transcript review panel and is not transmitted until the user explicitly selects **EXECUTE DIRECTIVE**.
 - Continuous hands-free/browser wake detection is now blocked until a true local audio wake-word engine is configured; the current transcript matcher is not an audio-level local detector. The requested wake acknowledgement is `Hi sir, I am ready to work.` when a supported wake path is available.
 - **Not yet verified on physical hardware:** browser recognition behavior, audible TTS timing, and end-to-end local model inference. No local wake-word capability is claimed.
 
