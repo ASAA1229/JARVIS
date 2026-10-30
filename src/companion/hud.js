@@ -213,7 +213,13 @@ function normalizeSpeechText(text) {
 function textMatchesPhraseSet(text, phrases) {
   const normalized = normalizeSpeechText(text);
   if (!normalized) return false;
-  return phrases.some((phrase) => normalized.includes(phrase) || normalized === phrase);
+  // Match complete normalized phrases only. Substring matching can wake on
+  // words such as “Jarvisian” or trigger a stop command inside another word.
+  const boundedText = ` ${normalized} `;
+  return phrases.some((phrase) => {
+    const boundedPhrase = ` ${normalizeSpeechText(phrase)} `;
+    return boundedText.includes(boundedPhrase);
+  });
 }
 
 function isWakePhrase(text) {
