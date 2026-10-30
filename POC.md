@@ -104,3 +104,19 @@ JARVIS supports a guarded Windows UI Automation path for inspecting accessible c
 **Safety boundary:** desktop actions are limited to the current foreground window, go through the policy gateway, and require approval for state-changing actions. Credential/payment-related fields are blocked or redacted using Windows password metadata and label heuristics. Those heuristics are a defence-in-depth measure, not a guarantee that every sensitive field is detected. Actions must stop when a control name is ambiguous or the required UI Automation pattern is unavailable.
 
 **Verification limitation:** UI Automation value readback confirms the control's exposed value, not necessarily that an application saved or submitted it. JARVIS must not claim a form was saved or a transaction completed without application-specific evidence. Real interactive acceptance on the target MSI laptop remains required.
+
+
+### Target-process binding and acceptance requirements (2026-10-30)
+
+Control-read, control-click and control-value requests can include an explicit process target (for example, `read control Document title in notepad`). JARVIS checks that the foreground process matches this target before executing the operation. Omitting the target means the operation applies to the current foreground process, still subject to the foreground guard and approval policy.
+
+Acceptance on the actual MSI laptop remains a required release gate:
+1. Open Notepad and a browser; test that a target-bound request is rejected when the wrong app is foreground.
+2. Inspect the foreground window and verify that duplicate control names fail closed.
+3. Test reading a harmless field, setting a harmless field, and invoking a harmless button; verify values and outcomes.
+4. Confirm password and financial-labelled controls are redacted or blocked.
+5. Test focus changes during a request and confirm no action is redirected to a different app.
+6. Verify a saved test document by reopening/reading its file content; a control-value readback alone is not proof of persistence.
+7. Record Windows version, app versions, pass/fail results, and sanitized evidence without recording document contents or secrets.
+
+Automated CI covers the planner, policy, script construction, build, and regression tests. It cannot substitute for this interactive hardware acceptance.
