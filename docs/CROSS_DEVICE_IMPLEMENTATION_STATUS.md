@@ -1,6 +1,6 @@
 # Cross-Device Agent Protocol and Implementation Status
 
-**Updated:** 2026-10-24  
+**Updated:** 2026-10-30  
 **Status:** Windows local POC foundation present; native Android agents and secure remote operation are not yet accepted.
 
 ## Architecture target
@@ -26,7 +26,7 @@ The current source includes:
 - A bounded Windows foreground-window adapter and selected application launch.
 - A browser-based companion/HUD.
 
-The source tree does **not** contain a completed native Android application/agent. The web companion does not provide native Android Keystore, unrestricted app control, or background telephony authority.
+The source tree contains an initial native Android companion under `android-app/`. Hosted Gradle compilation passes, but this is not a complete Android agent and has not passed physical-device acceptance. The web companion does not provide native Android Keystore, unrestricted app control, or background telephony authority.
 
 ## Signed request requirements
 
@@ -48,7 +48,7 @@ Limitations:
 - Native companion/agent with Android Keystore-backed device key.
 - Independent enrollment, identity, sessions, permissions and revocation for each phone.
 - Signed requests, replay protection, secure authenticated transport and run-time authorization.
-- App discovery/launch through permitted OS APIs; selected notifications, messaging and telephony only where platform and app capabilities permit.
+- Local launchable-app discovery and user-tap launch are implemented in the Android companion using permitted launcher queries. Remote app discovery/control, notifications, messaging and telephony remain unimplemented.
 - AccessibilityService only after explicit user enablement, with transparent disclosure and narrow permissions.
 - Real two-phone acceptance: enroll both, verify independent keys/permissions, revoke one, and prove the other remains usable.
 - Remote control must remain disabled until transport, authorization and physical-device acceptance are proven.
@@ -97,3 +97,12 @@ Important limitations and acceptance gates:
 - Before enabling remote state-changing actions, add integration tests for two independent Android identities, session replay, request replay, revocation during an active session, TLS failure, and operation-specific permission denial.
 
 No physical-device success is claimed until build, install, and acceptance evidence is recorded for both phones.
+
+
+## Cross-device epic progress — 2026-10-30
+
+- Fixed the authenticated device-list response to report each device's stored platform instead of hardcoding every device as Browser.
+- Added Android local launcher-app discovery and user-tap launching. This intentionally does not silently launch/control apps remotely.
+- Added `deploy/Caddyfile.example` and `docs/SECURE_PHONE_CONNECTIVITY.md` for a loopback-only Node server behind HTTPS, with access restricted to a private network/VPN.
+- CI at commit `b1f6ee11a796b25be5567e54d31f44597fafb6ed` passed the Node audit/build/type-check/tests/browser smoke test and Android `assembleDebug`, and published the debug APK artifact. New changes after that commit require their own CI result.
+- Still open: verify TLS connectivity from the actual phones; owner-approved enrollment on both phones; revocation isolation; device-specific Android acceptance; remote command delivery to Android; laptop reachability/offline recovery; native notifications and selected phone integrations. The current client sends requests to the laptop but the laptop does not yet dispatch remote commands back to a phone agent.
