@@ -378,3 +378,10 @@ A follow-up source audit enumerated task-state transitions in JarvisCoreService 
 The Windows app-launch adapter no longer returns raw process/spawn exception text to the client. Allowlisted and Start-menu launch failures now return bounded generic messages with only the error class retained in evidence. Invalid application-name diagnostics no longer echo an arbitrary oversized or non-string input. A regression test asserts these redaction boundaries at source level.
 
 **Status:** implementation and regression test are committed; exact-head CI is not yet available. This does not prove actual Windows launch success or close the MSI interaction/verification acceptance gate.
+
+
+## Voice reliability hardening — 2026-10-31
+
+- Tightened local STT WAV validation before audio is passed to the optional whisper.cpp process: RIFF length must match the buffer, each chunk header and payload must remain inside the declared container, and the PCM format chunk must contain the required fields.
+- Added focused regression tests for valid PCM input, truncated chunks, inconsistent RIFF size, undersized format chunks, wake-phrase word boundaries, and explicit cloud-speech opt-in.
+- This is source-level hardening only. The tests must run on the exact resulting commit; it does not prove whisper.cpp/model installation, microphone capture, wake-word accuracy, or audible TTS on the MSI.
