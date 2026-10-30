@@ -208,18 +208,14 @@ function stopHandsFreeStandby() {
 }
 
 function enableWakeDetection() {
-  if (isMicMuted) {
-    setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute before enabling hands-free listening.');
-    return;
-  }
-  if (!speechRecognitionConstructor) {
-    setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED', speechUnavailableReason || 'Use the text input field; no microphone capture was started.');
-    return;
-  }
-  handsFreeEnabled = true;
-  handsFreeStandby = true;
+  setAssistantState(
+    'LOCAL WAKE WORD UNAVAILABLE',
+    'The local audio wake-word engine is not installed. Continuous browser recognition is disabled to prevent background audio from being sent to a browser/vendor service. Use push-to-talk with explicit browser-speech consent, or use text input.',
+  );
+  handsFreeEnabled = false;
+  handsFreeStandby = false;
+  stopHandsFreeStandby();
   updateHandsFreeButtons();
-  startHandsFreeStandby();
 }
 
 function disableWakeDetection() {
@@ -557,14 +553,14 @@ function scheduleHandsFreeRestart() {
 }
 
 function enableHandsFree() {
-  if (isMicMuted) { setAssistantState('MIC MUTED', 'Unmute the microphone before enabling hands-free mode.'); return; }
-  if (!speechRecognitionConstructor) { setAssistantState('SPEECH API UNAVAILABLE', speechUnavailableReason || 'Use push-to-talk or text input in this browser.'); return; }
-  isHandsFreeEnabled = true;
+  isHandsFreeEnabled = false;
   isWaitingForWakeCommand = false;
   const button = document.getElementById('btn-hands-free');
-  if (button) { button.textContent = 'HANDS-FREE: ON'; button.setAttribute('aria-pressed', 'true'); }
-  setAssistantState('HANDS-FREE STANDBY', 'Listening for “Hey JARVIS”. Microphone remains active until you disable hands-free.');
-  startVoiceCapture();
+  if (button) { button.textContent = 'HANDS-FREE: OFF'; button.setAttribute('aria-pressed', 'false'); }
+  setAssistantState(
+    'LOCAL WAKE WORD UNAVAILABLE',
+    'Hands-free is disabled because no local audio wake-word engine is configured. This prevents continuous browser/vendor audio recognition. Use push-to-talk with explicit browser-speech consent, or use text input.',
+  );
 }
 
 function disableHandsFree() {
@@ -585,6 +581,14 @@ function startVoiceCapture() {
     return;
   }
   if (isListening) return;
+  const browserSpeechConsent = document.getElementById('allow-browser-speech');
+  if (!browserSpeechConsent || !browserSpeechConsent.checked) {
+    setAssistantState(
+      'VOICE CONSENT REQUIRED',
+      'Browser speech recognition may send captured audio to a vendor service. Check the one-session consent box before using push-to-talk, or use text input.',
+    );
+    return;
+  }
   if (!speechRecognitionConstructor) {
     setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
       speechUnavailableReason || 'Use the text input field; no audio capture was started.');
