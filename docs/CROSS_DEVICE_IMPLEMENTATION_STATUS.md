@@ -135,3 +135,10 @@ Current boundaries:
 Named-control reads, clicks, and value updates now accept optional `expectProcess`. Natural-language requests can specify a target process using an `in <process>` suffix. The desktop guard rejects a process mismatch before the operation executes. This is a foreground-process check, not a guarantee that every application exposes controls or that a window remains unchanged for the entire workflow.
 
 **Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
+
+
+## Android inventory queue hardening — 2026-10-30
+
+The `new` branch now hardens the bounded in-memory `android.app.list` command queue: device IDs are checked at create/claim/result lookup; invalid TTLs fall back to a finite default; app inventory entries with empty, oversized or control-character fields are rejected; inventories above 300 entries are rejected; and result snapshots are defensive copies. An invalid result leaves the command claimed rather than marking it complete. Added unit tests cover these cases plus expiry and one-time claim/completion.
+
+This is a narrow safety improvement, not an accepted native Android agent. Hosted CI has not yet been confirmed for the resulting head, and no physical-device test has been performed here. The queue is still volatile and only supports read-only app inventory. Transport, lifecycle/reconnect, per-phone permission/revocation acceptance and two-phone testing remain release blockers.
