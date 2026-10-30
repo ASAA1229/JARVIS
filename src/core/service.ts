@@ -84,6 +84,7 @@ const RETRYABLE_READ_ONLY = new Set([
   'system:get_battery_status',
   'system:get_disk_space',
   'desktop:list_windows',
+  'desktop:read_control',
   'file:list',
   'file:search',
   'file:read',
