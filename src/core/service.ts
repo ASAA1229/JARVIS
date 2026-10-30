@@ -844,6 +844,9 @@ export class JarvisCoreService {
       this.#recordStep(task, 'cancelled', undefined, 'Rejected by approver');
       this.#skipRemainingSteps(task);
       this.#persistTask(task);
+      if (task.state !== TaskState.REJECTED) {
+        return { success: false, message: task.error || 'Rejection checkpoint failed; task requires recovery.' };
+      }
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
     return { success: true, message: 'Task rejected' };
@@ -957,7 +960,7 @@ export class JarvisCoreService {
       task.updatedAt = Date.now();
       this.#recordStep(task, 'cancelled', undefined, 'Cancelled by user');
       this.#skipRemainingSteps(task);
-      if (!this.#persistTask(task)) {
+      if (!this.#persistTask(task) || task.state !== TaskState.CANCELLED) {
         return { success: false, message: task.error || 'Cancellation checkpoint failed; task state requires recovery.', state: task.state };
       }
       this.audit.record('TASK_CANCELLED', { taskId }, requester.id, taskId);
