@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { TaskJournal } from '../src/core/taskJournal.js';
 import type { TaskLifecycleRecord } from '../src/core/service.js';
 import { TaskState, VerificationOutcome } from '../src/core/types.js';
+import { JarvisCoreService } from '../src/core/service.js';
+import type { IAIPlannerProvider } from '../src/planner/planner.js';
 
 const TOKEN = 'owner-control-token-for-task-journal-tests-01';
 
@@ -79,4 +81,18 @@ test('task journal fails closed on tampered ciphertext and wrong owner token', (
 
 test('task journal requires a strong owner control token', () => withTempDir((directory) => {
   assert.throws(() => new TaskJournal(join(directory, 'tasks.enc'), 'short'), /at least 32 characters/i);
+}));
+
+
+test('core service restores interrupted journal tasks without resuming them', () => withTempDir((directory) => {
+  const statePath = join(directory, 'state');
+  new TaskJournal(statePath + '.tasks', TOKEN).save(record());
+  const service = new JarvisCoreService({} as IAIPlannerProvider, join(directory, 'audit.log'), statePath, TOKEN);
+  const restored = service.getTask('task-test-001' as TaskLifecycleRecord['id']);
+  assert.ok(restored);
+  assert.equal(restored.state, TaskState.AWAITING_RECOVERY);
+  assert.equal(restored.interrupted, true);
+  assert.match(restored.error || '', /reconcile external state before any retry/i);
+  assert.equal(service.listTasks().length, 1);
+  service.stopBackgroundServices();
 }));
