@@ -74,7 +74,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Foreground UI Automation inspection, exact-name InvokePattern and non-sensitive ValuePattern are available; universal coverage and full outcome verification remain incomplete.',
+    notes: 'Foreground UI Automation inspection, exact-name InvokePattern, guarded ValuePattern reads (credential/financial fields redacted), and non-sensitive ValuePattern writes are available; universal coverage and target-app acceptance remain incomplete.',
   },
   {
     id: 'desktop.text-and-clipboard',
