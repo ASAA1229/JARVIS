@@ -307,7 +307,7 @@ export class JarvisServer {
         const auth = this.authorizeControl(req, url.pathname, undefined, 'device:list');
         if (!auth.device) return this.jsonResponse(res, auth.status, { error: auth.error });
         const now = Date.now();
-        const devices = this.jarvis.identity.listDevices().map((device) => ({ id: device.id, name: device.name, platform: 'Browser', status: device.status, permissions: device.permissions, enrolledAt: device.enrolledAt, lastActivityAt: device.lastSeenAt, sessionActive: this.jarvis.identity.hasActiveSession?.(device.id, now) ?? device.status === 'ACTIVE' }));
+        const devices = this.jarvis.identity.listDevices().map((device) => ({ id: device.id, name: device.name, platform: device.platform || 'Browser', status: device.status, permissions: device.permissions, enrolledAt: device.enrolledAt, lastActivityAt: device.lastSeenAt, sessionActive: this.jarvis.identity.hasActiveSession?.(device.id, now) ?? device.status === 'ACTIVE' }));
         return this.jsonResponse(res, 200, { devices });
       }
 
