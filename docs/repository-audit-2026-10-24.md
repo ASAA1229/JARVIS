@@ -419,3 +419,12 @@ The workflow supports three human-reviewed dispositions. Confirmed no effect clo
 - The documented Actions runner startup issue remains an external blocker to exact-head hosted validation until a workflow executes its steps.
 - The MSI microphone/voice and Windows UI Automation acceptance, and the two-phone Android enrollment/transport/revocation acceptance, still require the actual devices.
 - The report file was updated in place; no new report file was created. No PR was opened, and dev/main were not changed.
+
+
+### Additional security review — stale approval guard (2026-10-30)
+
+A source review found a lifecycle invariant gap: the approval handler did not explicitly require the associated task to remain in AWAITING_APPROVAL before resolving an existing approval record. This matters when a checkpoint failure, interruption, or cancellation has already moved the task into another state. The handler now checks the task state before approval resolution, audits the rejection, and returns a conflict response. A regression test covers a task already awaiting recovery and verifies that the approval remains unconsumed.
+
+The companion now includes a Recovery Review panel that reads tasks via the authenticated signed-session endpoint and submits a user-reviewed disposition through the signed API. This is a review/closure UX, not automatic resume.
+
+**Exact-head validation is still unavailable:** no local test execution was performed, and the connector reports no CI status checks or workflow run for the latest source head. Keep these changes marked pending verification until the workflow actually runs. Physical MSI and both-phone acceptance remain separate release gates.
