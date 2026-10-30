@@ -22,9 +22,9 @@ Copy-Item $jszip $assetRoot -Force
 Get-ChildItem $dist -Filter 'ort-wasm*' -File | Copy-Item -Destination $assetRoot -Force
 
 $downloads = @(
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/web/wakeword.js'; Name = 'wakeword.js'; MinBytes = 1000 },
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/melspectrogram.onnx'; Name = 'melspectrogram.onnx'; MinBytes = 1000 },
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/en/multi_jarvis_v9.3.zip'; Name = 'multi_jarvis_v9.3.zip'; MinBytes = 1000 }
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/web/wakeword.js'; Name = 'wakeword.js'; MinBytes = 1000; GitBlobSha = 'a33f24ebcb89532478f15ba9e3b33bb8aa165a23' },
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/melspectrogram.onnx'; Name = 'melspectrogram.onnx'; MinBytes = 1000; GitBlobSha = 'a3a60354eebe5fa4c7c9534851e4cb0bd7b0d06c' },
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/en/multi_jarvis_v9.3.zip'; Name = 'multi_jarvis_v9.3.zip'; MinBytes = 1000; GitBlobSha = '12d92a59869d7a1228761eb7127b930e5f568a6e' }
 )
 foreach ($item in $downloads) {
   $target = Join-Path $assetRoot $item.Name
@@ -32,6 +32,19 @@ foreach ($item in $downloads) {
   Invoke-WebRequest -Uri $item.Url -OutFile $target
   if (-not (Test-Path $target) -or (Get-Item $target).Length -lt $item.MinBytes) {
     throw "Downloaded asset failed the size check: $($item.Name)"
+  }
+  # Verify the exact Git blob content pinned in the upstream tree, not only the URL/size.
+  $assetBytes = [System.IO.File]::ReadAllBytes($target)
+  $gitHeader = [System.Text.Encoding]::ASCII.GetBytes("blob $($assetBytes.Length)`0")
+  $gitObject = New-Object byte[] ($gitHeader.Length + $assetBytes.Length)
+  [System.Buffer]::BlockCopy($gitHeader, 0, $gitObject, 0, $gitHeader.Length)
+  [System.Buffer]::BlockCopy($assetBytes, 0, $gitObject, $gitHeader.Length, $assetBytes.Length)
+  $sha1 = [System.Security.Cryptography.SHA1]::Create()
+  try { $actualGitBlobSha = [System.BitConverter]::ToString($sha1.ComputeHash($gitObject)).Replace('-', '').ToLowerInvariant() }
+  finally { $sha1.Dispose() }
+  if ($actualGitBlobSha -ne $item.GitBlobSha) {
+    Remove-Item $target -Force
+    throw "Downloaded asset failed pinned Git blob integrity verification: $($item.Name)"
   }
 }
 $zipPath = Join-Path $assetRoot 'multi_jarvis_v9.3.zip'
