@@ -532,7 +532,7 @@ function handleHandsFreeTranscript(rawTranscript) {
       void submitDirective(command);
     } else {
       setAssistantState('JARVIS IS LISTENING', 'Wake phrase detected. Say your command now.');
-      void speakResponse('Hii sir, I am ready to work.');
+      void speakResponse('Hi sir, I am ready to work.');
     }
     return;
   }
