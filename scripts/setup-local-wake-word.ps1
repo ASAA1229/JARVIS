@@ -8,9 +8,17 @@ $runtimeRoot = Join-Path $repoRoot '.jarvis-local-wakeword'
 $assetRoot = Join-Path $repoRoot 'src\companion\local-wakeword'
 New-Item -ItemType Directory -Force -Path $runtimeRoot, $assetRoot | Out-Null
 
-Write-Host 'Installing pinned local inference runtime (no root package or lockfile changes)...'
-npm install --prefix $runtimeRoot --no-save --package-lock=false onnxruntime-web@1.20.1 jszip@3.10.1
+Write-Host 'Installing pinned local inference runtime (isolated under the ignored .jarvis-local-wakeword folder)...'
+$runtimeLock = Join-Path $runtimeRoot 'package-lock.json'
+if (Test-Path $runtimeLock) {
+  # Reuse the local lockfile so transitive dependencies do not drift between runs.
+  npm ci --prefix $runtimeRoot
+} else {
+  # First run: save exact top-level versions and generate a local lockfile.
+  npm install --prefix $runtimeRoot --save-exact onnxruntime-web@1.20.1 jszip@3.10.1
+}
 if ($LASTEXITCODE -ne 0) { throw 'Local wake-word runtime installation failed.' }
+if (-not (Test-Path $runtimeLock)) { throw 'The isolated wake-word runtime lockfile was not created.' }
 
 $dist = Join-Path $runtimeRoot 'node_modules\onnxruntime-web\dist'
 $jszip = Join-Path $runtimeRoot 'node_modules\jszip\dist\jszip.min.js'
