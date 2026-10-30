@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildControlActionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
@@ -179,4 +179,11 @@ test('planner binds control click and value changes to an explicitly named proce
   assert.equal(setPlan.operations[0]?.operation, 'desktop:set_value');
   assert.deepEqual(setPlan.operations[0]?.parameters, { name: 'Document title', expectProcess: 'notepad', text: 'JARVIS test' });
   assert.equal(planner.validatePlanSchema(setPlan).valid, true);
+});
+
+
+test('keyboard input scripts can fail closed when foreground focus changes', () => {
+  const assertion = buildForegroundFocusAssertionScript();
+  assert.match(assertion, /GetForegroundWindow\(\) -ne \$foregroundHwnd/);
+  assert.match(assertion, /FOREGROUND_CHANGED/);
 });
