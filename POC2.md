@@ -385,3 +385,14 @@ The Windows app-launch adapter no longer returns raw process/spawn exception tex
 - Tightened local STT WAV validation before audio is passed to the optional whisper.cpp process: RIFF length must match the buffer, each chunk header and payload must remain inside the declared container, and the PCM format chunk must contain the required fields.
 - Added focused regression tests for valid PCM input, truncated chunks, inconsistent RIFF size, undersized format chunks, wake-phrase word boundaries, and explicit cloud-speech opt-in.
 - This is source-level hardening only. The tests must run on the exact resulting commit; it does not prove whisper.cpp/model installation, microphone capture, wake-word accuracy, or audible TTS on the MSI.
+
+
+## Voice epic follow-up — bounded local TTS output
+
+- [x] Bound Piper subprocess stdout to 16 MiB and retained stderr diagnostics to 8 KiB to prevent unbounded process output from consuming memory.
+- [x] Validate RIFF/WAV declared size, chunk boundaries, format chunk presence and non-empty audio data before returning TTS output.
+- [x] Add focused tests for valid WAV output, inconsistent RIFF size, truncated chunks, empty samples and oversized buffers.
+- [ ] Run the exact-head TypeScript build, unit suite and browser smoke test after runner availability is restored; no hosted test result is claimed for this change.
+- [ ] On the MSI, verify the configured Piper binary/model, audible playback, interruption/timeout behavior and acceptable latency.
+
+This is reliability hardening within the existing Voice Interaction & Cinematic HUD epic, not epic acceptance. Local wake-word operation and physical-device voice acceptance remain open.
