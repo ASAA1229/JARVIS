@@ -395,4 +395,4 @@ The Windows app-launch adapter no longer returns raw process/spawn exception tex
 - [ ] Run the exact-head TypeScript build, unit suite and browser smoke test after runner availability is restored; no hosted test result is claimed for this change.
 - [ ] On the MSI, verify the configured Piper binary/model, audible playback, interruption/timeout behavior and acceptable latency.
 
-This is reliability hardening within the existing Voice Interaction & Cinematic HUD epic, not epic acceptance. Local wake-word operation and physical-device voice acceptance remain open.
+This is reliability hardening within the existing Voice Interaction & Cinematic HUD epic, not epic acceptance. Local wake-word operation and physical-device voice acceptance remain open. The HUD's transcript-based wake/stop helper was also hardened to require whole-phrase boundaries, reducing accidental substring triggers. Direct browser-level tests for that helper remain outstanding.
