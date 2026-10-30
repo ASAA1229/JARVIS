@@ -30,6 +30,7 @@ test('Android companion contract matches laptop enrollment and signed-request ve
     );
     const enrolled = identity.enrollDevice(proof.challengeToken, proof.deviceName, proof.publicKeyPem, 'Android');
     assert.equal(enrolled.success, true);
+    assert.equal(identity.getDevice(enrolled.deviceId!)?.platform, 'Android');
     const sessionReq = signSessionRequest(enrolled.deviceId!, keyPair.privateKey);
     const session = identity.createSession(sessionReq.deviceId, sessionReq.signature, sessionReq.timestamp, sessionReq.nonce);
     assert.equal(session.success, true);
