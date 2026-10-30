@@ -748,6 +748,7 @@ export class JarvisCoreService {
       if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
         expiredTask.state = TaskState.EXPIRED;
         expiredTask.updatedAt = Date.now();
+        this.#persistTask(expiredTask);
         this.#skipRemainingSteps(expiredTask);
         this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: expiredTask.id, deviceId: expiredTask.deviceId });
       }
@@ -878,6 +879,7 @@ export class JarvisCoreService {
       else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED) {
         task.state = TaskState.CANCELLED;
         task.updatedAt = Date.now();
+        this.#persistTask(task);
       }
     }
     this.notifications.push('warning', 'device_revoked', `A device was revoked; ${invalidated} approval(s) and ${schedules} schedule(s) were cancelled.`, { deviceId });
