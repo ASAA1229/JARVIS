@@ -82,7 +82,7 @@ Hosted CI can validate TypeScript, planner/policy behavior, encrypted memory and
 
 A first native Android application foundation now exists under `android-app/`:
 
-- Kotlin launcher UI for owner-approved challenge enrollment, session reconnect, and signed text requests.
+- Kotlin launcher UI for one-time enrollment transaction/code exchange, explicit owner approval, session reconnect, and signed text requests.
 - Per-install Ed25519 device identity; private-key bytes are encrypted at rest with AES-GCM and a wrapping key held by Android Keystore.
 - Session proof and signed-request payloads follow the existing server canonical protocol, including timestamp, one-time nonce, session binding, and body SHA-256.
 - Enrollment identifies the platform as Android so the server's device list can distinguish native phones from browser companions.
@@ -92,7 +92,7 @@ Important limitations and acceptance gates:
 
 - This is an initial native client, not a release-ready or physically verified Android agent. A separate Android Gradle assembleDebug CI job has been added; until it passes on the latest branch head, Android compilation is not verified. Install and acceptance tests on both physical phones remain required.
 - The current JARVIS Node server exposes HTTP directly. The Android client deliberately requires a trusted HTTPS endpoint; until a TLS reverse proxy or native TLS server is configured and its certificate is trusted on the phones, remote connection is expected to fail closed.
-- Owner enrollment challenge creation still requires the existing owner-authorized flow. Do not put the owner control token into the Android app.
+- Each phone must use a short-lived enrollment transaction created by an authenticated owner device, then receive explicit owner approval before it can open a session. The app accepts the transaction ID and one-time code from the owner-generated QR/manual copy; never put the owner control token into the Android app.
 - This initial vertical slice submits text requests only. Native notifications, app discovery/control, SMS/call actions, background execution, push notifications, and remote wake are not implemented by this slice.
 - Before enabling remote state-changing actions, add integration tests for two independent Android identities, session replay, request replay, revocation during an active session, TLS failure, and operation-specific permission denial.
 
