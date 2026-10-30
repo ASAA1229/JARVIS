@@ -59,6 +59,8 @@ export interface TaskLifecycleRecord {
   origin?: 'interactive' | 'schedule';
   /** Per-step record: completed, failed, uncertain, blocked, skipped, cancelled. */
   steps?: WorkflowStepRecord[];
+  /** Owner-reviewed recovery note. This never authorizes automatic replay. */
+  reconciliation?: { disposition: 'confirmed_no_effect' | 'effect_observed' | 'still_unknown'; note: string; reviewedAt: number; reviewedBy: DeviceId };
 }
 
 export interface TaskResult {
@@ -809,6 +811,86 @@ export class JarvisCoreService {
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
     return { success: true, message: 'Task rejected' };
+  }
+
+  /**
+   * Records an authenticated human reconciliation decision for an interrupted or
+   * ambiguous task. This closes/annotates the record only; it never resumes or
+   * replays an operation. "effect_observed" is intentionally PARTIAL, not COMPLETED,
+   * because a user note is not independent application-level verification.
+   */
+  public reconcileTask(
+    taskId: TaskId,
+    sessionId: SessionId,
+    disposition: 'confirmed_no_effect' | 'effect_observed' | 'still_unknown',
+    note: string,
+  ): { success: boolean; taskId: TaskId; state: TaskState; message: string } {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const reviewer = auth.device;
+    if (!auth.valid || !reviewer) {
+      this.audit.record('TASK_RECOVERY_RECONCILE_DENIED', { reason: 'INVALID_SESSION' });
+      throw new Error('Session is not authenticated');
+    }
+    if (!['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(disposition)) {
+      throw new Error('Recovery disposition is invalid');
+    }
+    if (typeof note !== 'string' || note.trim().length < 8 || note.length > 500) {
+      throw new Error('Recovery note must be 8–500 characters');
+    }
+
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error('Task not found');
+    if (task.deviceId !== reviewer.id && !reviewer.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('TASK_RECOVERY_RECONCILE_DENIED', { reason: 'NOT_TASK_OWNER', taskId }, reviewer.id, taskId);
+      throw new Error('Only the requesting device or an owner device can reconcile this task');
+    }
+    if (task.state !== TaskState.AWAITING_RECOVERY && task.state !== TaskState.INTERRUPTED) {
+      throw new Error('Task is not awaiting recovery');
+    }
+
+    // Do not put the potentially sensitive user note into the audit log.
+    this.audit.record('TASK_RECOVERY_RECONCILED', {
+      disposition,
+      noteLength: note.trim().length,
+      previousState: task.state,
+      automaticReplay: false,
+    }, reviewer.id, taskId);
+
+    task.reconciliation = {
+      disposition,
+      note: note.trim(),
+      reviewedAt: Date.now(),
+      reviewedBy: reviewer.id,
+    };
+    task.updatedAt = Date.now();
+    if (disposition === 'confirmed_no_effect') {
+      task.state = TaskState.FAILED;
+      task.error = 'Manual review recorded that no side effect occurred. This task is closed; submit a new request if needed. It will not be replayed.';
+    } else if (disposition === 'effect_observed') {
+      task.state = TaskState.PARTIAL;
+      task.error = 'A possible side effect was observed during manual reconciliation. The task remains unverified and was not replayed.';
+    } else {
+      task.state = TaskState.AWAITING_RECOVERY;
+      task.error = 'The outcome remains unknown. No retry or dependent workflow step was started.';
+    }
+
+    if (!this.#persistTask(task)) {
+      return {
+        success: false,
+        taskId,
+        state: task.state,
+        message: task.error || 'Recovery decision could not be durably checkpointed.',
+      };
+    }
+    this.notifications.push(
+      disposition === 'still_unknown' ? 'warning' : 'info',
+      'task_recovery_reviewed',
+      disposition === 'still_unknown'
+        ? 'Task recovery reviewed, but the outcome remains unknown. No retry was started.'
+        : 'Task recovery review recorded. JARVIS did not replay the task.',
+      { taskId, deviceId: task.deviceId },
+    );
+    return { success: true, taskId, state: task.state, message: task.error || 'Recovery review recorded; no operation was replayed.' };
   }
 
   /**
