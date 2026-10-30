@@ -35,8 +35,8 @@ The debug APK is written to `android-app/app/build/outputs/apk/debug/app-debug.a
 
 ## Current limits
 
-- This initial implementation has not yet passed Android build/physical-device acceptance; follow the latest CI result.
+- The initial implementation passed the hosted Android Gradle `assembleDebug` job on 2026-10-30. Physical-device acceptance is still outstanding.
 - No QR scanner is included; the transaction ID and code are entered manually.
-- No remote phone app control, SMS/call actions, notification access, push delivery, wake-on-LAN, or background task service is implemented.
+- The app can discover launchable apps locally and open one only after the user taps it. Remote phone app control, SMS/call actions, notification access, push delivery, wake-on-LAN, and a background task service are not implemented.
 - Use a trusted certificate chain on the phones. Do not disable TLS validation or use a permissive trust manager.
 - Install only on test devices until Android build and two-phone revocation/permission tests pass.
