@@ -112,6 +112,8 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
 
     const setupScript = readFileSync('scripts/setup-local-wake-word.ps1', 'utf8');
     assert.match(setupScript, /onnxruntime-web@1\.20\.1/);
+    assert.match(setupScript, /npm ci --prefix \$runtimeRoot/);
+    assert.match(setupScript, /package-lock\.json/);
     assert.match(setupScript, /multi_jarvis_v9\.3\.zip/);
     assert.match(setupScript, /8002ba9a14d80c0f71447920d3f1c8ee986b1432/);
     assert.match(setupScript, /a33f24ebcb89532478f15ba9e3b33bb8aa165a23/);
