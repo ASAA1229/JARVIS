@@ -383,3 +383,10 @@ The Windows UI Automation `desktop:set_value` path now blocks additional sensiti
 - Added `test/http_body_limits.test.ts` to exercise the live HTTP server's shared JSON-body parser for an incorrect media type, malformed JSON, and an oversized payload.
 - Expected outcomes are HTTP 415, 400, and 413 respectively. The test intentionally reaches request parsing before session authorization; it does not imply that the requested operation can execute without a signed session.
 - CI for the exact updated `new` head must pass before this coverage is marked verified.
+
+
+### Android inventory queue input validation — 2026-10-30
+
+A focused hardening increment on `new` adds validation to `src/android/commandQueue.ts` and regression cases in `test/android_command_queue.test.ts`. Device IDs must be bounded identifiers; non-finite TTLs no longer create a NaN expiry; malformed or over-limit app inventories are rejected atomically; and returned inventory snapshots do not alias internal queue state. Invalid completion payloads leave the command in `CLAIMED` state.
+
+**Audit disposition:** source change and test additions are present, but execution evidence is pending. Do not mark the tests as passing until CI or a local test run on this exact head is inspected. This does not close the Android epic: volatile queue state, remote transport/lifecycle behavior and real-device enrollment/revocation remain unaccepted.
