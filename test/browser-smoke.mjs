@@ -247,8 +247,27 @@ try {
   }
   await hud.unroute('**/api/approval/approve');
 
-  // Click-to-toggle voice capture must stay open after the initiating click.
+  // Browser speech requires explicit per-session consent. Hands-free is blocked
+  // until a true local audio wake-word engine is available.
   const ptt = hud.locator('#btn-ptt');
+  await ptt.click();
+  await hud.getByText('VOICE CONSENT REQUIRED').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Browser speech recognition started without explicit consent');
+  }
+  await hud.locator('#btn-hands-free-toggle').click();
+  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Wake detection started browser recognition without a local wake-word engine');
+  }
+  await hud.locator('#btn-hands-free').click();
+  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Hands-free capture started browser recognition without a local wake-word engine');
+  }
+  await hud.locator('#allow-browser-speech').check();
+
+  // Click-to-toggle voice capture must stay open after the initiating click.
   await ptt.click();
   await hud.waitForFunction(() => window.__mockRecognizers.length === 1, null, { timeout: 3000 });
   const listeningState = await hud.locator('#hud-state-label').innerText();
@@ -305,6 +324,72 @@ try {
   await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'not-allowed' }), recognizerCount);
   await hud.getByText('MICROPHONE PERMISSION REQUIRED').waitFor({ state: 'visible' });
   await hud.getByText('Allow microphone access for this site in browser settings, then retry voice input.').waitFor({ state: 'visible' });
+
+  // Finalized speech must be reviewed and explicitly submitted; recognition
+  // ending alone must not transmit a directive.
+  let explicitVoiceRequestCount = 0;
+  await hud.route('**/api/request', async (route) => {
+    explicitVoiceRequestCount++;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        taskId: 'voice-explicit-submit-test',
+        state: 'COMPLETED',
+        outcome: 'VERIFIED_SUCCESS',
+        verified: true,
+        message: 'Voice directive explicitly submitted',
+      }),
+    });
+  });
+  const explicitSubmitRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, explicitSubmitRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const recognizer = window.__mockRecognizers[index];
+    recognizer.onresult({
+      resultIndex: 0,
+      results: Object.assign([[{ transcript: 'What is the OS version?' }]], {
+        0: Object.assign([{ transcript: 'What is the OS version?' }], { isFinal: true }),
+      }),
+    });
+    recognizer.stop();
+  }, explicitSubmitRecognizerIndex);
+  await hud.getByText('VOICE TRANSCRIPT READY').waitFor({ state: 'visible' });
+  await delay(150);
+  if (explicitVoiceRequestCount !== 0) {
+    throw new Error('Finalized voice recognition auto-submitted without explicit user consent');
+  }
+  if (await hud.locator('#transcript-input').inputValue() !== 'What is the OS version?') {
+    throw new Error('Finalized voice transcript was not made available for review');
+  }
+  await hud.locator('#btn-transcript-submit').click();
+  await hud.getByText('DIRECTIVE EXECUTED').waitFor({ state: 'visible' });
+  if (explicitVoiceRequestCount !== 1) {
+    throw new Error(`Explicit transcript submission sent ${explicitVoiceRequestCount} requests instead of one`);
+  }
+  await hud.unroute('**/api/request');
+
+  // Revoking consent mid-capture must stop the recognizer and discard its transcript.
+  const consentRevocationRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await hud.locator('#btn-ptt').click();
+  await hud.waitForFunction((index) => window.__mockRecognizers.length === index + 1, consentRevocationRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onresult({
+    results: [[{ transcript: 'sensitive pending command' }]],
+  }), consentRevocationRecognizerIndex);
+  await hud.locator('#transcript-box').waitFor({ state: 'visible' });
+  await hud.locator('#allow-browser-speech').uncheck();
+  await hud.getByText('VOICE CONSENT REVOKED').waitFor({ state: 'visible' });
+  if (await hud.locator('#transcript-input').inputValue() !== '' || await hud.locator('#transcript-box').isVisible()) {
+    throw new Error('Revoking browser-speech consent did not discard the pending transcript');
+  }
+  await hud.evaluate((index) => window.__mockRecognizers[index].onresult({
+    results: [[{ transcript: 'late sensitive command' }]],
+  }), consentRevocationRecognizerIndex);
+  if (await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('A late speech result was accepted after browser-speech consent was revoked');
+  }
+  await hud.locator('#allow-browser-speech').check();
 
   await hud.locator('#btn-toggle-motion').click();
 

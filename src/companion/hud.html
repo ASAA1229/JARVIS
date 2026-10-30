@@ -123,7 +123,7 @@
 
         <div class="hud-status-banner">
           <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
-          <p class="hud-state-sub" id="hud-state-sub">Enable hands-free to say “Hey JARVIS, open Notepad”. Disable hands-free to release the microphone.</p>
+          <p class="hud-state-sub" id="hud-state-sub">Push-to-talk is available after one-session browser speech consent. Hands-free wake listening stays off until a local audio wake-word engine is installed.</p>
         </div>
 
         <div class="transcript-box frame hidden" id="transcript-box">
@@ -217,7 +217,7 @@
           <div class="input-wrapper">
             <span class="terminal-prefix">&gt;</span>
             <label class="sr-only" for="hud-text-input">Directive to send to JARVIS</label>
-            <input type="text" id="hud-text-input" class="hud-terminal-input" placeholder="Enter a directive or say Hey JARVIS in hands-free mode..." autocomplete="off" />
+            <input type="text" id="hud-text-input" class="hud-terminal-input" placeholder="Enter a directive..." autocomplete="off" />
           </div>
           <button id="btn-hud-send" class="hud-btn hud-btn-cyan">TRANSMIT</button>
         </div>
@@ -231,7 +231,7 @@
         <button id="btn-hands-free-toggle" class="hud-btn-mini" title="Enable or disable wake phrase detection" aria-pressed="false">ENABLE WAKE DETECTION</button>
         <button id="btn-hands-free-pause" class="hud-btn-mini" title="Pause or resume wake phrase detection" aria-pressed="false" disabled>PAUSE LISTENING</button>
       </div>
-      <p class="hud-privacy-notice" role="note">Voice privacy: browser speech recognition may send audio to a browser/vendor service; local-only processing is not guaranteed. Use text input if you do not want to use browser speech.</p>
+      <div class="hud-privacy-notice" role="group" aria-label="Voice privacy controls"><p>Local wake detection runs on this device after the optional runtime/model is installed. Browser speech recognition may send command audio to a browser/vendor service; local-only recognition is not guaranteed. Consent is session-only and never stored.</p><label for="allow-browser-speech"><input id="allow-browser-speech" type="checkbox"> I allow browser speech recognition for push-to-talk in this session.</label><label for="allow-wake-browser-speech"><input id="allow-wake-browser-speech" type="checkbox"> I separately allow browser speech recognition after local “Hey Jarvis” detection in this session.</label><p>Wake detection stays unavailable if local model/runtime assets are missing. Typed directives remain available.</p></div>
       <div class="hud-controls hud-controls-right">
         <button id="btn-hands-free" class="hud-btn-mini" type="button" aria-pressed="false">HANDS-FREE CAPTURE: OFF</button>
         <button id="btn-speech-output" class="hud-btn-mini" type="button" aria-pressed="true">VOICE: ON</button>

@@ -24,3 +24,37 @@ test('Android inventory command rejects same-device targeting and expires', asyn
   assert.equal(queue.claimNext('phone-a'), undefined);
   assert.equal(queue.complete('phone-a', command.id, []), false);
 });
+
+test('Android command queue clamps invalid TTLs and rejects malformed device IDs', () => {
+  const queue = new AndroidCommandQueue();
+  const command = queue.create('phone-a', 'owner', Number.NaN);
+  assert.equal(command.expiresAt - command.createdAt, 60_000);
+  assert.throws(() => queue.create(' phone-a', 'owner'));
+  assert.throws(() => queue.create('phone-a', 'owner\n'));
+  assert.equal(queue.claimNext(' phone-a'), undefined);
+  assert.deepEqual(queue.resultsForRequester(' owner'), []);
+});
+
+test('invalid app inventory cannot complete a claimed command or poison its result', () => {
+  const queue = new AndroidCommandQueue();
+  const command = queue.create('phone-a', 'owner');
+  queue.claimNext('phone-a');
+  assert.equal(queue.complete('phone-a', command.id, [{ label: '  ', packageName: 'com.example.app' }]), false);
+  assert.equal(queue.complete('phone-a', command.id, [{ label: 'Settings\nsecret', packageName: 'com.example.app' }]), false);
+  assert.equal(queue.complete('phone-a', command.id, [{ label: 'Settings', packageName: 'com.example.app' }, null] as never), false);
+  assert.equal(queue.resultsForRequester('owner')[0].state, 'CLAIMED');
+  assert.equal(queue.complete('phone-a', command.id, [{ label: ' Settings ', packageName: 'com.example.app ' }]), true);
+  assert.deepEqual(queue.resultsForRequester('owner')[0].apps, [{ label: 'Settings', packageName: 'com.example.app' }]);
+});
+
+test('inventory results are defensive copies and excessive app lists are rejected', () => {
+  const queue = new AndroidCommandQueue();
+  const command = queue.create('phone-a', 'owner');
+  queue.claimNext('phone-a');
+  const apps = Array.from({ length: 301 }, (_, index) => ({ label: 'App ' + index, packageName: 'com.example.app' }));
+  assert.equal(queue.complete('phone-a', command.id, apps), false);
+  assert.equal(queue.complete('phone-a', command.id, [{ label: 'Settings', packageName: 'com.android.settings' }]), true);
+  const result = queue.resultsForRequester('owner');
+  result[0].apps![0].label = 'tampered';
+  assert.equal(queue.resultsForRequester('owner')[0].apps![0].label, 'Settings');
+});

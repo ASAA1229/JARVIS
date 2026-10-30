@@ -20,7 +20,9 @@ import { join } from 'node:path';
  *    It does NOT listen to audio itself; the transcript comes from whichever STT
  *    is in use (today the browser's recognizer, which may use a vendor cloud).
  *  - Piper TTS lives in piperTts.ts and is wired through the existing endpoint.
- * Not implemented: an always-on, audio-level local wake-word engine.
+ *  - Local audio-level wake-word detection is integrated in the HUD through the optional
+ *    onnx-wakeword Web SDK assets installed by scripts/setup-local-wake-word.ps1.
+ *    Runtime assets are kept out of Git and served only through a filename allowlist.
  */
 
 export interface TranscriptionResult {

@@ -24,6 +24,13 @@ export interface IAIPlannerProvider {
   validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] };
 }
 
+function splitForegroundTarget(value: string): { name: string; expectProcess?: string } {
+  const match = value.match(/\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+  if (!match) return { name: value.trim() };
+  const name = value.slice(0, match.index).trim().replace(/[\"'“”]+$/g, '').trim();
+  const expectProcess = match[1].replace(/\.exe$/i, '');
+  return name ? { name, expectProcess } : { name: value.trim() };
+}
 export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public readonly name = 'local-heuristic-v1';
 
@@ -232,11 +239,12 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
 
     const readControl = requestText.match(/\b(?:read|inspect|get)\s+(?:the\s+)?(?:value\s+of\s+)?(?:the\s+)?control\s+["“]?(.+?)["”]?\s*$/i);
     if (readControl && readControl[1].trim()) {
+      const target = splitForegroundTarget(readControl[1]);
       return {
         intent: 'Read a uniquely named foreground UI control',
-        operations: [{ operation: 'desktop:read_control', parameters: { name: readControl[1].trim() }, justification: 'Owner explicitly requested reading one named UI control' }],
+        operations: [{ operation: 'desktop:read_control', parameters: target, justification: 'Owner explicitly requested reading one named UI control' }],
         confidence: 0.82,
-        explanation: 'Will request approval, read only a uniquely named accessible control, and redact password and credential/financial fields. Apps that do not expose a ValuePattern may return no value.',
+        explanation: 'Will request approval, bind to the named foreground process when supplied, read only a uniquely named accessible control, and redact password and credential/financial fields. Apps that do not expose a ValuePattern may return no value.',
       };
     }
 
@@ -311,11 +319,13 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
     const clickControl = requestText.match(/\bclick\s+(?:the\s+)?(?:button|control)\s+(?:named\s+)?["“]?(.+?)["”]?\s*$/i);
     if (clickControl && clickControl[1].trim()) {
-      return { intent: 'Click an exact named foreground control', operations: [{ operation: 'desktop:click_control', parameters: { name: clickControl[1].trim() }, justification: 'User specified an exact control name' }], confidence: 0.82, explanation: 'Will click only if exactly one accessible control matches, after approval.' };
+      const target = splitForegroundTarget(clickControl[1]);
+      return { intent: 'Click an exact named foreground control', operations: [{ operation: 'desktop:click_control', parameters: target, justification: 'User specified an exact control name' }], confidence: 0.82, explanation: 'Will bind to the named process when supplied and invoke only if exactly one accessible control matches, after approval.' };
     }
     const setControl = requestText.match(/\bset\s+(?:the\s+)?(?:field|control)\s+["“]?(.+?)["”]?\s+to\s+["“]?(.+?)["”]?\s*$/i);
     if (setControl && setControl[1].trim() && setControl[2].trim()) {
-      return { intent: 'Set a named foreground control value', operations: [{ operation: 'desktop:set_value', parameters: { name: setControl[1].trim(), text: setControl[2].trim() }, justification: 'User specified a named field and explicit value' }], confidence: 0.78, explanation: 'Will update only a unique non-password, non-financial accessible field after approval and verify its value.' };
+      const target = splitForegroundTarget(setControl[1]);
+      return { intent: 'Set a named foreground control value', operations: [{ operation: 'desktop:set_value', parameters: { ...target, text: setControl[2].trim() }, justification: 'User specified a named field and explicit value' }], confidence: 0.78, explanation: 'Will update only a unique non-password, non-financial accessible field in the named process when supplied, after approval, and verify its value.' };
     }
 
     // Explicit desktop interaction requests. The policy gateway still requires approval.

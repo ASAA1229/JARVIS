@@ -79,8 +79,10 @@ The POC remains **NOT COMPLETE** until the blockers in [POC2.md](POC2.md) have a
 - No cloud endpoint is selected by default. If the local/configured endpoint is unavailable, JARVIS returns a clear fallback instead of pretending that an AI answer was generated.
 - Owner memories are supplied only when the authenticated device has device-management permission, and only a bounded set of records is included.
 - The HUD now handles `state: ANSWERED` separately from action execution outcomes, displays the conversational message, and sends that message to speech output.
-- The existing hands-free wake detector now speaks `Hii sir, I am ready to work.` after detecting a wake phrase and attempts to enter command capture afterward.
-- **Not yet verified on physical hardware:** browser wake-word recognition, audible TTS timing, and end-to-end local model inference. Browser speech recognition may depend on the browser's remote recognition service; this is not a claim of local wake-word detection.
+- The HUD requires explicit, per-session consent before starting browser speech recognition for push-to-talk. Consent is not persisted between page sessions because the browser recognition provider may process audio remotely.
+- Finalized speech is displayed in the editable transcript review panel and is not transmitted until the user explicitly selects **EXECUTE DIRECTIVE**.
+- Continuous hands-free/browser wake detection is now blocked until a true local audio wake-word engine is configured; the current transcript matcher is not an audio-level local detector. The requested wake acknowledgement is `Hi sir, I am ready to work.` when a supported wake path is available.
+- **Not yet verified on physical hardware:** browser recognition behavior, audible TTS timing, and end-to-end local model inference. No local wake-word capability is claimed.
 
 
 ## Implementation status refresh — 2026-10-26
@@ -104,3 +106,45 @@ JARVIS supports a guarded Windows UI Automation path for inspecting accessible c
 **Safety boundary:** desktop actions are limited to the current foreground window, go through the policy gateway, and require approval for state-changing actions. Credential/payment-related fields are blocked or redacted using Windows password metadata and label heuristics. Those heuristics are a defence-in-depth measure, not a guarantee that every sensitive field is detected. Actions must stop when a control name is ambiguous or the required UI Automation pattern is unavailable.
 
 **Verification limitation:** UI Automation value readback confirms the control's exposed value, not necessarily that an application saved or submitted it. JARVIS must not claim a form was saved or a transaction completed without application-specific evidence. Real interactive acceptance on the target MSI laptop remains required.
+
+
+### Target-process binding and acceptance requirements (2026-10-30)
+
+Control-read, control-click and control-value requests can include an explicit process target (for example, `read control Document title in notepad`). JARVIS checks that the foreground process matches this target before executing the operation. Omitting the target means the operation applies to the current foreground process, still subject to the foreground guard and approval policy.
+
+Acceptance on the actual MSI laptop remains a required release gate:
+1. Open Notepad and a browser; test that a target-bound request is rejected when the wrong app is foreground.
+2. Inspect the foreground window and verify that duplicate control names fail closed.
+3. Test reading a harmless field, setting a harmless field, and invoking a harmless button; verify values and outcomes.
+4. Confirm password and financial-labelled controls are redacted or blocked.
+5. Test focus changes during a request and confirm no action is redirected to a different app.
+6. Verify a saved test document by reopening/reading its file content; a control-value readback alone is not proof of persistence.
+7. Record Windows version, app versions, pass/fail results, and sanitized evidence without recording document contents or secrets.
+
+Automated CI covers the planner, policy, script construction, build, and regression tests. It cannot substitute for this interactive hardware acceptance.
+
+
+## Android companion — inventory queue hardening (2026-10-30)
+
+The read-only cross-device Android app-inventory queue now validates device identifiers, handles non-finite TTL values safely, rejects malformed/control-character app records and inventories above 300 entries, and avoids exposing internal result objects through returned references. Invalid inventory results do not transition a claimed command to completed. Regression tests were added for malformed input, queue expiry, oversize inventories and defensive-copy isolation.
+
+**Acceptance status remains partial:** these are source-level safeguards for the in-memory inventory command path, not proof of secure end-to-end remote operation. The queue is volatile and limited to `android.app.list`; it does not provide durable delivery, background push, arbitrary phone control or physical two-phone acceptance. Exact-head CI and Android device testing remain required before acceptance.
+
+
+## Advanced multi-step execution — encrypted checkpoint foundation (2026-10-30)
+
+Added `src/core/taskJournal.ts` with AES-256-GCM encrypted task checkpoints, authenticated encryption, bounded journal size/count, atomic temporary-file replacement, defensive-copy reads, and fail-closed handling for unreadable/tampered state. On restart, non-terminal records are converted to `AWAITING_RECOVERY`; stale approval IDs are cleared and automatic resume is explicitly disabled. Added focused regression tests in `test/task_journal.test.ts`.
+
+**Status: partial integration; not yet accepted as an end-to-end workflow feature.** `JarvisCoreService` now loads the encrypted journal when an owner control token is configured, restores persisted tasks, and checkpoints task creation, execution start, step results and workflow advancement. A failed checkpoint moves the live task to recovery-required and prevents the next dependent step from starting. Some early planning/error, expiry and revocation transitions still need full lifecycle coverage, and explicit reconcile/resume UX is not implemented. Exact-head CI and integration acceptance for crash/restart, partial side effects and safe reconciliation remain required. External side effects must be reconciled before retry; state-changing operations must never be automatically replayed after an uncertain outcome.
+
+## Voice/HUD lifecycle hardening — 2026-10-30
+
+The browser voice path now also stops and discards an in-flight capture immediately when the user unchecks browser-speech consent. Hiding the HUD stops active voice capture, clears the pending transcript, releases the audio meter, and stops any standby listener. Browser smoke coverage exercises mid-capture consent revocation and verifies that late recognition results cannot repopulate the discarded transcript.
+
+**Acceptance boundary:** these are software lifecycle safeguards, not proof of always-ready local voice. The local wake-word engine/model is still not installed; hands-free wake detection must remain unavailable. Browser push-to-talk may send audio to a vendor service after explicit session consent. Local Piper TTS and audible playback, and physical MSI/browser/microphone acceptance, remain unverified.
+
+## Local wake-word engine integration — 2026-10-30
+
+Added an opt-in local wake-word runtime path for the HUD using the open-source onnx-wakeword browser engine, the English “Hey Jarvis” model package, and a one-time Windows setup script at `scripts/setup-local-wake-word.ps1`. The setup installs exact `onnxruntime-web@1.20.1` / `jszip@3.10.1` versions in an ignored local folder with a local npm lockfile, and downloads engine/model assets from immutable upstream commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432`. Each downloaded upstream file is checked against its pinned Git blob hash before use. Assets remain ignored by Git; audio inference is performed in-browser on the device after setup. The server serves only a strict allowlist of local wake assets. If the assets are missing or fail to load, the HUD fails closed and keeps text and consent-gated push-to-talk available.
+
+Wake-triggered browser speech recognition requires a separate, session-only checkbox from push-to-talk consent. Recognized speech in both modes remains review-only until the user explicitly selects **EXECUTE DIRECTIVE**. The model/runtime is not bundled in Git and has not yet been installed or exercised on the target MSI. Therefore local wake detection is implemented as an integration path but is **not yet accepted as operational**. Exact-head CI and target-device microphone, false-trigger, resource-use and local TTS playback checks are required. As of the latest attempt, hosted Actions jobs fail before runner assignment (`runner_id: 0`, no runner name, no steps), so source build/test status remains unknown until runner availability is restored.

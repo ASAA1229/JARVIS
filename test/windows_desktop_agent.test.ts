@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildControlActionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
@@ -157,4 +157,33 @@ test('planner routes an explicit named-field value change to guarded UI Automati
   assert.equal(plan.operations[0]?.operation, 'desktop:set_value');
   assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', text: 'JARVIS test' });
   assert.equal(planner.validatePlanSchema(plan).valid, true);
+});
+
+
+test('planner binds a named-control read to an explicitly named process', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('read control Document title in notepad', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(plan.operations[0]?.operation, 'desktop:read_control');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', expectProcess: 'notepad' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
+});
+
+test('planner binds control click and value changes to an explicitly named process', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const clickPlan = await planner.generatePlan('click button Save in notepad', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(clickPlan.operations[0]?.operation, 'desktop:click_control');
+  assert.deepEqual(clickPlan.operations[0]?.parameters, { name: 'Save', expectProcess: 'notepad' });
+  assert.equal(planner.validatePlanSchema(clickPlan).valid, true);
+
+  const setPlan = await planner.generatePlan('set field Document title in notepad to JARVIS test', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(setPlan.operations[0]?.operation, 'desktop:set_value');
+  assert.deepEqual(setPlan.operations[0]?.parameters, { name: 'Document title', expectProcess: 'notepad', text: 'JARVIS test' });
+  assert.equal(planner.validatePlanSchema(setPlan).valid, true);
+});
+
+
+test('keyboard input scripts can fail closed when foreground focus changes', () => {
+  const assertion = buildForegroundFocusAssertionScript();
+  assert.match(assertion, /GetForegroundWindow\(\) -ne \$foregroundHwnd/);
+  assert.match(assertion, /FOREGROUND_CHANGED/);
 });

@@ -19,8 +19,8 @@ export type DesktopAction =
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
   | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
   | { operation: 'desktop:read_control'; parameters: { name: string; expectProcess?: string } }
-  | { operation: 'desktop:click_control'; parameters: { name: string } }
-  | { operation: 'desktop:set_value'; parameters: { name: string; text: string } }
+  | { operation: 'desktop:click_control'; parameters: { name: string; expectProcess?: string } }
+  | { operation: 'desktop:set_value'; parameters: { name: string; text: string; expectProcess?: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
   | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
@@ -38,6 +38,10 @@ function escapePowerShellSingleQuoted(value: string): string {
 
 function encodePowerShell(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+export function buildForegroundFocusAssertionScript(): string {
+  return "if ([JarvisForeground]::GetForegroundWindow() -ne $foregroundHwnd) { throw 'FOREGROUND_CHANGED' }";
 }
 
 export function buildReadControlScript(name: string): string {
@@ -164,9 +168,11 @@ export class WindowsDesktopAgent {
     const script = [
       '$ErrorActionPreference = "Stop"',
       'Add-Type -AssemblyName System.Windows.Forms',
+      buildForegroundFocusAssertionScript(),
       "$payload = '" + safeText + "'",
       '[System.Windows.Forms.Clipboard]::SetText($payload)',
       'Start-Sleep -Milliseconds 120',
+      buildForegroundFocusAssertionScript(),
       '[System.Windows.Forms.SendKeys]::SendWait("^v")',
       'Start-Sleep -Milliseconds 180',
       '[Console]::Out.WriteLine("PASTE_SENT")',
@@ -228,6 +234,7 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          buildForegroundFocusAssertionScript(),
           "[System.Windows.Forms.SendKeys]::SendWait('" + escapePowerShellSingleQuoted(sequence) + "')",
           '[Console]::Out.WriteLine("HOTKEY_SENT")',
         ].join('; ');
@@ -248,6 +255,7 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          buildForegroundFocusAssertionScript(),
           "[System.Windows.Forms.SendKeys]::SendWait('" + sequence + "')",
           '[Console]::Out.WriteLine("ZOOM_KEY_SENT")',
         ].join('; ');
@@ -333,6 +341,7 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          buildForegroundFocusAssertionScript(),
           '[System.Windows.Forms.SendKeys]::SendWait("^v")',
           '[Console]::Out.WriteLine("CLIPBOARD_PASTE_SENT")',
         ].join('; ');
@@ -352,6 +361,7 @@ export class WindowsDesktopAgent {
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
           '$before = [System.Windows.Forms.Clipboard]::GetText()',
+          buildForegroundFocusAssertionScript(),
           '[System.Windows.Forms.SendKeys]::SendWait("^c")',
           'Start-Sleep -Milliseconds 250',
           '$clip = [System.Windows.Forms.Clipboard]::GetText()',

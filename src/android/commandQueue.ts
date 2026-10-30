@@ -25,17 +25,20 @@ export interface AndroidInventoryCommand {
 export class AndroidCommandQueue {
   private readonly commands = new Map<string, AndroidInventoryCommand>();
   private readonly maxCommands = 200;
+  private readonly maxAppsPerCommand = 300;
 
   create(targetDeviceId: string, requesterDeviceId: string, ttlMs = 60_000): AndroidInventoryCommand {
     this.prune();
     if (this.commands.size >= this.maxCommands) throw new Error('Android command queue is full');
-    if (!targetDeviceId || !requesterDeviceId || targetDeviceId === requesterDeviceId) {
+    if (!this.isDeviceId(targetDeviceId) || !this.isDeviceId(requesterDeviceId) ||
+        targetDeviceId === requesterDeviceId) {
       throw new Error('Android command target and requester must be distinct valid devices');
     }
+    const requestedTtl = Number.isFinite(ttlMs) ? Math.trunc(ttlMs) : 60_000;
     const now = Date.now();
     const command: AndroidInventoryCommand = {
       id: randomUUID(), operation: 'android.app.list', targetDeviceId, requesterDeviceId,
-      createdAt: now, expiresAt: now + Math.min(Math.max(ttlMs, 1000), 60_000), state: 'PENDING',
+      createdAt: now, expiresAt: now + Math.min(Math.max(requestedTtl, 1000), 60_000), state: 'PENDING',
     };
     this.commands.set(command.id, command);
     return { ...command };
@@ -43,6 +46,7 @@ export class AndroidCommandQueue {
 
   claimNext(targetDeviceId: string): AndroidInventoryCommand | undefined {
     this.prune();
+    if (!this.isDeviceId(targetDeviceId)) return undefined;
     const command = Array.from(this.commands.values()).find((item) =>
       item.targetDeviceId === targetDeviceId && item.state === 'PENDING');
     if (!command) return undefined;
@@ -54,13 +58,17 @@ export class AndroidCommandQueue {
   complete(targetDeviceId: string, commandId: string, apps: AndroidInventoryApp[]): boolean {
     this.prune();
     const command = this.commands.get(commandId);
-    if (!command || command.targetDeviceId !== targetDeviceId || command.state !== 'CLAIMED' ||
-        Date.now() >= command.expiresAt) return false;
+    if (!command || !this.isDeviceId(targetDeviceId) || command.targetDeviceId !== targetDeviceId ||
+        command.state !== 'CLAIMED' || Date.now() >= command.expiresAt || !Array.isArray(apps)) return false;
+
+    // Reject malformed entries instead of storing partial or attacker-shaped inventory.
+    if (apps.length > this.maxAppsPerCommand || apps.some((app) => !this.isValidApp(app))) return false;
+    command.apps = apps.map(({ label, packageName }) => ({
+      label: label.trim().slice(0, 120),
+      packageName: packageName.trim().slice(0, 240),
+    }));
     command.state = 'COMPLETED';
     command.completedAt = Date.now();
-    command.apps = apps.slice(0, 300).map(({ label, packageName }) => ({
-      label: label.slice(0, 120), packageName: packageName.slice(0, 240),
-    }));
     return true;
   }
 
@@ -69,12 +77,27 @@ export class AndroidCommandQueue {
     createdAt: number; completedAt?: number; apps?: AndroidInventoryApp[];
   }> {
     this.prune();
+    if (!this.isDeviceId(requesterDeviceId)) return [];
     return Array.from(this.commands.values())
       .filter((item) => item.requesterDeviceId === requesterDeviceId)
       .slice(-30)
       .map(({ id, targetDeviceId, state, createdAt, completedAt, apps }) => ({
         id, targetDeviceId, state, createdAt, completedAt, ...(apps ? { apps: apps.map((app) => ({ ...app })) } : {}),
       }));
+  }
+
+  private isDeviceId(value: unknown): value is string {
+    return typeof value === 'string' && value.length <= 100 &&
+      value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(value);
+  }
+
+  private isValidApp(value: unknown): value is AndroidInventoryApp {
+    if (typeof value !== 'object' || value === null) return false;
+    const app = value as Partial<AndroidInventoryApp>;
+    return typeof app.label === 'string' && app.label.trim().length > 0 &&
+      app.label.length <= 500 && !/[\u0000-\u001f\u007f]/.test(app.label) &&
+      typeof app.packageName === 'string' && app.packageName.trim().length > 0 &&
+      app.packageName.length <= 300 && !/[\u0000-\u001f\u007f]/.test(app.packageName);
   }
 
   private prune(): void {

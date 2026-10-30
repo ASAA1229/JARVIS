@@ -4,6 +4,22 @@
 **Baseline:** source tree 6222e1964774c78e6853d6113335b1a3f0284881; documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c; dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc  
 **Rule:** A capability does not move to POC.md as accepted until its acceptance criteria pass with recorded evidence. No new requirements document is needed for this gap closure; update this file and the existing project docs.
 
+## Existing Epic Closure Plan — 2026-10-30
+
+**Scope freeze:** finish and accept only the epics/capabilities already started or recorded in this repository. Do not introduce a new epic, milestone, or unrelated feature stream until every existing epic has either passed its acceptance gate or has an explicitly documented external blocker with evidence. No PR is created without the owner's explicit request.
+
+Complete these phases in order; phase numbers organize existing work and do not create new epics:
+
+1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for any browser/vendor speech recognition after wake, review-before-execute transcript handling, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance.
+2. **Advanced Multi-Step Execution & Recovery:** audit every task lifecycle transition into the encrypted journal; test restart recovery, expired/revoked/stale approvals, checkpoint write failures, partial side effects and idempotency; implement safe reconciliation/recovery UX. Never auto-replay uncertain state-changing operations.
+3. **Security and approval foundation:** re-run exact-head tests for policy gateway, task/device/operation/parameter-bound approvals, replay protection, expiry/revocation, audit integrity, persistence failure, redaction, and owner recovery.
+4. **Windows desktop agent:** close software-testable launch/focus/control/input/clipboard/zoom/verification gaps; document unsupported controls and keep actual MSI acceptance separate from hosted CI.
+5. **Android and cross-device companion:** complete software-testable native identity/session/Keystore/revocation/queue behavior and Android build; perform independent enrollment/revocation and transport tests on both actual phones before enabling remote control.
+6. **Existing memory, scheduler, and productivity workflows:** complete lifecycle, persistence, retrieval/review/deletion, cancellation and restart tests for capabilities already in the repository.
+7. **Existing integrations and final acceptance audit:** verify each already-started communications/productivity integration, preserve explicit unsupported/restricted boundaries, run the full regression/security/Android build pipeline, and reconcile POC.md, POC2.md, README.md and CROSS_DEVICE_IMPLEMENTATION_STATUS.md.
+
+**Acceptance rule:** each phase closes only with (a) implementation evidence, (b) passing exact-head CI for applicable build/tests, (c) target-device evidence where hardware is required, and (d) documentation aligned to the evidence. If hardware is unavailable in hosted CI, report the remaining user-side acceptance step precisely; do not mislabel it as passed or introduce new work to replace it.
+
 ## Confirmed repository/branch state
 
 - PR #12 (new → dev feature integration) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/12
@@ -253,3 +269,65 @@ Still required before this epic can be called complete:
 5. Expand supported-app coverage incrementally and document unsupported applications explicitly.
 
 This is an incremental implementation, not universal compatibility with every installed Windows application. Payment apps/actions remain out of scope.
+
+
+### Target binding and remaining acceptance gate (2026-10-30)
+
+Named-control reads, clicks, and value updates now accept optional `expectProcess`. Natural-language requests can specify a target process using an `in <process>` suffix. The desktop guard rejects a process mismatch before the operation executes. This is a foreground-process check, not a guarantee that every application exposes controls or that a window remains unchanged for the entire workflow.
+
+**Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
+
+
+## Android companion — inventory queue hardening (2026-10-30)
+
+Implemented on `new`:
+- Validate requester/target identifiers before creating, claiming or querying commands; reject same-device requests.
+- Treat non-finite TTL input as the default 60-second TTL, then clamp valid values to the supported 1–60 second range.
+- Reject malformed app inventory records, control characters, and lists larger than 300 rather than silently storing partial data.
+- Keep a command in `CLAIMED` state when an invalid result is submitted, allowing only a valid result to complete it before expiry.
+- Return defensive copies so callers cannot mutate the queue's stored inventory through result objects.
+- Add regression tests for invalid IDs/TTL, malformed app records, oversize lists, expiry, single-claim/single-completion and defensive-copy behavior.
+
+**Not yet proven:** tests have been authored but have not been run in this environment. This change does not complete the Android epic. The queue remains in-memory and read-only; secure authenticated transport, full native Android lifecycle/permission acceptance, reconnect behavior and real two-phone revocation tests remain open. Do not enable general remote control based on this increment alone.
+
+
+## Advanced multi-step execution — checkpoint journal foundation (2026-10-30)
+
+Implemented on `new`:
+- AES-256-GCM encrypted task checkpoint file, keyed from the configured owner control token with a per-write random salt and IV.
+- Atomic temp-file write/rename, bounded file size and record count, and fail-closed behavior for invalid/tampered encrypted state.
+- Defensive-copy checkpoint reads and basic record shape validation.
+- On restart, non-terminal records are moved to `AWAITING_RECOVERY`; stale approval IDs are cleared and no workflow auto-resumes.
+- Regression tests for encrypted-at-rest content, restart recovery, terminal-state preservation, tampering/wrong key, invalid records and defensive copies.
+
+**Integration status (2026-10-30):** `JarvisCoreService` now opens the encrypted journal when an owner control token is configured, restores prior task records into the task list, checkpoints task creation, execution start, step results and workflow advancement, and marks interrupted records `AWAITING_RECOVERY` on restart without replaying them. A checkpoint-write failure moves the live task to recovery-required and prevents the next workflow step from starting. Cancellation/interruption and approval steps checkpoint through the step recorder. This is still partial lifecycle coverage: some early planning/error/revocation/expiry transitions and recovery UX need further audit, and the service currently has no explicit reconcile-and-resume command. Exact-head CI, crash/restart integration acceptance, partial-side-effect reconciliation and target-device acceptance remain unconfirmed.
+
+
+## Voice and HUD privacy hardening — 2026-10-30
+
+Implemented on `new`:
+- Browser speech recognition for push-to-talk is blocked by default and requires an explicit checkbox consent for the current page session. The consent is not persisted.
+- Finalized speech populates the editable transcript review field; it is not sent until the user explicitly presses **EXECUTE DIRECTIVE**.
+- Hands-free/wake detection now fails closed while no local audio-level wake-word engine is configured, preventing continuous browser/vendor recognition from starting through either HUD toggle.
+- HUD text explains the privacy boundary and keeps typed directives available without microphone use.
+- Corrected the wake acknowledgement text to `Hi sir, I am ready to work.`.
+- Browser smoke coverage checks that speech does not start without consent and that hands-free cannot start without a local wake engine.
+
+**Status note:** this was the status before the local wake-word runtime integration documented below. The integration now exists in source, but the engine/model still requires installation and hardware acceptance on the target MSI. Browser push-to-talk and post-wake speech may still send audio to a browser/vendor service after separate explicit consent. Piper TTS audible output, accessibility/responsive behavior, and exact-head CI remain open.
+
+## Voice/HUD follow-up — consent revocation and hidden-page handling (2026-10-30)
+
+Added immediate capture cancellation when browser-speech consent is revoked, including transcript discard and protection against late recognition results. When the HUD becomes hidden, active capture is cancelled, the audio meter is released, and any standby listener is stopped. Browser smoke coverage verifies mid-capture consent revocation and late-result rejection.
+
+**Still open / not accepted:** the local wake-word integration now has a setup path, but it is not yet proven operational on the target MSI. Verify model/runtime compatibility, microphone permissions, false triggers, CPU/RAM, local TTS/Piper audible output, and accessibility/responsive behavior. Do not describe the voice path as fully local: post-wake/browser speech remains a separately consented browser/vendor service unless local STT is installed and integrated.
+
+## Local wake-word runtime integration and current acceptance gate — 2026-10-30
+
+Implemented on `new`:
+- Added `scripts/setup-local-wake-word.ps1` to install pinned `onnxruntime-web@1.20.1` and `jszip@3.10.1` in the ignored local runtime directory, preserve a local npm lockfile for transitive dependencies, and download the onnx-wakeword engine, mel frontend, and English “Hey Jarvis” model package. Upstream source/model URLs are pinned to immutable commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432` rather than the mutable `main` branch. Assets are ignored by Git and are not checked into the repository.
+- Added strict allowlisted server routes for the local runtime/model assets. Missing assets fail closed; the HUD does not fall back to continuous browser/vendor recognition.
+- Connected the HUD to the local wake engine with single-start protection, local inference status, pause/stop behavior, page-hidden cleanup, and the required spoken acknowledgement.
+- Added separate session-only consent for browser speech recognition after local wake detection. Voice transcripts remain review-only and require explicit **EXECUTE DIRECTIVE**.
+- Added tests for the setup script reference, wake asset route allowlisting, and local wake integration wiring.
+
+**Not accepted yet:** the setup script has not been run on the target MSI, so third-party model/runtime files and their compatibility are not verified on the actual machine. The upstream commit is immutable but unsigned. The setup script now verifies each downloaded source/model file against the expected Git blob SHA-1 from that commit before use, then prints a SHA-256 inventory for local records. Microphone permission, false-trigger behavior, CPU/RAM usage, audible local Piper TTS, and browser recovery still require target-device tests. The latest hosted Actions runs (including commit `1cac6e346559d6b9d5bae0c18312d7b311755778`) report both jobs failing within about 2–3 seconds before checkout: the Jobs API returns `runner_id: 0`, an empty `runner_name`, and no steps. This is evidence of a runner/job-start failure, not evidence that source tests failed; logs are unavailable (`BlobNotFound`). There is no exact-head build/test result to claim. Restore/investigate GitHub-hosted runner availability and then obtain a green exact-head run before acceptance. Do not advance to Phase 2 or introduce any new epic until this active phase reaches its acceptance gate or a precisely evidenced external blocker is recorded.

@@ -128,3 +128,48 @@ Current boundaries:
 - Value readback is not proof that a document was saved or a form submitted.
 - The automated CI run must pass, and actual interactive acceptance on the MSI laptop is still needed before calling the Windows-control epic complete.
 - Applications with custom-rendered or inaccessible controls require app-specific adapters; universal coverage is not claimed.
+
+
+### Target binding and remaining acceptance gate (2026-10-30)
+
+Named-control reads, clicks, and value updates now accept optional `expectProcess`. Natural-language requests can specify a target process using an `in <process>` suffix. The desktop guard rejects a process mismatch before the operation executes. This is a foreground-process check, not a guarantee that every application exposes controls or that a window remains unchanged for the entire workflow.
+
+**Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
+
+
+## Android inventory queue hardening — 2026-10-30
+
+The `new` branch now hardens the bounded in-memory `android.app.list` command queue: device IDs are checked at create/claim/result lookup; invalid TTLs fall back to a finite default; app inventory entries with empty, oversized or control-character fields are rejected; inventories above 300 entries are rejected; and result snapshots are defensive copies. An invalid result leaves the command claimed rather than marking it complete. Added unit tests cover these cases plus expiry and one-time claim/completion.
+
+This is a narrow safety improvement, not an accepted native Android agent. Hosted CI has not yet been confirmed for the resulting head, and no physical-device test has been performed here. The queue is still volatile and only supports read-only app inventory. Transport, lifecycle/reconnect, per-phone permission/revocation acceptance and two-phone testing remain release blockers.
+
+
+## Advanced workflow checkpoint foundation — 2026-10-30
+
+`src/core/taskJournal.ts` now provides an encrypted, atomic task-checkpoint journal prototype. It uses AES-256-GCM, a per-write random salt/IV, bounded records/file size, validated record shape, defensive-copy reads and fail-closed loading. Non-terminal records encountered on restart are marked `AWAITING_RECOVERY`; stale approval references are removed and automatic replay is prohibited. `test/task_journal.test.ts` adds regression cases for encryption, restart recovery, terminal records, tampering, wrong token, invalid records and copy isolation.
+
+`JarvisCoreService` is now wired to the encrypted journal when an owner control token is configured. It restores persisted tasks into the task list, checkpoints task creation, execution start, step results and workflow advancement, and stops dependent workflow execution if a checkpoint write fails. Restarted non-terminal tasks are held in `AWAITING_RECOVERY`; no automatic replay or stale approval reuse is permitted. Lifecycle coverage is not yet complete: early planning/error, expiry, and revocation transitions still need a full audit, and there is no explicit reconcile-and-resume command. Exact-head CI is pending; do not mark the epic accepted until CI and crash/restart/reconciliation tests pass.
+
+
+## Voice and HUD privacy hardening — 2026-10-30
+
+The HUD now requires explicit, per-page-session consent before push-to-talk starts browser speech recognition; consent is not stored. Finalized transcripts are review-only until the user explicitly presses **EXECUTE DIRECTIVE**. Both hands-free/wake-detection controls fail closed until a local audio-level wake-word engine is configured, so the current browser recognizer is not used for continuous wake listening. Text input remains available. This improves the privacy boundary but does not deliver the requested local wake-word engine. Browser push-to-talk may still use a remote provider after consent; Piper TTS and physical MSI acceptance remain unverified.
+
+### Voice/HUD lifecycle hardening — 2026-10-30 follow-up
+
+- Browser-speech consent can be revoked during capture; the recognizer is cancelled and pending transcript discarded. Late recognition callbacks are ignored.
+- Hiding the HUD cancels capture, stops the microphone level meter, and stops standby recognition.
+- Browser smoke test added for consent revocation and late-result rejection.
+- This does not close the voice epic by itself. A real local wake-word engine/model, validated local TTS/Piper and audible output, and physical MSI/browser/microphone acceptance are still outstanding. Keep wake detection disabled until local inference is actually present and measured.
+
+### Local wake-word runtime integration — 2026-10-30
+
+- Added an optional local-only browser wake-word integration using the open-source onnx-wakeword engine and English “Hey Jarvis” model package. `scripts/setup-local-wake-word.ps1` installs `onnxruntime-web@1.20.1` and `jszip@3.10.1` into an ignored local runtime folder with a persisted local npm lockfile, and downloads engine/model assets from immutable upstream commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432`; downloaded model/runtime files are ignored by Git. The upstream commit is unsigned, but each downloaded source/model file is now checked against its expected Git blob SHA-1 before use; the script also reports a SHA-256 inventory.
+- Server routes expose only a strict allowlist of wake-word asset filenames. Missing runtime/model assets fail closed without falling back to continuous browser speech recognition.
+- Added a separate session-only consent for browser/vendor speech recognition after local wake detection. All recognized commands remain review-only until explicit execution.
+- Still pending: setup/install on the target MSI, validate model asset compatibility and microphone permissions, test false triggers and CPU/memory usage, verify local Piper TTS audible output, and pass exact-head CI. Until those checks pass, do not mark always-ready local wake as accepted.
+
+
+### Exact-head CI runner blocker — 2026-10-30
+
+The latest hosted workflow attempts terminate within roughly 2–3 seconds before checkout. The GitHub Jobs API reports `runner_id: 0`, empty `runner_name`, and no executed steps for both `windows-latest` validation and `ubuntu-latest` Android build. Downloaded job logs return `BlobNotFound`. This does not prove a source-level test failure; it means current-head build/test/Android acceptance cannot be established. Investigate hosted-runner availability, Actions usage/billing limits, and repository Actions settings, then rerun CI on the latest `new` head. Keep the voice epic open until that result and target-MSI hardware acceptance are complete.
