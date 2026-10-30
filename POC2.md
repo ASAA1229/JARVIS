@@ -299,6 +299,7 @@ Implemented on `new`:
 - Defensive-copy checkpoint reads and basic record shape validation.
 - On restart, non-terminal records are moved to `AWAITING_RECOVERY`; stale approval IDs are cleared and no workflow auto-resumes.
 - Regression tests for encrypted-at-rest content, restart recovery, terminal-state preservation, tampering/wrong key, invalid records and defensive copies.
+- [x] On checkpoint persistence failure, restore the prior in-memory record (or remove a newly added one), mark the journal unhealthy, and reject subsequent writes; regression test simulates a blocked parent path.
 
 **Integration status (2026-10-30):** `JarvisCoreService` now opens the encrypted journal when an owner control token is configured, restores prior task records into the task list, checkpoints task creation, execution start, step results and workflow advancement, and marks interrupted records `AWAITING_RECOVERY` on restart without replaying them. A checkpoint-write failure moves the live task to recovery-required and prevents the next workflow step from starting. Cancellation/interruption and approval steps checkpoint through the step recorder. This is still partial lifecycle coverage: some early planning/error/revocation/expiry transitions and recovery UX need further audit, and the service currently has no explicit reconcile-and-resume command. Exact-head CI, crash/restart integration acceptance, partial-side-effect reconciliation and target-device acceptance remain unconfirmed.
 
