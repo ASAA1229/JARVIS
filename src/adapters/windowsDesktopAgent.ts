@@ -18,6 +18,7 @@ export type DesktopAction =
   | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
   | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
+  | { operation: 'desktop:read_control'; parameters: { name: string; expectProcess?: string } }
   | { operation: 'desktop:click_control'; parameters: { name: string } }
   | { operation: 'desktop:set_value'; parameters: { name: string; text: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
@@ -37,6 +38,27 @@ function escapePowerShellSingleQuoted(value: string): string {
 
 function encodePowerShell(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+export function buildReadControlScript(name: string): string {
+  const safeName = escapePowerShellSingleQuoted(name.trim());
+  return [
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle([JarvisForeground]::GetForegroundWindow())',
+    '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+    'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+    '$element = $matches.Item(0)',
+    '$name = $element.Current.Name',
+    '$type = $element.Current.ControlType.ProgrammaticName',
+    '$sensitive = $element.Current.IsPassword -or $name -match "(?i)password|passcode|pin|otp|one[- ]time password|recovery code|cvv|card number|credit card|debit card|card expiry|expiration date|bank account|account number|routing number|iban|swift code|sort code|security code"',
+    '$value = $null',
+    '$available = $false',
+    'if (-not $sensitive) { $pattern = $null; if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $value = [string]$pattern.Current.Value; $available = $true } }',
+    '$result = @{ name = $name; controlType = $type; valueAvailable = $available; redacted = [bool]$sensitive; value = $(if ($sensitive) { "[REDACTED]" } elseif ($available) { $value } else { $null }) }',
+    '$result | ConvertTo-Json -Compress -Depth 3',
+  ].join('; ');
 }
 
 export function buildControlActionScript(
@@ -257,6 +279,19 @@ export class WindowsDesktopAgent {
           outcome: VerificationOutcome.VERIFIED_SUCCESS,
           data: parsed,
           evidence: { host: 'windows', mechanism: 'Windows UI Automation control-tree inspection', controlsReported: parsed.controls.length },
+        };
+      }
+
+      if (action.operation === 'desktop:read_control') {
+        const name = action.parameters.name;
+        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
+        const output = await this.runPowerShell(buildReadControlScript(name), signal);
+        const parsed = JSON.parse(output) as { name: string; controlType: string; valueAvailable: boolean; redacted: boolean; value: string | null };
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: parsed,
+          evidence: { host: 'windows', mechanism: 'UI Automation ValuePattern read', uniqueControlVerified: true, sensitiveValueRedacted: parsed.redacted, valueAvailable: parsed.valueAvailable },
         };
       }
 
