@@ -155,9 +155,16 @@ function setupEventListeners() {
   // Revoking browser speech consent is immediate: discard the in-flight transcript and stop capture.
   const browserSpeechConsent = document.getElementById('allow-browser-speech');
   if (browserSpeechConsent) browserSpeechConsent.addEventListener('change', () => {
-    if (!browserSpeechConsent.checked && isListening) {
+    if (!browserSpeechConsent.checked && isListening && !wakeCaptureAwaitingReview) {
       cancelVoiceCapture();
       setAssistantState('VOICE CONSENT REVOKED', 'Microphone capture stopped and the pending transcript was discarded. Re-enable consent only when you want to use browser speech.');
+    }
+  });
+  const wakeSpeechConsent = document.getElementById('allow-wake-browser-speech');
+  if (wakeSpeechConsent) wakeSpeechConsent.addEventListener('change', () => {
+    if (!wakeSpeechConsent.checked && isListening && wakeCaptureAwaitingReview) {
+      cancelVoiceCapture();
+      setAssistantState('VOICE CONSENT REVOKED', 'Post-wake browser speech stopped and the pending transcript was discarded. Local wake detection can remain active.');
     }
   });
 
@@ -174,6 +181,8 @@ function setupEventListeners() {
         stopHandsFreeStandby();
         updateHandsFreeButtons();
       }
+    } else if (document.visibilityState === 'visible' && handsFreeEnabled && !isMicMuted) {
+      scheduleHandsFreeRestart();
     }
   });
 
@@ -218,8 +227,13 @@ function updateHandsFreeButtons() {
   const btnToggle = document.getElementById('btn-hands-free-toggle');
   const btnPause = document.getElementById('btn-hands-free-pause');
   if (!btnToggle || !btnPause) return;
-  btnToggle.textContent = handsFreeEnabled ? 'DISABLE HANDS-FREE' : 'ENABLE HANDS-FREE';
+  btnToggle.textContent = handsFreeEnabled ? 'DISABLE LOCAL WAKE' : 'ENABLE LOCAL WAKE';
   btnToggle.setAttribute('aria-pressed', String(handsFreeEnabled));
+  const handsFreeButton = document.getElementById('btn-hands-free');
+  if (handsFreeButton) {
+    handsFreeButton.textContent = handsFreeEnabled ? 'HANDS-FREE CAPTURE: ON' : 'HANDS-FREE CAPTURE: OFF';
+    handsFreeButton.setAttribute('aria-pressed', String(handsFreeEnabled));
+  }
   const pauseLabel = handsFreeStandby ? 'PAUSE LISTENING' : 'RESUME LISTENING';
   btnPause.textContent = pauseLabel;
   btnPause.disabled = !handsFreeEnabled;
@@ -340,13 +354,13 @@ function enableWakeDetection() {
 
 function disableWakeDetection() {
   handsFreeEnabled = false;
+  isHandsFreeEnabled = false;
   handsFreeStandby = false;
+  wakeCaptureAwaitingReview = false;
   stopHandsFreeStandby();
-  if (isListening) {
-    cancelVoiceCapture();
-  }
+  if (isListening) cancelVoiceCapture();
   updateHandsFreeButtons();
-  setAssistantState('HANDS-FREE DISABLED', 'Wake phrase detection is off. Push-to-talk remains available.');
+  setAssistantState('HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped. Push-to-talk remains available.');
 }
 
 function startHandsFreeStandby() {
@@ -779,7 +793,10 @@ function cancelVoiceCapture() {
   document.getElementById('btn-ptt').classList.remove('active');
   document.getElementById('transcript-input').value = '';
   document.getElementById('transcript-box').classList.add('hidden');
+  const shouldResumeWake = handsFreeEnabled && wakeCaptureAwaitingReview;
+  wakeCaptureAwaitingReview = false;
   setAssistantState('IDLE — READY', 'Ready for directive.');
+  if (shouldResumeWake) scheduleHandsFreeRestart();
 }
 
 function handleTextSubmit() {
@@ -797,6 +814,7 @@ async function submitDirective(text) {
   }
   if (isSubmitting) return;
   isSubmitting = true;
+  if (wakeCaptureAwaitingReview) wakeCaptureAwaitingReview = false;
   const sendButton = document.getElementById('btn-hud-send');
   const transcriptSubmit = document.getElementById('btn-transcript-submit');
   const textInput = document.getElementById('hud-text-input');
