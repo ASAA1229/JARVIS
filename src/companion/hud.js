@@ -24,6 +24,7 @@ let handsFreeRestartTimer = null;
 let localTtsUnavailable = false;
 let localWakeEngine = null;
 let localWakeAssetsPromise = null;
+let localWakeStartPromise = null;
 let wakeCaptureAwaitingReview = false;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
@@ -276,27 +277,33 @@ async function loadLocalWakeWordAssets() {
 async function startLocalWakeEngine() {
   if (!handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden') return;
   if (localWakeEngine) return;
-  await loadLocalWakeWordAssets();
-  const engine = window.VoicuteWakeWord.create();
-  await engine.load('/hud/local-wakeword/multi_jarvis_v9.3.zip', '/hud/local-wakeword/melspectrogram.onnx');
-  engine.setL1(true);
-  engine.setL3(true);
-  localWakeEngine = engine;
-  try {
-    await engine.start((word, probability) => {
-      if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
-      if (String(word || '').toLowerCase().includes('jarvis')) {
-        void handleLocalWakeDetected(Number(probability) || 0);
-      }
-    });
-    handsFreeStandby = true;
-    updateHandsFreeButtons();
-    setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded.');
-  } catch (error) {
-    try { engine.stop(); } catch { /* release best-effort */ }
-    localWakeEngine = null;
-    throw error;
-  }
+  if (localWakeStartPromise) return localWakeStartPromise;
+  localWakeStartPromise = (async () => {
+    await loadLocalWakeWordAssets();
+    if (!handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden' || localWakeEngine) return;
+    const engine = window.VoicuteWakeWord.create();
+    await engine.load('/hud/local-wakeword/multi_jarvis_v9.3.zip', '/hud/local-wakeword/melspectrogram.onnx');
+    engine.setL1(true);
+    engine.setL3(true);
+    localWakeEngine = engine;
+    try {
+      await engine.start((word, probability) => {
+        if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+        if (String(word || '').toLowerCase().includes('jarvis')) {
+          void handleLocalWakeDetected(Number(probability) || 0);
+        }
+      });
+      handsFreeStandby = true;
+      updateHandsFreeButtons();
+      setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded.');
+    } catch (error) {
+      try { engine.stop(); } catch { /* release best-effort */ }
+      localWakeEngine = null;
+      throw error;
+    }
+  })();
+  try { await localWakeStartPromise; }
+  finally { localWakeStartPromise = null; }
 }
 
 function stopHandsFreeStandby() {
@@ -323,7 +330,6 @@ async function handleLocalWakeDetected(probability) {
   setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
   const wakeConsent = document.getElementById('allow-wake-browser-speech');
   wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
-  void speakResponse('Hi sir, I am ready to work.');
   const continueAfterGreeting = () => {
     if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') return;
     if (isSpeaking) {
@@ -337,6 +343,7 @@ async function handleLocalWakeDetected(probability) {
       scheduleHandsFreeRestart();
     }
   };
+  await speakResponse('Hi sir, I am ready to work.');
   handsFreeRestartTimer = setTimeout(continueAfterGreeting, 150);
 }
 
