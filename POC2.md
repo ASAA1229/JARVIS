@@ -357,3 +357,17 @@ A code review found that an approval record could remain present after a task mo
 A regression test seeds a task in AWAITING_RECOVERY, creates an approval record for it, and asserts that approval fails without consuming the approval or changing the recovery state. The test uses an unsupported operation so the test cannot launch or mutate a real application.
 
 **Validation remains pending:** no exact-head build/typecheck/test/browser-smoke result is available yet. Treat this as a security fix with authored regression coverage, not as verified until CI executes on the resulting commit.
+
+
+## Workflow lifecycle checkpoint audit — 2026-10-30
+
+A follow-up source audit enumerated task-state transitions in JarvisCoreService and tightened persistence around several early-exit and terminal paths:
+
+- Persist request-audit failure and planner failure/schema-rejection/unmappable-plan states.
+- Persist device-state, revocation and audit-integrity execution denials.
+- Treat a failed checkpoint while entering AWAITING_APPROVAL as a hard stop and attempt to invalidate the pending approval; the stale-task approval guard remains a second line of defence.
+- Persist skipped-step records after policy denial, approval rejection, approval expiry and cancellation.
+- Persist final verified/partial/failed outcomes after step recording; if the final checkpoint fails, report UNCERTAIN/AWAITING_RECOVERY rather than a verified completion.
+- Require a configured durable encrypted task journal before the HTTP recovery-review endpoint accepts a disposition.
+
+**Status:** these source changes are committed on new, but they do not yet have exact-head CI evidence. Additional fault-injection tests are still required for journal write failure, audit write failure, concurrent cancellation/revocation, and crash/restart after a side effect. Keep the workflow epic open until these tests pass and the MSI application-level recovery checklist is recorded.
