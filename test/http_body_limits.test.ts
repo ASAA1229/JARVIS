@@ -17,7 +17,7 @@ test('HTTP JSON body validation rejects wrong content type, malformed JSON, and 
     server = new JarvisServer(port, join(dir, 'audit.log'), join(dir, 'devices.json'));
     await server.start();
 
-    const wrongType = await fetch(`http://127.0.0.1:${port}/api/request`, {
+    const wrongType = await fetch(`http://127.0.0.1:${port}/api/enrollment/redeem`, {
       method: 'POST',
       headers: { 'content-type': 'text/plain' },
       body: '{"text":"hello"}',
@@ -25,7 +25,7 @@ test('HTTP JSON body validation rejects wrong content type, malformed JSON, and 
     assert.equal(wrongType.status, 415);
     assert.equal((await wrongType.json() as { error: string }).error, 'Content-Type must be application/json');
 
-    const malformed = await fetch(`http://127.0.0.1:${port}/api/request`, {
+    const malformed = await fetch(`http://127.0.0.1:${port}/api/enrollment/redeem`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{"text":',
@@ -33,7 +33,7 @@ test('HTTP JSON body validation rejects wrong content type, malformed JSON, and 
     assert.equal(malformed.status, 400);
     assert.equal((await malformed.json() as { error: string }).error, 'Invalid JSON payload');
 
-    const oversized = await fetch(`http://127.0.0.1:${port}/api/request`, {
+    const oversized = await fetch(`http://127.0.0.1:${port}/api/enrollment/redeem`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'x'.repeat(70 * 1024) }),
