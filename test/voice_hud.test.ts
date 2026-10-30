@@ -114,6 +114,10 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(setupScript, /onnxruntime-web@1\.20\.1/);
     assert.match(setupScript, /multi_jarvis_v9\.3\.zip/);
     assert.match(setupScript, /8002ba9a14d80c0f71447920d3f1c8ee986b1432/);
+    assert.match(setupScript, /a33f24ebcb89532478f15ba9e3b33bb8aa165a23/);
+    assert.match(setupScript, /a3a60354eebe5fa4c7c9534851e4cb0bd7b0d06c/);
+    assert.match(setupScript, /12d92a59869d7a1228761eb7127b930e5f568a6e/);
+    assert.match(setupScript, /pinned Git blob integrity verification/);
     assert.doesNotMatch(setupScript, /raw\.githubusercontent\.com\/voicute\/onnx-wakeword\/main\//);
     const unapprovedWakeAsset = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/private.env`);
     assert.strictEqual(unapprovedWakeAsset.status, 404);
