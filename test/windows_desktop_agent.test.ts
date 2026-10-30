@@ -158,3 +158,25 @@ test('planner routes an explicit named-field value change to guarded UI Automati
   assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', text: 'JARVIS test' });
   assert.equal(planner.validatePlanSchema(plan).valid, true);
 });
+
+
+test('planner binds a named-control read to an explicitly named process', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('read control Document title in notepad', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(plan.operations[0]?.operation, 'desktop:read_control');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', expectProcess: 'notepad' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
+});
+
+test('planner binds control click and value changes to an explicitly named process', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const clickPlan = await planner.generatePlan('click button Save in notepad', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(clickPlan.operations[0]?.operation, 'desktop:click_control');
+  assert.deepEqual(clickPlan.operations[0]?.parameters, { name: 'Save', expectProcess: 'notepad' });
+  assert.equal(planner.validatePlanSchema(clickPlan).valid, true);
+
+  const setPlan = await planner.generatePlan('set field Document title in notepad to JARVIS test', { requesterName: 'owner', timestamp: Date.now() });
+  assert.equal(setPlan.operations[0]?.operation, 'desktop:set_value');
+  assert.deepEqual(setPlan.operations[0]?.parameters, { name: 'Document title', expectProcess: 'notepad', text: 'JARVIS test' });
+  assert.equal(planner.validatePlanSchema(setPlan).valid, true);
+});
