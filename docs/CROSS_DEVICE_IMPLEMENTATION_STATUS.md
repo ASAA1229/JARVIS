@@ -164,7 +164,12 @@ The HUD now requires explicit, per-page-session consent before push-to-talk star
 
 ### Local wake-word runtime integration — 2026-10-30
 
-- Added an optional local-only browser wake-word integration using the open-source onnx-wakeword engine and English “Hey Jarvis” model package. `scripts/setup-local-wake-word.ps1` installs `onnxruntime-web@1.20.1` and `jszip@3.10.1`, and downloads engine/model assets from immutable upstream commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432`; downloaded model/runtime files are ignored by Git. The upstream commit is unsigned, but each downloaded source/model file is now checked against its expected Git blob SHA-1 before use; the script also reports a SHA-256 inventory.
+- Added an optional local-only browser wake-word integration using the open-source onnx-wakeword engine and English “Hey Jarvis” model package. `scripts/setup-local-wake-word.ps1` installs `onnxruntime-web@1.20.1` and `jszip@3.10.1` into an ignored local runtime folder with a persisted local npm lockfile, and downloads engine/model assets from immutable upstream commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432`; downloaded model/runtime files are ignored by Git. The upstream commit is unsigned, but each downloaded source/model file is now checked against its expected Git blob SHA-1 before use; the script also reports a SHA-256 inventory.
 - Server routes expose only a strict allowlist of wake-word asset filenames. Missing runtime/model assets fail closed without falling back to continuous browser speech recognition.
 - Added a separate session-only consent for browser/vendor speech recognition after local wake detection. All recognized commands remain review-only until explicit execution.
 - Still pending: setup/install on the target MSI, validate model asset compatibility and microphone permissions, test false triggers and CPU/memory usage, verify local Piper TTS audible output, and pass exact-head CI. Until those checks pass, do not mark always-ready local wake as accepted.
+
+
+### Exact-head CI runner blocker — 2026-10-30
+
+The latest hosted workflow attempts terminate within roughly 2–3 seconds before checkout. The GitHub Jobs API reports `runner_id: 0`, empty `runner_name`, and no executed steps for both `windows-latest` validation and `ubuntu-latest` Android build. Downloaded job logs return `BlobNotFound`. This does not prove a source-level test failure; it means current-head build/test/Android acceptance cannot be established. Investigate hosted-runner availability, Actions usage/billing limits, and repository Actions settings, then rerun CI on the latest `new` head. Keep the voice epic open until that result and target-MSI hardware acceptance are complete.
