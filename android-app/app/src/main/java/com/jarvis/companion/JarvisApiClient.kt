@@ -23,7 +23,7 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         val publicKey = keys.publicKeyPem()
         val proof = "ENROLLMENT_PROOF:" + challengeToken + ":" + deviceName + ":" + sha256(publicKey)
         val body = JSONObject().put("challengeToken", challengeToken).put("deviceName", deviceName)
-            .put("publicKey", publicKey).put("proofSignature", keys.sign(proof))
+            .put("publicKey", publicKey).put("proofSignature", keys.sign(proof)).put("platform", "Android")
         val response = post("/api/enrollment/redeem", body)
         check(response.optBoolean("success") && response.optString("deviceId") == keys.deviceId()) {
             "Server did not confirm enrollment for this device."
