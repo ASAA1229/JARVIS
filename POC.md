@@ -79,8 +79,9 @@ The POC remains **NOT COMPLETE** until the blockers in [POC2.md](POC2.md) have a
 - No cloud endpoint is selected by default. If the local/configured endpoint is unavailable, JARVIS returns a clear fallback instead of pretending that an AI answer was generated.
 - Owner memories are supplied only when the authenticated device has device-management permission, and only a bounded set of records is included.
 - The HUD now handles `state: ANSWERED` separately from action execution outcomes, displays the conversational message, and sends that message to speech output.
-- The existing hands-free wake detector now speaks `Hii sir, I am ready to work.` after detecting a wake phrase and attempts to enter command capture afterward.
-- **Not yet verified on physical hardware:** browser wake-word recognition, audible TTS timing, and end-to-end local model inference. Browser speech recognition may depend on the browser's remote recognition service; this is not a claim of local wake-word detection.
+- The HUD requires explicit, per-session consent before starting browser speech recognition for push-to-talk. Consent is not persisted between page sessions because the browser recognition provider may process audio remotely.
+- Continuous hands-free/browser wake detection is now blocked until a true local audio wake-word engine is configured; the current transcript matcher is not an audio-level local detector. The requested wake acknowledgement is `Hi sir, I am ready to work.` when a supported wake path is available.
+- **Not yet verified on physical hardware:** browser recognition behavior, audible TTS timing, and end-to-end local model inference. No local wake-word capability is claimed.
 
 
 ## Implementation status refresh — 2026-10-26
