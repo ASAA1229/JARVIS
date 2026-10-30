@@ -273,3 +273,15 @@ Implemented on `new`:
 - Add regression tests for invalid IDs/TTL, malformed app records, oversize lists, expiry, single-claim/single-completion and defensive-copy behavior.
 
 **Not yet proven:** tests have been authored but have not been run in this environment. This change does not complete the Android epic. The queue remains in-memory and read-only; secure authenticated transport, full native Android lifecycle/permission acceptance, reconnect behavior and real two-phone revocation tests remain open. Do not enable general remote control based on this increment alone.
+
+
+## Advanced multi-step execution — checkpoint journal foundation (2026-10-30)
+
+Implemented on `new`:
+- AES-256-GCM encrypted task checkpoint file, keyed from the configured owner control token with a per-write random salt and IV.
+- Atomic temp-file write/rename, bounded file size and record count, and fail-closed behavior for invalid/tampered encrypted state.
+- Defensive-copy checkpoint reads and basic record shape validation.
+- On restart, non-terminal records are moved to `AWAITING_RECOVERY`; stale approval IDs are cleared and no workflow auto-resumes.
+- Regression tests for encrypted-at-rest content, restart recovery, terminal-state preservation, tampering/wrong key, invalid records and defensive copies.
+
+**Open integration gap:** `JarvisCoreService` still keeps its live task map in memory and does not yet persist every lifecycle transition through `TaskJournal`. This increment therefore does not establish durable workflow execution in the running product. Next implementation work must wire checkpoints into task creation, approval transitions, each step result, cancellation and final state; make journal-write failure stop dependent execution; then test crash/restart, stale approval, partial side effects and safe reconcile-before-retry. Hosted CI and runtime acceptance remain unconfirmed.
