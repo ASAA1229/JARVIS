@@ -274,7 +274,7 @@ async function loadLocalWakeWordAssets() {
 }
 
 async function startLocalWakeEngine() {
-  if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') return;
+  if (!handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden') return;
   if (localWakeEngine) return;
   await loadLocalWakeWordAssets();
   const engine = window.VoicuteWakeWord.create();
