@@ -146,7 +146,7 @@ export class JarvisServer {
       // Optional, one-time-installed local wake-word assets. Only explicit filenames are served.
       if (req.method === 'GET' && url.pathname.startsWith('/hud/local-wakeword/')) {
         const filename = url.pathname.slice('/hud/local-wakeword/'.length);
-        const allowed = /^(?:ort\\.min\\.js|jszip\\.min\\.js|wakeword\\.js|melspectrogram\\.onnx|multi_jarvis_v9\\.3\\.zip|ort-wasm[\\w.-]+\\.(?:wasm|mjs|js))$/;
+        const allowed = /^(?:ort\.min\.js|jszip\.min\.js|wakeword\.js|melspectrogram\.onnx|multi_jarvis_v9\.3\.zip|ort-wasm[\w.-]+\.(?:wasm|mjs|js))$/;
         if (!allowed.test(filename)) {
           res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
           res.end('Local wake-word asset not found');
