@@ -22,9 +22,9 @@ Copy-Item $jszip $assetRoot -Force
 Get-ChildItem $dist -Filter 'ort-wasm*' -File | Copy-Item -Destination $assetRoot -Force
 
 $downloads = @(
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/main/web/wakeword.js'; Name = 'wakeword.js'; MinBytes = 1000 },
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/main/models/melspectrogram.onnx'; Name = 'melspectrogram.onnx'; MinBytes = 1000 },
-  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/main/models/en/multi_jarvis_v9.3.zip'; Name = 'multi_jarvis_v9.3.zip'; MinBytes = 1000 }
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/web/wakeword.js'; Name = 'wakeword.js'; MinBytes = 1000 },
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/melspectrogram.onnx'; Name = 'melspectrogram.onnx'; MinBytes = 1000 },
+  @{ Url = 'https://raw.githubusercontent.com/voicute/onnx-wakeword/8002ba9a14d80c0f71447920d3f1c8ee986b1432/models/en/multi_jarvis_v9.3.zip'; Name = 'multi_jarvis_v9.3.zip'; MinBytes = 1000 }
 )
 foreach ($item in $downloads) {
   $target = Join-Path $assetRoot $item.Name
