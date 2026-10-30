@@ -248,10 +248,18 @@ async function loadLocalWakeWordAssets() {
       const existing = Array.from(document.scripts).find((script) => script.src.endsWith(src));
       if (existing?.dataset.loaded === 'true') { resolve(); return; }
       const script = existing || document.createElement('script');
+      const onLoad = () => { script.dataset.loaded = 'true'; resolve(); };
+      const onError = () => reject(new Error('Local wake-word asset could not be loaded: ' + src));
+      script.addEventListener('load', onLoad, { once: true });
+      script.addEventListener('error', onError, { once: true });
       if (!existing) { script.src = src; script.async = false; document.head.appendChild(script); }
-      script.addEventListener('load', () => { script.dataset.loaded = 'true'; resolve(); }, { once: true });
-      script.addEventListener('error', () => reject(new Error('Local wake-word asset could not be loaded: ' + src)), { once: true });
     });
+    // Preflight script files with fetch so missing optional assets fail closed
+    // without injecting broken script tags or generating browser console errors.
+    for (const src of ['/hud/local-wakeword/ort.min.js', '/hud/local-wakeword/jszip.min.js', '/hud/local-wakeword/wakeword.js']) {
+      const response = await fetch(src, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Local wake-word runtime assets are missing. Run scripts/setup-local-wake-word.ps1.');
+    }
     await loadScript('/hud/local-wakeword/ort.min.js');
     await loadScript('/hud/local-wakeword/jszip.min.js');
     await loadScript('/hud/local-wakeword/wakeword.js');
@@ -724,6 +732,10 @@ function startVoiceCapture(mode = 'push-to-talk') {
   if (!speechRecognitionConstructor) {
     setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
       speechUnavailableReason || 'Use the text input field; no audio capture was started.');
+    if (mode === 'wake') {
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+    }
     return;
   }
 
