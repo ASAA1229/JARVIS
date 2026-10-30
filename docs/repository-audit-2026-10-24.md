@@ -428,3 +428,15 @@ A source review found a lifecycle invariant gap: the approval handler did not ex
 The companion now includes a Recovery Review panel that reads tasks via the authenticated signed-session endpoint and submits a user-reviewed disposition through the signed API. This is a review/closure UX, not automatic resume.
 
 **Exact-head validation is still unavailable:** no local test execution was performed, and the connector reports no CI status checks or workflow run for the latest source head. Keep these changes marked pending verification until the workflow actually runs. Physical MSI and both-phone acceptance remain separate release gates.
+
+
+### Lifecycle and Windows diagnostic hardening follow-up — 2026-10-30
+
+- JarvisCoreService now checkpoints early planning failures, policy denials, execution precondition failures, skipped workflow steps, approval rejection/expiry, cancellation, and final outcomes more consistently. If a final checkpoint fails, the returned result is uncertain/recovery-required rather than verified completion.
+- Approval-state checkpoint failure attempts to invalidate the approval; the approval handler independently rejects any approval whose task is no longer in AWAITING_APPROVAL.
+- Rejection/cancellation now report checkpoint failures instead of returning a clean success when the task state has moved to recovery.
+- The task recovery endpoint requires the durable encrypted journal and the companion has a signed-session Recovery Review panel.
+- Windows app-launch adapter errors no longer echo raw process exceptions or unbounded invalid app input. A regression test asserts the redaction boundary.
+- Added further tests for unresolved recovery disposition, malformed reconciliation metadata, audit-note redaction, stale approvals, and Windows launcher error disclosure.
+
+**Verification:** these changes are committed on new, but no exact-head CI run or local test execution is available in this environment. All newly added tests remain unverified until the workflow executes on the exact branch head. Hardware acceptance for voice, Windows UI automation, and both Android devices remains open.
