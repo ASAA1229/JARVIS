@@ -291,6 +291,7 @@ Implemented on `new`:
 
 Implemented on `new`:
 - Browser speech recognition for push-to-talk is blocked by default and requires an explicit checkbox consent for the current page session. The consent is not persisted.
+- Finalized speech populates the editable transcript review field; it is not sent until the user explicitly presses **EXECUTE DIRECTIVE**.
 - Hands-free/wake detection now fails closed while no local audio-level wake-word engine is configured, preventing continuous browser/vendor recognition from starting through either HUD toggle.
 - HUD text explains the privacy boundary and keeps typed directives available without microphone use.
 - Corrected the wake acknowledgement text to `Hi sir, I am ready to work.`.
