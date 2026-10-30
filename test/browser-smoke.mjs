@@ -247,8 +247,22 @@ try {
   }
   await hud.unroute('**/api/approval/approve');
 
-  // Click-to-toggle voice capture must stay open after the initiating click.
+  // Browser speech requires explicit per-session consent. Hands-free is blocked
+  // until a true local audio wake-word engine is available.
   const ptt = hud.locator('#btn-ptt');
+  await ptt.click();
+  await hud.getByText('VOICE CONSENT REQUIRED').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Browser speech recognition started without explicit consent');
+  }
+  await hud.locator('#btn-hands-free-toggle').click();
+  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
+    throw new Error('Hands-free started browser recognition without a local wake-word engine');
+  }
+  await hud.locator('#allow-browser-speech').check();
+
+  // Click-to-toggle voice capture must stay open after the initiating click.
   await ptt.click();
   await hud.waitForFunction(() => window.__mockRecognizers.length === 1, null, { timeout: 3000 });
   const listeningState = await hud.locator('#hud-state-label').innerText();
