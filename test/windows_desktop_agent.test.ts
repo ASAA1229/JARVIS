@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildControlActionScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+
+test('desktop:read_control requires a unique control and redacts sensitive values', () => {
+  const script = buildReadControlScript("Account name");
+  assert.match(script, /\\$matches = \\$root\\.FindAll/);
+  assert.match(script, /\\$matches\\.Count -ne 1/);
+  assert.match(script, /Current\\.IsPassword/);
+  assert.match(script, /\\[REDACTED\\]/);
+  assert.match(script, /ValuePattern/);
+  assert.match(script, /valueAvailable/);
+});
 
 test('desktop:click_control validates and indexes the same UI Automation collection', () => {
   const script = buildControlActionScript('desktop:click_control', 'Save');
