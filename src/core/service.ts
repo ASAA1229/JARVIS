@@ -1048,6 +1048,10 @@ export class JarvisCoreService {
     };
   }
 
+  public hasDurableTaskJournal(): boolean {
+    return this.taskJournal !== undefined;
+  }
+
   public getTask(taskId: TaskId): TaskLifecycleRecord | undefined {
     return this.tasks.get(taskId);
   }
