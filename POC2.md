@@ -4,6 +4,22 @@
 **Baseline:** source tree 6222e1964774c78e6853d6113335b1a3f0284881; documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c; dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc  
 **Rule:** A capability does not move to POC.md as accepted until its acceptance criteria pass with recorded evidence. No new requirements document is needed for this gap closure; update this file and the existing project docs.
 
+## Existing Epic Closure Plan — 2026-10-30
+
+**Scope freeze:** finish and accept only the epics/capabilities already started or recorded in this repository. Do not introduce a new epic, milestone, or unrelated feature stream until every existing epic has either passed its acceptance gate or has an explicitly documented external blocker with evidence. No PR is created without the owner's explicit request.
+
+Complete these phases in order; phase numbers organize existing work and do not create new epics:
+
+1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for any browser/vendor speech recognition after wake, review-before-execute transcript handling, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance.
+2. **Advanced Multi-Step Execution & Recovery:** audit every task lifecycle transition into the encrypted journal; test restart recovery, expired/revoked/stale approvals, checkpoint write failures, partial side effects and idempotency; implement safe reconciliation/recovery UX. Never auto-replay uncertain state-changing operations.
+3. **Security and approval foundation:** re-run exact-head tests for policy gateway, task/device/operation/parameter-bound approvals, replay protection, expiry/revocation, audit integrity, persistence failure, redaction, and owner recovery.
+4. **Windows desktop agent:** close software-testable launch/focus/control/input/clipboard/zoom/verification gaps; document unsupported controls and keep actual MSI acceptance separate from hosted CI.
+5. **Android and cross-device companion:** complete software-testable native identity/session/Keystore/revocation/queue behavior and Android build; perform independent enrollment/revocation and transport tests on both actual phones before enabling remote control.
+6. **Existing memory, scheduler, and productivity workflows:** complete lifecycle, persistence, retrieval/review/deletion, cancellation and restart tests for capabilities already in the repository.
+7. **Existing integrations and final acceptance audit:** verify each already-started communications/productivity integration, preserve explicit unsupported/restricted boundaries, run the full regression/security/Android build pipeline, and reconcile POC.md, POC2.md, README.md and CROSS_DEVICE_IMPLEMENTATION_STATUS.md.
+
+**Acceptance rule:** each phase closes only with (a) implementation evidence, (b) passing exact-head CI for applicable build/tests, (c) target-device evidence where hardware is required, and (d) documentation aligned to the evidence. If hardware is unavailable in hosted CI, report the remaining user-side acceptance step precisely; do not mislabel it as passed or introduce new work to replace it.
+
 ## Confirmed repository/branch state
 
 - PR #12 (new → dev feature integration) is merged: https://github.com/Guda-Abhishek/JARVIS/pull/12
