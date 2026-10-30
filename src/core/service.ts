@@ -27,6 +27,7 @@ import { NotificationCenter } from './notifications.js';
 import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
 import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
+import { TaskJournal } from './taskJournal.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
 
@@ -109,6 +110,7 @@ export class JarvisCoreService {
   public readonly personalMemory?: PersonalMemoryStore;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
+  private readonly taskJournal?: TaskJournal;
   private activeExecutionTokens = new Map<TaskId, AbortController>();
   private readonly startedAt = Date.now();
   private cpuSample?: { idle: number; total: number };
@@ -143,6 +145,8 @@ export class JarvisCoreService {
         statePath ? statePath + '.memory' : './data/personal-memory.enc',
         ownerControlToken,
       );
+      this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken);
+      for (const record of this.taskJournal.list()) this.tasks.set(record.id, record);
     }
   }
 
@@ -200,6 +204,9 @@ export class JarvisCoreService {
       steps: [],
     };
     this.tasks.set(taskId, taskRecord);
+    if (!this.#persistTask(taskRecord)) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Task checkpoint failed; no operation was executed', verified: false };
+    }
 
     try {
       this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length, origin }, device.id, taskId);
@@ -288,6 +295,25 @@ export class JarvisCoreService {
       at: Date.now(),
       message: message ? message.slice(0, 160) : undefined,
     });
+    this.#persistTask(task);
+  }
+
+  /** Persist a checkpoint before further work; a failed write stops dependent steps. */
+  #persistTask(task: TaskLifecycleRecord): boolean {
+    task.updatedAt = Date.now();
+    if (!this.taskJournal) return true;
+    try {
+      this.taskJournal.save(task);
+      return true;
+    } catch {
+      task.state = TaskState.AWAITING_RECOVERY;
+      task.interrupted = true;
+      task.error = 'Task checkpoint could not be durably saved. Execution is stopped; reconcile external state before retrying.';
+      try {
+        this.audit.record('TASK_CHECKPOINT_FAILED', { state: task.state }, task.deviceId, task.id);
+      } catch { /* Fail closed even if the audit sink is also unavailable. */ }
+      return false;
+    }
   }
 
   #skipRemainingSteps(task: TaskLifecycleRecord): void {
@@ -388,6 +414,9 @@ export class JarvisCoreService {
     }
 
     taskRecord.state = TaskState.EXECUTING;
+    if (!this.#persistTask(taskRecord)) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed before execution', verified: false };
+    }
     const abortController = new AbortController();
     this.activeExecutionTokens.set(taskId, abortController);
     const timeoutHandle = setTimeout(() => abortController.abort(), EXECUTION_TIMEOUT_MS);
@@ -625,6 +654,9 @@ export class JarvisCoreService {
       ? 'completed'
       : verification.honestOutcome === VerificationOutcome.VERIFIED_FAILURE ? 'failed' : 'uncertain';
     this.#recordStep(taskRecord, stepStatus, verification.honestOutcome, verification.message);
+    if (taskRecord.state === TaskState.AWAITING_RECOVERY && taskRecord.interrupted) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+    }
 
     const hasNextStep = taskRecord.operations !== undefined && taskRecord.operationIndex !== undefined &&
       taskRecord.operationIndex + 1 < taskRecord.operations.length;
@@ -637,6 +669,9 @@ export class JarvisCoreService {
       taskRecord.parameters = nextOperation.parameters;
       taskRecord.state = TaskState.CREATED;
       taskRecord.updatedAt = Date.now();
+      if (!this.#persistTask(taskRecord)) {
+        return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; next step was not started', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+      }
       this.audit.record('WORKFLOW_STEP_VERIFIED', {
         completedIndex: nextIndex - 1,
         nextIndex,
@@ -819,8 +854,10 @@ export class JarvisCoreService {
       controller.abort();
       const task = this.tasks.get(taskId);
       if (task) {
-        task.state = TaskState.INTERRUPTED;
+        task.state = TaskState.AWAITING_RECOVERY;
         task.interrupted = true;
+        task.error = 'Execution was interrupted; reconcile external state before retrying.';
+        this.#persistTask(task);
       }
       this.audit.record('TASK_INTERRUPTED', { taskId }, task?.deviceId, taskId);
       return true;
