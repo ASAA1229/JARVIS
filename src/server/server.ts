@@ -763,7 +763,7 @@ export class JarvisServer {
       }
       if (/recovery disposition|recovery note/i.test(message)) return this.jsonResponse(res, 400, { error: message });
       if (/not awaiting recovery/i.test(message)) return this.jsonResponse(res, 409, { error: message });
-      if (/expired|no longer pending|already been consumed|scope was modified|could not be rejected/i.test(message)) {
+      if (/expired|no longer pending|no longer awaiting approval|already been consumed|scope was modified|could not be rejected/i.test(message)) {
         return this.jsonResponse(res, 409, { error: message });
       }
       if (/proof verification failed/i.test(message)) return this.jsonResponse(res, 401, { error: 'Enrollment proof verification failed' });
