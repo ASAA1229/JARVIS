@@ -24,7 +24,7 @@ test('scheduler fails closed when the at-most-once state cannot be persisted', a
       'test-owner-control-token-that-is-long-enough-123456',
     );
 
-    const created = scheduler.create('device-test', 'read system memory', Date.now() + 30_000);
+    const created = scheduler.create('device-test', 'read system memory', Date.now() + 60_000);
     assert.equal(created.ok, true);
     if (!created.ok) return;
 
@@ -32,7 +32,7 @@ test('scheduler fails closed when the at-most-once state cannot be persisted', a
     rmSync(stateDirectory, { recursive: true, force: true });
     writeFileSync(stateDirectory, 'not-a-directory');
 
-    await scheduler.tick(Date.now() + 31_000);
+    await scheduler.tick(Date.now() + 61_000);
 
     assert.equal(runnerCalls, 0, 'scheduled work must not execute without durable at-most-once state');
     assert.equal(scheduler.healthy, false, 'persistence failure must disable the scheduler');
