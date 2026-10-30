@@ -169,3 +169,5 @@ The follow-up lifecycle audit also adds checkpoint writes for early planning/den
 ## Voice input validation follow-up — 2026-10-31
 
 The local speech-recognition provider now rejects malformed RIFF/WAV containers and truncated chunks before starting the local recognition process. Regression tests cover container/chunk bounds, PCM format requirements, wake phrase boundaries, and explicit cloud-provider opt-in. Exact-head execution and Windows microphone/model/TTS acceptance remain pending; this change does not claim end-to-end voice completion.
+
+The local Piper TTS adapter now caps captured audio at 16 MiB, bounds retained stderr to 8 KiB, and validates RIFF/WAV size and chunk boundaries before returning generated audio. Added regression tests cover valid WAV output, inconsistent RIFF size, truncated chunks, empty samples, and oversized buffers. These are source-level safeguards only; exact-head CI and audible Piper playback on the MSI remain unverified.
