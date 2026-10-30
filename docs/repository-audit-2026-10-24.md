@@ -397,3 +397,25 @@ A focused hardening increment on `new` adds validation to `src/android/commandQu
 Added `src/core/taskJournal.ts` and `test/task_journal.test.ts` on `new`. The journal encrypts task snapshots using AES-256-GCM, atomically replaces the state file, rejects malformed/oversized checkpoint data, and fails closed when authenticated decryption or schema validation fails. Non-terminal states become `AWAITING_RECOVERY` on reload, with stale approvals cleared and no automatic replay.
 
 **Audit finding / release blocker:** the journal is not yet connected to `JarvisCoreService` task lifecycle writes. This is a tested-by-design implementation increment, not yet verified by execution evidence and not a claim of durable workflow support in the live service. Confirm CI on the exact head, integrate every lifecycle transition, and exercise crash/restart with uncertain external effects before acceptance.
+
+
+## Follow-up implementation audit — 2026-10-30
+
+### Manual recovery review increment
+
+Four implementation commits on the new branch add a guarded manual recovery path:
+
+- Service commit: 39403879bc1db83652157af2c5c36ceb029c3676 — adds task reconciliation semantics.
+- API commit: c357ee647d6ff75d9fe7d02fbe3da10c9cca308f — adds signed-session POST /api/task/reconcile.
+- Test commit: f795c383a7ff1bfdc4d804361c23f212cd5cb99b — adds service regression tests.
+- Journal validation commit: 91b5fc196a64472e273b50588ad103e01ab2cd3a — validates persisted reconciliation metadata.
+
+The workflow supports three human-reviewed dispositions. Confirmed no effect closes the original task as failed; observed effect is only partial/unverified; unknown remains awaiting recovery. It never resumes or replays the task, never starts dependent steps, and never treats a user note as independent proof of application success. The raw recovery note is persisted only in the encrypted task journal; the audit event records its length and disposition, not the note itself.
+
+### Verification status and limits
+
+- GitHub's combined status endpoint returned no status checks for commit 91b5fc196a64472e273b50588ad103e01ab2cd3a at the time of this audit; the connector's workflow-run lookup returned no runs for that SHA. Therefore the new code and newly added tests are **not CI-verified** here.
+- No local build/test command was run in this environment.
+- The documented Actions runner startup issue remains an external blocker to exact-head hosted validation until a workflow executes its steps.
+- The MSI microphone/voice and Windows UI Automation acceptance, and the two-phone Android enrollment/transport/revocation acceptance, still require the actual devices.
+- The report file was updated in place; no new report file was created. No PR was opened, and dev/main were not changed.
