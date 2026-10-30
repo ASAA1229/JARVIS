@@ -36,6 +36,13 @@ Native clients must use the device-bound session and signed-request protocol. Si
 
 The current Windows adapter targets the foreground window and supports bounded actions such as explicit text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, foreground-window inspection, unique-name control invocation and value-setting. The app launcher has a small static allowlist and constrained Start-menu discovery.
 
+Recent Windows desktop-control increment — 2026-10-30:
+- Added an explicit `desktop:read_control` operation through the existing planner → policy → execution pipeline.
+- It resolves an exact, unique UI Automation control name in the foreground app and reads only the control's ValuePattern value when available.
+- Password controls and labels matching credential/payment identifiers return a redacted value instead of content.
+- The operation requires task-scoped approval, uses the existing foreground financial-app guard and optional expected-process binding, and is covered by script-shape and planner-routing tests.
+- This remains accessibility-based automation, not universal control. The newest commit must pass CI and be exercised on the actual Windows laptop before this increment is accepted.
+
 Limitations:
 - It is not universal control of every installed Windows app.
 - UI Automation requires accessible controls and exact unique names; custom-rendered apps may not expose usable controls.
