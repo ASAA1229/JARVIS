@@ -370,6 +370,27 @@ try {
   }
   await hud.unroute('**/api/request');
 
+  // Revoking consent mid-capture must stop the recognizer and discard its transcript.
+  const consentRevocationRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await hud.locator('#btn-ptt').click();
+  await hud.waitForFunction((index) => window.__mockRecognizers.length === index + 1, consentRevocationRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onresult({
+    results: [[{ transcript: 'sensitive pending command' }]],
+  }), consentRevocationRecognizerIndex);
+  await hud.locator('#transcript-box').waitFor({ state: 'visible' });
+  await hud.locator('#allow-browser-speech').uncheck();
+  await hud.getByText('VOICE CONSENT REVOKED').waitFor({ state: 'visible' });
+  if (await hud.locator('#transcript-input').inputValue() !== '' || await hud.locator('#transcript-box').isVisible()) {
+    throw new Error('Revoking browser-speech consent did not discard the pending transcript');
+  }
+  await hud.evaluate((index) => window.__mockRecognizers[index].onresult({
+    results: [[{ transcript: 'late sensitive command' }]],
+  }), consentRevocationRecognizerIndex);
+  if (await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('A late speech result was accepted after browser-speech consent was revoked');
+  }
+  await hud.locator('#allow-browser-speech').check();
+
   await hud.locator('#btn-toggle-motion').click();
 
   // The camera remains off until the user explicitly enables it. This uses
