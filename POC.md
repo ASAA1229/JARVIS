@@ -148,3 +148,17 @@ The browser voice path now also stops and discards an in-flight capture immediat
 Added an opt-in local wake-word runtime path for the HUD using the open-source onnx-wakeword browser engine, the English “Hey Jarvis” model package, and a one-time Windows setup script at `scripts/setup-local-wake-word.ps1`. The setup installs exact `onnxruntime-web@1.20.1` / `jszip@3.10.1` versions in an ignored local folder with a local npm lockfile, and downloads engine/model assets from immutable upstream commit `8002ba9a14d80c0f71447920d3f1c8ee986b1432`. Each downloaded upstream file is checked against its pinned Git blob hash before use. Assets remain ignored by Git; audio inference is performed in-browser on the device after setup. The server serves only a strict allowlist of local wake assets. If the assets are missing or fail to load, the HUD fails closed and keeps text and consent-gated push-to-talk available.
 
 Wake-triggered browser speech recognition requires a separate, session-only checkbox from push-to-talk consent. Recognized speech in both modes remains review-only until the user explicitly selects **EXECUTE DIRECTIVE**. The model/runtime is not bundled in Git and has not yet been installed or exercised on the target MSI. Therefore local wake detection is implemented as an integration path but is **not yet accepted as operational**. Exact-head CI and target-device microphone, false-trigger, resource-use and local TTS playback checks are required. As of the latest attempt, hosted Actions jobs fail before runner assignment (`runner_id: 0`, no runner name, no steps), so source build/test status remains unknown until runner availability is restored.
+
+
+## Task recovery review — implementation status (2026-10-30)
+
+The new branch now exposes an authenticated POST /api/task/reconcile route for tasks already in AWAITING_RECOVERY or INTERRUPTED. The task owner can review their task; an active device with device-management permission can review another device's task. A review note and one of three explicit dispositions are required.
+
+- **Confirmed no effect:** closes the original task as failed; the user must submit a new request if appropriate.
+- **Effect observed:** records a partial outcome. It never marks the task completed from a user note alone.
+- **Still unknown:** leaves the task awaiting recovery.
+- All dispositions avoid automatic replay and do not start the next workflow step. The note is stored in the encrypted task journal; audit records contain only its length, disposition, reviewer and previous state.
+
+Automated regression tests have been added, but they have not been executed in this chat environment. The exact-head CI result is not yet available. This feature is **implemented, pending automated validation**, and does not satisfy the real-application recovery acceptance gate by itself.
+
+**Release acceptance remains incomplete:** run build/typecheck/unit tests/browser smoke on the exact new head; then perform the crash/restart and uncertain-side-effect checklist on the target MSI. Do not interpret a manual note as proof that an application saved or submitted anything.
