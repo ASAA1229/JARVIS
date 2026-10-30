@@ -367,3 +367,13 @@ The Windows UI Automation `desktop:set_value` path now blocks additional sensiti
 5. Record exact commit, environment, test result, expected/actual behavior and limitations for each accepted capability.
 
 **Status:** Phase 1 is **in progress**, not complete. No physical-device acceptance is implied by this report.
+
+## Phase 1 route and error-disclosure review — 2026-10-30
+
+### Finding and remediation on `new`
+
+- **Finding:** The authenticated local voice synthesis endpoint returned exception messages from the Piper process directly to the client. Spawn failures can include configured executable paths, and process diagnostics can include model or filesystem details. The local transcription endpoint also forwarded provider exceptions directly, so future providers could accidentally expose implementation details.
+- **Remediation:** `/api/voice/synthesize` now returns generic configuration/generation errors and `/api/voice/transcribe` returns a generic recognition error. Provider details remain server-side and are not included in the API response.
+- **Regression coverage:** Added `test/voice_endpoint_redaction.test.ts`, which configures a deliberately missing executable with sensitive-looking paths, sends an authenticated signed request, and asserts that the response is a generic failure without those paths.
+- **Validation:** This change is committed to `new`; exact-head CI is required before calling it verified. No physical device behavior is implied.
+- **Route review status:** Initial source inspection found signed-request authentication on the main task, approval, memory, voice, notification, health, task, cancellation and audit routes; owner-management routes additionally apply permission/policy checks. Public enrollment status/details are transaction-code bound; the bootstrap challenge is gated by the owner control token and closes after an active device exists. This is an initial static review, not a complete penetration test. Remaining adversarial coverage should include body-size/content-type abuse, enrollment transaction replay/races, state-file tampering and recovery, concurrent approval resolution, and route-level permission matrix tests.
