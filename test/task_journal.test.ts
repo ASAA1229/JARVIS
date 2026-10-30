@@ -162,7 +162,7 @@ test('a stale approval cannot execute a task already awaiting recovery', async (
   }
 });
 
-test('manual recovery cannot turn a user observation into verified success and preserves unknown outcomes', () => withTempDir((directory) => {
+test('manual recovery never promotes a user observation to verified success', () => withTempDir((directory) => {
   const statePath = join(directory, 'state');
   new TaskJournal(statePath + '.tasks', TOKEN).save(record({ state: TaskState.AWAITING_RECOVERY, interrupted: true }));
   const service = new JarvisCoreService({} as IAIPlannerProvider, join(directory, 'audit.log'), statePath, TOKEN);
