@@ -6,3 +6,6 @@ dist/
 !.env.example
 coverage/
 data/
+.jarvis-local-wakeword/
+src/companion/local-wakeword/*
+!src/companion/local-wakeword/.gitkeep
