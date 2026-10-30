@@ -253,3 +253,10 @@ Still required before this epic can be called complete:
 5. Expand supported-app coverage incrementally and document unsupported applications explicitly.
 
 This is an incremental implementation, not universal compatibility with every installed Windows application. Payment apps/actions remain out of scope.
+
+
+### Target binding and remaining acceptance gate (2026-10-30)
+
+Named-control reads, clicks, and value updates now accept optional `expectProcess`. Natural-language requests can specify a target process using an `in <process>` suffix. The desktop guard rejects a process mismatch before the operation executes. This is a foreground-process check, not a guarantee that every application exposes controls or that a window remains unchanged for the entire workflow.
+
+**Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
