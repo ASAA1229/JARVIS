@@ -320,3 +320,14 @@ Implemented on `new`:
 Added immediate capture cancellation when browser-speech consent is revoked, including transcript discard and protection against late recognition results. When the HUD becomes hidden, active capture is cancelled, the audio meter is released, and any standby listener is stopped. Browser smoke coverage verifies mid-capture consent revocation and late-result rejection.
 
 **Still open / not accepted:** a genuine local wake-word engine and model, verified local TTS/Piper installation and audible output, target-MSI microphone/browser testing, and accessibility/responsive/hardware acceptance. Do not describe the current voice path as fully local or always listening. Hands-free remains fail-closed until a real local engine is configured.
+
+## Local wake-word runtime integration and current acceptance gate — 2026-10-30
+
+Implemented on `new`:
+- Added `scripts/setup-local-wake-word.ps1` to install the pinned browser ONNX runtime locally and download the onnx-wakeword engine, mel frontend, and English “Hey Jarvis” model package. Assets are ignored by Git and are not checked into the repository.
+- Added strict allowlisted server routes for the local runtime/model assets. Missing assets fail closed; the HUD does not fall back to continuous browser/vendor recognition.
+- Connected the HUD to the local wake engine with single-start protection, local inference status, pause/stop behavior, page-hidden cleanup, and the required spoken acknowledgement.
+- Added separate session-only consent for browser speech recognition after local wake detection. Voice transcripts remain review-only and require explicit **EXECUTE DIRECTIVE**.
+- Added tests for the setup script reference, wake asset route allowlisting, and local wake integration wiring.
+
+**Not accepted yet:** the setup script has not been run on the target MSI, so the third-party model/runtime files are not verified on the actual machine. Microphone permission, false-trigger behavior, CPU/RAM usage, audible local Piper TTS, and browser recovery still require target-device tests. The latest hosted Actions runs reported job failure before any workflow steps executed (step lists were empty), so there is no exact-head build/test result to claim. CI must be made runnable and green before accepting the code. Do not advance to Phase 2 or introduce any new epic until this active phase reaches its acceptance gate or a precisely evidenced external blocker is recorded.
