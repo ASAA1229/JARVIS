@@ -121,3 +121,25 @@ test('unknown operation parameters are denied before approval is considered', ()
   assert.equal(result.requiresApproval, false);
   assert.match(result.reason ?? '', /disallowed parameter 'shell'/i);
 });
+
+test('desktop control reads require task-scoped approval and reject extra parameters', () => {
+  const { gateway } = setup();
+  const device = makeDevice('device-a');
+  const request = gateway.evaluate(
+    { operation: 'desktop:read_control', parameters: { name: 'Document title' } },
+    device,
+    'task-read-control',
+  );
+  assert.equal(request.allowed, false);
+  assert.equal(request.requiresApproval, true);
+  assert.equal(request.riskTier, RiskTier.HIGH);
+
+  const widened = gateway.evaluate(
+    { operation: 'desktop:read_control', parameters: { name: 'Document title', rawTree: true } },
+    device,
+    'task-read-control-2',
+  );
+  assert.equal(widened.allowed, false);
+  assert.equal(widened.requiresApproval, false);
+  assert.match(widened.reason ?? '', /disallowed parameter 'rawTree'/i);
+});

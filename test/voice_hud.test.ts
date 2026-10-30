@@ -2,7 +2,7 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { VoiceManager, SpeechState } from '../src/voice/voiceManager.ts';
 import { JarvisServer } from '../src/server/server.ts';
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, readFileSync } from 'node:fs';
 
 const TEST_AUDIT_LOG = './data/test_voice_audit.log';
 const TEST_PORT = 3988;
@@ -102,9 +102,28 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.doesNotMatch(csp, /style-src[^;]*unsafe-inline/);
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
-    assert.match(hudHtml, /local-only processing is not guaranteed/i);
+    assert.match(hudHtml, /Browser speech recognition may send command audio to a browser\/vendor service/i);
+    assert.match(hudHtml, /allow-browser-speech/);
+    assert.match(hudHtml, /Local wake detection stays unavailable if local model\/runtime assets are missing/i);
+    assert.match(hudHtml, /allow-wake-browser-speech/);
     assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
+    assert.match(hudHtml, /allow-wake-browser-speech/);
+
+    const setupScript = readFileSync('scripts/setup-local-wake-word.ps1', 'utf8');
+    assert.match(setupScript, /onnxruntime-web@1\.20\.1/);
+    assert.match(setupScript, /npm ci --prefix \$runtimeRoot/);
+    assert.match(setupScript, /package-lock\.json/);
+    assert.match(setupScript, /multi_jarvis_v9\.3\.zip/);
+    assert.match(setupScript, /8002ba9a14d80c0f71447920d3f1c8ee986b1432/);
+    assert.match(setupScript, /a33f24ebcb89532478f15ba9e3b33bb8aa165a23/);
+    assert.match(setupScript, /a3a60354eebe5fa4c7c9534851e4cb0bd7b0d06c/);
+    assert.match(setupScript, /12d92a59869d7a1228761eb7127b930e5f568a6e/);
+    assert.match(setupScript, /pinned Git blob integrity verification/);
+    assert.doesNotMatch(setupScript, /raw\.githubusercontent\.com\/voicute\/onnx-wakeword\/main\//);
+    const unapprovedWakeAsset = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/private.env`);
+    assert.strictEqual(unapprovedWakeAsset.status, 404);
+    assert.match(await unapprovedWakeAsset.text(), /asset not found/i);
 
     // 2. Fetch HUD CSS
     const cssRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/hud.css`);
@@ -122,7 +141,12 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
     assert.match(jsText, /finalized segments separate from interim hypotheses/);
-    assert.match(jsText, /Analyzing the recognized command through the policy gateway/);
+    assert.match(jsText, /Review or edit the recognized command, then select EXECUTE DIRECTIVE/);
+    assert.match(jsText, /VOICE CONSENT REQUIRED/);
+    assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);
+    assert.match(jsText, /VoicuteWakeWord\.create/);
+    assert.match(jsText, /multi_jarvis_v9\.3\.zip/);
+    assert.match(jsText, /All voice modes are review-first/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);

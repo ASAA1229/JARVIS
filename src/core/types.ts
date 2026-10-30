@@ -108,6 +108,15 @@ export interface AuditRecord {
   hash: string;
 }
 
+export type FailureKind =
+  | 'timeout' // the adapter ran out of time; side effects may or may not have happened
+  | 'unsupported' // the operation or target is not supported on this host or app
+  | 'blocked' // refused by an adapter-level safety rule
+  | 'unavailable' // the target app/window/process was not available
+  | 'locked_session' // the Windows desktop is locked or disconnected
+  | 'target_mismatch' // the foreground target was not the intended application
+  | 'cancelled'; // the caller cancelled the operation
+
 export interface ExecutionResult {
   success: boolean;
   outcome: VerificationOutcome;
@@ -115,4 +124,6 @@ export interface ExecutionResult {
   error?: string;
   evidence: Record<string, unknown>;
   interrupted?: boolean;
+  /** Machine-readable reason for a non-success result. */
+  failureKind?: FailureKind;
 }

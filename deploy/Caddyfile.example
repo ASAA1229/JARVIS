@@ -1,0 +1,17 @@
+# Copy to your Caddy configuration and replace jarvis.example.com with a
+# hostname you control that resolves to this laptop through your private VPN.
+# Keep the laptop's firewall closed to untrusted networks; do not expose JARVIS
+# directly to the public internet. Caddy obtains/renews a publicly trusted cert.
+jarvis.example.com {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Cache-Control "no-store"
+        -Server
+    }
+
+    reverse_proxy 127.0.0.1:3000
+}
