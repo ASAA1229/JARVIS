@@ -440,3 +440,24 @@ The companion now includes a Recovery Review panel that reads tasks via the auth
 - Added further tests for unresolved recovery disposition, malformed reconciliation metadata, audit-note redaction, stale approvals, and Windows launcher error disclosure.
 
 **Verification:** these changes are committed on new, but no exact-head CI run or local test execution is available in this environment. All newly added tests remain unverified until the workflow executes on the exact branch head. Hardware acceptance for voice, Windows UI automation, and both Android devices remains open.
+
+## Follow-up audit — voice hardening and task-journal persistence — 2026-10-31
+
+### Voice Interaction & Cinematic HUD
+
+- The local Piper TTS subprocess now caps captured audio at 16 MiB and retained stderr at 8 KiB, terminates generation when the output cap or timeout is exceeded, and validates RIFF/WAV container size and chunk boundaries before returning audio.
+- Added `test/piper_tts.test.ts` coverage for valid WAV, inconsistent RIFF size, truncated chunks, empty samples, and oversized buffers.
+- The HUD's transcript-based wake/stop phrase helper now matches complete normalized phrase boundaries instead of substrings, reducing false matches inside longer words.
+- These changes do not establish local wake-word operation or audible TTS acceptance on the target MSI. Direct browser-level coverage for the HUD helper and physical-device tests remain open.
+
+### Advanced Multi-Step Execution & Recovery
+
+- `TaskJournal.save` now rolls back its in-memory mutation if durable persistence fails, marks the journal unhealthy, and rejects subsequent writes. This prevents an undurable task checkpoint from being exposed as the current in-memory state.
+- Added a regression test that simulates a filesystem path blocking journal persistence and checks rollback plus fail-closed behavior.
+
+### Branch and validation status
+
+- All source, test, and documentation changes in this addendum were committed to the authorized `new` branch only. No PR was created; `dev` and `main` were not modified.
+- The CI workflow on `new` is configured for manual dispatch and pull requests targeting `dev`, rather than running on every push. This reduces push-triggered notification noise; it does not fix the underlying runner-start failure.
+- **Validation remains pending:** no exact-head build, unit-test, browser-smoke or Android-build result was available for these latest commits. The previously observed runner failures occurred before any job steps, so they are not evidence that these code changes pass or fail. Run the project checks when Actions runner availability is restored.
+- The active voice epic remains partial. Local wake engine/model installation, false-trigger/resource testing, Piper audible playback, and real MSI microphone/browser acceptance are still required. Task recovery also remains partial until exact-head tests and partial-side-effect reconciliation acceptance pass.
