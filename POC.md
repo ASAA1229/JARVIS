@@ -159,6 +159,6 @@ The new branch now exposes an authenticated POST /api/task/reconcile route for t
 - **Still unknown:** leaves the task awaiting recovery.
 - All dispositions avoid automatic replay and do not start the next workflow step. The note is stored in the encrypted task journal; audit records contain only its length, disposition, reviewer and previous state.
 
-Automated regression tests have been added, but they have not been executed in this chat environment. The exact-head CI result is not yet available. This feature is **implemented, pending automated validation**, and does not satisfy the real-application recovery acceptance gate by itself.
+The browser companion now includes a Recovery Review panel: it loads recovery tasks through the signed session and submits the selected disposition and note through the signed API. A browser smoke assertion checks the panel and authenticated task-list flow. Automated regression tests have been added, but they have not been executed in this chat environment. The exact-head CI result is not yet available. This feature is **implemented, pending automated validation**, and does not satisfy the real-application recovery acceptance gate by itself.
 
 **Release acceptance remains incomplete:** run build/typecheck/unit tests/browser smoke on the exact new head; then perform the crash/restart and uncertain-side-effect checklist on the target MSI. Do not interpret a manual note as proof that an application saved or submitted anything.
