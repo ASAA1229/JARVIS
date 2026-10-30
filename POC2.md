@@ -260,3 +260,16 @@ This is an incremental implementation, not universal compatibility with every in
 Named-control reads, clicks, and value updates now accept optional `expectProcess`. Natural-language requests can specify a target process using an `in <process>` suffix. The desktop guard rejects a process mismatch before the operation executes. This is a foreground-process check, not a guarantee that every application exposes controls or that a window remains unchanged for the entire workflow.
 
 **Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
+
+
+## Android companion — inventory queue hardening (2026-10-30)
+
+Implemented on `new`:
+- Validate requester/target identifiers before creating, claiming or querying commands; reject same-device requests.
+- Treat non-finite TTL input as the default 60-second TTL, then clamp valid values to the supported 1–60 second range.
+- Reject malformed app inventory records, control characters, and lists larger than 300 rather than silently storing partial data.
+- Keep a command in `CLAIMED` state when an invalid result is submitted, allowing only a valid result to complete it before expiry.
+- Return defensive copies so callers cannot mutate the queue's stored inventory through result objects.
+- Add regression tests for invalid IDs/TTL, malformed app records, oversize lists, expiry, single-claim/single-completion and defensive-copy behavior.
+
+**Not yet proven:** tests have been authored but have not been run in this environment. This change does not complete the Android epic. The queue remains in-memory and read-only; secure authenticated transport, full native Android lifecycle/permission acceptance, reconnect behavior and real two-phone revocation tests remain open. Do not enable general remote control based on this increment alone.
