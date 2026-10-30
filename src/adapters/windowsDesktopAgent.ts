@@ -234,6 +234,7 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          buildForegroundFocusAssertionScript(),
           "[System.Windows.Forms.SendKeys]::SendWait('" + escapePowerShellSingleQuoted(sequence) + "')",
           '[Console]::Out.WriteLine("HOTKEY_SENT")',
         ].join('; ');
@@ -254,6 +255,7 @@ export class WindowsDesktopAgent {
         const script = [
           '$ErrorActionPreference = "Stop"',
           'Add-Type -AssemblyName System.Windows.Forms',
+          buildForegroundFocusAssertionScript(),
           "[System.Windows.Forms.SendKeys]::SendWait('" + sequence + "')",
           '[Console]::Out.WriteLine("ZOOM_KEY_SENT")',
         ].join('; ');
