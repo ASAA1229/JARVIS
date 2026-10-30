@@ -136,11 +136,11 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     name: 'Android app control',
     description: 'Launch and interact with apps through explicitly granted Android capabilities.',
     platforms: ['android'],
-    status: 'planned',
+    status: 'partial',
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'No native APK is in this tree. A signed-request contract exists for a future Keystore client; physical two-phone acceptance is blocked until that app is built and tested.',
+    notes: 'Native Kotlin companion has a Keystore-backed identity, owner-approved enrollment, signed text requests, and local launcher-app discovery/user-tap launch. Remote app-control dispatch, interactive UI automation, and physical two-phone acceptance remain incomplete.',
   },
   {
     id: 'device.find-and-ring',
