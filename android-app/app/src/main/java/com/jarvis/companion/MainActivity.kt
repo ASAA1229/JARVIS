@@ -9,6 +9,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var server: EditText
@@ -16,6 +18,7 @@ class MainActivity : Activity() {
     private lateinit var enrollmentCode: EditText
     private lateinit var phoneName: EditText
     private lateinit var request: EditText
+    private lateinit var targetDeviceId: EditText
     private lateinit var status: TextView
     private lateinit var column: LinearLayout
     private lateinit var appList: LinearLayout
@@ -90,6 +93,28 @@ class MainActivity : Activity() {
             text = "Discover launchable phone apps"
             setOnClickListener { discoverPhoneApps() }
         }, params())
+        targetDeviceId = field("Target Android device ID (owner phone only)", "", column)
+        column.addView(Button(this).apply {
+            text = "Request app inventory from target phone"
+            setOnClickListener { background {
+                val api = client ?: error("Reconnect the authenticated owner session first.")
+                api.requestAndroidInventory(targetDeviceId.text.toString().trim())
+            } }
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Check for laptop command (this phone)"
+            setOnClickListener { background {
+                val api = client ?: error("Reconnect the authenticated session first.")
+                api.pollAndroidInventory(buildAppInventory())
+            } }
+        }, params())
+        column.addView(Button(this).apply {
+            text = "View recent remote inventory results"
+            setOnClickListener { background {
+                val api = client ?: error("Reconnect the authenticated session first.")
+                api.androidInventoryResults()
+            } }
+        }, params())
         appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(appList, params())
         setContentView(scroll)
@@ -130,6 +155,22 @@ class MainActivity : Activity() {
                 }
             }, params())
         }
+    }
+
+    private fun buildAppInventory(): JSONArray {
+        val result = JSONArray()
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(launcherIntent, 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+            .take(300)
+        for (app in apps) {
+            result.put(JSONObject()
+                .put("label", app.loadLabel(packageManager).toString().take(120))
+                .put("packageName", app.activityInfo.packageName.take(240)))
+        }
+        return result
     }
 
     private fun field(hintText: String, value: String, root: LinearLayout): EditText {
