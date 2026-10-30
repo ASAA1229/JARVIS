@@ -234,3 +234,22 @@ The first CI attempt for the new routing tests exposed an escaped-regex defect i
 ## Windows desktop field-protection gap closure — 2026-10-30
 
 The Windows UI Automation `desktop:set_value` path now blocks additional sensitive-field name patterns, including one-time passwords (OTP), recovery codes, credit/debit card fields, card expiry/expiration date, account and routing numbers, IBAN, SWIFT code, and sort code. This complements the existing password/PIN/CVV/security-code checks and the financial-app process/window block. Regression coverage asserts that the generated UI Automation script retains the expanded denylist. This is defense-in-depth, not a substitute for classifying every form semantically; fields with misleading or missing accessibility names remain a limitation. Hosted CI for the latest source and test commits must complete before this change is called validated, and physical MSI acceptance remains outstanding.
+
+
+## Universal Windows application control — current status (2026-10-30)
+
+Implemented in the current `new` branch:
+- Foreground-window process guard with payment/financial-window deny patterns.
+- Windows UI Automation control inspection and exact-name matching.
+- Guarded control value read, click/invoke, and non-sensitive value set with readback verification.
+- Credential/financial field heuristics, task-scoped approval for state changes, and tests for planner routing and script construction.
+- UI Automation scripts now use the same foreground window handle captured by the guard, reducing the chance of a focus change redirecting the action to another application.
+
+Still required before this epic can be called complete:
+1. Run the automated workflow on Windows and complete interactive acceptance on the actual MSI laptop.
+2. Add app-specific adapters for applications whose controls do not expose usable UI Automation patterns.
+3. Verify durable outcomes (for example, saved document state) rather than only control-value readback.
+4. Build robust multi-step target selection and recovery when a window closes, changes, or becomes unavailable.
+5. Expand supported-app coverage incrementally and document unsupported applications explicitly.
+
+This is an incremental implementation, not universal compatibility with every installed Windows application. Payment apps/actions remain out of scope.
