@@ -111,7 +111,7 @@ export class PiperTtsProvider {
       child.stdin.once('error', (error) => {
         // A child may exit before consuming its input; the close handler reports
         // its exit code and bounded stderr, so avoid an unhandled stream error.
-        if (!settled && error.code !== 'EPIPE') {
+        if (!settled && (error as NodeJS.ErrnoException).code !== 'EPIPE') {
           fail(new Error(`Could not provide text to the local Piper executable: ${error.message}`));
         }
       });
