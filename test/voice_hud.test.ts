@@ -102,9 +102,9 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.doesNotMatch(csp, /style-src[^;]*unsafe-inline/);
     assert.match(hudHtml, /J\.A\.R\.V\.I\.S\./);
     assert.match(hudHtml, /btn-arc-ptt/);
-    assert.match(hudHtml, /local-only processing is not guaranteed/i);
+    assert.match(hudHtml, /Browser speech recognition may send command audio to a browser\/vendor service/i);
     assert.match(hudHtml, /allow-browser-speech/);
-    assert.match(hudHtml, /Continuous hands-free listening remains disabled/i);
+    assert.match(hudHtml, /Local wake detection stays unavailable if local model\/runtime assets are missing/i);\n    assert.match(hudHtml, /allow-wake-browser-speech/);
     assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);
 
@@ -126,7 +126,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /finalized segments separate from interim hypotheses/);
     assert.match(jsText, /Review or edit the recognized command, then select EXECUTE DIRECTIVE/);
     assert.match(jsText, /VOICE CONSENT REQUIRED/);
-    assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);
+    assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);\n    assert.match(jsText, /VoicuteWakeWord\.create/);\n    assert.match(jsText, /multi_jarvis_v9\.3\.zip/);\n    assert.match(jsText, /All voice modes are review-first/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);
