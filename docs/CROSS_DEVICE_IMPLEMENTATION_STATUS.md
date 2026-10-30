@@ -116,3 +116,15 @@ No physical-device success is claimed until build, install, and acceptance evide
 - The Android UI now has manual controls to request inventory from a target device, check for a command on the current phone, and view recent results. This is a narrow vertical slice, not background push or general remote phone control. It does not remotely launch apps, read notifications, send SMS, place calls, or use AccessibilityService.
 - Automated queue tests cover target isolation, one-time claim/completion, requester result isolation and expiry. Latest CI must pass after this change before treating it as build-verified.
 - Still open: verify TLS connectivity from the actual phones; owner-approved enrollment on both phones; revocation isolation; device-specific Android acceptance; broader policy-bound command/approval integration; laptop reachability/offline recovery; native notifications and selected phone integrations.
+
+
+## Windows application control follow-up (2026-10-30)
+
+A further safety improvement binds UI Automation control inspection/read/write/click scripts to the same foreground-window handle that was captured by the desktop guard before the action. This reduces (but cannot entirely eliminate) focus-race risk. Regression tests cover script construction and natural-language routing for named-field writes.
+
+Current boundaries:
+- Control operations require a unique accessible control name and the corresponding UI Automation pattern.
+- Value writes reject password and heuristic credential/financial labels, then verify the exposed control value.
+- Value readback is not proof that a document was saved or a form submitted.
+- The automated CI run must pass, and actual interactive acceptance on the MSI laptop is still needed before calling the Windows-control epic complete.
+- Applications with custom-rendered or inaccessible controls require app-specific adapters; universal coverage is not claimed.
