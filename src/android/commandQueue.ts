@@ -97,7 +97,7 @@ export class AndroidCommandQueue {
     return typeof app.label === 'string' && app.label.trim().length > 0 &&
       app.label.length <= 500 && !/[\u0000-\u001f\u007f]/.test(app.label) &&
       typeof app.packageName === 'string' && app.packageName.trim().length > 0 &&
-      app.packageName.length <= 300 && !/[\u0000-\u0020\u007f]/.test(app.packageName);
+      app.packageName.length <= 300 && !/[\u0000-\u001f\u007f]/.test(app.packageName);
   }
 
   private prune(): void {
