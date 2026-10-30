@@ -331,3 +331,20 @@ Implemented on `new`:
 - Added tests for the setup script reference, wake asset route allowlisting, and local wake integration wiring.
 
 **Not accepted yet:** the setup script has not been run on the target MSI, so third-party model/runtime files and their compatibility are not verified on the actual machine. The upstream commit is immutable but unsigned. The setup script now verifies each downloaded source/model file against the expected Git blob SHA-1 from that commit before use, then prints a SHA-256 inventory for local records. Microphone permission, false-trigger behavior, CPU/RAM usage, audible local Piper TTS, and browser recovery still require target-device tests. The latest hosted Actions runs (including commit `1cac6e346559d6b9d5bae0c18312d7b311755778`) report both jobs failing within about 2–3 seconds before checkout: the Jobs API returns `runner_id: 0`, an empty `runner_name`, and no steps. This is evidence of a runner/job-start failure, not evidence that source tests failed; logs are unavailable (`BlobNotFound`). There is no exact-head build/test result to claim. Restore/investigate GitHub-hosted runner availability and then obtain a green exact-head run before acceptance. Do not advance to Phase 2 or introduce any new epic until this active phase reaches its acceptance gate or a precisely evidenced external blocker is recorded.
+
+
+## Recovery workflow implementation increment — 2026-10-30
+
+**Implemented on `new` after the previously documented checkpoint-journal foundation:**
+- Added an authenticated `POST /api/task/reconcile` endpoint, using the existing signed-session request protocol.
+- The requesting device may review its own task; a device with `DEVICE_MANAGE` permission may review other tasks. Tasks outside `AWAITING_RECOVERY`/`INTERRUPTED` cannot be reconciled through this endpoint.
+- A review requires an explicit disposition and an 8–500 character note. The raw note is kept out of audit details; the audit records only its length, reviewer, prior state, and disposition.
+- `confirmed_no_effect` closes the task as `FAILED` and tells the user to submit a new request if needed; it does not replay the original task.
+- `effect_observed` closes the task as `PARTIAL`, never `COMPLETED`, because a user note is not independent application-level proof.
+- `still_unknown` remains `AWAITING_RECOVERY`. All paths explicitly avoid automatic replay or dependent-step continuation.
+- Reconciliation metadata is stored in the encrypted task journal and shape-validated when restored.
+- Added service-level regression tests for owner-authenticated reconciliation, no automatic replacement task, and the rule that user observation cannot be promoted to verified success.
+
+**Validation status:** implementation and tests are committed on `new`; exact-head build, lint, full unit suite, browser smoke, and Android build have not yet been confirmed. The GitHub connector currently reports no status checks for the exact head, so this increment must not be called green until a completed workflow provides evidence. These tests have not been executed in this chat environment.
+
+**Remaining workflow gaps:** add crash/fault-injection coverage for audit-write and journal-write failures during reconciliation; exercise partial external side effects with a real application; ensure the companion surfaces recovery tasks and invokes this endpoint through its signed request client; verify cancellation/revocation/expiry transitions across the complete lifecycle. The endpoint is a safe review/closure path, not a generic workflow resume engine.
