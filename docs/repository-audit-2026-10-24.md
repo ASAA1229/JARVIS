@@ -390,3 +390,10 @@ The Windows UI Automation `desktop:set_value` path now blocks additional sensiti
 A focused hardening increment on `new` adds validation to `src/android/commandQueue.ts` and regression cases in `test/android_command_queue.test.ts`. Device IDs must be bounded identifiers; non-finite TTLs no longer create a NaN expiry; malformed or over-limit app inventories are rejected atomically; and returned inventory snapshots do not alias internal queue state. Invalid completion payloads leave the command in `CLAIMED` state.
 
 **Audit disposition:** source change and test additions are present, but execution evidence is pending. Do not mark the tests as passing until CI or a local test run on this exact head is inspected. This does not close the Android epic: volatile queue state, remote transport/lifecycle behavior and real-device enrollment/revocation remain unaccepted.
+
+
+### Workflow checkpoint journal prototype — 2026-10-30
+
+Added `src/core/taskJournal.ts` and `test/task_journal.test.ts` on `new`. The journal encrypts task snapshots using AES-256-GCM, atomically replaces the state file, rejects malformed/oversized checkpoint data, and fails closed when authenticated decryption or schema validation fails. Non-terminal states become `AWAITING_RECOVERY` on reload, with stale approvals cleared and no automatic replay.
+
+**Audit finding / release blocker:** the journal is not yet connected to `JarvisCoreService` task lifecycle writes. This is a tested-by-design implementation increment, not yet verified by execution evidence and not a claim of durable workflow support in the live service. Confirm CI on the exact head, integrate every lifecycle transition, and exercise crash/restart with uncertain external effects before acceptance.
