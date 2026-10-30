@@ -147,6 +147,31 @@ function setupEventListeners() {
     startHandsFreeStandby();
   });
 
+  // Revoking browser speech consent is immediate: discard the in-flight transcript and stop capture.
+  const browserSpeechConsent = document.getElementById('allow-browser-speech');
+  if (browserSpeechConsent) browserSpeechConsent.addEventListener('change', () => {
+    if (!browserSpeechConsent.checked && isListening) {
+      cancelVoiceCapture();
+      setAssistantState('VOICE CONSENT REVOKED', 'Microphone capture stopped and the pending transcript was discarded. Re-enable consent only when you want to use browser speech.');
+    }
+  });
+
+  // Never keep an active mic session alive after the HUD is backgrounded or hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      if (isListening) {
+        cancelVoiceCapture();
+        setAssistantState('VOICE CAPTURE STOPPED', 'The HUD was hidden; microphone capture and the pending transcript were stopped.');
+      }
+      stopAudioMeter();
+      if (handsFreeEnabled) {
+        handsFreeStandby = false;
+        stopHandsFreeStandby();
+        updateHandsFreeButtons();
+      }
+    }
+  });
+
   // Reduced Motion Toggle
   btnMotion.addEventListener('click', () => {
     document.body.classList.toggle('reduced-motion');
