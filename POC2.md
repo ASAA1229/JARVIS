@@ -285,3 +285,15 @@ Implemented on `new`:
 - Regression tests for encrypted-at-rest content, restart recovery, terminal-state preservation, tampering/wrong key, invalid records and defensive copies.
 
 **Integration status (2026-10-30):** `JarvisCoreService` now opens the encrypted journal when an owner control token is configured, restores prior task records into the task list, checkpoints task creation, execution start, step results and workflow advancement, and marks interrupted records `AWAITING_RECOVERY` on restart without replaying them. A checkpoint-write failure moves the live task to recovery-required and prevents the next workflow step from starting. Cancellation/interruption and approval steps checkpoint through the step recorder. This is still partial lifecycle coverage: some early planning/error/revocation/expiry transitions and recovery UX need further audit, and the service currently has no explicit reconcile-and-resume command. Exact-head CI, crash/restart integration acceptance, partial-side-effect reconciliation and target-device acceptance remain unconfirmed.
+
+
+## Voice and HUD privacy hardening — 2026-10-30
+
+Implemented on `new`:
+- Browser speech recognition for push-to-talk is blocked by default and requires an explicit checkbox consent for the current page session. The consent is not persisted.
+- Hands-free/wake detection now fails closed while no local audio-level wake-word engine is configured, preventing continuous browser/vendor recognition from starting through either HUD toggle.
+- HUD text explains the privacy boundary and keeps typed directives available without microphone use.
+- Corrected the wake acknowledgement text to `Hi sir, I am ready to work.`.
+- Browser smoke coverage checks that speech does not start without consent and that hands-free cannot start without a local wake engine.
+
+**Remaining:** this does not implement the local wake-word engine, nor does it prove the browser's speech provider is local. Push-to-talk with consent may still send audio to a browser/vendor service. Piper TTS compatibility/audible output, accessibility/responsive behavior, and physical MSI acceptance remain open. Latest exact-head CI must pass before this increment is considered validated.
