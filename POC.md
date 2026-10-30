@@ -161,4 +161,6 @@ The new branch now exposes an authenticated POST /api/task/reconcile route for t
 
 The browser companion now includes a Recovery Review panel: it loads recovery tasks through the signed session and submits the selected disposition and note through the signed API. A browser smoke assertion checks the panel and authenticated task-list flow. Automated regression tests have been added, but they have not been executed in this chat environment. The exact-head CI result is not yet available. This feature is **implemented, pending automated validation**, and does not satisfy the real-application recovery acceptance gate by itself.
 
+The follow-up lifecycle audit also adds checkpoint writes for early planning/denial paths, skipped workflow steps, rejection/expiry/cancellation, and final outcomes. A failed final checkpoint is returned as uncertain/recovery-required instead of verified completion. The HTTP recovery endpoint fails closed when the encrypted task journal is not configured.
+
 **Release acceptance remains incomplete:** run build/typecheck/unit tests/browser smoke on the exact new head; then perform the crash/restart and uncertain-side-effect checklist on the target MSI. Do not interpret a manual note as proof that an application saved or submitted anything.
