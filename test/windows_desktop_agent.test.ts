@@ -139,3 +139,22 @@ test('planner routes an explicit named-control read to the guarded desktop opera
   assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title' });
   assert.equal(planner.validatePlanSchema(plan).valid, true);
 });
+
+
+test('desktop control scripts bind UI Automation to the same guarded foreground window handle', () => {
+  const readScript = buildReadControlScript('Document title');
+  const setScript = buildControlActionScript('desktop:set_value', 'Document title', 'JARVIS');
+
+  assert.match(readScript, /FromHandle\(\$foregroundHwnd\)/);
+  assert.match(setScript, /FromHandle\(\$foregroundHwnd\)/);
+  assert.doesNotMatch(readScript, /FromHandle\(\[JarvisForeground\]::GetForegroundWindow\(\)\)/);
+});
+
+test('planner routes an explicit named-field value change to guarded UI Automation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('set field Document title to JARVIS test', { requesterName: 'owner', timestamp: Date.now() });
+
+  assert.equal(plan.operations[0]?.operation, 'desktop:set_value');
+  assert.deepEqual(plan.operations[0]?.parameters, { name: 'Document title', text: 'JARVIS test' });
+  assert.equal(planner.validatePlanSchema(plan).valid, true);
+});
