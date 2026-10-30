@@ -455,14 +455,12 @@ function createSpeechRecognizer(captureGeneration) {
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
     } else if (!isHandsFreeEnabled && !isMicMuted && finalTranscript.trim()) {
-      // A user-started push-to-talk capture is an explicit request to process
-      // the spoken directive. Submit only finalized recognition text, never an
-      // interim guess, and let the policy gateway handle any required approval.
+      // Recognition only fills the review field. A voice transcript must never
+      // be dispatched until the user explicitly presses EXECUTE DIRECTIVE.
       const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ');
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
-      setAssistantState('VOICE RECOGNIZED', 'Analyzing the recognized command through the policy gateway.');
-      void submitDirective(recognizedCommand);
+      setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
     }
     if (isHandsFreeEnabled && !isMicMuted && !isSpeaking) scheduleHandsFreeRestart();
   };
