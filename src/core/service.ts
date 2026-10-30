@@ -376,6 +376,7 @@ export class JarvisCoreService {
         this.audit.record('TASK_DENIED', { reason: policyResult.reason }, deviceId, taskId);
         this.#recordStep(taskRecord, 'blocked', undefined, policyResult.reason);
         this.#skipRemainingSteps(taskRecord);
+        this.#persistTask(taskRecord);
         this.notifications.push('error', 'task_blocked', `Blocked by policy: ${opRequest.operation}.`, { taskId, deviceId });
         return { taskId, state: taskRecord.state, message: policyResult.reason || 'Policy denied execution' };
       }
@@ -700,6 +701,15 @@ export class JarvisCoreService {
     // continue past a failure or an ambiguous result.
     if (verification.honestOutcome !== VerificationOutcome.VERIFIED_SUCCESS) this.#skipRemainingSteps(taskRecord);
     taskRecord.updatedAt = Date.now();
+    if (!this.#persistTask(taskRecord)) {
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error || 'Final task checkpoint failed; reconcile before retrying.',
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
     if (taskRecord.state === TaskState.COMPLETED) {
       this.notifications.push('info', 'task_completed', `Completed and verified: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
     } else if (taskRecord.state === TaskState.FAILED) {
