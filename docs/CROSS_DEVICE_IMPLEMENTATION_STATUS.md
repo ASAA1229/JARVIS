@@ -154,3 +154,10 @@ This is a narrow safety improvement, not an accepted native Android agent. Hoste
 ## Voice and HUD privacy hardening — 2026-10-30
 
 The HUD now requires explicit, per-page-session consent before push-to-talk starts browser speech recognition; consent is not stored. Finalized transcripts are review-only until the user explicitly presses **EXECUTE DIRECTIVE**. Both hands-free/wake-detection controls fail closed until a local audio-level wake-word engine is configured, so the current browser recognizer is not used for continuous wake listening. Text input remains available. This improves the privacy boundary but does not deliver the requested local wake-word engine. Browser push-to-talk may still use a remote provider after consent; Piper TTS and physical MSI acceptance remain unverified.
+
+### Voice/HUD lifecycle hardening — 2026-10-30 follow-up
+
+- Browser-speech consent can be revoked during capture; the recognizer is cancelled and pending transcript discarded. Late recognition callbacks are ignored.
+- Hiding the HUD cancels capture, stops the microphone level meter, and stops standby recognition.
+- Browser smoke test added for consent revocation and late-result rejection.
+- This does not close the voice epic by itself. A real local wake-word engine/model, validated local TTS/Piper and audible output, and physical MSI/browser/microphone acceptance are still outstanding. Keep wake detection disabled until local inference is actually present and measured.
