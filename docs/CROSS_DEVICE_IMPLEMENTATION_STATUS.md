@@ -76,3 +76,24 @@ Prefer local AI for private data. Before cloud sharing when required, disclose t
 ## Validation boundary
 
 Hosted CI can validate TypeScript, planner/policy behavior, encrypted memory and adapter tests. It cannot prove that an actual Windows application received/saved text, that zoom changed visually, or that native Android controls work on physical devices. Keep universal application control, always-ready local wake-word behavior, two-phone remote operation, communications integrations and recurring unattended workflows marked partial/planned until target acceptance evidence exists.
+
+
+## Native Android companion implementation — 2026-10-30
+
+A first native Android application foundation now exists under `android-app/`:
+
+- Kotlin launcher UI for owner-approved challenge enrollment, session reconnect, and signed text requests.
+- Per-install Ed25519 device identity; private-key bytes are encrypted at rest with AES-GCM and a wrapping key held by Android Keystore.
+- Session proof and signed-request payloads follow the existing server canonical protocol, including timestamp, one-time nonce, session binding, and body SHA-256.
+- Enrollment identifies the platform as Android so the server's device list can distinguish native phones from browser companions.
+- Cleartext traffic and Android app backups are disabled. The client refuses non-HTTPS URLs and disables redirects.
+
+Important limitations and acceptance gates:
+
+- This is an initial native client, not a release-ready or physically verified Android agent. The repository's Node CI does not compile the Android Gradle project yet; Android SDK/Gradle build validation and install tests on both physical phones remain required.
+- The current JARVIS Node server exposes HTTP directly. The Android client deliberately requires a trusted HTTPS endpoint; until a TLS reverse proxy or native TLS server is configured and its certificate is trusted on the phones, remote connection is expected to fail closed.
+- Owner enrollment challenge creation still requires the existing owner-authorized flow. Do not put the owner control token into the Android app.
+- This initial vertical slice submits text requests only. Native notifications, app discovery/control, SMS/call actions, background execution, push notifications, and remote wake are not implemented by this slice.
+- Before enabling remote state-changing actions, add integration tests for two independent Android identities, session replay, request replay, revocation during an active session, TLS failure, and operation-specific permission denial.
+
+No physical-device success is claimed until build, install, and acceptance evidence is recorded for both phones.
