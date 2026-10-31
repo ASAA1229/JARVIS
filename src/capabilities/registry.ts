@@ -63,7 +63,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Static allowlist plus unique Start menu app discovery is available; apps without Start menu entries and independent target-window verification remain unsupported.',
+    notes: 'Static allowlist plus unique Start menu discovery is available. Known Windows inbox apps (Settings, Microsoft Store, Photos, Clock) use conservative process-and-title identity hints for launch verification; unknown discovered apps remain partial because no trusted identity mapping exists.',
   },
   {
     id: 'desktop.ui-automation',
