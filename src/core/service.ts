@@ -832,6 +832,22 @@ export class JarvisCoreService {
 
     this.#assertApproverPermission(approval, approver, 'REJECTION_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
+    // A pending approval must not be able to mutate a task that was cancelled,
+    // interrupted, expired, or moved into recovery after the approval was issued.
+    // Check before consuming/rejecting the approval, matching approveTask's guard.
+    const pendingTask = this.tasks.get(approval.taskId);
+    if (!pendingTask) {
+      this.audit.record('REJECTION_FAILED_TASK_NOT_FOUND', { approvalId }, approver.id, approval.taskId);
+      throw new Error('Associated task not found');
+    }
+    if (pendingTask.state !== TaskState.AWAITING_APPROVAL) {
+      this.audit.record('REJECTION_FAILED_TASK_NOT_PENDING', {
+        approvalId,
+        taskState: pendingTask.state,
+      }, approver.id, pendingTask.id);
+      throw new Error('Task is no longer awaiting approval');
+    }
+
     const resolveRes = this.policy.resolveApproval(approvalId, false, approver.id);
     if (!resolveRes.success) {
       throw new Error(resolveRes.error || 'Approval could not be rejected');
