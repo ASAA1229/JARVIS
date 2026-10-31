@@ -39,6 +39,7 @@ This document records repository-visible implementation and hosted CI evidence. 
 - Piper TTS is optional and requires a compatible executable and model; actual audible playback and voice quality on the target laptop remain unverified.
 
 ### Windows desktop
+- Start-menu discovery now uses conservative process-and-title identity hints for selected inbox apps (Settings, Microsoft Store, Photos, Clock); unknown discovered apps remain partial rather than being reported as independently verified.
 - Desktop interaction targets the current foreground window.
 - UI Automation depends on accessible, uniquely named controls. Custom-rendered or inaccessible controls may not be operable.
 - Paste, hotkey and zoom acknowledgements do not prove the destination accepted or saved content; those outcomes remain partial unless independently verified.
