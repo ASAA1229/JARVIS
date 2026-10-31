@@ -336,21 +336,18 @@ async function handleLocalWakeDetected(probability) {
   setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
   const wakeConsent = document.getElementById('allow-wake-browser-speech');
   wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
-  const continueAfterGreeting = () => {
-    if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') return;
-    if (isSpeaking) {
-      handsFreeRestartTimer = setTimeout(continueAfterGreeting, 200);
-      return;
-    }
-    if (wakeConsent?.checked) {
-      startVoiceCapture('wake');
-    } else {
-      setAssistantState('WAKE PHRASE DETECTED', 'Wake detection was local. Enable separate post-wake browser-speech consent to speak a command, or use push-to-talk/text input.');
-      scheduleHandsFreeRestart();
-    }
-  };
-  await speakResponse('Hi sir, I am ready to work.');
-  handsFreeRestartTimer = setTimeout(continueAfterGreeting, 150);
+  if (!wakeConsent?.checked) {
+    await speakResponse('Hi sir, I am ready to work.');
+    setAssistantState('WAKE PHRASE DETECTED', 'Wake detection is local, but spoken commands need the separate post-wake browser-speech consent checkbox. Enable it for this session, or use text input.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+
+  // Start command recognition immediately after local wake detection so the
+  // remaining words in a single utterance such as “Hey Jarvis, open Notepad”
+  // are not lost while the greeting is playing. The greeting is spoken after
+  // capture; the recognized directive still passes through the policy gateway.
+  startVoiceCapture('wake');
 }
 
 function enableWakeDetection() {
@@ -520,7 +517,7 @@ function initSpeechRecognition() {
   }
 }
 
-function createSpeechRecognizer(captureGeneration) {
+function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   const recognizer = new speechRecognitionConstructor();
   let finalTranscript = '';
   recognizer.continuous = false;
@@ -604,16 +601,47 @@ function createSpeechRecognizer(captureGeneration) {
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
+    } else if (!isMicMuted && finalTranscript.trim() && mode === 'wake') {
+      // Local wake detection plus the separate session consent authorizes
+      // capturing this spoken directive. Dispatch it to the existing policy
+      // gateway automatically; the gateway can still deny or require approval.
+      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ')
+        .replace(/^(?:hey|hello|hi)\\s+jarvis\\b[,.!?;: -]*/i, '').trim();
+      wakeCaptureAwaitingReview = false;
+      document.getElementById('transcript-input').value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+      void (async () => {
+        await speakResponse('Hi sir, I am ready to work.');
+        const speechDeadline = Date.now() + 8000;
+        while (isSpeaking && Date.now() < speechDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (recognizedCommand) {
+          setAssistantState('COMMAND RECEIVED', recognizedCommand);
+          await submitDirective(recognizedCommand);
+        } else {
+          setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
+          scheduleHandsFreeRestart();
+        }
+      })();
     } else if (!isMicMuted && finalTranscript.trim()) {
-      // Recognition only fills the review field. A voice transcript must never
-      // be dispatched until the user explicitly presses EXECUTE DIRECTIVE.
+      // Push-to-talk remains review-first; only post-wake commands are sent
+      // directly to the policy gateway after explicit session consent.
       const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ');
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
     } else if (wakeCaptureAwaitingReview && handsFreeEnabled && !isMicMuted) {
       wakeCaptureAwaitingReview = false;
-      scheduleHandsFreeRestart();
+      void (async () => {
+        await speakResponse('Hi sir, I am ready to work.');
+        const speechDeadline = Date.now() + 8000;
+        while (isSpeaking && Date.now() < speechDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
+        scheduleHandsFreeRestart();
+      })();
     }
   };
 
@@ -759,7 +787,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
   const captureGeneration = ++voiceCaptureGeneration;
   try {
-    speechRecognizer = createSpeechRecognizer(captureGeneration);
+    speechRecognizer = createSpeechRecognizer(captureGeneration, mode);
     speechRecognizer.start();
     void startAudioMeter();
     voiceTimeoutId = setTimeout(() => {
