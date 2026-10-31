@@ -10,7 +10,7 @@
 
 Complete these phases in order; phase numbers organize existing work and do not create new epics:
 
-1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for any browser/vendor speech recognition after wake, review-before-execute transcript handling, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance.
+1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for browser/vendor speech recognition after wake, review-before-execute for push-to-talk, consent-gated post-wake command submission through the policy gateway, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance. Post-wake submission is not approval: the policy gateway may deny the directive or require the applicable approval.
 2. **Advanced Multi-Step Execution & Recovery:** audit every task lifecycle transition into the encrypted journal; test restart recovery, expired/revoked/stale approvals, checkpoint write failures, partial side effects and idempotency; implement safe reconciliation/recovery UX. Never auto-replay uncertain state-changing operations.
 3. **Security and approval foundation:** re-run exact-head tests for policy gateway, task/device/operation/parameter-bound approvals, replay protection, expiry/revocation, audit integrity, persistence failure, redaction, and owner recovery.
 4. **Windows desktop agent:** close software-testable launch/focus/control/input/clipboard/zoom/verification gaps; document unsupported controls and keep actual MSI acceptance separate from hosted CI.
@@ -58,8 +58,8 @@ Complete these phases in order; phase numbers organize existing work and do not 
 - [ ] Verify the command phrase is preserved through authenticated request signing and policy evaluation.
 - [ ] Test actual Piper TTS executable/model compatibility and audible playback on the target laptop; test browser speech-synthesis fallback.
 - [ ] Document speech-recognition provider/network behavior. Do not claim local-only recognition unless demonstrated.
-- [ ] Implement and measure the desired local wake-word loop, visible microphone/listening status, privacy control, interruption and resource use before claiming always-ready voice.
-- [ ] Keep wake-word listening off until the actual opt-in local implementation and acceptance are complete.
+- [ ] Install and measure the opt-in local wake-word engine on the target MSI; verify the complete wake → consented command capture → policy-gateway decision path, visible microphone/listening status, privacy control, interruption and resource use before claiming accepted always-ready voice.
+- [ ] Keep wake-word listening disabled by default; only enable it after the user opts in, and do not claim the flow is accepted until target-device acceptance is recorded.
 - [ ] Verify compact HUD layouts, keyboard accessibility, error states and real-device browser behavior.
 
 ## P1 — Android companions and remote control
