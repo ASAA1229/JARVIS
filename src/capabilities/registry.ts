@@ -74,7 +74,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Foreground UI Automation inspection, exact-name InvokePattern, guarded ValuePattern reads (credential/financial fields redacted), and non-sensitive ValuePattern writes are available; universal coverage and target-app acceptance remain incomplete.',
+    notes: 'Foreground UI Automation inspection exposes AutomationId; read/click/set can select by AutomationId or exact control name and require a unique match. Credential/financial fields remain guarded; universal coverage and target-app acceptance remain incomplete.',
   },
   {
     id: 'desktop.text-and-clipboard',
