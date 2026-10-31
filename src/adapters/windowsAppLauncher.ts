@@ -27,10 +27,12 @@ export interface AllowlistedApp {
 export function discoveredLaunchResult(
   selected: { Name: string; AppID: string },
   newWindow?: WindowInfo,
+  expectedIdentity?: { processNames: string[]; titleContains?: string },
 ): ExecutionResult {
+  const targetWindowVerified = Boolean(newWindow && expectedIdentity && matchesExpectedAppWindow(newWindow, { windowMatch: expectedIdentity }));
   return {
     success: true,
-    outcome: VerificationOutcome.PARTIAL_SUCCESS,
+    outcome: targetWindowVerified ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.PARTIAL_SUCCESS,
     data: {
       name: selected.Name,
       appId: selected.AppID,
@@ -42,11 +44,24 @@ export function discoveredLaunchResult(
       launcher: 'explorer.exe shell:AppsFolder',
       exactOrUniqueMatch: true,
       newWindowDetected: Boolean(newWindow),
-      targetWindowVerified: false,
-      verificationLimitation: 'No trusted AppID-to-process identity mapping is available.',
+      targetWindowVerified,
+      verificationLimitation: targetWindowVerified ? undefined : 'No trusted AppID-to-process identity mapping is available for this app.',
+      ...(expectedIdentity ? { expectedProcessNames: expectedIdentity.processNames } : {}),
     },
-    error: 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
+    error: targetWindowVerified ? undefined : 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
   };
+}
+
+/** Conservative identity hints for common Windows inbox apps. Unknown apps remain partial. */
+const DISCOVERED_WINDOW_IDENTITIES: Record<string, { processNames: string[]; titleContains?: string }> = {
+  'settings': { processNames: ['SystemSettings'], titleContains: 'Settings' },
+  'microsoft store': { processNames: ['WinStore.App'], titleContains: 'Microsoft Store' },
+  'photos': { processNames: ['Photos', 'Microsoft.Photos'], titleContains: 'Photos' },
+  'clock': { processNames: ['Time', 'WindowsAlarms'], titleContains: 'Clock' },
+};
+
+export function discoveredWindowIdentity(name: string): { processNames: string[]; titleContains?: string } | undefined {
+  return DISCOVERED_WINDOW_IDENTITIES[name.trim().toLowerCase()];
 }
 
 export function matchesExpectedAppWindow(
@@ -346,8 +361,23 @@ export class WindowsAppLauncherAdapter {
         timeout: 8_000, windowsHide: true, signal,
       });
       let newWindow: WindowInfo | undefined;
-      try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
-      return discoveredLaunchResult(selected, newWindow);
+      const expectedIdentity = discoveredWindowIdentity(selected.Name);
+      if (expectedIdentity) {
+        const deadline = Date.now() + 8_000;
+        while (Date.now() < deadline && !signal?.aborted) {
+          try {
+            const windows = await this.windows.snapshot(signal);
+            newWindow = windows.find((window) =>
+              !knownPids.has(window.pid) &&
+              matchesExpectedAppWindow(window, { windowMatch: expectedIdentity }));
+          } catch { newWindow = undefined; }
+          if (newWindow) break;
+          await delay(400, undefined, { signal }).catch(() => undefined);
+        }
+      } else {
+        try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
+      }
+      return discoveredLaunchResult(selected, newWindow, expectedIdentity);
     } catch (error) {
       return {
         success: false,
