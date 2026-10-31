@@ -32,6 +32,12 @@ jobs:
         run: npm audit --audit-level=moderate
       - name: TypeScript build
         run: npm run build
+      - name: TypeScript check
+        run: npm run lint
+      - name: Automated test suite
+        run: npm test
+      - name: Browser security smoke test
+        run: npm run test:browser
       - name: Create and verify SHA-256 build manifest
         run: |
           tar -czf jarvis-build.tar.gz -C dist .
@@ -49,12 +55,6 @@ jobs:
             jarvis-build.tar.gz.sha256
           if-no-files-found: error
           retention-days: 7
-      - name: TypeScript check
-        run: npm run lint
-      - name: Automated test suite
-        run: npm test
-      - name: Browser security smoke test
-        run: npm run test:browser
 
   android-build:
     runs-on: ubuntu-latest
