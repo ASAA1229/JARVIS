@@ -35,6 +35,7 @@ Complete these phases in order; phase numbers organize existing work and do not 
 - [ ] Re-run the complete security suite on the exact documentation-updated commit and confirm hosted CI is green.
 - [ ] Verify every state-changing operation passes the default-deny policy gateway, with no alternate adapter or API path.
 - [ ] Complete approval lifecycle API tests: approve/reject, expiry, duplicate/concurrent transitions, stale state, persistence failure, and exact task/device/operation/parameter binding.
+- [x] Reject stale approval mutations: `rejectTask` now verifies the associated task exists and remains `AWAITING_APPROVAL` before resolving the approval; a regression test checks that a recovery-state task and its approval remain unchanged.
 - [ ] Verify replay rejection, session expiry, immediate revocation, independent device identities/permissions, and fail-closed behavior when audit or security persistence fails.
 - [ ] Complete route-by-route API/error-redaction review and independent adversarial security review.
 - [ ] Define and test owner recovery for TOTP/device-management state before owner-token rotation or authenticator loss.
