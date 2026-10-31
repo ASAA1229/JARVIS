@@ -605,8 +605,8 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       // Local wake detection plus the separate session consent authorizes
       // capturing this spoken directive. Dispatch it to the existing policy
       // gateway automatically; the gateway can still deny or require approval.
-      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ')
-        .replace(/^(?:hey|hello|hi)\\s+jarvis\\b[,.!?;: -]*/i, '').trim();
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ')
+        .replace(/^(?:hey|hello|hi)\s+jarvis\b[,.!?;: -]*/i, '').trim();
       wakeCaptureAwaitingReview = false;
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
@@ -627,7 +627,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     } else if (!isMicMuted && finalTranscript.trim()) {
       // Push-to-talk remains review-first; only post-wake commands are sent
       // directly to the policy gateway after explicit session consent.
-      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ');
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ');
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
