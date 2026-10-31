@@ -461,3 +461,17 @@ The companion now includes a Recovery Review panel that reads tasks via the auth
 - The CI workflow on `new` is configured for manual dispatch and pull requests targeting `dev`, rather than running on every push. This reduces push-triggered notification noise; it does not fix the underlying runner-start failure.
 - **Validation remains pending:** no exact-head build, unit-test, browser-smoke or Android-build result was available for these latest commits. The previously observed runner failures occurred before any job steps, so they are not evidence that these code changes pass or fail. Run the project checks when Actions runner availability is restored.
 - The active voice epic remains partial. Local wake engine/model installation, false-trigger/resource testing, Piper audible playback, and real MSI microphone/browser acceptance are still required. Task recovery also remains partial until exact-head tests and partial-side-effect reconciliation acceptance pass.
+
+## Approval lifecycle follow-up — stale rejection guard (2026-10-31)
+
+A source review found that `approveTask` guarded against tasks that had moved out of `AWAITING_APPROVAL`, while `rejectTask` resolved the approval before checking the task lifecycle. That asymmetry could let an old approval record mutate approval state after the task had already been cancelled, interrupted, or moved into recovery.
+
+### Change on `new`
+
+- `rejectTask` now requires the associated task to exist and remain in `AWAITING_APPROVAL` before resolving/rejecting the approval.
+- Missing-task and non-pending-state attempts are audited and denied.
+- Added a regression test that moves a pending task to `AWAITING_RECOVERY`, attempts rejection, and verifies the task remains in recovery and the approval is not approved, rejected, or consumed.
+
+### Verification status
+
+The source and regression test are committed on `new` only. No local test execution or exact-head CI result is available; this change remains **pending automated validation**. The test simulates a lifecycle transition at unit level and does not replace concurrent HTTP/device acceptance.
