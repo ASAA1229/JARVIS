@@ -20,9 +20,9 @@ export interface AllowlistedApp {
  * A title substring is an additional constraint, never an alternative identity.
  */
 /**
- * Start-menu AppIDs are not mapped to expected process identities yet. A new
- * window is useful evidence that something opened, but cannot independently
- * prove that it belongs to the selected app; keep the result partial.
+ * Unknown Start-menu apps remain partial unless a conservative process identity
+ * hint is available. A matching process plus optional title constraint is
+ * required before reporting a discovered launch as independently verified.
  */
 export function discoveredLaunchResult(
   selected: { Name: string; AppID: string },
