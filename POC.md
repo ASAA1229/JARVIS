@@ -15,7 +15,7 @@ This document records repository-visible implementation and hosted CI evidence. 
 - Hash-chained audit records, redaction, integrity verification, persistence handling, and fail-closed behavior when required security state is unhealthy.
 - Read-only Windows system information for selected OS, memory, battery, and disk queries.
 - Windows application launch adapter with a small static allowlist (Notepad, Calculator, Paint) and constrained Start-menu discovery.
-- Windows foreground-window interaction adapter for text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, window/control inspection, unique-name control invocation, and value-setting.
+- Windows foreground-window interaction adapter for text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, window/control inspection, and InvokePattern/ValuePattern actions selected by a unique control name or UI Automation AutomationId.
 - Encrypted local personal-memory store with categories, TTL, integrity validation, and conservative rejection of credential/payment-like content.
 - Optional local Piper TTS endpoint and browser speech-synthesis fallback.
 - Official-store search-link generation; this is discovery/handoff, not silent app installation.
@@ -41,7 +41,7 @@ This document records repository-visible implementation and hosted CI evidence. 
 ### Windows desktop
 - Start-menu discovery now uses conservative process-and-title identity hints for selected inbox apps (Settings, Microsoft Store, Photos, Clock); unknown discovered apps remain partial rather than being reported as independently verified.
 - Desktop interaction targets the current foreground window.
-- UI Automation depends on accessible, uniquely named controls. Custom-rendered or inaccessible controls may not be operable.
+- UI Automation depends on accessible controls. Read/click/set can use an exact control name or a discovered AutomationId, and the chosen selector must resolve to exactly one control. Custom-rendered or inaccessible controls may not be operable.
 - Paste, hotkey and zoom acknowledgements do not prove the destination accepted or saved content; those outcomes remain partial unless independently verified.
 - Foreground process/window-name checks for financial/payment apps are defense in depth, not complete semantic detection.
 - This is not yet a universal desktop agent for every installed application.
