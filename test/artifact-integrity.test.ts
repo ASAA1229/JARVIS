@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const utility = path.join(root, 'scripts', 'artifact-integrity.mjs');
 
-function run(args, expectSuccess = true) {
+function run(args: string[], expectSuccess = true) {
   const result = spawnSync(process.execPath, [utility, ...args], {
     cwd: root,
     encoding: 'utf8',
@@ -23,11 +24,11 @@ function run(args, expectSuccess = true) {
 }
 
 describe('artifact integrity utility', () => {
-  let temp;
-  let artifactDir;
-  let manifest;
-  let archive;
-  let checksum;
+  let temp: string;
+  let artifactDir: string;
+  let manifest: string;
+  let archive: string;
+  let checksum: string;
 
   beforeEach(() => {
     temp = mkdtempSync(path.join(os.tmpdir(), 'jarvis-integrity-'));
@@ -48,7 +49,7 @@ describe('artifact integrity utility', () => {
     const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
     assert.equal(parsed.algorithm, 'SHA256');
     assert.equal(parsed.fileCount, 2);
-    assert.deepEqual(parsed.files.map((file) => file.path), ['index.js', 'nested/module.js']);
+    assert.deepEqual(parsed.files.map((file: { path: string }) => file.path), ['index.js', 'nested/module.js']);
     run(['verify', artifactDir, manifest, archive]);
     run(['hash', archive, checksum]);
     run(['verify-hash', archive, checksum]);
