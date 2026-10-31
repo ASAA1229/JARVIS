@@ -178,7 +178,7 @@ export class WindowsAppLauncherAdapter {
    */
   public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {
     if (typeof appId !== 'string' || !appId.trim() || appId.trim().length > 120) {
-      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedApp: String(appId) } };
+      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedType: typeof appId, requestedLength: typeof appId === 'string' ? appId.length : undefined } };
     }
     const requestedName = appId.trim();
     if (this.isFinancialAppName(requestedName)) {
@@ -283,8 +283,8 @@ export class WindowsAppLauncherAdapter {
       return {
         success: false,
         outcome: VerificationOutcome.VERIFIED_FAILURE,
-        error: `Launch execution error: ${String(err)}`,
-        evidence: { app: app.id, error: String(err) },
+        error: 'Application launch failed; no verified success is reported.',
+        evidence: { app: app.id, errorType: err instanceof Error ? err.name : 'UnknownError' },
       };
     }
   }
@@ -352,8 +352,10 @@ export class WindowsAppLauncherAdapter {
       return {
         success: false,
         outcome: signal?.aborted ? VerificationOutcome.UNCERTAIN : VerificationOutcome.VERIFIED_FAILURE,
-        error: error instanceof Error ? error.message : String(error),
-        evidence: { query, discovery: 'Get-StartApps' },
+        error: signal?.aborted
+          ? 'Application launch was interrupted; reconcile the target state before retrying.'
+          : 'Start-menu application launch failed; no verified success is reported.',
+        evidence: { query, discovery: 'Get-StartApps', errorType: error instanceof Error ? error.name : 'UnknownError' },
         interrupted: signal?.aborted,
       };
     }

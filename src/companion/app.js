@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(pollStatus, 3000);
   setInterval(fetchAuditLogs, 4000);
   setInterval(fetchNotifications, 10000);
+  setInterval(fetchRecoveryTasks, 10000);
 });
 
 function setupEventListeners() {
@@ -21,6 +22,7 @@ function setupEventListeners() {
   document.getElementById('btn-send-request').addEventListener('click', handleSendRequest);
   document.getElementById('btn-refresh-audit').addEventListener('click', fetchAuditLogs);
   document.getElementById('btn-refresh-notifications').addEventListener('click', fetchNotifications);
+  document.getElementById('btn-refresh-recovery').addEventListener('click', fetchRecoveryTasks);
   document.getElementById('btn-refresh-schedules').addEventListener('click', requestScheduleList);
   document.getElementById('schedule-form').addEventListener('submit', handleCreateSchedule);
   document.getElementById('btn-refresh-memories').addEventListener('click', requestMemoryList);
@@ -820,6 +822,91 @@ async function pollStatus() {
     } else {
       setLinkState('offline', 'LAPTOP UNREACHABLE', 'The laptop may be asleep, off, or off the network. Requests cannot be delivered right now, and nothing is queued for later execution.');
     }
+  }
+}
+
+async function fetchRecoveryTasks() {
+  const feed = document.getElementById('recovery-feed');
+  const status = document.getElementById('recovery-status');
+  if (!feed || !status || document.hidden) return;
+  if (!currentSession) {
+    status.textContent = 'Authenticate this device to review recovery tasks.';
+    return;
+  }
+  try {
+    const result = await signedJson('/api/tasks');
+    const tasks = (Array.isArray(result.tasks) ? result.tasks : [])
+      .filter((task) => task && ['AWAITING_RECOVERY', 'INTERRUPTED'].includes(task.state))
+      .slice(-30)
+      .reverse();
+    feed.replaceChildren();
+    if (!tasks.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = 'No tasks currently require manual recovery review.';
+      feed.appendChild(empty);
+      status.textContent = 'Recovery list checked; no uncertain tasks were returned for this device.';
+      return;
+    }
+    for (const task of tasks) {
+      const card = document.createElement('article');
+      card.className = 'task-item pending';
+      const header = document.createElement('div');
+      header.className = 'task-header';
+      const title = document.createElement('strong');
+      title.textContent = String(task.id || 'Unknown task');
+      const state = document.createElement('span');
+      state.textContent = String(task.state);
+      header.append(title, state);
+      const operation = document.createElement('p');
+      operation.textContent = 'Operation: ' + String(task.operation || 'multi-step workflow');
+      const warning = document.createElement('p');
+      warning.className = 'muted';
+      warning.textContent = 'Inspect the target app/device first. Choosing a disposition records your review only; it does not retry the operation.';
+      const actions = document.createElement('div');
+      actions.className = 'action-row';
+      const choices = [
+        ['confirmed_no_effect', 'Confirm no effect'],
+        ['effect_observed', 'Effect observed'],
+        ['still_unknown', 'Still unknown'],
+      ];
+      for (const [disposition, label] of choices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = disposition === 'still_unknown' ? 'btn btn-secondary' : 'btn btn-primary';
+        button.textContent = label;
+        button.addEventListener('click', async () => {
+          const note = window.prompt('Describe what you checked (8–500 characters). Do not include passwords or secrets:');
+          if (note === null) return;
+          if (note.trim().length < 8 || note.length > 500) {
+            status.textContent = 'Recovery note must be 8–500 characters.';
+            return;
+          }
+          for (const action of actions.querySelectorAll('button')) action.disabled = true;
+          try {
+            const reviewed = await signedJson('/api/task/reconcile', 'POST', {
+              taskId: String(task.id),
+              disposition,
+              note: note.trim(),
+            });
+            status.textContent = reviewed.message || 'Recovery review recorded; no operation was replayed.';
+            await fetchRecoveryTasks();
+            await fetchNotifications();
+          } catch (error) {
+            status.textContent = error instanceof Error ? 'Recovery review failed: ' + error.message : 'Recovery review failed.';
+            for (const action of actions.querySelectorAll('button')) action.disabled = false;
+          }
+        });
+        actions.appendChild(button);
+      }
+      card.append(header, operation, warning, actions);
+      feed.appendChild(card);
+    }
+    status.textContent = 'Showing ' + tasks.length + ' task(s) requiring manual recovery review.';
+  } catch (error) {
+    status.textContent = error instanceof Error
+      ? 'Recovery tasks unavailable: ' + error.message
+      : 'Recovery tasks unavailable. Check the authenticated connection.';
   }
 }
 

@@ -689,6 +689,32 @@ export class JarvisServer {
         return this.jsonResponse(res, 200, { tasks });
       }
 
+      // Manual recovery review is an annotation/closure action only. It never retries or resumes a task.
+      if (req.method === 'POST' && url.pathname === '/api/task/reconcile') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) ||
+            typeof body.taskId !== 'string' || !body.taskId ||
+            typeof body.note !== 'string' ||
+            !['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(String(body.disposition))) {
+          return this.jsonResponse(res, 400, { error: 'taskId, a valid disposition, and a recovery note are required' });
+        }
+        if (body.note.trim().length < 8 || body.note.length > 500) {
+          return this.jsonResponse(res, 400, { error: 'Recovery note must be 8–500 characters' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.jarvis.hasDurableTaskJournal()) return this.jsonResponse(res, 503, { error: 'Durable task recovery is not configured', code: 'TASK_JOURNAL_NOT_CONFIGURED' });
+        const result = this.jarvis.reconcileTask(
+          body.taskId,
+          sessionId,
+          body.disposition as 'confirmed_no_effect' | 'effect_observed' | 'still_unknown',
+          body.note,
+        );
+        return this.jsonResponse(res, result.success ? 200 : 503, result);
+      }
+
       // Cancel a waiting task (invalidating its approval) or interrupt a running one.
       if (req.method === 'POST' && url.pathname === '/api/task/cancel') {
         const sessionId = req.headers['x-session-id'];
@@ -736,7 +762,9 @@ export class JarvisServer {
       if (message === 'Approval not found' || message === 'Associated task not found') {
         return this.jsonResponse(res, 404, { error: message });
       }
-      if (/expired|no longer pending|already been consumed|scope was modified|could not be rejected/i.test(message)) {
+      if (/recovery disposition|recovery note/i.test(message)) return this.jsonResponse(res, 400, { error: message });
+      if (/not awaiting recovery/i.test(message)) return this.jsonResponse(res, 409, { error: message });
+      if (/expired|no longer pending|no longer awaiting approval|already been consumed|scope was modified|could not be rejected/i.test(message)) {
         return this.jsonResponse(res, 409, { error: message });
       }
       if (/proof verification failed/i.test(message)) return this.jsonResponse(res, 401, { error: 'Enrollment proof verification failed' });

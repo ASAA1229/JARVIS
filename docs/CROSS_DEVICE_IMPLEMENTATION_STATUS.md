@@ -173,3 +173,12 @@ The HUD now requires explicit, per-page-session consent before push-to-talk star
 ### Exact-head CI runner blocker — 2026-10-30
 
 The latest hosted workflow attempts terminate within roughly 2–3 seconds before checkout. The GitHub Jobs API reports `runner_id: 0`, empty `runner_name`, and no executed steps for both `windows-latest` validation and `ubuntu-latest` Android build. Downloaded job logs return `BlobNotFound`. This does not prove a source-level test failure; it means current-head build/test/Android acceptance cannot be established. Investigate hosted-runner availability, Actions usage/billing limits, and repository Actions settings, then rerun CI on the latest `new` head. Keep the voice epic open until that result and target-MSI hardware acceptance are complete.
+
+
+## Workflow recovery companion follow-up — 2026-10-30
+
+The browser companion now exposes a Recovery Review panel for tasks in AWAITING_RECOVERY or INTERRUPTED. It reads the task list through the signed session flow and posts a manual disposition/note to /api/task/reconcile. The API requires a configured durable encrypted task journal and rejects malformed notes or tasks that are not eligible for recovery review. The UI explicitly states that review does not retry the operation.
+
+A stale-approval guard was also added: approval resolution now requires the associated task to remain in AWAITING_APPROVAL. This prevents an orphaned approval record from authorizing execution after a task has moved to recovery/cancelled/another state.
+
+**Not yet accepted:** exact-head CI, browser interaction against a completed run, crash/restart and partial-side-effect tests, and target MSI interaction remain unverified. This does not change the Android limitations above; both physical phones still require secure HTTPS connectivity, independent enrollment, revocation-isolation and reconnect tests.

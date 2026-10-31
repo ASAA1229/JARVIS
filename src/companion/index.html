@@ -86,6 +86,21 @@
         </div>
       </section>
 
+      <!-- Manual review of uncertain/interrupted workflows. This never resumes a task automatically. -->
+      <section class="card frame" id="card-recovery" aria-labelledby="recovery-title">
+        <div class="card-header">
+          <h2 id="recovery-title">Recovery Review</h2>
+          <button id="btn-refresh-recovery" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted">Interrupted or uncertain tasks are never replayed automatically. Review the actual application state before choosing a disposition. A manual note is not proof that an action was saved or submitted.</p>
+          <p id="recovery-status" class="muted" role="status" aria-live="polite">Authenticate this device to review recovery tasks.</p>
+          <div id="recovery-feed" class="tasks-feed" aria-label="Tasks awaiting manual recovery review">
+            <p class="muted">No recovery tasks loaded.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Personal memory review; mutations are submitted through the signed policy-gated request path -->
       <section class="card frame" id="card-memory" aria-labelledby="memory-title">
         <div class="card-header">

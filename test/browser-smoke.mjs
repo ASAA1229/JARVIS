@@ -89,6 +89,7 @@ try {
   });
 
   await page.goto(`${baseUrl}/companion`, { waitUntil: 'domcontentloaded' });
+  if (await page.locator('#card-recovery').count() !== 1) throw new Error('Companion recovery review panel is missing');
   page.on('dialog', async (dialog) => {
     if (dialog.type() === 'prompt') await dialog.accept(ownerToken);
     else await dialog.dismiss();
@@ -104,6 +105,12 @@ try {
   if (!(await page.locator('#header-device-name').innerText()).includes('JARVIS Browser Companion')) {
     throw new Error('Browser enrollment did not update the device identity UI');
   }
+
+  // Recovery list is loaded through the authenticated signed-request path.
+  await page.locator('#btn-refresh-recovery').click();
+  await page.waitForFunction(() => /Recovery list checked|Showing \d+ task\(s\) requiring manual recovery review/.test(
+    document.getElementById('recovery-status')?.textContent || '',
+  ));
 
   // Verify a signed read-only API request returns a completed result.
   await page.locator('#input-request').fill('What is the OS version?');

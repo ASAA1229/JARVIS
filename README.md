@@ -1,8 +1,8 @@
 # JARVIS
 
-**Security-first personal AI assistant POC — Windows host and browser-based companion, with native Android agents planned.**
+**Security-first personal AI assistant POC — Windows host, browser HUD/companion, and an initial native Android companion vertical slice.**
 
-> **Current status (2026-10-24): NOT RELEASE-READY.** The repository has a working security-oriented backend foundation and a successful hosted CI run, but the universal assistant vision is not implemented end-to-end. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
+> **Current status (2026-10-30): NOT RELEASE-READY.** The repository has a security-oriented backend foundation, bounded Windows UI Automation, an initial Android Keystore-backed client, and an encrypted task journal/recovery review path. Universal app control, full two-phone operation, local voice acceptance, end-to-end communications integrations, and exact-head CI/device acceptance remain incomplete. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
 
 ## Branch and PR status
 
@@ -107,7 +107,7 @@ Remembered app-launch approvals default to 30 minutes and are limited to the exa
 
 The initial CI run for Cursor's latest change (`033daffcb528432accbfc23a423db1001fa9d82d`) exposed one routing regression: the natural-language request `List installed apps` fell through to conversational-model fallback instead of reaching the policy-controlled planner. The action-request matcher was corrected on `new`.
 
-The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure.
+The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure. The task journal now follows the same fail-closed principle: a failed checkpoint write rolls back its in-memory mutation and disables further writes, with regression coverage for filesystem persistence failure. The approval lifecycle now also rejects attempts to reject a task that has moved out of `AWAITING_APPROVAL`, auditing the denial before the approval can be consumed; a targeted regression test was added.
 
 Exact final code/test revision `405b2eb233f08dfa0dde022a781cc34c611acd97` passed hosted CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275): TypeScript build, TypeScript check, automated test suite, and browser security smoke. The PR-triggered run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217) also passed on that revision. These results do not establish physical Windows voice/UI acceptance or native Android acceptance. A separate `npm audit` command and real-device tests remain outstanding.
 
@@ -121,3 +121,8 @@ Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishe
 
 The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
 
+
+
+## Voice input hardening — 2026-10-31
+
+The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. New regression tests cover malformed/truncated WAV input and voice privacy boundaries. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted. HUD transcript wake/stop matching now requires whole normalized phrase boundaries; direct browser-level regression coverage remains outstanding.The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. The local Piper TTS path now limits captured output to 16 MiB, retains at most 8 KiB of process diagnostics, and validates the generated WAV structure before returning it. Regression coverage was added for malformed/truncated WAV data and size limits. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted.
