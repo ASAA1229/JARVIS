@@ -33,6 +33,23 @@ jobs:
         run: npm test
       - name: Browser security smoke test
         run: npm run test:browser
+      - name: Create and verify SHA-256 build manifest
+        run: |
+          tar -czf jarvis-build.tar.gz -C dist .
+          node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+      - name: Upload verified build package and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-build-${{ github.run_number }}
+          path: |
+            jarvis-build.tar.gz
+            jarvis-manifest.json
+            jarvis-build.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   android-build:
     runs-on: ubuntu-latest
