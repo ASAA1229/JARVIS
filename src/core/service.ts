@@ -3,23 +3,42 @@ import {
   TaskState,
   OperationRequest,
   DeviceId,
+  DeviceRecord,
   SessionId,
   ExecutionResult,
   VerificationOutcome,
   RiskTier,
   Permission,
 } from '../core/types.js';
+import { cpus, freemem, totalmem } from 'node:os';
 import { DeviceIdentityManager } from '../core/identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
 import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
 import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
 import { WindowsDesktopAgent, DesktopAction } from '../adapters/windowsDesktopAgent.js';
+import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
+import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { DeviceSecurityService } from './deviceSecurity.js';
+import { NotificationCenter } from './notifications.js';
+import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
 import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { CommunicationsAdapter } from '../adapters/communications.js';
+import { TaskJournal } from './taskJournal.js';
+
+export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
+
+export interface WorkflowStepRecord {
+  index: number;
+  operation: string;
+  status: WorkflowStepStatus;
+  outcome?: VerificationOutcome;
+  at: number;
+  message?: string;
+}
 
 export interface TaskLifecycleRecord {
   id: TaskId;
@@ -36,6 +55,10 @@ export interface TaskLifecycleRecord {
   interrupted?: boolean;
   operations?: OperationRequest[];
   operationIndex?: number;
+  /** 'schedule' tasks were started by the scheduler; they never inherit approvals. */
+  origin?: 'interactive' | 'schedule';
+  /** Per-step record: completed, failed, uncertain, blocked, skipped, cancelled. */
+  steps?: WorkflowStepRecord[];
 }
 
 export interface TaskResult {
@@ -48,6 +71,27 @@ export interface TaskResult {
   verified?: boolean;
 }
 
+/** Hard ceiling for any single adapter call; adapters that honour AbortSignal stop at this point. */
+const EXECUTION_TIMEOUT_MS = 60_000;
+
+/**
+ * Read-only operations that may be retried once after a TIMEOUT. State-changing
+ * operations are never retried automatically: after a timeout their effect is
+ * unknown and a repeat could duplicate it.
+ */
+const RETRYABLE_READ_ONLY = new Set([
+  'system:get_os_info',
+  'system:get_memory_info',
+  'system:get_battery_status',
+  'system:get_disk_space',
+  'desktop:list_windows',
+  'desktop:read_control',
+  'file:list',
+  'file:search',
+  'file:read',
+  'app:inventory',
+]);
+
 export class JarvisCoreService {
   public readonly audit: AuditLogger;
   public readonly identity: DeviceIdentityManager;
@@ -56,12 +100,20 @@ export class JarvisCoreService {
   public readonly systemAdapter: WindowsSystemAdapter;
   public readonly appAdapter: WindowsAppLauncherAdapter;
   public readonly desktopAgent: WindowsDesktopAgent;
+  public readonly fileAdapter: WorkspaceFileAdapter;
+  public readonly terminal: TerminalRunner;
+  public readonly communications: CommunicationsAdapter;
   public readonly verifier: OutcomeVerifier;
+  public readonly notifications: NotificationCenter;
+  public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
   public readonly personalMemory?: PersonalMemoryStore;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
+  private readonly taskJournal?: TaskJournal;
   private activeExecutionTokens = new Map<TaskId, AbortController>();
+  private readonly startedAt = Date.now();
+  private cpuSample?: { idle: number; total: number };
 
   constructor(
     planner: IAIPlannerProvider,
@@ -76,14 +128,36 @@ export class JarvisCoreService {
     this.systemAdapter = new WindowsSystemAdapter();
     this.appAdapter = new WindowsAppLauncherAdapter();
     this.desktopAgent = new WindowsDesktopAgent();
+    this.fileAdapter = new WorkspaceFileAdapter();
+    this.terminal = new TerminalRunner(this.fileAdapter);
+    this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
+    this.notifications = new NotificationCenter();
+    this.scheduler = new Scheduler(
+      this.audit,
+      (job) => this.#runScheduledJob(job),
+      ownerControlToken ? (statePath ? `${statePath}.schedules` : './data/schedules.json') : undefined,
+      ownerControlToken,
+    );
     this.planner = planner;
     if (ownerControlToken) {
       this.personalMemory = new PersonalMemoryStore(
         statePath ? statePath + '.memory' : './data/personal-memory.enc',
         ownerControlToken,
       );
+      this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken);
+      for (const record of this.taskJournal.list()) this.tasks.set(record.id, record);
     }
+  }
+
+  /** Start the scheduler loop. Called by the server on start; never runs implicitly. */
+  public startBackgroundServices(): void {
+    this.scheduler.start();
+  }
+
+  public stopBackgroundServices(): void {
+    this.scheduler.stop();
+    for (const controller of this.activeExecutionTokens.values()) controller.abort();
   }
 
   /**
@@ -99,8 +173,15 @@ export class JarvisCoreService {
       this.audit.record('REQUEST_AUTH_FAILED', { reason: auth.error });
       throw new Error(`Authentication failed: ${auth.error}`);
     }
+    return this.#processRequest(auth.device, requestText, 'interactive');
+  }
 
-    const device = auth.device;
+  /**
+   * Shared pipeline for interactive and scheduled requests. A scheduled request
+   * gets no special authority: it is planned and policy-evaluated exactly like a
+   * live one, using the owner device's permissions at the moment it runs.
+   */
+  async #processRequest(device: DeviceRecord, requestText: string, origin: 'interactive' | 'schedule'): Promise<TaskResult> {
     const taskId = `task-${CryptoUtil.randomToken(12)}`;
     const auditIntegrity = this.audit.verifyIntegrity();
     if (!auditIntegrity.valid) {
@@ -119,11 +200,16 @@ export class JarvisCoreService {
       state: TaskState.CREATED,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      origin,
+      steps: [],
     };
     this.tasks.set(taskId, taskRecord);
+    if (!this.#persistTask(taskRecord)) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Task checkpoint failed; no operation was executed', verified: false };
+    }
 
     try {
-      this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length }, device.id, taskId);
+      this.audit.record('REQUEST_RECEIVED', { requestLength: requestText.length, origin }, device.id, taskId);
     } catch {
       taskRecord.state = TaskState.AWAITING_RECOVERY;
       taskRecord.error = 'Request could not be durably audited; no operation was planned or executed';
@@ -134,7 +220,7 @@ export class JarvisCoreService {
     const context: MinimizedContext = {
       requesterName: device.name,
       timestamp: Date.now(),
-      memory: this.personalMemory?.list().slice(0, 20).map((record) => record.content),
+      memory: this.personalMemory?.relevant(requestText, 5).map((record) => record.content),
     };
     let plan: PlanProposal;
     try {
@@ -159,7 +245,8 @@ export class JarvisCoreService {
       };
     }
 
-    // Validate plan against strict schema
+    // Validate plan against strict schema. A model-written plan is a proposal only;
+    // it is never authorization (every step still goes through the PolicyGateway).
     const validation = this.planner.validatePlanSchema(plan);
     if (!validation.valid) {
       taskRecord.state = TaskState.FAILED;
@@ -178,7 +265,8 @@ export class JarvisCoreService {
       return { taskId, state: taskRecord.state, message: plan.explanation };
     }
 
-    // Single bounded operation per task in POC slice
+    // Sequential, dependency-ordered workflow: step N+1 starts only after step N is
+    // verified. The first step is evaluated now; later steps are evaluated when reached.
     const proposedOp = plan.operations[0];
     taskRecord.operations = plan.operations.map((operation) => ({
       operation: operation.operation,
@@ -195,6 +283,45 @@ export class JarvisCoreService {
 
     // Step 3: Evaluate Policy
     return this.#evaluateAndProceed(taskId, opRequest, device.id);
+  }
+
+  #recordStep(task: TaskLifecycleRecord, status: WorkflowStepStatus, outcome?: VerificationOutcome, message?: string): void {
+    if (!task.steps) task.steps = [];
+    task.steps.push({
+      index: task.operationIndex ?? 0,
+      operation: task.operation ?? 'unknown',
+      status,
+      outcome,
+      at: Date.now(),
+      message: message ? message.slice(0, 160) : undefined,
+    });
+    this.#persistTask(task);
+  }
+
+  /** Persist a checkpoint before further work; a failed write stops dependent steps. */
+  #persistTask(task: TaskLifecycleRecord): boolean {
+    task.updatedAt = Date.now();
+    if (!this.taskJournal) return true;
+    try {
+      this.taskJournal.save(task);
+      return true;
+    } catch {
+      task.state = TaskState.AWAITING_RECOVERY;
+      task.interrupted = true;
+      task.error = 'Task checkpoint could not be durably saved. Execution is stopped; reconcile external state before retrying.';
+      try {
+        this.audit.record('TASK_CHECKPOINT_FAILED', { state: task.state }, task.deviceId, task.id);
+      } catch { /* Fail closed even if the audit sink is also unavailable. */ }
+      return false;
+    }
+  }
+
+  #skipRemainingSteps(task: TaskLifecycleRecord): void {
+    if (!task.operations) return;
+    if (!task.steps) task.steps = [];
+    for (let index = (task.operationIndex ?? 0) + 1; index < task.operations.length; index++) {
+      task.steps.push({ index, operation: task.operations[index].operation, status: 'skipped', at: Date.now() });
+    }
   }
 
   /**
@@ -225,6 +352,8 @@ export class JarvisCoreService {
           policyResult.riskTier
         );
         taskRecord.approvalId = approval.id;
+        this.#recordStep(taskRecord, 'awaiting_approval', undefined, policyResult.reason);
+        this.notifications.push('warning', 'approval_required', `Approval needed for ${opRequest.operation} (risk ${policyResult.riskTier}).`, { taskId, deviceId });
         return {
           taskId,
           state: taskRecord.state,
@@ -235,6 +364,9 @@ export class JarvisCoreService {
         taskRecord.state = TaskState.FAILED;
         taskRecord.error = policyResult.reason;
         this.audit.record('TASK_DENIED', { reason: policyResult.reason }, deviceId, taskId);
+        this.#recordStep(taskRecord, 'blocked', undefined, policyResult.reason);
+        this.#skipRemainingSteps(taskRecord);
+        this.notifications.push('error', 'task_blocked', `Blocked by policy: ${opRequest.operation}.`, { taskId, deviceId });
         return { taskId, state: taskRecord.state, message: policyResult.reason || 'Policy denied execution' };
       }
     }
@@ -245,6 +377,8 @@ export class JarvisCoreService {
 
   /**
    * Executes permitted operation via allowlisted execution adapters with cancellation tracking.
+   * This is the ONLY place adapters are invoked, and it is reachable only from
+   * #evaluateAndProceed after the PolicyGateway has allowed the exact operation.
    */
   async #executeTask(
     taskId: TaskId,
@@ -280,12 +414,17 @@ export class JarvisCoreService {
     }
 
     taskRecord.state = TaskState.EXECUTING;
+    if (!this.#persistTask(taskRecord)) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed before execution', verified: false };
+    }
     const abortController = new AbortController();
     this.activeExecutionTokens.set(taskId, abortController);
+    const timeoutHandle = setTimeout(() => abortController.abort(), EXECUTION_TIMEOUT_MS);
 
     try {
       this.audit.record('EXECUTION_STARTED', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
     } catch {
+      clearTimeout(timeoutHandle);
       this.activeExecutionTokens.delete(taskId);
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'Execution blocked because the audit record could not be persisted';
@@ -299,99 +438,151 @@ export class JarvisCoreService {
     }
 
     let rawResult: ExecutionResult;
+    const parameters = opRequest.parameters;
+    const signal = abortController.signal;
 
-    try {
-      if (abortController.signal.aborted) {
-        throw new Error('Task was aborted before execution');
-      }
-
+    const dispatch = async (): Promise<ExecutionResult> => {
       // Dispatch ONLY to allowlisted adapters
       switch (opRequest.operation) {
         case 'memory:list': {
-          if (!this.personalMemory) {
-            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
-          } else {
-            rawResult = { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: this.personalMemory.list(), evidence: { memoryAvailable: true, encryptedAtRest: true } };
-          }
-          break;
+          if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: this.personalMemory.list(), evidence: { memoryAvailable: true, encryptedAtRest: true } };
         }
         case 'memory:save': {
-          if (!this.personalMemory) {
-            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
-          } else {
-            const record = this.personalMemory.save(
-              opRequest.parameters.category as MemoryCategory,
-              opRequest.parameters.content as string,
-              opRequest.parameters.ttlDays as number | undefined,
-            );
-            this.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, taskRecord.deviceId, taskId);
-            rawResult = { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: record.id, category: record.category, createdAt: record.createdAt, expiresAt: record.expiresAt }, evidence: { encryptedAtRest: true, memoryId: record.id } };
-          }
-          break;
+          if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          const record = this.personalMemory.save(
+            parameters.category as MemoryCategory,
+            parameters.content as string,
+            parameters.ttlDays as number | undefined,
+          );
+          this.audit.record('PERSONAL_MEMORY_SAVED', { category: record.category, memoryId: record.id }, taskRecord.deviceId, taskId);
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: record.id, category: record.category, createdAt: record.createdAt, expiresAt: record.expiresAt }, evidence: { encryptedAtRest: true, memoryId: record.id } };
+        }
+        case 'memory:update': {
+          if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          const updated = this.personalMemory.update(parameters.id as string, parameters.content as string);
+          if (!updated) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Memory entry not found.', evidence: { memoryId: parameters.id } };
+          this.audit.record('PERSONAL_MEMORY_UPDATED', { memoryId: updated.id, category: updated.category }, taskRecord.deviceId, taskId);
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: updated.id, category: updated.category, updatedAt: updated.updatedAt }, evidence: { encryptedAtRest: true, memoryId: updated.id } };
         }
         case 'memory:delete': {
-          if (!this.personalMemory) {
-            rawResult = { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
-          } else {
-            const id = opRequest.parameters.id as string;
-            const deleted = this.personalMemory.delete(id);
-            this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted }, taskRecord.deviceId, taskId);
-            rawResult = { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted } };
-          }
-          break;
+          if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
+          const id = parameters.id as string;
+          const deleted = this.personalMemory.delete(id);
+          // Prove deletion by re-reading and decrypting the stored file, not by trusting memory.
+          const diskVerified = deleted ? this.personalMemory.verifyAbsentOnDisk(id) : false;
+          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified }, taskRecord.deviceId, taskId);
+          if (deleted && !diskVerified) return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified } };
+          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified } };
         }
         case 'system:get_os_info':
-          rawResult = await this.systemAdapter.getOsInfo();
-          break;
+          return this.systemAdapter.getOsInfo();
         case 'system:get_memory_info':
-          rawResult = await this.systemAdapter.getMemoryInfo();
-          break;
+          return this.systemAdapter.getMemoryInfo();
         case 'system:get_battery_status':
-          rawResult = await this.systemAdapter.getBatteryStatus(abortController.signal);
-          break;
+          return this.systemAdapter.getBatteryStatus(signal);
         case 'system:get_disk_space':
-          rawResult = await this.systemAdapter.getDiskSpace(
-            (opRequest.parameters.drive as string) || 'C:',
-            abortController.signal
-          );
-          break;
+          return this.systemAdapter.getDiskSpace((parameters.drive as string) || 'C:', signal);
         case 'app:launch':
-          rawResult = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
-          break;
+          return this.appAdapter.launchApp(parameters.appId as string, signal);
+        case 'app:inventory':
+          return this.appAdapter.inventory(signal);
+        case 'comms:handoff_email':
+          return this.communications.handoffEmail(parameters, signal);
+        case 'comms:unsupported':
+          return this.communications.unsupported(parameters.channel, parameters.reason);
         case 'desktop:launch_and_type': {
-          const launch = await this.appAdapter.launchApp(opRequest.parameters.appId as string, abortController.signal);
-          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
-            rawResult = launch;
-          } else {
-            const typing = await this.desktopAgent.execute({
-              operation: 'desktop:type_text',
-              parameters: { text: opRequest.parameters.text as string },
-            }, abortController.signal);
-            rawResult = {
-              ...typing,
-              data: { launch: launch.data, typing: typing.data },
-              evidence: { launch: launch.evidence, typing: typing.evidence },
+          const launch = await this.appAdapter.launchApp(parameters.appId as string, signal);
+          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
+          // Type only into the exact window the launch verified. Without a verified
+          // window identity JARVIS refuses to type rather than guess the foreground app.
+          const launched = launch.data as { windowPid?: number; windowProcess?: string } | undefined;
+          if (!launched?.windowPid || !launched.windowProcess) {
+            return {
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application launched, but its window could not be identified, so no text was typed.',
+              failureKind: 'target_mismatch',
+              data: { launch: launch.data },
+              evidence: { launch: launch.evidence, typingSkipped: true },
             };
           }
-          break;
+          const focus = await this.desktopAgent.execute({ operation: 'desktop:focus_window', parameters: { pid: launched.windowPid } }, signal);
+          if (!focus.success) {
+            return {
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application launched, but it could not be brought to the foreground, so no text was typed.',
+              failureKind: focus.failureKind ?? 'unavailable',
+              data: { launch: launch.data },
+              evidence: { launch: launch.evidence, focus: focus.evidence, typingSkipped: true },
+            };
+          }
+          const typing = await this.desktopAgent.execute({
+            operation: 'desktop:type_text',
+            parameters: { text: parameters.text as string, expectProcess: launched.windowProcess },
+          } as unknown as DesktopAction, signal);
+          return {
+            ...typing,
+            data: { launch: launch.data, typing: typing.data },
+            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence },
+          };
         }
         case 'desktop:type_text':
         case 'desktop:paste_text':
         case 'desktop:hotkey':
         case 'desktop:zoom':
         case 'desktop:inspect_window':
+        case 'desktop:read_control':
         case 'desktop:click_control':
         case 'desktop:set_value':
         case 'desktop:copy_selection':
         case 'desktop:paste_clipboard':
-          rawResult = await this.desktopAgent.execute({
-            operation: opRequest.operation,
-            parameters: opRequest.parameters,
-          } as DesktopAction, abortController.signal);
-          break;
+        case 'desktop:list_windows':
+        case 'desktop:focus_window':
+          return this.desktopAgent.execute({ operation: opRequest.operation, parameters } as unknown as DesktopAction, signal);
+        case 'file:list':
+          return this.fileAdapter.list(parameters.path);
+        case 'file:search':
+          return this.fileAdapter.search(parameters.query, parameters.path);
+        case 'file:read':
+          return this.fileAdapter.read(parameters.path);
+        case 'file:write':
+          return this.fileAdapter.write(parameters.path, parameters.content);
+        case 'file:edit':
+          return this.fileAdapter.edit(parameters.path, parameters.find, parameters.replace);
+        case 'file:delete':
+          return this.fileAdapter.delete(parameters.path);
+        case 'file:restore':
+          return this.fileAdapter.restore(parameters.quarantineId);
+        case 'terminal:run':
+          return this.terminal.run({ command: parameters.command, args: parameters.args, cwd: parameters.cwd }, signal);
+        case 'schedule:create': {
+          const created = this.scheduler.create(taskRecord.deviceId, parameters.requestText, parameters.runAt, parameters.everyMinutes);
+          if (!created.ok) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: created.error, failureKind: 'unsupported', evidence: { scheduler: true } };
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: created.job.id, runAt: created.job.runAt, everyMinutes: created.job.everyMinutes }, evidence: { scheduler: true, jobId: created.job.id, note: 'Each run is re-authorized and needs fresh approval for state-changing steps.' } };
+        }
+        case 'schedule:list':
+          return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: this.scheduler.list(taskRecord.deviceId), evidence: { scheduler: true } };
+        case 'schedule:cancel': {
+          const cancelled = this.scheduler.cancel(String(parameters.id), taskRecord.deviceId);
+          return { success: cancelled, outcome: cancelled ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: cancelled ? undefined : 'No active schedule with that id belongs to this device.', evidence: { scheduler: true } };
+        }
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
+    };
+
+    try {
+      if (signal.aborted) {
+        throw new Error('Task was aborted before execution');
+      }
+      let attempts = 0;
+      do {
+        attempts++;
+        rawResult = await dispatch();
+        // One bounded retry, read-only operations only, and only after a timeout.
+      } while (RETRYABLE_READ_ONLY.has(opRequest.operation) && rawResult.failureKind === 'timeout' && attempts < 2 && !signal.aborted);
     } catch (err: unknown) {
       // Adapter exceptions can contain local paths, command fragments, or other
       // implementation details. Keep the user-facing result generic and retain
@@ -403,10 +594,11 @@ export class JarvisCoreService {
         evidence: { errorType: err instanceof Error ? err.name : 'UnknownError' },
       };
     } finally {
+      clearTimeout(timeoutHandle);
       this.activeExecutionTokens.delete(taskId);
     }
 
-    if (abortController.signal.aborted || taskRecord.interrupted) {
+    if (signal.aborted || taskRecord.interrupted) {
       rawResult = {
         ...rawResult,
         success: false,
@@ -426,6 +618,9 @@ export class JarvisCoreService {
       taskRecord.state = TaskState.PARTIAL;
     } else if (rawResult.interrupted) {
       taskRecord.state = TaskState.INTERRUPTED;
+    } else if (verification.honestOutcome === VerificationOutcome.UNCERTAIN) {
+      // The effect may or may not have happened: hold for reconciliation and never auto-retry.
+      taskRecord.state = TaskState.AWAITING_RECOVERY;
     } else {
       taskRecord.state = TaskState.FAILED;
     }
@@ -437,6 +632,7 @@ export class JarvisCoreService {
           operation: opRequest.operation,
           honestOutcome: verification.honestOutcome,
           verified: verification.verified,
+          ...(rawResult.failureKind ? { failureKind: rawResult.failureKind } : {}),
           ...(typeof rawResult.evidence.errorType === 'string' ? { errorType: rawResult.evidence.errorType } : {}),
         },
         taskRecord.deviceId,
@@ -454,23 +650,47 @@ export class JarvisCoreService {
       };
     }
 
-    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS &&
-        taskRecord.operations && taskRecord.operationIndex !== undefined &&
-        taskRecord.operationIndex + 1 < taskRecord.operations.length) {
-      const nextIndex = taskRecord.operationIndex + 1;
-      const nextOperation = taskRecord.operations[nextIndex];
+    const stepStatus: WorkflowStepStatus = verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS
+      ? 'completed'
+      : verification.honestOutcome === VerificationOutcome.VERIFIED_FAILURE ? 'failed' : 'uncertain';
+    this.#recordStep(taskRecord, stepStatus, verification.honestOutcome, verification.message);
+    if (taskRecord.state === TaskState.AWAITING_RECOVERY && taskRecord.interrupted) {
+      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+    }
+
+    const hasNextStep = taskRecord.operations !== undefined && taskRecord.operationIndex !== undefined &&
+      taskRecord.operationIndex + 1 < taskRecord.operations.length;
+
+    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS && hasNextStep) {
+      const nextIndex = (taskRecord.operationIndex as number) + 1;
+      const nextOperation = (taskRecord.operations as OperationRequest[])[nextIndex];
       taskRecord.operationIndex = nextIndex;
       taskRecord.operation = nextOperation.operation;
       taskRecord.parameters = nextOperation.parameters;
       taskRecord.state = TaskState.CREATED;
       taskRecord.updatedAt = Date.now();
+      if (!this.#persistTask(taskRecord)) {
+        return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; next step was not started', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+      }
       this.audit.record('WORKFLOW_STEP_VERIFIED', {
         completedIndex: nextIndex - 1,
         nextIndex,
         nextOperation: nextOperation.operation,
-        totalSteps: taskRecord.operations.length,
+        totalSteps: (taskRecord.operations as OperationRequest[]).length,
       }, taskRecord.deviceId, taskId);
       return this.#evaluateAndProceed(taskId, nextOperation, taskRecord.deviceId);
+    }
+
+    // The workflow stops here: either it finished, or a step was not verified. Never
+    // continue past a failure or an ambiguous result.
+    if (verification.honestOutcome !== VerificationOutcome.VERIFIED_SUCCESS) this.#skipRemainingSteps(taskRecord);
+    taskRecord.updatedAt = Date.now();
+    if (taskRecord.state === TaskState.COMPLETED) {
+      this.notifications.push('info', 'task_completed', `Completed and verified: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
+    } else if (taskRecord.state === TaskState.FAILED) {
+      this.notifications.push('error', 'task_failed', `Failed: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
+    } else {
+      this.notifications.push('warning', 'task_uncertain', `Outcome not confirmed for ${opRequest.operation}; check the laptop before retrying.`, { taskId, deviceId: taskRecord.deviceId });
     }
 
     return {
@@ -481,6 +701,27 @@ export class JarvisCoreService {
       outcome: verification.honestOutcome,
       verified: verification.verified,
     };
+  }
+
+  #assertApproverPermission(
+    approval: { operation: string; taskId: string },
+    approver: DeviceRecord,
+    failureEvent: string,
+    approvalId: string,
+  ): void {
+    const isMemory = approval.operation.startsWith('memory:');
+    const needsManage = isMemory || approval.operation.startsWith('schedule:');
+    const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
+      approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
+      approval.operation.startsWith('comms:');
+    if (needsManage && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record(failureEvent, { approvalId, operation: approval.operation }, approver.id, approval.taskId);
+      throw new Error(isMemory ? 'Approver lacks DEVICE_MANAGE permission for personal memory' : 'Approver lacks permission for this action');
+    }
+    if (needsApp && !approver.permissions.includes(Permission.APP_LAUNCH)) {
+      this.audit.record(failureEvent, { approvalId, operation: approval.operation }, approver.id, approval.taskId);
+      throw new Error('Approver lacks permission for this action');
+    }
   }
 
   /**
@@ -500,13 +741,17 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
-    if (approval.operation.startsWith('memory:') && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
-      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
-      throw new Error('Approver lacks DEVICE_MANAGE permission for personal memory');
-    }
-    if ((approval.operation === 'app:launch' || approval.operation.startsWith('desktop:')) && !approver.permissions.includes(Permission.APP_LAUNCH)) {
-      this.audit.record('APPROVAL_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
-      throw new Error('Approver lacks permission for this action');
+    this.#assertApproverPermission(approval, approver, 'APPROVAL_FAILED_INSUFFICIENT_PERMISSION', approvalId);
+
+    if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
+      const expiredTask = this.tasks.get(approval.taskId);
+      if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
+        expiredTask.state = TaskState.EXPIRED;
+        expiredTask.updatedAt = Date.now();
+        this.#persistTask(expiredTask);
+        this.#skipRemainingSteps(expiredTask);
+        this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: expiredTask.id, deviceId: expiredTask.deviceId });
+      }
     }
 
     const resolveRes = this.policy.resolveApproval(approvalId, true, approver.id);
@@ -548,15 +793,7 @@ export class JarvisCoreService {
     const approval = this.policy.getApproval(approvalId);
     if (!approval) throw new Error('Approval not found');
 
-    if (approval.operation.startsWith('memory:') && !approver.permissions.includes(Permission.DEVICE_MANAGE)) {
-      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
-      throw new Error('Approver lacks DEVICE_MANAGE permission for personal memory');
-    }
-    if ((approval.operation === 'app:launch' || approval.operation.startsWith('desktop:')) &&
-        !approver.permissions.includes(Permission.APP_LAUNCH)) {
-      this.audit.record('REJECTION_FAILED_INSUFFICIENT_PERMISSION', { approvalId, operation: approval.operation }, approver.id, approval.taskId);
-      throw new Error('Approver lacks permission for this action');
-    }
+    this.#assertApproverPermission(approval, approver, 'REJECTION_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
     const resolveRes = this.policy.resolveApproval(approvalId, false, approver.id);
     if (!resolveRes.success) {
@@ -567,9 +804,46 @@ export class JarvisCoreService {
     if (task) {
       task.state = TaskState.REJECTED;
       task.updatedAt = Date.now();
+      this.#recordStep(task, 'cancelled', undefined, 'Rejected by approver');
+      this.#skipRemainingSteps(task);
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
     return { success: true, message: 'Task rejected' };
+  }
+
+  /**
+   * Cancel a task. A task still waiting for approval is cancelled and its approval
+   * is invalidated immediately; a running task is interrupted and will be reported
+   * as needing reconciliation (its side effects are not assumed undone).
+   */
+  public cancelTask(taskId: TaskId, sessionId: SessionId): { success: boolean; message: string; state?: TaskState } {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const requester = auth.device;
+    if (!auth.valid || !requester) {
+      this.audit.record('CANCEL_FAILED_INVALID_SESSION', { reason: auth.error });
+      throw new Error('Session is not authenticated');
+    }
+    const task = this.tasks.get(taskId);
+    if (!task) return { success: false, message: 'Task not found' };
+    if (task.deviceId !== requester.id && !requester.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('CANCEL_DENIED_NOT_OWNER', { taskId }, requester.id, taskId);
+      throw new Error('Only the requesting device or an owner device can cancel this task');
+    }
+    if (task.state === TaskState.EXECUTING) {
+      const interrupted = this.interruptTask(taskId);
+      return { success: interrupted, message: interrupted ? 'Interrupt requested. The outcome will be reported as needing reconciliation.' : 'The task was not interruptible.', state: task.state };
+    }
+    if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
+      this.policy.invalidateApprovals({ taskId }, 'TASK_CANCELLED');
+      task.state = TaskState.CANCELLED;
+      task.updatedAt = Date.now();
+      this.#recordStep(task, 'cancelled', undefined, 'Cancelled by user');
+      this.#skipRemainingSteps(task);
+      this.audit.record('TASK_CANCELLED', { taskId }, requester.id, taskId);
+      this.notifications.push('info', 'task_cancelled', 'A task was cancelled before it ran.', { taskId, deviceId: task.deviceId });
+      return { success: true, message: 'Task cancelled; nothing was executed.', state: task.state };
+    }
+    return { success: false, message: `Task is already ${task.state}.`, state: task.state };
   }
 
   /**
@@ -581,13 +855,103 @@ export class JarvisCoreService {
       controller.abort();
       const task = this.tasks.get(taskId);
       if (task) {
-        task.state = TaskState.INTERRUPTED;
+        task.state = TaskState.AWAITING_RECOVERY;
         task.interrupted = true;
+        task.error = 'Execution was interrupted; reconcile external state before retrying.';
+        this.#persistTask(task);
       }
       this.audit.record('TASK_INTERRUPTED', { taskId }, task?.deviceId, taskId);
       return true;
     }
     return false;
+  }
+
+  /**
+   * Must be called whenever a device is revoked. Pending approvals, remembered
+   * grants, scheduled work and running tasks owned by that device stop immediately.
+   */
+  public onDeviceRevoked(deviceId: DeviceId): void {
+    const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
+    const schedules = this.scheduler.cancelForDevice(deviceId);
+    for (const task of this.tasks.values()) {
+      if (task.deviceId !== deviceId) continue;
+      if (task.state === TaskState.EXECUTING) this.interruptTask(task.id);
+      else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED) {
+        task.state = TaskState.CANCELLED;
+        task.updatedAt = Date.now();
+        this.#persistTask(task);
+      }
+    }
+    this.notifications.push('warning', 'device_revoked', `A device was revoked; ${invalidated} approval(s) and ${schedules} schedule(s) were cancelled.`, { deviceId });
+  }
+
+  /** Re-run a due scheduled request as its owner. No approval or permission is inherited. */
+  async #runScheduledJob(job: ScheduledJob): Promise<JobRunResult> {
+    const owner = this.identity.getDevice(job.ownerDeviceId);
+    if (!owner || owner.status !== 'ACTIVE') {
+      this.audit.record('SCHEDULE_BLOCKED_OWNER_UNAVAILABLE', { jobId: job.id }, job.ownerDeviceId);
+      this.notifications.push('warning', 'schedule_blocked', 'A scheduled request was skipped because its owner device is no longer active.', { deviceId: job.ownerDeviceId });
+      return { state: 'OWNER_UNAVAILABLE' };
+    }
+    const result = await this.#processRequest(owner, job.requestText, 'schedule');
+    this.notifications.push(
+      result.state === TaskState.AWAITING_APPROVAL ? 'warning' : 'info',
+      'schedule_triggered',
+      result.state === TaskState.AWAITING_APPROVAL
+        ? 'A scheduled request is waiting for your approval before it can run.'
+        : `A scheduled request ran: ${result.state}.`,
+      { taskId: result.taskId, deviceId: owner.id },
+    );
+    return { taskId: result.taskId, state: result.state };
+  }
+
+  /** Measured host/service health. Values come from the OS and live service state, never constants. */
+  public getHealthSnapshot(): Record<string, unknown> {
+    const cpuList = cpus();
+    let idle = 0;
+    let total = 0;
+    for (const cpu of cpuList) {
+      idle += cpu.times.idle;
+      total += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.idle + cpu.times.irq;
+    }
+    let cpuPercent: number | undefined;
+    if (this.cpuSample && total > this.cpuSample.total) {
+      cpuPercent = Math.round((1 - (idle - this.cpuSample.idle) / (total - this.cpuSample.total)) * 100);
+    }
+    this.cpuSample = { idle, total };
+    const tasks = Array.from(this.tasks.values());
+    const total_ = totalmem();
+    return {
+      generatedAt: Date.now(),
+      uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
+      core: {
+        auditIntegrity: this.audit.verifyIntegrity().valid,
+        identityState: this.identity.isStateHealthy(),
+        schedulerPersistence: this.scheduler.healthy,
+      },
+      host: {
+        platform: process.platform,
+        logicalCores: cpuList.length,
+        cpuUsagePercent: cpuPercent ?? null,
+        memoryTotalBytes: total_,
+        memoryUsedPercent: Math.round((1 - freemem() / total_) * 100),
+        processRssBytes: process.memoryUsage().rss,
+      },
+      agent: {
+        windowsDesktopAgentSupported: this.desktopAgent.isSupportedHost(),
+        workspaceRoots: this.fileAdapter.getRoots().length,
+        personalMemoryConfigured: this.personalMemory !== undefined,
+      },
+      tasks: {
+        total: tasks.length,
+        running: this.activeExecutionTokens.size,
+        awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
+        awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
+        failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
+      },
+      schedules: { active: this.scheduler.activeCount },
+      notifications: this.notifications.size,
+    };
   }
 
   public getTask(taskId: TaskId): TaskLifecycleRecord | undefined {

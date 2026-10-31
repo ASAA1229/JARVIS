@@ -84,9 +84,10 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
       signature,
       timestamp,
       nonce,
-      -1,
+      1,
     );
     assert.strictEqual(expiredSession.success, true);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
 
     await assert.rejects(
       () => jarvis.submitRequest(expiredSession.sessionId!, 'What is the OS version?'),
