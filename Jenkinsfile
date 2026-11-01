@@ -7,6 +7,7 @@ pipeline {
   }
   environment {
     PROJECT_NAME = 'JARVIS'
+    REQUIRE_BUILD_PROVENANCE = 'true'
     ARTIFACT_FILE = 'jarvis-build.tar.gz'
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
