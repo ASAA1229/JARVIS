@@ -808,6 +808,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
     if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
     speechRecognizer = null;
+    stopAudioMeter();
     if (mode === 'wake') {
       wakeCaptureAwaitingReview = false;
       setAssistantState('VOICE START FAILED', 'The browser could not start post-wake speech recognition. No command was sent; local wake detection will retry. You can also use text input.');
@@ -848,12 +849,14 @@ function cancelVoiceCapture() {
     clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
   }
-  if (speechRecognizer) {
+  const recognizerToAbort = speechRecognizer;
+  speechRecognizer = null;
+  stopAudioMeter();
+  if (recognizerToAbort) {
     try {
-      speechRecognizer.abort();
-      stopAudioMeter();
+      recognizerToAbort.abort();
     } catch (e) {
-      // ignore
+      // The capture generation is invalidated even if the browser cannot abort.
     }
   }
   document.getElementById('reactor-container').classList.remove('listening');
