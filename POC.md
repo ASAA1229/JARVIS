@@ -177,3 +177,8 @@ The local Piper TTS adapter now caps captured audio at 16 MiB, bounds retained s
 ## Voice capture completion idempotency — 2026-11-01
 
 The HUD now guards each speech-recognition capture's terminal `onend` handler so a repeated terminal event cannot dispatch the same post-wake command twice. Push-to-talk remains review-first; consented post-wake capture still passes through the policy gateway. Tests remain paused and exact-head CI/MSI acceptance are pending.
+
+
+## Voice cancellation cleanup hardening — 2026-11-01
+
+The HUD now detaches the active browser recognizer before aborting a cancelled capture, stops the audio meter, and relies on capture-generation invalidation to ignore late callbacks. Recognition startup failures also stop the meter. Tests remain paused and exact-head CI/MSI acceptance remain pending.
