@@ -410,3 +410,10 @@ This is reliability hardening within the existing Voice Interaction & Cinematic 
 - Added a per-capture completion guard so duplicate browser `onend` events cannot process the same finalized wake transcript more than once or submit the same command twice from that capture.
 - Corrected the stale source comment to distinguish review-first push-to-talk from consented post-wake command dispatch through the policy gateway.
 - This is a source-level safeguard only. Tests remain paused; exact-head CI and MSI voice acceptance are not claimed.
+
+
+## Voice cancellation cleanup hardening — 2026-11-01
+
+- Cancellation now detaches the active recognizer reference before requesting browser abort, invalidates the capture generation, and stops the audio meter. Late callbacks from the cancelled capture remain ignored by the generation guard.
+- Recognition-start exceptions also stop the audio meter while resetting capture state.
+- Source-level change only. Tests remain paused; exact-head CI and target MSI acceptance are not claimed.
