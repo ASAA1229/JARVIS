@@ -182,3 +182,8 @@ The HUD now guards each speech-recognition capture's terminal `onend` handler so
 ## Voice cancellation cleanup hardening — 2026-11-01
 
 The HUD now detaches the active browser recognizer before aborting a cancelled capture, stops the audio meter, and relies on capture-generation invalidation to ignore late callbacks. Recognition startup failures also stop the meter. Tests remain paused and exact-head CI/MSI acceptance remain pending.
+
+
+### Voice timeout safety update — 2026-11-01
+
+A post-wake browser-speech capture that reaches the 15-second limit is now cancelled and discarded instead of being stopped normally, preventing a possibly incomplete final transcript from being auto-dispatched. The cancellation invalidates late recognition callbacks and allows wake detection to recover when still enabled. Push-to-talk continues to expose its transcript for explicit review. This change has not been tested because testing is paused; Windows MSI acceptance and exact-head CI remain pending.
