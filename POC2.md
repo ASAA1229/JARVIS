@@ -403,3 +403,10 @@ This is reliability hardening within the existing Voice Interaction & Cinematic 
 
 - Fixed the post-wake browser speech-recognition startup exception path: if the browser rejects `recognizer.start()`, JARVIS now clears the pending wake-capture state, resets listening indicators, reports that no command was sent, and schedules local wake standby recovery.
 - This is a source-level recovery fix only. Tests remain paused and no exact-head CI or MSI acceptance is claimed.
+
+
+## Voice capture completion idempotency — 2026-11-01
+
+- Added a per-capture completion guard so duplicate browser `onend` events cannot process the same finalized wake transcript more than once or submit the same command twice from that capture.
+- Corrected the stale source comment to distinguish review-first push-to-talk from consented post-wake command dispatch through the policy gateway.
+- This is a source-level safeguard only. Tests remain paused; exact-head CI and MSI voice acceptance are not claimed.
