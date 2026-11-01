@@ -797,6 +797,13 @@ function startVoiceCapture(mode = 'push-to-talk') {
     void startAudioMeter();
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
+      if (mode === 'wake') {
+        // A timed-out hands-free utterance may be incomplete. Abort it rather
+        // than letting recognizer.onend dispatch a partial command automatically.
+        cancelVoiceCapture();
+        setAssistantState('VOICE TIME LIMIT — COMMAND NOT SENT', 'The post-wake capture reached 15 seconds. No command was sent; wake detection will recover for another attempt.');
+        return;
+      }
       stopVoiceCapture(isHandsFreeEnabled ? 'HANDS-FREE STANDBY' : 'VOICE TIME LIMIT', isHandsFreeEnabled ? 'Refreshing the browser recognition session.' : 'The 15-second capture limit was reached. Review the transcript before sending.');
     }, 15000);
   } catch (e) {
