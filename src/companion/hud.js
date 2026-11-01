@@ -520,6 +520,7 @@ function initSpeechRecognition() {
 function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   const recognizer = new speechRecognitionConstructor();
   let finalTranscript = '';
+  let captureFinished = false;
   recognizer.continuous = false;
   recognizer.interimResults = true;
   recognizer.lang = 'en-US';
@@ -533,8 +534,9 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
 
   recognizer.onresult = (event) => {
     if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
-    // All voice modes are review-first: recognized text never executes automatically.
-    // Keep finalized segments separate from interim hypotheses to avoid duplicated words.
+    // Push-to-talk remains review-first; consented post-wake capture can dispatch
+    // through the policy gateway. Keep finalized segments separate from interim
+    // hypotheses to avoid duplicated words.
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (result.isFinal) finalTranscript += result[0].transcript + ' ';
@@ -587,7 +589,10 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   };
 
   recognizer.onend = () => {
-    if (captureGeneration !== voiceCaptureGeneration) return;
+    // Some browser implementations can emit overlapping terminal events. Process
+    // a capture's final transcript at most once so a wake command is never double-submitted.
+    if (captureGeneration !== voiceCaptureGeneration || captureFinished) return;
+    captureFinished = true;
     isListening = false;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
