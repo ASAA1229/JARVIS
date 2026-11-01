@@ -574,6 +574,17 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access for this site in browser settings, then retry voice input.');
       return;
     }
+    if (mode === 'wake') {
+      // Any non-network, non-permission wake-capture error makes the transcript
+      // uncertain. Invalidate callbacks and discard it rather than allowing
+      // onend to auto-submit a partial command.
+      const shouldRecover = handsFreeEnabled && !isMicMuted;
+      cancelVoiceCapture();
+      const failure = describeSpeechRecognitionError(event.error);
+      setAssistantState('VOICE CAPTURE INTERRUPTED — COMMAND NOT SENT', `${failure.detail} No command was sent; the partial transcript was discarded.`);
+      if (shouldRecover) scheduleHandsFreeRestart();
+      return;
+    }
     if (isHandsFreeEnabled && !isMicMuted) {
       isListening = false;
       if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
