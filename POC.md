@@ -187,3 +187,8 @@ The HUD now detaches the active browser recognizer before aborting a cancelled c
 ### Voice timeout safety update — 2026-11-01
 
 A post-wake browser-speech capture that reaches the 15-second limit is now cancelled and discarded instead of being stopped normally, preventing a possibly incomplete final transcript from being auto-dispatched. The cancellation invalidates late recognition callbacks and allows wake detection to recover when still enabled. Push-to-talk continues to expose its transcript for explicit review. This change has not been tested because testing is paused; Windows MSI acceptance and exact-head CI remain pending.
+
+
+### Voice interruption safety update — 2026-11-02
+
+Non-network, non-permission errors during post-wake speech capture now invalidate the active capture and discard partial speech before automatic dispatch, show a clear “command not sent” status, and schedule wake recovery when hands-free remains enabled. Existing network and microphone-permission failures continue to stop/disable the affected voice path. Testing remains paused; this is a source change, not proof of runtime behavior on Windows.
