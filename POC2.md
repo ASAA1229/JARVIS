@@ -422,3 +422,8 @@ This is reliability hardening within the existing Voice Interaction & Cinematic 
 ## Voice/HUD follow-up — fail-closed post-wake timeout (2026-11-01)
 
 Implemented on `new`: if consented post-wake browser speech capture reaches its 15-second limit, JARVIS now cancels and discards that capture instead of calling the normal stop path that can finalize and automatically submit a potentially incomplete wake command. Cancellation invalidates late recognizer events and schedules local wake detection recovery when hands-free remains enabled. Push-to-talk retains its existing timeout behavior: the transcript is presented for user review and is not sent automatically. This is source-level hardening only; tests remain paused by instruction, and exact-head CI plus Windows MSI voice acceptance are still unverified.
+
+
+## Voice/HUD follow-up — interrupted wake capture fails closed (2026-11-02)
+
+Implemented on `new`: non-permission, non-network errors during post-wake browser speech capture now invalidate the active capture and discard any partial transcript before it can reach automatic policy-gateway submission. The HUD reports that no command was sent and schedules wake recovery when hands-free remains enabled. Network and microphone-permission errors retain their existing explicit stop/disable behavior. Tests remain paused; this is not runtime acceptance evidence, and exact-head CI plus target-MSI verification remain pending.
