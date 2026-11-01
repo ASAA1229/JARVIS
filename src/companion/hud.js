@@ -797,11 +797,19 @@ function startVoiceCapture(mode = 'push-to-talk') {
   } catch (e) {
     isListening = false;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    document.getElementById('btn-ptt').classList.remove('active');
     voiceCaptureGeneration++;
     if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
     speechRecognizer = null;
-    setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
+    if (mode === 'wake') {
+      wakeCaptureAwaitingReview = false;
+      setAssistantState('VOICE START FAILED', 'The browser could not start post-wake speech recognition. No command was sent; local wake detection will retry. You can also use text input.');
+      scheduleHandsFreeRestart();
+    } else {
+      setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
+    }
   }
 }
 
