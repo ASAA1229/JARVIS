@@ -398,3 +398,8 @@ The Windows app-launch adapter no longer returns raw process/spawn exception tex
 - [ ] On the MSI, verify the configured Piper binary/model, audible playback, interruption/timeout behavior and acceptable latency.
 
 This is reliability hardening within the existing Voice Interaction & Cinematic HUD epic, not epic acceptance. Local wake-word operation and physical-device voice acceptance remain open. The HUD's transcript-based wake/stop helper was also hardened to require whole-phrase boundaries, reducing accidental substring triggers. Direct browser-level tests for that helper remain outstanding.
+
+## Voice startup failure recovery — 2026-11-01
+
+- Fixed the post-wake browser speech-recognition startup exception path: if the browser rejects `recognizer.start()`, JARVIS now clears the pending wake-capture state, resets listening indicators, reports that no command was sent, and schedules local wake standby recovery.
+- This is a source-level recovery fix only. Tests remain paused and no exact-head CI or MSI acceptance is claimed.
