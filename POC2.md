@@ -417,3 +417,8 @@ This is reliability hardening within the existing Voice Interaction & Cinematic 
 - Cancellation now detaches the active recognizer reference before requesting browser abort, invalidates the capture generation, and stops the audio meter. Late callbacks from the cancelled capture remain ignored by the generation guard.
 - Recognition-start exceptions also stop the audio meter while resetting capture state.
 - Source-level change only. Tests remain paused; exact-head CI and target MSI acceptance are not claimed.
+
+
+## Voice/HUD follow-up — fail-closed post-wake timeout (2026-11-01)
+
+Implemented on `new`: if consented post-wake browser speech capture reaches its 15-second limit, JARVIS now cancels and discards that capture instead of calling the normal stop path that can finalize and automatically submit a potentially incomplete wake command. Cancellation invalidates late recognizer events and schedules local wake detection recovery when hands-free remains enabled. Push-to-talk retains its existing timeout behavior: the transcript is presented for user review and is not sent automatically. This is source-level hardening only; tests remain paused by instruction, and exact-head CI plus Windows MSI voice acceptance are still unverified.
