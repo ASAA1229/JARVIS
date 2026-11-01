@@ -13,6 +13,10 @@ jobs:
   validate:
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      GIT_COMMIT: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      REQUIRE_BUILD_PROVENANCE: 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
