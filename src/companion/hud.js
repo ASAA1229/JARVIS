@@ -22,6 +22,10 @@ let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
 let localTtsUnavailable = false;
+let activeSpeechAudio = null;
+let activeSpeechAudioUrl = null;
+let activeSpeechCleanup = null;
+let speechOutputGeneration = 0;
 let localWakeEngine = null;
 let localWakeAssetsPromise = null;
 let localWakeStartPromise = null;
@@ -108,7 +112,7 @@ function setupEventListeners() {
     speechOutputEnabled = !speechOutputEnabled;
     btnSpeech.setAttribute('aria-pressed', String(speechOutputEnabled));
     btnSpeech.textContent = speechOutputEnabled ? 'VOICE: ON' : 'VOICE: OFF';
-    if (!speechOutputEnabled && speechSynthesisAvailable) { window.speechSynthesis.cancel(); isSpeaking = false; }
+    if (!speechOutputEnabled) cancelSpeechOutput();
     if (speechOutputEnabled) speakResponse('Voice responses enabled.');
   });
 
@@ -764,8 +768,7 @@ function disableHandsFree() {
   const button = document.getElementById('btn-hands-free');
   if (button) { button.textContent = 'HANDS-FREE CAPTURE: OFF'; button.setAttribute('aria-pressed', 'false'); }
   cancelVoiceCapture();
-  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-  isSpeaking = false;
+  cancelSpeechOutput();
   updateHandsFreeButtons();
   setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped.');
 }
@@ -976,15 +979,43 @@ async function submitDirective(text) {
 }
 
 
+function cancelSpeechOutput() {
+  // Invalidate any synthesis request that is still awaiting a network response.
+  speechOutputGeneration += 1;
+  if (handsFreeRestartTimer) {
+    clearTimeout(handsFreeRestartTimer);
+    handsFreeRestartTimer = null;
+  }
+  if (activeSpeechAudio) {
+    try {
+      activeSpeechAudio.pause();
+      activeSpeechAudio.removeAttribute('src');
+      activeSpeechAudio.load();
+    } catch { /* Best-effort stop; cleanup below still releases the object URL. */ }
+  }
+  if (activeSpeechCleanup) activeSpeechCleanup();
+  else {
+    if (activeSpeechAudioUrl) URL.revokeObjectURL(activeSpeechAudioUrl);
+    activeSpeechAudioUrl = null;
+    activeSpeechAudio = null;
+  }
+  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  isSpeaking = false;
+}
+
 async function speakResponse(message) {
   const text = String(message || '').trim();
   if (!text || isMicMuted || !speechOutputEnabled) return;
-  isSpeaking = false;
+  // A new response supersedes earlier speech and invalidates stale async TTS work.
+  cancelSpeechOutput();
+  const generation = speechOutputGeneration;
+  const stillAllowed = () => generation === speechOutputGeneration && !isMicMuted && speechOutputEnabled;
   if (!localTtsUnavailable && currentSession && window.JarvisDeviceCrypto?.signedFetch) {
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
         method: 'POST', body: { text: text.slice(0, 1200) },
       });
+      if (!stillAllowed()) return;
       if (!response.ok) {
         // A failing local provider will not be retried for every response.
         // Browser speech synthesis is the graceful fallback for this session.
@@ -992,6 +1023,7 @@ async function speakResponse(message) {
         throw new Error(`Local TTS returned HTTP ${response.status}`);
       }
       const blob = await response.blob();
+      if (!stillAllowed()) return;
       if (blob.type.includes('audio/wav') && blob.size > 44) {
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
@@ -999,10 +1031,18 @@ async function speakResponse(message) {
         const finishPlayback = () => {
           if (playbackFinished) return;
           playbackFinished = true;
+          if (activeSpeechAudio === audio) {
+            activeSpeechAudio = null;
+            activeSpeechAudioUrl = null;
+            activeSpeechCleanup = null;
+          }
           URL.revokeObjectURL(url);
           isSpeaking = false;
-          if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
+          if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
         };
+        activeSpeechAudio = audio;
+        activeSpeechAudioUrl = url;
+        activeSpeechCleanup = finishPlayback;
         // Attach terminal handlers before play(): short clips can finish quickly,
         // and media errors after play() resolves must still release speech state.
         audio.addEventListener('ended', finishPlayback, { once: true });
@@ -1019,9 +1059,11 @@ async function speakResponse(message) {
       localTtsUnavailable = true;
       throw new Error('Local TTS returned an invalid audio response');
     } catch (error) {
+      if (!stillAllowed()) return;
       console.warn('Local neural TTS unavailable; using browser speech synthesis.', error);
     }
   }
+  if (!stillAllowed()) return;
   if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -1029,8 +1071,13 @@ async function speakResponse(message) {
     utterance.lang = 'en-GB';
     utterance.rate = 0.92;
     utterance.pitch = 0.9;
-    utterance.onend = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
-    utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
+    const finishSpeech = () => {
+      if (generation !== speechOutputGeneration) return;
+      isSpeaking = false;
+      if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
+    };
+    utterance.onend = finishSpeech;
+    utterance.onerror = finishSpeech;
     window.speechSynthesis.speak(utterance);
   }
 }
