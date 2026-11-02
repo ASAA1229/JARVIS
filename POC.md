@@ -216,3 +216,7 @@ Local wake model loading and engine startup now verify that their lifecycle is s
 ### Voice visibility recovery update — 2026-11-02
 
 Hands-free wake recovery no longer queues a restart while the HUD document is hidden, including recovery requests raised during capture cancellation. The delayed callback also checks visibility before attempting startup; the existing visibility-change handler schedules recovery when the HUD becomes visible again. Tests remain paused; browser lifecycle behavior and Windows MSI acceptance are unverified.
+
+### Browser wake fallback visibility update — 2026-11-02
+
+The browser-based hands-free fallback now refuses to start recognition while the HUD is hidden or microphone privacy mode is enabled. Its delayed error/end/start-failure recovery callbacks recheck visibility and mute state before opening a new recognition session, matching the local wake engine's foreground-only behavior. Tests remain paused; browser runtime and Windows MSI acceptance are unverified.
