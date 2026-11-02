@@ -80,8 +80,15 @@ jobs:
             jarvis-build.tar.gz.sha256
             jarvis-manifest-ignore.json
             jarvis-manifest-ignore.json.sha256
-            jarvis-manifest-ignore.sig
-          if-no-files-found: ignore
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload signed manifest-ignore policy
+        if: hashFiles('jarvis-manifest-ignore.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-policy-signature-${{ github.run_number }}
+          path: jarvis-manifest-ignore.sig
+          if-no-files-found: error
           retention-days: 7
 
   android-build:
