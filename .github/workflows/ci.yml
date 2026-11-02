@@ -46,6 +46,10 @@ jobs:
           node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
+          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -54,6 +58,8 @@ jobs:
             jarvis-build.tar.gz
             jarvis-manifest.json
             jarvis-build.tar.gz.sha256
+            jarvis-manifest-ignore.json
+            jarvis-manifest-ignore.json.sha256
           if-no-files-found: error
           retention-days: 7
 
