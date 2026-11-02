@@ -40,6 +40,7 @@ describe('customer release verification order', () => {
       const badInventory = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, trusted], false);
       assert.match(badInventory.stderr, /Package inventory failed/);
 
+      writeFileSync(path.join(dist, 'app.js'), 'release-content');
       const { privateKey, publicKey } = generateKeyPairSync('ed25519');
       const privatePath = path.join(temp, 'policy-private.pem'), publicPath = path.join(temp, 'policy-public.pem');
       const signaturePath = path.join(temp, 'manifest-ignore.sig');
