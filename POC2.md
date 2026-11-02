@@ -427,3 +427,8 @@ Implemented on `new`: if consented post-wake browser speech capture reaches its 
 ## Voice/HUD follow-up — interrupted wake capture fails closed (2026-11-02)
 
 Implemented on `new`: non-permission, non-network errors during post-wake browser speech capture now invalidate the active capture and discard any partial transcript before it can reach automatic policy-gateway submission. The HUD reports that no command was sent and schedules wake recovery when hands-free remains enabled. Network and microphone-permission errors retain their existing explicit stop/disable behavior. Tests remain paused; this is not runtime acceptance evidence, and exact-head CI plus target-MSI verification remain pending.
+
+
+## Voice/HUD follow-up — local speech playback terminal-state cleanup (2026-11-02)
+
+Implemented on `new`: local TTS audio now registers its ended/error handlers before playback begins and uses a one-shot cleanup path to revoke the object URL, clear `isSpeaking`, and schedule hands-free recovery where appropriate. This addresses a short-clip race where playback could finish before the completion handler was attached, plus media errors that could leave speech state stuck. Tests remain paused; runtime playback, browser compatibility, and Windows MSI acceptance are not verified.
