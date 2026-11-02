@@ -40,6 +40,7 @@ describe('customer release verification order', () => {
       const badInventory = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, trusted], false);
       assert.match(badInventory.stderr, /Package inventory failed/);
 
+      writeFileSync(path.join(dist, 'app.js'), 'release-content');
       const { privateKey, publicKey } = generateKeyPairSync('ed25519');
       const privatePath = path.join(temp, 'policy-private.pem'), publicPath = path.join(temp, 'policy-public.pem');
       const signaturePath = path.join(temp, 'manifest-ignore.sig');
@@ -50,10 +51,12 @@ describe('customer release verification order', () => {
       assert.match(signedGood.stdout, /Stage 1 PASSED:[\s\S]*Stage 2 PASSED:[\s\S]*Stage 3 PASSED/);
       const originalPolicy = readFileSync(policy);
       writeFileSync(policy, Buffer.concat([originalPolicy, Buffer.from(' ')]));
+      rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
       const signedTamper = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '-', signaturePath, publicPath], false);
       assert.match(signedTamper.stderr, /Ed25519 signature verification failed/);
       writeFileSync(policy, originalPolicy);
+      rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
       run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '0'.repeat(64)], false);
     } finally {
