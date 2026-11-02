@@ -46,19 +46,26 @@ jobs:
       - name: Browser security smoke test
         run: npm run test:browser
       - name: Create and verify SHA-256 build manifest
+        shell: pwsh
         run: |
           tar -czf jarvis-build.tar.gz -C dist .
           node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
           node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
           node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Package hashing failed.' }
           node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
-<<<<<<< HEAD
-=======
+          if ($LASTEXITCODE -ne 0) { throw 'Package checksum verification failed.' }
           node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
           node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy creation failed.' }
           node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy hashing failed.' }
           $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
           node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          if ($LASTEXITCODE -ne 0) { throw 'Customer release verification failed.' }
           if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
             $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
             $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
@@ -77,7 +84,6 @@ jobs:
           } else {
             Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
           }
->>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -86,8 +92,6 @@ jobs:
             jarvis-build.tar.gz
             jarvis-manifest.json
             jarvis-build.tar.gz.sha256
-<<<<<<< HEAD
-=======
             jarvis-manifest-ignore.json
             jarvis-manifest-ignore.json.sha256
           if-no-files-found: error
@@ -98,7 +102,6 @@ jobs:
         with:
           name: jarvis-policy-signature-${{ github.run_number }}
           path: jarvis-manifest-ignore.sig
->>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
           if-no-files-found: error
           retention-days: 7
 
