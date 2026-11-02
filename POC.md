@@ -197,3 +197,8 @@ Non-network, non-permission errors during post-wake speech capture now invalidat
 ### Speech output lifecycle update — 2026-11-02
 
 Local TTS playback now attaches completion/error handlers before playback and routes both events through one-shot cleanup, revoking the audio object URL, clearing the speaking flag, and scheduling hands-free recovery when enabled. This is source-level hardening only. Testing remains paused, and actual TTS playback and Windows acceptance are pending.
+
+
+### Speech output cancellation update — 2026-11-02
+
+Disabling voice output or hands-free now stops active local TTS and browser speech synthesis, releases audio resources, clears a pending hands-free restart timer, and invalidates late synthesis responses so they cannot unexpectedly begin playback. This is source-level hardening only; testing remains paused and runtime/MSI acceptance is pending.
