@@ -121,3 +121,39 @@ Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishe
 
 The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
 
+## CI/CD artifact integrity and Nexus publication
+
+The Jenkins pipeline builds the project, creates a packaged release artifact, generates a SHA-256 file inventory manifest, and verifies both the manifest and the package checksum before archiving the release outputs.
+
+### Required build provenance
+
+The pipeline sets `REQUIRE_BUILD_PROVENANCE=true`. Manifest creation and verification therefore require a full Git commit SHA and build number. Verification also compares those values with the current Jenkins build environment; a manifest copied from a different build is rejected.
+
+### Optional Nexus Raw publication
+
+Nexus publication runs only when `NEXUS_RAW_REPOSITORY_URL` is configured in Jenkins. Configure it as an HTTPS URL for the target Raw repository **without** embedded credentials, query parameters, or fragments. Store the Nexus username/password in Jenkins Credentials under the ID `nexus-credentials` (Username with password); do not add credentials to source control or the URL.
+
+The release path uses the lower-case project name, Jenkins build number, and short Git commit; this aligns the Nexus coordinate with the manifest's project/build/commit identity. `verify-release` rejects a manifest whose project differs from `PROJECT_NAME`, and its successful verification output records the project, build number, full source commit, artifact name, size, and SHA-256. Jenkins also emits a concise release-traceability line naming the artifact, manifest, and checksum sidecar. Before upload, the pipeline checks each expected release asset using authenticated `HEAD` requests. It refuses to overwrite existing assets and stops if it cannot establish that an asset is absent. After upload, it downloads the files and compares SHA-256 digests with the local copies.
+
+**Repository compatibility note:** the configured Nexus Raw repository and its access policy must support authenticated `HEAD` requests and return HTTP 404 for absent paths. Validate this behavior with your Nexus administrator before enabling publication. The HEAD preflight is a guard against accidental overwrite, not an atomic immutability guarantee; use repository-side permissions or immutable storage controls where available.
+
+### Verify a downloaded release before extraction
+
+Before unpacking a downloaded release archive, verify its checksum sidecar and confirm the manifest's packaged-artifact name, size, and SHA-256 agree with the archive:
+
+```sh
+node scripts/artifact-integrity.mjs verify-release <artifact.tar.gz> <manifest.json> <artifact.tar.gz.sha256>
+```
+
+When `REQUIRE_BUILD_PROVENANCE=true`, set `GIT_COMMIT` (or `GIT_COMMIT_SHA`) and `BUILD_NUMBER` (or `GITHUB_RUN_NUMBER`) to the expected approved release values; the command rejects a manifest whose provenance differs. This pre-extraction check validates the archive against its sidecar and manifest metadata. After extraction, also run the existing `verify` command against the extracted directory and manifest to validate every packaged file.
+
+### Published build outputs
+
+- Packaged application archive
+- JSON manifest listing packaged files, sizes, and SHA-256 digests, with build provenance
+- SHA-256 checksum sidecar for the archive
+
+### Operational status
+
+Changes to the pipeline and integrity scripts must be validated in Jenkins before being treated as release-ready. A successful local commit or PR update alone does not prove that the configured Jenkins agent, Nexus permissions, or repository behavior works end to end.
+

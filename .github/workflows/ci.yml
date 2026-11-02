@@ -13,6 +13,13 @@ jobs:
   validate:
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      PROJECT_NAME: JARVIS
+      GIT_COMMIT: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      REQUIRE_BUILD_PROVENANCE: 'true'
+      MANIFEST_IGNORE_PRIVATE_KEY: ${{ secrets.MANIFEST_IGNORE_PRIVATE_KEY }}
+      MANIFEST_IGNORE_PUBLIC_KEY: ${{ secrets.MANIFEST_IGNORE_PUBLIC_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -33,6 +40,56 @@ jobs:
         run: npm test
       - name: Browser security smoke test
         run: npm run test:browser
+      - name: Create and verify SHA-256 build manifest
+        run: |
+          tar -czf jarvis-build.tar.gz -C dist .
+          node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
+          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
+            $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
+            $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
+            try {
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
+              node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
+              node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
+              node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
+            } finally {
+              Remove-Item -Force $privatePath, $publicPath -ErrorAction SilentlyContinue
+            }
+          } else {
+            Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
+          }
+      - name: Upload verified build package and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-build-${{ github.run_number }}
+          path: |
+            jarvis-build.tar.gz
+            jarvis-manifest.json
+            jarvis-build.tar.gz.sha256
+            jarvis-manifest-ignore.json
+            jarvis-manifest-ignore.json.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload signed manifest-ignore policy
+        if: hashFiles('jarvis-manifest-ignore.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-policy-signature-${{ github.run_number }}
+          path: jarvis-manifest-ignore.sig
+          if-no-files-found: error
+          retention-days: 7
 
   android-build:
     runs-on: ubuntu-latest

@@ -104,7 +104,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(hudHtml, /btn-arc-ptt/);
     assert.match(hudHtml, /Browser speech recognition may send command audio to a browser\/vendor service/i);
     assert.match(hudHtml, /allow-browser-speech/);
-    assert.match(hudHtml, /Local wake detection stays unavailable if local model\/runtime assets are missing/i);
+    assert.match(hudHtml, /Hands-free wake listening stays off until a local audio wake-word engine is installed/i);
     assert.match(hudHtml, /allow-wake-browser-speech/);
     assert.doesNotMatch(hudHtml, /onclick=/i);
     assert.match(hudHtml, /waveform-canvas/);

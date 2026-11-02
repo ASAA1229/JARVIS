@@ -65,8 +65,10 @@ try {
   const pageErrors = [];
   const consoleErrors = [];
   const unexpectedServerFailures = [];
+  const notFoundResponses = [];
   let expectedOptionalTtsFailures = 0;
   const trackResponse = (response) => {
+    if (response.status() === 404) notFoundResponses.push(response.url());
     if (response.status() < 500) return;
     const url = response.url();
     if (response.status() === 503 && url.includes('/api/voice/synthesize')) expectedOptionalTtsFailures++;
@@ -486,9 +488,23 @@ try {
   if (unexpectedServerFailures.length) throw new Error('Unexpected server failures: ' + unexpectedServerFailures.join(' | '));
   if (expectedOptionalTtsFailures > 0) console.log('OPTIONAL_LOCAL_TTS_UNAVAILABLE: browser speech fallback exercised (' + expectedOptionalTtsFailures + ' responses)');
   const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
-  const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
-  if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length > 1) {
-    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
+  // The local wake-word runtime is an optional, locally provisioned feature.
+  // Its availability probe intentionally receives 404 when setup assets are absent;
+  // tolerate only this exact missing asset and keep every other 404 fatal.
+  const uniqueNotFoundResponses = [...new Set(notFoundResponses)];
+  const optionalWakeWordAssetsMissing =
+    uniqueNotFoundResponses.length > 0 &&
+    uniqueNotFoundResponses.every((url) => url === `${baseUrl}/hud/local-wakeword/ort.min.js`);
+  const genericResourceErrors = consoleErrors.filter((message) =>
+    message.startsWith('Failed to load resource: the server responded with a status of 404 (Not Found)'),
+  );
+  const unexpectedConsoleErrors = consoleErrors.filter((message) =>
+    message !== 'Speech recognition error: not-allowed' &&
+    !(optionalWakeWordAssetsMissing && genericResourceErrors.includes(message)),
+  );
+  if (pageErrors.length || unexpectedConsoleErrors.length || uniqueNotFoundResponses.some((url) =>
+    url !== `${baseUrl}/hud/local-wakeword/ort.min.js`) || expectedRecognitionErrors.length > 1) {
+    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nHTTP 404 responses: ${uniqueNotFoundResponses.join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
   }
 
   const insecurePage = await context.newPage();
