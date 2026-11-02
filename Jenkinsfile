@@ -105,7 +105,7 @@ pipeline {
                   }
                 }
               }
-              foreach ($file in @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE)) {
+              foreach ($file in @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')) {
                 $uri = "$target/$file"
                 Invoke-WebRequest -Uri $uri -Method Put -InFile $file -Headers $headers -UseBasicParsing | Out-Null
                 $download = Join-Path $verificationDir $file
@@ -119,6 +119,8 @@ pipeline {
               }
               node scripts/artifact-integrity.mjs verify-hash (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
               node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
+              $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
+              node scripts/customer-release-verifier.mjs verify (Join-Path $verificationDir 'jarvis-manifest-ignore.json') (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' $trustedPolicyHash
             } finally {
               Remove-Item -Recurse -Force -LiteralPath $verificationDir -ErrorAction SilentlyContinue
               Remove-Variable pair, encoded, headers -ErrorAction SilentlyContinue
