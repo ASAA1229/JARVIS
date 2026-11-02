@@ -212,3 +212,7 @@ Stale callbacks from stopped/replaced browser wake recognizers are now ignored; 
 ### Local wake-engine lifecycle update — 2026-11-02
 
 Local wake model loading and engine startup now verify that their lifecycle is still current after asynchronous waits. Stale starts are stopped rather than enabling wake listening after hands-free was disabled or microphone privacy mode was activated. If hands-free is re-enabled during an old startup, a fresh attempt is scheduled after it unwinds. Tests remain paused; runtime/MSI acceptance is pending.
+
+### Voice visibility recovery update — 2026-11-02
+
+Hands-free wake recovery no longer queues a restart while the HUD document is hidden, including recovery requests raised during capture cancellation. The delayed callback also checks visibility before attempting startup; the existing visibility-change handler schedules recovery when the HUD becomes visible again. Tests remain paused; browser lifecycle behavior and Windows MSI acceptance are unverified.
