@@ -771,10 +771,19 @@ function handleHandsFreeTranscript(rawTranscript) {
 }
 
 function scheduleHandsFreeRestart() {
+  // Do not queue microphone work while the HUD is backgrounded. Capture
+  // cancellation can itself request recovery, so gate both scheduling and
+  // timer execution on visibility; the visibilitychange handler retries when
+  // the user returns to the HUD.
+  if (document.visibilityState === 'hidden') {
+    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
+    handsFreeRestartTimer = null;
+    return;
+  }
   if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
   handsFreeRestartTimer = setTimeout(() => {
     handsFreeRestartTimer = null;
-    if (!handsFreeEnabled || isMicMuted || isSpeaking || isListening || isSubmitting || wakeCaptureAwaitingReview) return;
+    if (document.visibilityState === 'hidden' || !handsFreeEnabled || isMicMuted || isSpeaking || isListening || isSubmitting || wakeCaptureAwaitingReview) return;
     startLocalWakeEngine().catch((error) => {
       setAssistantState('LOCAL WAKE WORD UNAVAILABLE', error instanceof Error ? error.message : 'Could not restart local wake detection.');
       disableWakeDetection();
