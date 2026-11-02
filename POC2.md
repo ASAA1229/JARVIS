@@ -442,3 +442,8 @@ Implemented on `new`: disabling voice output or switching hands-free off now can
 ## Voice/HUD follow-up — stale hands-free recognizer callbacks (2026-11-02)
 
 Hardened browser wake-listener lifecycle on `new`: callbacks from a recognizer that has already been stopped or replaced are ignored, and only the current recognizer may schedule a restart. Restart timers are cleared and nulled before replacement starts, reducing the chance of overlapping microphone-recognition sessions during wake/capture transitions. Tests remain paused; this is source-level hardening and does not establish runtime or MSI acceptance.
+
+
+## Voice/HUD follow-up — wake-engine startup cancellation race (2026-11-02)
+
+Added a lifecycle generation guard to local wake-engine startup on `new`. If the user disables hands-free, mutes the microphone, changes visibility, or replaces the active lifecycle while model loading/engine startup is awaiting, stale startup work is abandoned and its engine is stopped rather than reactivating the microphone. A fresh restart is scheduled if hands-free was re-enabled while the older startup was still unwinding. Tests remain paused; runtime/browser and MSI acceptance are not verified.
