@@ -202,3 +202,8 @@ Local TTS playback now attaches completion/error handlers before playback and ro
 ### Speech output cancellation update — 2026-11-02
 
 Disabling voice output or hands-free now stops active local TTS and browser speech synthesis, releases audio resources, clears a pending hands-free restart timer, and invalidates late synthesis responses so they cannot unexpectedly begin playback. This is source-level hardening only; testing remains paused and runtime/MSI acceptance is pending.
+
+
+### Hands-free recognizer lifecycle update — 2026-11-02
+
+Stale callbacks from stopped/replaced browser wake recognizers are now ignored; restart scheduling is owned by the active recognizer and its timer is cleared safely before a successor starts. This reduces the risk of overlapping recognition sessions during wake-word and command-capture transitions. Tests remain paused and runtime/MSI acceptance is pending.
