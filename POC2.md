@@ -437,3 +437,8 @@ Implemented on `new`: local TTS audio now registers its ended/error handlers bef
 ## Voice/HUD follow-up — speech-output cancellation and privacy controls (2026-11-02)
 
 Implemented on `new`: disabling voice output or switching hands-free off now cancels browser speech synthesis and active local TTS audio, revokes its object URL, clears pending wake-restart timers, and resets speaking state. A generation guard prevents an in-flight local TTS request from starting playback after voice output has been disabled or superseded by a newer response. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+
+## Voice/HUD follow-up — stale hands-free recognizer callbacks (2026-11-02)
+
+Hardened browser wake-listener lifecycle on `new`: callbacks from a recognizer that has already been stopped or replaced are ignored, and only the current recognizer may schedule a restart. Restart timers are cleared and nulled before replacement starts, reducing the chance of overlapping microphone-recognition sessions during wake/capture transitions. Tests remain paused; this is source-level hardening and does not establish runtime or MSI acceptance.
