@@ -408,7 +408,10 @@ function disableWakeDetection() {
 }
 
 function startHandsFreeStandby() {
-  if (!handsFreeEnabled || !speechRecognitionConstructor) return;
+  // The browser-based fallback must follow the same foreground-only rule as
+  // the local wake engine. Do not open a recognition session from a delayed
+  // callback while the HUD is hidden.
+  if (!handsFreeEnabled || !speechRecognitionConstructor || isMicMuted || document.visibilityState === 'hidden') return;
   stopHandsFreeStandby();
   const recognizer = new speechRecognitionConstructor();
   recognizer.continuous = true;
@@ -479,7 +482,7 @@ function startHandsFreeStandby() {
       if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
         handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+        if (handsFreeEnabled && handsFreeStandby && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
       }, 900);
     }
   };
@@ -494,7 +497,7 @@ function startHandsFreeStandby() {
     if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
     handsFreeRestartTimer = setTimeout(() => {
       handsFreeRestartTimer = null;
-      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer) startHandsFreeStandby();
+      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
     }, 400);
   };
 
@@ -507,7 +510,7 @@ function startHandsFreeStandby() {
       if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
         handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer) startHandsFreeStandby();
+        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
       }, 800);
     }
   }
