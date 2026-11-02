@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(root, 'scripts', 'policy-signature.mjs');
 const dirs: string[] = [];
 after(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
