@@ -395,12 +395,12 @@ function startHandsFreeStandby() {
   recognizer.lang = 'en-US';
 
   recognizer.onstart = () => {
-    if (!handsFreeEnabled || !handsFreeStandby) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled || !handsFreeStandby) return;
     setAssistantState('STANDBY', 'Listening for wake phrase…');
   };
 
   recognizer.onresult = (event) => {
-    if (!handsFreeEnabled || !handsFreeStandby || isSubmitting) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled || !handsFreeStandby || isSubmitting) return;
     let transcript = '';
     for (let index = 0; index < event.results.length; index++) {
       transcript += event.results[index][0].transcript;
@@ -432,7 +432,7 @@ function startHandsFreeStandby() {
   };
 
   recognizer.onerror = (event) => {
-    if (!handsFreeEnabled) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled) return;
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       setAssistantState('MICROPHONE DENIED', 'Allow microphone access for this site in browser settings, then enable listening again.');
       disableWakeDetection();
@@ -464,10 +464,16 @@ function startHandsFreeStandby() {
   };
 
   recognizer.onend = () => {
-    if (!handsFreeEnabled || !handsFreeStandby) return;
+    // A stopped/replaced recognizer can emit onend asynchronously. Only the
+    // current recognizer may schedule its successor, preventing overlapping
+    // browser microphone sessions during wake/capture transitions.
+    if (handsFreeRecognizer !== recognizer) return;
     handsFreeRecognizer = null;
+    if (!handsFreeEnabled || !handsFreeStandby) return;
+    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
     handsFreeRestartTimer = setTimeout(() => {
-      if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+      handsFreeRestartTimer = null;
+      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer) startHandsFreeStandby();
     }, 400);
   };
 
@@ -475,10 +481,12 @@ function startHandsFreeStandby() {
   try {
     recognizer.start();
   } catch (error) {
-    handsFreeRecognizer = null;
+    if (handsFreeRecognizer === recognizer) handsFreeRecognizer = null;
     if (handsFreeEnabled && handsFreeStandby) {
+      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
-        if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+        handsFreeRestartTimer = null;
+        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer) startHandsFreeStandby();
       }, 800);
     }
   }
