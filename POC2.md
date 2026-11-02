@@ -447,3 +447,7 @@ Hardened browser wake-listener lifecycle on `new`: callbacks from a recognizer t
 ## Voice/HUD follow-up — wake-engine startup cancellation race (2026-11-02)
 
 Added a lifecycle generation guard to local wake-engine startup on `new`. If the user disables hands-free, mutes the microphone, changes visibility, or replaces the active lifecycle while model loading/engine startup is awaiting, stale startup work is abandoned and its engine is stopped rather than reactivating the microphone. A fresh restart is scheduled if hands-free was re-enabled while the older startup was still unwinding. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+## Voice/HUD follow-up — visibility-aware wake recovery (2026-11-02)
+
+Implemented on `new`: wake-recovery scheduling now refuses to queue microphone startup while the HUD is hidden and clears any existing restart timer. The timer callback repeats the visibility guard, while the existing `visibilitychange` handler requests recovery after the HUD returns to the foreground. This avoids background restart attempts triggered by capture-cancellation cleanup. Tests remain paused; runtime/browser and MSI acceptance are not verified.
