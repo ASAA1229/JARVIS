@@ -65,8 +65,10 @@ try {
   const pageErrors = [];
   const consoleErrors = [];
   const unexpectedServerFailures = [];
+  const notFoundResponses = [];
   let expectedOptionalTtsFailures = 0;
   const trackResponse = (response) => {
+    if (response.status() === 404) notFoundResponses.push(response.url());
     if (response.status() < 500) return;
     const url = response.url();
     if (response.status() === 503 && url.includes('/api/voice/synthesize')) expectedOptionalTtsFailures++;
@@ -488,7 +490,7 @@ try {
   const expectedRecognitionErrors = consoleErrors.filter((message) => message === 'Speech recognition error: not-allowed');
   const unexpectedConsoleErrors = consoleErrors.filter((message) => message !== 'Speech recognition error: not-allowed');
   if (pageErrors.length || unexpectedConsoleErrors.length || expectedRecognitionErrors.length > 1) {
-    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
+    throw new Error(`Browser runtime errors:\nPage errors: ${pageErrors.join(' | ')}\nUnexpected console errors: ${unexpectedConsoleErrors.join(' | ')}\nHTTP 404 responses: ${[...new Set(notFoundResponses)].join(' | ')}\nUnexpected permission error count (maximum one): ${expectedRecognitionErrors.length}`);
   }
 
   const insecurePage = await context.newPage();
