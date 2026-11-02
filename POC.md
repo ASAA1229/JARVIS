@@ -192,3 +192,8 @@ A post-wake browser-speech capture that reaches the 15-second limit is now cance
 ### Voice interruption safety update — 2026-11-02
 
 Non-network, non-permission errors during post-wake speech capture now invalidate the active capture and discard partial speech before automatic dispatch, show a clear “command not sent” status, and schedule wake recovery when hands-free remains enabled. Existing network and microphone-permission failures continue to stop/disable the affected voice path. Testing remains paused; this is a source change, not proof of runtime behavior on Windows.
+
+
+### Speech output lifecycle update — 2026-11-02
+
+Local TTS playback now attaches completion/error handlers before playback and routes both events through one-shot cleanup, revoking the audio object URL, clearing the speaking flag, and scheduling hands-free recovery when enabled. This is source-level hardening only. Testing remains paused, and actual TTS playback and Windows acceptance are pending.
