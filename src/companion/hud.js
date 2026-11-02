@@ -995,16 +995,24 @@ async function speakResponse(message) {
       if (blob.type.includes('audio/wav') && blob.size > 44) {
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        const releaseUrl = () => URL.revokeObjectURL(url);
-        audio.addEventListener('ended', releaseUrl, { once: true });
-        audio.addEventListener('error', releaseUrl, { once: true });
+        let playbackFinished = false;
+        const finishPlayback = () => {
+          if (playbackFinished) return;
+          playbackFinished = true;
+          URL.revokeObjectURL(url);
+          isSpeaking = false;
+          if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
+        };
+        // Attach terminal handlers before play(): short clips can finish quickly,
+        // and media errors after play() resolves must still release speech state.
+        audio.addEventListener('ended', finishPlayback, { once: true });
+        audio.addEventListener('error', finishPlayback, { once: true });
         try {
-          await audio.play();
           isSpeaking = true;
-          audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
+          await audio.play();
           return;
         } catch (playError) {
-          releaseUrl();
+          finishPlayback();
           throw playError;
         }
       }
