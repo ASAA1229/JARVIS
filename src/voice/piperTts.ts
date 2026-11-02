@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
 
 /**
  * Local Piper TTS adapter. It never invokes a shell and accepts only configured
@@ -11,6 +10,48 @@ export interface PiperConfig {
   timeoutMs?: number;
 }
 
+export const MAX_PIPER_AUDIO_BYTES = 16 * 1024 * 1024;
+const MAX_PIPER_STDERR_BYTES = 8 * 1024;
+
+/**
+ * Validate the WAV container returned by Piper before exposing it to the caller.
+ * Piper models may use sample rates other than the STT input's fixed 16 kHz, so
+ * this deliberately validates container/chunk integrity rather than one rate.
+ */
+export function validatePiperWav(audio: Buffer): string | undefined {
+  if (audio.length < 44 || audio.length > MAX_PIPER_AUDIO_BYTES) {
+    return `Speech audio must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
+  }
+  if (audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
+    return 'Piper output is not a RIFF/WAVE file.';
+  }
+
+  const riffEnd = audio.readUInt32LE(4) + 8;
+  if (riffEnd !== audio.length || riffEnd < 44) return 'Piper output has an invalid RIFF size.';
+
+  let offset = 12;
+  let hasFormat = false;
+  let hasData = false;
+  while (offset < riffEnd) {
+    if (riffEnd - offset < 8) return 'Piper output contains a truncated WAV chunk header.';
+    const id = audio.toString('ascii', offset, offset + 4);
+    const size = audio.readUInt32LE(offset + 4);
+    const payloadStart = offset + 8;
+    if (size > riffEnd - payloadStart) return 'Piper output contains a truncated WAV chunk.';
+    if (id === 'fmt ') {
+      if (size < 16) return 'Piper output contains an invalid WAV format chunk.';
+      hasFormat = true;
+    }
+    if (id === 'data' && size > 0) hasData = true;
+    offset = payloadStart + size + (size % 2);
+    if (offset > riffEnd) return 'Piper output contains a truncated WAV chunk.';
+  }
+  if (offset !== riffEnd || !hasFormat || !hasData) {
+    return 'Piper output has an incomplete WAV layout.';
+  }
+  return undefined;
+}
+
 export class PiperTtsProvider {
   constructor(private readonly config: PiperConfig) {}
 
@@ -19,7 +60,7 @@ export class PiperTtsProvider {
     if (!normalized || normalized.length > 1200) {
       throw new Error('Speech text must contain 1–1200 characters.');
     }
-    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(normalized)) {
+    if (/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(normalized)) {
       throw new Error('Speech text contains unsupported control characters.');
     }
 
@@ -31,40 +72,63 @@ export class PiperTtsProvider {
     const timeoutMs = this.config.timeoutMs ?? 20_000;
     const chunks: Buffer[] = [];
     const errors: Buffer[] = [];
+    let stderrBytes = 0;
+    let stdoutBytes = 0;
     let settled = false;
 
     return await new Promise<Buffer>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const cleanup = (): void => clearTimeout(timer);
+      const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
+        cleanup();
         child.kill();
-        reject(new Error('Local speech generation timed out.'));
+        reject(error);
+      };
+      const timer = setTimeout(() => {
+        fail(new Error('Local speech generation timed out.'));
       }, timeoutMs);
 
-      child.stdout.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+      child.stdout.on('data', (chunk: Buffer) => {
+        if (settled) return;
+        stdoutBytes += chunk.length;
+        if (stdoutBytes > MAX_PIPER_AUDIO_BYTES) {
+          fail(new Error('Local speech output exceeded the configured audio size limit.'));
+          return;
+        }
+        chunks.push(Buffer.from(chunk));
+      });
       child.stderr.on('data', (chunk: Buffer) => {
-        if (Buffer.concat(errors).length < 8192) errors.push(Buffer.from(chunk));
+        if (stderrBytes >= MAX_PIPER_STDERR_BYTES) return;
+        const remaining = MAX_PIPER_STDERR_BYTES - stderrBytes;
+        const kept = Buffer.from(chunk.subarray(0, remaining));
+        errors.push(kept);
+        stderrBytes += kept.length;
       });
       child.once('error', (error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error(`Could not start the local Piper executable: ${error.message}`));
+        fail(new Error(`Could not start the local Piper executable: ${error.message}`));
+      });
+      child.stdin.once('error', (error) => {
+        // A child may exit before consuming its input; the close handler reports
+        // its exit code and bounded stderr, so avoid an unhandled stream error.
+        if (!settled && (error as NodeJS.ErrnoException).code !== 'EPIPE') {
+          fail(new Error(`Could not provide text to the local Piper executable: ${error.message}`));
+        }
       });
       child.once('close', (code) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         const audio = Buffer.concat(chunks);
-        if (code !== 0 || audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' ||
-            audio.toString('ascii', 8, 12) !== 'WAVE') {
+        const invalid = validatePiperWav(audio);
+        if (code !== 0 || invalid) {
           const detail = Buffer.concat(errors).toString('utf8').slice(0, 500);
-          reject(new Error(`Piper did not return valid WAV audio (exit ${code ?? 'unknown'}).${detail ? ' ' + detail : ''}`));
+          reject(new Error(`Piper did not return valid WAV audio (exit ${code ?? 'unknown'}).${invalid ? ' ' + invalid : ''}${detail ? ' ' + detail : ''}`));
           return;
         }
         resolve(audio);
       });
-      child.stdin.end(normalized + '\n');
+      child.stdin.end(normalized + '\\n');
     });
   }
 }

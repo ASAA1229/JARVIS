@@ -397,3 +397,81 @@ A focused hardening increment on `new` adds validation to `src/android/commandQu
 Added `src/core/taskJournal.ts` and `test/task_journal.test.ts` on `new`. The journal encrypts task snapshots using AES-256-GCM, atomically replaces the state file, rejects malformed/oversized checkpoint data, and fails closed when authenticated decryption or schema validation fails. Non-terminal states become `AWAITING_RECOVERY` on reload, with stale approvals cleared and no automatic replay.
 
 **Audit finding / release blocker:** the journal is not yet connected to `JarvisCoreService` task lifecycle writes. This is a tested-by-design implementation increment, not yet verified by execution evidence and not a claim of durable workflow support in the live service. Confirm CI on the exact head, integrate every lifecycle transition, and exercise crash/restart with uncertain external effects before acceptance.
+
+
+## Follow-up implementation audit — 2026-10-30
+
+### Manual recovery review increment
+
+Four implementation commits on the new branch add a guarded manual recovery path:
+
+- Service commit: 39403879bc1db83652157af2c5c36ceb029c3676 — adds task reconciliation semantics.
+- API commit: c357ee647d6ff75d9fe7d02fbe3da10c9cca308f — adds signed-session POST /api/task/reconcile.
+- Test commit: f795c383a7ff1bfdc4d804361c23f212cd5cb99b — adds service regression tests.
+- Journal validation commit: 91b5fc196a64472e273b50588ad103e01ab2cd3a — validates persisted reconciliation metadata.
+
+The workflow supports three human-reviewed dispositions. Confirmed no effect closes the original task as failed; observed effect is only partial/unverified; unknown remains awaiting recovery. It never resumes or replays the task, never starts dependent steps, and never treats a user note as independent proof of application success. The raw recovery note is persisted only in the encrypted task journal; the audit event records its length and disposition, not the note itself.
+
+### Verification status and limits
+
+- GitHub's combined status endpoint returned no status checks for commit 91b5fc196a64472e273b50588ad103e01ab2cd3a at the time of this audit; the connector's workflow-run lookup returned no runs for that SHA. Therefore the new code and newly added tests are **not CI-verified** here.
+- No local build/test command was run in this environment.
+- The documented Actions runner startup issue remains an external blocker to exact-head hosted validation until a workflow executes its steps.
+- The MSI microphone/voice and Windows UI Automation acceptance, and the two-phone Android enrollment/transport/revocation acceptance, still require the actual devices.
+- The report file was updated in place; no new report file was created. No PR was opened, and dev/main were not changed.
+
+
+### Additional security review — stale approval guard (2026-10-30)
+
+A source review found a lifecycle invariant gap: the approval handler did not explicitly require the associated task to remain in AWAITING_APPROVAL before resolving an existing approval record. This matters when a checkpoint failure, interruption, or cancellation has already moved the task into another state. The handler now checks the task state before approval resolution, audits the rejection, and returns a conflict response. A regression test covers a task already awaiting recovery and verifies that the approval remains unconsumed.
+
+The companion now includes a Recovery Review panel that reads tasks via the authenticated signed-session endpoint and submits a user-reviewed disposition through the signed API. This is a review/closure UX, not automatic resume.
+
+**Exact-head validation is still unavailable:** no local test execution was performed, and the connector reports no CI status checks or workflow run for the latest source head. Keep these changes marked pending verification until the workflow actually runs. Physical MSI and both-phone acceptance remain separate release gates.
+
+
+### Lifecycle and Windows diagnostic hardening follow-up — 2026-10-30
+
+- JarvisCoreService now checkpoints early planning failures, policy denials, execution precondition failures, skipped workflow steps, approval rejection/expiry, cancellation, and final outcomes more consistently. If a final checkpoint fails, the returned result is uncertain/recovery-required rather than verified completion.
+- Approval-state checkpoint failure attempts to invalidate the approval; the approval handler independently rejects any approval whose task is no longer in AWAITING_APPROVAL.
+- Rejection/cancellation now report checkpoint failures instead of returning a clean success when the task state has moved to recovery.
+- The task recovery endpoint requires the durable encrypted journal and the companion has a signed-session Recovery Review panel.
+- Windows app-launch adapter errors no longer echo raw process exceptions or unbounded invalid app input. A regression test asserts the redaction boundary.
+- Added further tests for unresolved recovery disposition, malformed reconciliation metadata, audit-note redaction, stale approvals, and Windows launcher error disclosure.
+
+**Verification:** these changes are committed on new, but no exact-head CI run or local test execution is available in this environment. All newly added tests remain unverified until the workflow executes on the exact branch head. Hardware acceptance for voice, Windows UI automation, and both Android devices remains open.
+
+## Follow-up audit — voice hardening and task-journal persistence — 2026-10-31
+
+### Voice Interaction & Cinematic HUD
+
+- The local Piper TTS subprocess now caps captured audio at 16 MiB and retained stderr at 8 KiB, terminates generation when the output cap or timeout is exceeded, and validates RIFF/WAV container size and chunk boundaries before returning audio.
+- Added `test/piper_tts.test.ts` coverage for valid WAV, inconsistent RIFF size, truncated chunks, empty samples, and oversized buffers.
+- The HUD's transcript-based wake/stop phrase helper now matches complete normalized phrase boundaries instead of substrings, reducing false matches inside longer words.
+- These changes do not establish local wake-word operation or audible TTS acceptance on the target MSI. Direct browser-level coverage for the HUD helper and physical-device tests remain open.
+
+### Advanced Multi-Step Execution & Recovery
+
+- `TaskJournal.save` now rolls back its in-memory mutation if durable persistence fails, marks the journal unhealthy, and rejects subsequent writes. This prevents an undurable task checkpoint from being exposed as the current in-memory state.
+- Added a regression test that simulates a filesystem path blocking journal persistence and checks rollback plus fail-closed behavior.
+
+### Branch and validation status
+
+- All source, test, and documentation changes in this addendum were committed to the authorized `new` branch only. No PR was created; `dev` and `main` were not modified.
+- The CI workflow on `new` is configured for manual dispatch and pull requests targeting `dev`, rather than running on every push. This reduces push-triggered notification noise; it does not fix the underlying runner-start failure.
+- **Validation remains pending:** no exact-head build, unit-test, browser-smoke or Android-build result was available for these latest commits. The previously observed runner failures occurred before any job steps, so they are not evidence that these code changes pass or fail. Run the project checks when Actions runner availability is restored.
+- The active voice epic remains partial. Local wake engine/model installation, false-trigger/resource testing, Piper audible playback, and real MSI microphone/browser acceptance are still required. Task recovery also remains partial until exact-head tests and partial-side-effect reconciliation acceptance pass.
+
+## Approval lifecycle follow-up — stale rejection guard (2026-10-31)
+
+A source review found that `approveTask` guarded against tasks that had moved out of `AWAITING_APPROVAL`, while `rejectTask` resolved the approval before checking the task lifecycle. That asymmetry could let an old approval record mutate approval state after the task had already been cancelled, interrupted, or moved into recovery.
+
+### Change on `new`
+
+- `rejectTask` now requires the associated task to exist and remain in `AWAITING_APPROVAL` before resolving/rejecting the approval.
+- Missing-task and non-pending-state attempts are audited and denied.
+- Added a regression test that moves a pending task to `AWAITING_RECOVERY`, attempts rejection, and verifies the task remains in recovery and the approval is not approved, rejected, or consumed.
+
+### Verification status
+
+The source and regression test are committed on `new` only. No local test execution or exact-head CI result is available; this change remains **pending automated validation**. The test simulates a lifecycle transition at unit level and does not replace concurrent HTTP/device acceptance.

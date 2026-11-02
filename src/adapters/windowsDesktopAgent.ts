@@ -18,9 +18,9 @@ export type DesktopAction =
   | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
   | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
-  | { operation: 'desktop:read_control'; parameters: { name: string; expectProcess?: string } }
-  | { operation: 'desktop:click_control'; parameters: { name: string; expectProcess?: string } }
-  | { operation: 'desktop:set_value'; parameters: { name: string; text: string; expectProcess?: string } }
+  | { operation: 'desktop:read_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
+  | { operation: 'desktop:click_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
+  | { operation: 'desktop:set_value'; parameters: { name?: string; automationId?: string; text: string; expectProcess?: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
   | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
@@ -44,15 +44,31 @@ export function buildForegroundFocusAssertionScript(): string {
   return "if ([JarvisForeground]::GetForegroundWindow() -ne $foregroundHwnd) { throw 'FOREGROUND_CHANGED' }";
 }
 
-export function buildReadControlScript(name: string): string {
-  const safeName = escapePowerShellSingleQuoted(name.trim());
+function buildControlSelector(name?: string, automationId?: string): string {
+  if (typeof automationId === 'string' && automationId.trim()) {
+    return "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '" + escapePowerShellSingleQuoted(automationId.trim()) + "')";
+  }
+  if (typeof name === 'string' && name.trim()) {
+    return "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + escapePowerShellSingleQuoted(name.trim()) + "')";
+  }
+  throw new Error('Specify a control name or automationId.');
+}
+
+function validateControlSelector(name?: unknown, automationId?: unknown): void {
+  if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 120)) throw new Error('Control name must contain 1–120 characters.');
+  if (automationId !== undefined && (typeof automationId !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(automationId))) throw new Error('automationId must contain 1–160 safe identifier characters.');
+  if ((typeof automationId !== 'string' || !automationId.trim()) && (typeof name !== 'string' || !name.trim())) throw new Error('Specify a control name or automationId.');
+}
+
+export function buildReadControlScript(name?: string, automationId?: string): string {
+  const selector = buildControlSelector(name, automationId);
   return [
     'Add-Type -AssemblyName UIAutomationClient',
     'Add-Type -AssemblyName UIAutomationTypes',
-    "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+    selector,
     '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
     '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
-    'if ($matches.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+    'if ($matches.Count -ne 1) { throw "Control selector must resolve to exactly one control." }',
     '$element = $matches.Item(0)',
     '$name = $element.Current.Name',
     '$type = $element.Current.ControlType.ProgrammaticName',
@@ -67,21 +83,22 @@ export function buildReadControlScript(name: string): string {
 
 export function buildControlActionScript(
   operation: 'desktop:click_control' | 'desktop:set_value',
-  name: string,
+  name?: string,
   text?: string,
+  automationId?: string,
 ): string {
-  const safeName = escapePowerShellSingleQuoted(name.trim());
+  const selector = buildControlSelector(name, automationId);
   const base = [
     'Add-Type -AssemblyName UIAutomationClient',
     'Add-Type -AssemblyName UIAutomationTypes',
-    "$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '" + safeName + "')",
+    selector,
     '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
   ];
   if (operation === 'desktop:click_control') {
     return [
       ...base,
       '$foundControls = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
-      'if ($foundControls.Count -ne 1) { throw "Control name must resolve to exactly one control." }',
+      'if ($foundControls.Count -ne 1) { throw "Control selector must resolve to exactly one control." }',
       '$element = $foundControls.Item(0)',
       '$pattern = $null',
       'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose an Invoke action." }',
@@ -293,9 +310,9 @@ export class WindowsDesktopAgent {
       }
 
       if (action.operation === 'desktop:read_control') {
-        const name = action.parameters.name;
-        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
-        const output = await this.runPowerShell(buildReadControlScript(name), signal);
+        const { name, automationId } = action.parameters;
+        validateControlSelector(name, automationId);
+        const output = await this.runPowerShell(buildReadControlScript(name, automationId), signal);
         const parsed = JSON.parse(output) as { name: string; controlType: string; valueAvailable: boolean; redacted: boolean; value: string | null };
         return {
           success: true,
@@ -306,33 +323,32 @@ export class WindowsDesktopAgent {
       }
 
       if (action.operation === 'desktop:click_control') {
-        const name = action.parameters.name;
-        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
-        const script = buildControlActionScript('desktop:click_control', name);
+        const { name, automationId } = action.parameters;
+        validateControlSelector(name, automationId);
+        const script = buildControlActionScript('desktop:click_control', name, undefined, automationId);
         const output = await this.runPowerShell(script, signal);
         const confirmed = output.includes('CONTROL_INVOKED');
         return {
           success: confirmed,
           outcome: confirmed ? VerificationOutcome.PARTIAL_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
-          data: { controlName: name },
-          evidence: { host: 'windows', mechanism: 'UI Automation InvokePattern', acknowledgement: confirmed },
+          data: { controlName: name, automationId },
+          evidence: { host: 'windows', mechanism: 'UI Automation InvokePattern', selector: automationId ? 'AutomationId' : 'Name', acknowledgement: confirmed },
           error: confirmed ? undefined : 'Control invocation was not acknowledged.',
         };
       }
 
       if (action.operation === 'desktop:set_value') {
-        const name = action.parameters.name;
-        const text = action.parameters.text;
-        if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error('Control name must contain 1–120 characters.');
+        const { name, automationId, text } = action.parameters;
+        validateControlSelector(name, automationId);
         this.validateText(text);
-        const script = buildControlActionScript('desktop:set_value', name, text);
+        const script = buildControlActionScript('desktop:set_value', name, text, automationId);
         const output = await this.runPowerShell(script, signal);
         const confirmed = output.includes('VALUE_VERIFIED');
         return {
           success: confirmed,
           outcome: confirmed ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
-          data: { controlName: name, characters: text.length },
-          evidence: { host: 'windows', mechanism: 'UI Automation ValuePattern', valueVerified: confirmed },
+          data: { controlName: name, automationId, characters: text.length },
+          evidence: { host: 'windows', mechanism: 'UI Automation ValuePattern', selector: automationId ? 'AutomationId' : 'Name', valueVerified: confirmed },
           error: confirmed ? undefined : 'The control value could not be verified.',
         };
       }

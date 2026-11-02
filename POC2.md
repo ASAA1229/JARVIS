@@ -10,7 +10,7 @@
 
 Complete these phases in order; phase numbers organize existing work and do not create new epics:
 
-1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for any browser/vendor speech recognition after wake, review-before-execute transcript handling, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance.
+1. **Voice Interaction & Cinematic HUD (currently active):** local-only “Hey Jarvis” keyword spotting, explicit separate consent for browser/vendor speech recognition after wake, review-before-execute for push-to-talk, consent-gated post-wake command submission through the policy gateway, microphone lifecycle safeguards, local TTS configuration/output, browser regression coverage, and target MSI acceptance. Post-wake submission is not approval: the policy gateway may deny the directive or require the applicable approval.
 2. **Advanced Multi-Step Execution & Recovery:** audit every task lifecycle transition into the encrypted journal; test restart recovery, expired/revoked/stale approvals, checkpoint write failures, partial side effects and idempotency; implement safe reconciliation/recovery UX. Never auto-replay uncertain state-changing operations.
 3. **Security and approval foundation:** re-run exact-head tests for policy gateway, task/device/operation/parameter-bound approvals, replay protection, expiry/revocation, audit integrity, persistence failure, redaction, and owner recovery.
 4. **Windows desktop agent:** close software-testable launch/focus/control/input/clipboard/zoom/verification gaps; document unsupported controls and keep actual MSI acceptance separate from hosted CI.
@@ -35,6 +35,7 @@ Complete these phases in order; phase numbers organize existing work and do not 
 - [ ] Re-run the complete security suite on the exact documentation-updated commit and confirm hosted CI is green.
 - [ ] Verify every state-changing operation passes the default-deny policy gateway, with no alternate adapter or API path.
 - [ ] Complete approval lifecycle API tests: approve/reject, expiry, duplicate/concurrent transitions, stale state, persistence failure, and exact task/device/operation/parameter binding.
+- [x] Reject stale approval mutations: `rejectTask` now verifies the associated task exists and remains `AWAITING_APPROVAL` before resolving the approval; a regression test checks that a recovery-state task and its approval remain unchanged.
 - [ ] Verify replay rejection, session expiry, immediate revocation, independent device identities/permissions, and fail-closed behavior when audit or security persistence fails.
 - [ ] Complete route-by-route API/error-redaction review and independent adversarial security review.
 - [ ] Define and test owner recovery for TOTP/device-management state before owner-token rotation or authenticator loss.
@@ -57,8 +58,8 @@ Complete these phases in order; phase numbers organize existing work and do not 
 - [ ] Verify the command phrase is preserved through authenticated request signing and policy evaluation.
 - [ ] Test actual Piper TTS executable/model compatibility and audible playback on the target laptop; test browser speech-synthesis fallback.
 - [ ] Document speech-recognition provider/network behavior. Do not claim local-only recognition unless demonstrated.
-- [ ] Implement and measure the desired local wake-word loop, visible microphone/listening status, privacy control, interruption and resource use before claiming always-ready voice.
-- [ ] Keep wake-word listening off until the actual opt-in local implementation and acceptance are complete.
+- [ ] Install and measure the opt-in local wake-word engine on the target MSI; verify the complete wake → consented command capture → policy-gateway decision path, visible microphone/listening status, privacy control, interruption and resource use before claiming accepted always-ready voice.
+- [ ] Keep wake-word listening disabled by default; only enable it after the user opts in, and do not claim the flow is accepted until target-device acceptance is recorded.
 - [ ] Verify compact HUD layouts, keyboard accessibility, error states and real-device browser behavior.
 
 ## P1 — Android companions and remote control
@@ -299,6 +300,7 @@ Implemented on `new`:
 - Defensive-copy checkpoint reads and basic record shape validation.
 - On restart, non-terminal records are moved to `AWAITING_RECOVERY`; stale approval IDs are cleared and no workflow auto-resumes.
 - Regression tests for encrypted-at-rest content, restart recovery, terminal-state preservation, tampering/wrong key, invalid records and defensive copies.
+- [x] On checkpoint persistence failure, restore the prior in-memory record (or remove a newly added one), mark the journal unhealthy, and reject subsequent writes; regression test simulates a blocked parent path.
 
 **Integration status (2026-10-30):** `JarvisCoreService` now opens the encrypted journal when an owner control token is configured, restores prior task records into the task list, checkpoints task creation, execution start, step results and workflow advancement, and marks interrupted records `AWAITING_RECOVERY` on restart without replaying them. A checkpoint-write failure moves the live task to recovery-required and prevents the next workflow step from starting. Cancellation/interruption and approval steps checkpoint through the step recorder. This is still partial lifecycle coverage: some early planning/error/revocation/expiry transitions and recovery UX need further audit, and the service currently has no explicit reconcile-and-resume command. Exact-head CI, crash/restart integration acceptance, partial-side-effect reconciliation and target-device acceptance remain unconfirmed.
 
@@ -330,4 +332,126 @@ Implemented on `new`:
 - Added separate session-only consent for browser speech recognition after local wake detection. Voice transcripts remain review-only and require explicit **EXECUTE DIRECTIVE**.
 - Added tests for the setup script reference, wake asset route allowlisting, and local wake integration wiring.
 
-**Not accepted yet:** the setup script has not been run on the target MSI, so third-party model/runtime files and their compatibility are not verified on the actual machine. The upstream commit is immutable but unsigned. The setup script now verifies each downloaded source/model file against the expected Git blob SHA-1 from that commit before use, then prints a SHA-256 inventory for local records. Microphone permission, false-trigger behavior, CPU/RAM usage, audible local Piper TTS, and browser recovery still require target-device tests. The latest hosted Actions runs (including commit `1cac6e346559d6b9d5bae0c18312d7b311755778`) report both jobs failing within about 2–3 seconds before checkout: the Jobs API returns `runner_id: 0`, an empty `runner_name`, and no steps. This is evidence of a runner/job-start failure, not evidence that source tests failed; logs are unavailable (`BlobNotFound`). There is no exact-head build/test result to claim. Restore/investigate GitHub-hosted runner availability and then obtain a green exact-head run before acceptance. Do not advance to Phase 2 or introduce any new epic until this active phase reaches its acceptance gate or a precisely evidenced external blocker is recorded.
+**Not accepted yet:** the setup script has not been run on the target MSI, so third-party model/runtime files and their compatibility are not verified on the actual machine. The upstream commit is immutable but unsigned. The setup script now verifies each downloaded source/model file against the expected Git blob SHA-1 from that commit before use, then prints a SHA-256 inventory for local records. Microphone permission, false-trigger behavior, CPU/RAM usage, audible local Piper TTS, and browser recovery still require target-device tests. The latest hosted Actions runs (including commit `1cac6e346559d6b9d5bae0c18312d7b311755778`) report both jobs failing within about 2–3 seconds before checkout: the Jobs API returns `runner_id: 0`, an empty `runner_name`, and no steps. This is evidence of a runner/job-start failure, not evidence that source tests failed; logs are unavailable (`BlobNotFound`). There is no exact-head build/test result to claim. The repeated pre-checkout runner-start failure is now recorded as an external validation blocker, so independent software-testable work in the already-existing Phase 2 recovery epic may proceed. Phase 1 remains open: obtain a green exact-head run when runner availability is restored and complete target-MSI wake/TTS/microphone acceptance before declaring voice complete.
+
+
+## Recovery workflow implementation increment — 2026-10-30
+
+**Implemented on `new` after the previously documented checkpoint-journal foundation:**
+- Added an authenticated `POST /api/task/reconcile` endpoint, using the existing signed-session request protocol.
+- The requesting device may review its own task; a device with `DEVICE_MANAGE` permission may review other tasks. Tasks outside `AWAITING_RECOVERY`/`INTERRUPTED` cannot be reconciled through this endpoint.
+- A review requires an explicit disposition and an 8–500 character note. The raw note is kept out of audit details; the audit records only its length, reviewer, prior state, and disposition.
+- `confirmed_no_effect` closes the task as `FAILED` and tells the user to submit a new request if needed; it does not replay the original task.
+- `effect_observed` closes the task as `PARTIAL`, never `COMPLETED`, because a user note is not independent application-level proof.
+- `still_unknown` remains `AWAITING_RECOVERY`. All paths explicitly avoid automatic replay or dependent-step continuation.
+- Reconciliation metadata is stored in the encrypted task journal and shape-validated when restored.
+- Added service-level regression tests for owner-authenticated reconciliation, no automatic replacement task, and the rule that user observation cannot be promoted to verified success.
+
+**Validation status:** implementation and tests are committed on `new`; exact-head build, lint, full unit suite, browser smoke, and Android build have not yet been confirmed. The GitHub connector currently reports no status checks for the exact head, so this increment must not be called green until a completed workflow provides evidence. These tests have not been executed in this chat environment.
+
+**Remaining workflow gaps:** add crash/fault-injection coverage for audit-write and journal-write failures during reconciliation; exercise partial external side effects with a real application; the companion now has a Recovery Review panel that fetches tasks through the signed session and submits review decisions through the signed request client; verify this interaction in exact-head browser smoke and target-device acceptance; verify cancellation/revocation/expiry transitions across the complete lifecycle. The endpoint is a safe review/closure path, not a generic workflow resume engine.
+
+
+## Security regression follow-up — stale approvals after recovery transitions (2026-10-30)
+
+A code review found that an approval record could remain present after a task moved out of AWAITING_APPROVAL (for example, after checkpoint failure or interruption). The approval handler now checks the current persisted/in-memory task state before resolving or consuming the approval and refuses any task not currently awaiting approval. The denial is audited, and the API maps this stale-state result to HTTP 409.
+
+A regression test seeds a task in AWAITING_RECOVERY, creates an approval record for it, and asserts that approval fails without consuming the approval or changing the recovery state. The test uses an unsupported operation so the test cannot launch or mutate a real application.
+
+**Validation remains pending:** no exact-head build/typecheck/test/browser-smoke result is available yet. Treat this as a security fix with authored regression coverage, not as verified until CI executes on the resulting commit.
+
+
+## Workflow lifecycle checkpoint audit — 2026-10-30
+
+A follow-up source audit enumerated task-state transitions in JarvisCoreService and tightened persistence around several early-exit and terminal paths:
+
+- Persist request-audit failure and planner failure/schema-rejection/unmappable-plan states.
+- Persist device-state, revocation and audit-integrity execution denials.
+- Treat a failed checkpoint while entering AWAITING_APPROVAL as a hard stop and attempt to invalidate the pending approval; the stale-task approval guard remains a second line of defence.
+- Persist skipped-step records after policy denial, approval rejection, approval expiry and cancellation.
+- Persist final verified/partial/failed outcomes after step recording; if the final checkpoint fails, report UNCERTAIN/AWAITING_RECOVERY rather than a verified completion.
+- Require a configured durable encrypted task journal before the HTTP recovery-review endpoint accepts a disposition.
+
+**Status:** these source changes are committed on new, but they do not yet have exact-head CI evidence. Additional fault-injection tests are still required for journal write failure, audit write failure, concurrent cancellation/revocation, and crash/restart after a side effect. Keep the workflow epic open until these tests pass and the MSI application-level recovery checklist is recorded.
+
+
+## Windows launcher error-disclosure hardening — 2026-10-30
+
+The Windows app-launch adapter no longer returns raw process/spawn exception text to the client. Allowlisted and Start-menu launch failures now return bounded generic messages with only the error class retained in evidence. Invalid application-name diagnostics no longer echo an arbitrary oversized or non-string input. A regression test asserts these redaction boundaries at source level.
+
+**Status:** implementation and regression test are committed; exact-head CI is not yet available. This does not prove actual Windows launch success or close the MSI interaction/verification acceptance gate.
+
+
+## Voice reliability hardening — 2026-10-31
+
+- Tightened local STT WAV validation before audio is passed to the optional whisper.cpp process: RIFF length must match the buffer, each chunk header and payload must remain inside the declared container, and the PCM format chunk must contain the required fields.
+- Added focused regression tests for valid PCM input, truncated chunks, inconsistent RIFF size, undersized format chunks, wake-phrase word boundaries, and explicit cloud-speech opt-in.
+- This is source-level hardening only. The tests must run on the exact resulting commit; it does not prove whisper.cpp/model installation, microphone capture, wake-word accuracy, or audible TTS on the MSI.
+
+
+## Voice epic follow-up — bounded local TTS output
+
+- [x] Bound Piper subprocess stdout to 16 MiB and retained stderr diagnostics to 8 KiB to prevent unbounded process output from consuming memory.
+- [x] Validate RIFF/WAV declared size, chunk boundaries, format chunk presence and non-empty audio data before returning TTS output.
+- [x] Add focused tests for valid WAV output, inconsistent RIFF size, truncated chunks, empty samples and oversized buffers.
+- [ ] Run the exact-head TypeScript build, unit suite and browser smoke test after runner availability is restored; no hosted test result is claimed for this change.
+- [ ] On the MSI, verify the configured Piper binary/model, audible playback, interruption/timeout behavior and acceptable latency.
+
+This is reliability hardening within the existing Voice Interaction & Cinematic HUD epic, not epic acceptance. Local wake-word operation and physical-device voice acceptance remain open. The HUD's transcript-based wake/stop helper was also hardened to require whole-phrase boundaries, reducing accidental substring triggers. Direct browser-level tests for that helper remain outstanding.
+
+## Voice startup failure recovery — 2026-11-01
+
+- Fixed the post-wake browser speech-recognition startup exception path: if the browser rejects `recognizer.start()`, JARVIS now clears the pending wake-capture state, resets listening indicators, reports that no command was sent, and schedules local wake standby recovery.
+- This is a source-level recovery fix only. Tests remain paused and no exact-head CI or MSI acceptance is claimed.
+
+
+## Voice capture completion idempotency — 2026-11-01
+
+- Added a per-capture completion guard so duplicate browser `onend` events cannot process the same finalized wake transcript more than once or submit the same command twice from that capture.
+- Corrected the stale source comment to distinguish review-first push-to-talk from consented post-wake command dispatch through the policy gateway.
+- This is a source-level safeguard only. Tests remain paused; exact-head CI and MSI voice acceptance are not claimed.
+
+
+## Voice cancellation cleanup hardening — 2026-11-01
+
+- Cancellation now detaches the active recognizer reference before requesting browser abort, invalidates the capture generation, and stops the audio meter. Late callbacks from the cancelled capture remain ignored by the generation guard.
+- Recognition-start exceptions also stop the audio meter while resetting capture state.
+- Source-level change only. Tests remain paused; exact-head CI and target MSI acceptance are not claimed.
+
+
+## Voice/HUD follow-up — fail-closed post-wake timeout (2026-11-01)
+
+Implemented on `new`: if consented post-wake browser speech capture reaches its 15-second limit, JARVIS now cancels and discards that capture instead of calling the normal stop path that can finalize and automatically submit a potentially incomplete wake command. Cancellation invalidates late recognizer events and schedules local wake detection recovery when hands-free remains enabled. Push-to-talk retains its existing timeout behavior: the transcript is presented for user review and is not sent automatically. This is source-level hardening only; tests remain paused by instruction, and exact-head CI plus Windows MSI voice acceptance are still unverified.
+
+
+## Voice/HUD follow-up — interrupted wake capture fails closed (2026-11-02)
+
+Implemented on `new`: non-permission, non-network errors during post-wake browser speech capture now invalidate the active capture and discard any partial transcript before it can reach automatic policy-gateway submission. The HUD reports that no command was sent and schedules wake recovery when hands-free remains enabled. Network and microphone-permission errors retain their existing explicit stop/disable behavior. Tests remain paused; this is not runtime acceptance evidence, and exact-head CI plus target-MSI verification remain pending.
+
+
+## Voice/HUD follow-up — local speech playback terminal-state cleanup (2026-11-02)
+
+Implemented on `new`: local TTS audio now registers its ended/error handlers before playback begins and uses a one-shot cleanup path to revoke the object URL, clear `isSpeaking`, and schedule hands-free recovery where appropriate. This addresses a short-clip race where playback could finish before the completion handler was attached, plus media errors that could leave speech state stuck. Tests remain paused; runtime playback, browser compatibility, and Windows MSI acceptance are not verified.
+
+
+## Voice/HUD follow-up — speech-output cancellation and privacy controls (2026-11-02)
+
+Implemented on `new`: disabling voice output or switching hands-free off now cancels browser speech synthesis and active local TTS audio, revokes its object URL, clears pending wake-restart timers, and resets speaking state. A generation guard prevents an in-flight local TTS request from starting playback after voice output has been disabled or superseded by a newer response. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+
+## Voice/HUD follow-up — stale hands-free recognizer callbacks (2026-11-02)
+
+Hardened browser wake-listener lifecycle on `new`: callbacks from a recognizer that has already been stopped or replaced are ignored, and only the current recognizer may schedule a restart. Restart timers are cleared and nulled before replacement starts, reducing the chance of overlapping microphone-recognition sessions during wake/capture transitions. Tests remain paused; this is source-level hardening and does not establish runtime or MSI acceptance.
+
+
+## Voice/HUD follow-up — wake-engine startup cancellation race (2026-11-02)
+
+Added a lifecycle generation guard to local wake-engine startup on `new`. If the user disables hands-free, mutes the microphone, changes visibility, or replaces the active lifecycle while model loading/engine startup is awaiting, stale startup work is abandoned and its engine is stopped rather than reactivating the microphone. A fresh restart is scheduled if hands-free was re-enabled while the older startup was still unwinding. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+## Voice/HUD follow-up — visibility-aware wake recovery (2026-11-02)
+
+Implemented on `new`: wake-recovery scheduling now refuses to queue microphone startup while the HUD is hidden and clears any existing restart timer. The timer callback repeats the visibility guard, while the existing `visibilitychange` handler requests recovery after the HUD returns to the foreground. This avoids background restart attempts triggered by capture-cancellation cleanup. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+## Voice/HUD follow-up — browser fallback visibility guards (2026-11-02)
+
+Implemented on `new`: browser-based hands-free standby now checks visibility and microphone mute state before creating a recognition session. Restart timers triggered by recognition errors, end events, or synchronous start failures re-check those conditions before restarting. This prevents delayed fallback callbacks from reopening microphone recognition while the HUD is hidden or privacy mute is active. Tests remain paused; runtime/browser and MSI acceptance are not verified.

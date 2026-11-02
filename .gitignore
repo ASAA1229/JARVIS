@@ -9,3 +9,33 @@ data/
 .jarvis-local-wakeword/
 src/companion/local-wakeword/*
 !src/companion/local-wakeword/.gitkeep
+
+# Gradle
+.gradle/
+**/.gradle/
+
+# Lock files
+*.lock
+
+# Gradle cache files
+cache.properties
+fileHashes.lock
+checksums.lock
+executionHistory.lock
+buildOutputCleanup.lock
+
+# Build outputs
+build/
+**/build/
+
+# Android
+local.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+
+# Generated files
+captures/
+.externalNativeBuild/
+.cxx/

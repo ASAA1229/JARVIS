@@ -20,17 +20,19 @@ export interface AllowlistedApp {
  * A title substring is an additional constraint, never an alternative identity.
  */
 /**
- * Start-menu AppIDs are not mapped to expected process identities yet. A new
- * window is useful evidence that something opened, but cannot independently
- * prove that it belongs to the selected app; keep the result partial.
+ * Unknown Start-menu apps remain partial unless a conservative process identity
+ * hint is available. A matching process plus optional title constraint is
+ * required before reporting a discovered launch as independently verified.
  */
 export function discoveredLaunchResult(
   selected: { Name: string; AppID: string },
   newWindow?: WindowInfo,
+  expectedIdentity?: { processNames: string[]; titleContains?: string },
 ): ExecutionResult {
+  const targetWindowVerified = Boolean(newWindow && expectedIdentity && matchesExpectedAppWindow(newWindow, { windowMatch: expectedIdentity }));
   return {
     success: true,
-    outcome: VerificationOutcome.PARTIAL_SUCCESS,
+    outcome: targetWindowVerified ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.PARTIAL_SUCCESS,
     data: {
       name: selected.Name,
       appId: selected.AppID,
@@ -42,11 +44,24 @@ export function discoveredLaunchResult(
       launcher: 'explorer.exe shell:AppsFolder',
       exactOrUniqueMatch: true,
       newWindowDetected: Boolean(newWindow),
-      targetWindowVerified: false,
-      verificationLimitation: 'No trusted AppID-to-process identity mapping is available.',
+      targetWindowVerified,
+      verificationLimitation: targetWindowVerified ? undefined : 'No trusted AppID-to-process identity mapping is available for this app.',
+      ...(expectedIdentity ? { expectedProcessNames: expectedIdentity.processNames } : {}),
     },
-    error: 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
+    error: targetWindowVerified ? undefined : 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
   };
+}
+
+/** Conservative identity hints for common Windows inbox apps. Unknown apps remain partial. */
+const DISCOVERED_WINDOW_IDENTITIES: Record<string, { processNames: string[]; titleContains?: string }> = {
+  'settings': { processNames: ['SystemSettings'], titleContains: 'Settings' },
+  'microsoft store': { processNames: ['WinStore.App'], titleContains: 'Microsoft Store' },
+  'photos': { processNames: ['Photos', 'Microsoft.Photos'], titleContains: 'Photos' },
+  'clock': { processNames: ['Time', 'WindowsAlarms'], titleContains: 'Clock' },
+};
+
+export function discoveredWindowIdentity(name: string): { processNames: string[]; titleContains?: string } | undefined {
+  return DISCOVERED_WINDOW_IDENTITIES[name.trim().toLowerCase()];
 }
 
 export function matchesExpectedAppWindow(
@@ -178,7 +193,7 @@ export class WindowsAppLauncherAdapter {
    */
   public async launchApp(appId: string, signal?: AbortSignal): Promise<ExecutionResult> {
     if (typeof appId !== 'string' || !appId.trim() || appId.trim().length > 120) {
-      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedApp: String(appId) } };
+      return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Application name must contain 1–120 characters.', evidence: { requestedType: typeof appId, requestedLength: typeof appId === 'string' ? appId.length : undefined } };
     }
     const requestedName = appId.trim();
     if (this.isFinancialAppName(requestedName)) {
@@ -283,8 +298,8 @@ export class WindowsAppLauncherAdapter {
       return {
         success: false,
         outcome: VerificationOutcome.VERIFIED_FAILURE,
-        error: `Launch execution error: ${String(err)}`,
-        evidence: { app: app.id, error: String(err) },
+        error: 'Application launch failed; no verified success is reported.',
+        evidence: { app: app.id, errorType: err instanceof Error ? err.name : 'UnknownError' },
       };
     }
   }
@@ -346,14 +361,31 @@ export class WindowsAppLauncherAdapter {
         timeout: 8_000, windowsHide: true, signal,
       });
       let newWindow: WindowInfo | undefined;
-      try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
-      return discoveredLaunchResult(selected, newWindow);
+      const expectedIdentity = discoveredWindowIdentity(selected.Name);
+      if (expectedIdentity) {
+        const deadline = Date.now() + 8_000;
+        while (Date.now() < deadline && !signal?.aborted) {
+          try {
+            const windows = await this.windows.snapshot(signal);
+            newWindow = windows.find((window) =>
+              !knownPids.has(window.pid) &&
+              matchesExpectedAppWindow(window, { windowMatch: expectedIdentity }));
+          } catch { newWindow = undefined; }
+          if (newWindow) break;
+          await delay(400, undefined, { signal }).catch(() => undefined);
+        }
+      } else {
+        try { newWindow = await this.windows.waitForNewWindow(knownPids, undefined, 8_000, signal); } catch { newWindow = undefined; }
+      }
+      return discoveredLaunchResult(selected, newWindow, expectedIdentity);
     } catch (error) {
       return {
         success: false,
         outcome: signal?.aborted ? VerificationOutcome.UNCERTAIN : VerificationOutcome.VERIFIED_FAILURE,
-        error: error instanceof Error ? error.message : String(error),
-        evidence: { query, discovery: 'Get-StartApps' },
+        error: signal?.aborted
+          ? 'Application launch was interrupted; reconcile the target state before retrying.'
+          : 'Start-menu application launch failed; no verified success is reported.',
+        evidence: { query, discovery: 'Get-StartApps', errorType: error instanceof Error ? error.name : 'UnknownError' },
         interrupted: signal?.aborted,
       };
     }

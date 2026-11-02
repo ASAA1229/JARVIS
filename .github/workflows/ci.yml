@@ -1,13 +1,18 @@
 name: JARVIS CI
 
 on:
-  push:
-    branches: [test, fix, new, dev]
+  # Avoid an email-producing workflow run for every small implementation commit.
+  # Run manually during development, and automatically for reviewable PRs into dev.
+  workflow_dispatch:
   pull_request:
     branches: [dev]
 
 permissions:
   contents: read
+
+concurrency:
+  group: jarvis-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -47,6 +52,8 @@ jobs:
           node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
           node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+<<<<<<< HEAD
+=======
           node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
           node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
           node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
@@ -70,6 +77,7 @@ jobs:
           } else {
             Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
           }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +86,8 @@ jobs:
             jarvis-build.tar.gz
             jarvis-manifest.json
             jarvis-build.tar.gz.sha256
+<<<<<<< HEAD
+=======
             jarvis-manifest-ignore.json
             jarvis-manifest-ignore.json.sha256
           if-no-files-found: error
@@ -88,6 +98,7 @@ jobs:
         with:
           name: jarvis-policy-signature-${{ github.run_number }}
           path: jarvis-manifest-ignore.sig
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
           if-no-files-found: error
           retention-days: 7
 

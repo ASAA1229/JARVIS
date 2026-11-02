@@ -63,22 +63,38 @@ const MAX_WAV_BYTES = 3 * 1024 * 1024;
 export function validateWav16kMono(wav: Buffer): string | undefined {
   if (wav.length < 44 || wav.length > MAX_WAV_BYTES) return `Audio must be a WAV file of at most ${MAX_WAV_BYTES / 1024 / 1024} MB.`;
   if (wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') return 'Audio is not a RIFF/WAVE file.';
+
+  // Validate the container's declared size and every chunk boundary before reading
+  // format fields or passing the bytes to a local speech-recognition process.
+  const riffSize = wav.readUInt32LE(4);
+  const riffEnd = riffSize + 8;
+  if (riffSize < 36 || riffEnd !== wav.length) return 'Audio has an invalid RIFF size.';
+
   let offset = 12;
   let formatOk = false;
   let hasData = false;
-  while (offset + 8 <= wav.length) {
+  while (offset < riffEnd) {
+    if (riffEnd - offset < 8) return 'Audio contains a truncated WAV chunk header.';
     const chunkId = wav.toString('ascii', offset, offset + 4);
     const chunkSize = wav.readUInt32LE(offset + 4);
-    if (chunkId === 'fmt ' && offset + 8 + 16 <= wav.length) {
-      const audioFormat = wav.readUInt16LE(offset + 8);
-      const channels = wav.readUInt16LE(offset + 10);
-      const sampleRate = wav.readUInt32LE(offset + 12);
-      const bits = wav.readUInt16LE(offset + 22);
+    const payloadStart = offset + 8;
+    if (chunkSize > riffEnd - payloadStart) return 'Audio contains a truncated WAV chunk.';
+    const payloadEnd = payloadStart + chunkSize;
+
+    if (chunkId === 'fmt ') {
+      if (chunkSize < 16) return 'Audio contains an invalid WAV format chunk.';
+      const audioFormat = wav.readUInt16LE(payloadStart);
+      const channels = wav.readUInt16LE(payloadStart + 2);
+      const sampleRate = wav.readUInt32LE(payloadStart + 4);
+      const bits = wav.readUInt16LE(payloadStart + 14);
       formatOk = audioFormat === 1 && channels === 1 && sampleRate === 16000 && bits === 16;
     }
     if (chunkId === 'data') hasData = chunkSize > 0;
-    offset += 8 + chunkSize + (chunkSize % 2);
+
+    offset = payloadEnd + (chunkSize % 2);
+    if (offset > riffEnd) return 'Audio contains a truncated WAV chunk.';
   }
+  if (offset !== riffEnd) return 'Audio contains an invalid WAV chunk layout.';
   if (!formatOk) return 'Audio must be 16 kHz, mono, 16-bit PCM WAV.';
   if (!hasData) return 'Audio contains no samples.';
   return undefined;

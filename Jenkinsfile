@@ -7,14 +7,20 @@ pipeline {
   }
   environment {
     PROJECT_NAME = 'JARVIS'
+<<<<<<< HEAD
+=======
     REQUIRE_BUILD_PROVENANCE = 'true'
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
     ARTIFACT_FILE = 'jarvis-build.tar.gz'
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
   }
+<<<<<<< HEAD
+=======
   parameters {
     booleanParam(name: 'ENABLE_POLICY_SIGNING', defaultValue: false, description: 'Sign manifest-ignore with the configured Ed25519 Jenkins credentials.')
   }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
   stages {
     stage('Checkout') {
       steps {
@@ -50,6 +56,10 @@ pipeline {
           node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
           node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
           node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+<<<<<<< HEAD
+        '''
+        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256', fingerprint: true
+=======
           node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
           node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
           node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
@@ -87,6 +97,7 @@ pipeline {
           '''
           archiveArtifacts artifacts: 'jarvis-manifest-ignore.sig', fingerprint: true
         }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
       }
     }
     stage('Publish to Nexus (optional)') {
@@ -98,6 +109,17 @@ pipeline {
           powershell '''
             $ErrorActionPreference = "Stop"
             $base = $env:NEXUS_RAW_REPOSITORY_URL.TrimEnd('/')
+<<<<<<< HEAD
+            $target = "$base/jarvis/$env:BUILD_NUMBER"
+            $pair = $env:NEXUS_USER + ':' + $env:NEXUS_PASSWORD
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
+            $headers = @{ Authorization = "Basic $encoded" }
+            foreach ($file in @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE)) {
+              Invoke-WebRequest -Uri "$target/$file" -Method Put -InFile $file -Headers $headers -UseBasicParsing | Out-Null
+              Write-Output "Published $file to Nexus build $env:BUILD_NUMBER"
+            }
+            Remove-Variable pair, encoded, headers
+=======
             $repositoryUri = $null
             if (-not [Uri]::TryCreate($base, [UriKind]::Absolute, [ref]$repositoryUri)) {
               throw "NEXUS_RAW_REPOSITORY_URL must be a valid absolute HTTPS repository URL."
@@ -168,6 +190,7 @@ pipeline {
               Remove-Item -Recurse -Force -LiteralPath $verificationDir -ErrorAction SilentlyContinue
               Remove-Variable pair, encoded, headers -ErrorAction SilentlyContinue
             }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
           '''
         }
       }
@@ -176,13 +199,19 @@ pipeline {
   post {
     success {
       echo 'JARVIS pipeline succeeded; artifact checksums and manifest were verified.'
+<<<<<<< HEAD
+=======
       echo "Release traceability: project=${env.PROJECT_NAME}; build=${env.BUILD_NUMBER}; commit=${env.GIT_COMMIT}; artifact=${env.ARTIFACT_FILE}; manifest=${env.MANIFEST_FILE}; checksum=${env.CHECKSUM_FILE}."
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
     }
     failure {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
     }
+<<<<<<< HEAD
+=======
     always {
       powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
     }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
   }
 }

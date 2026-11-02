@@ -22,9 +22,14 @@ let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
 let localTtsUnavailable = false;
+let activeSpeechAudio = null;
+let activeSpeechAudioUrl = null;
+let activeSpeechCleanup = null;
+let speechOutputGeneration = 0;
 let localWakeEngine = null;
 let localWakeAssetsPromise = null;
 let localWakeStartPromise = null;
+let localWakeLifecycleGeneration = 0;
 let wakeCaptureAwaitingReview = false;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
@@ -108,7 +113,7 @@ function setupEventListeners() {
     speechOutputEnabled = !speechOutputEnabled;
     btnSpeech.setAttribute('aria-pressed', String(speechOutputEnabled));
     btnSpeech.textContent = speechOutputEnabled ? 'VOICE: ON' : 'VOICE: OFF';
-    if (!speechOutputEnabled && speechSynthesisAvailable) { window.speechSynthesis.cancel(); isSpeaking = false; }
+    if (!speechOutputEnabled) cancelSpeechOutput();
     if (speechOutputEnabled) speakResponse('Voice responses enabled.');
   });
 
@@ -213,7 +218,13 @@ function normalizeSpeechText(text) {
 function textMatchesPhraseSet(text, phrases) {
   const normalized = normalizeSpeechText(text);
   if (!normalized) return false;
-  return phrases.some((phrase) => normalized.includes(phrase) || normalized === phrase);
+  // Match complete normalized phrases only. Substring matching can wake on
+  // words such as “Jarvisian” or trigger a stop command inside another word.
+  const boundedText = ` ${normalized} `;
+  return phrases.some((phrase) => {
+    const boundedPhrase = ` ${normalizeSpeechText(phrase)} `;
+    return boundedText.includes(boundedPhrase);
+  });
 }
 
 function isWakePhrase(text) {
@@ -278,35 +289,55 @@ async function startLocalWakeEngine() {
   if (!handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden') return;
   if (localWakeEngine) return;
   if (localWakeStartPromise) return localWakeStartPromise;
+  const lifecycleGeneration = localWakeLifecycleGeneration;
   localWakeStartPromise = (async () => {
     await loadLocalWakeWordAssets();
-    if (!handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden' || localWakeEngine) return;
+    if (lifecycleGeneration !== localWakeLifecycleGeneration || !handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden' || localWakeEngine) return;
     const engine = window.VoicuteWakeWord.create();
-    await engine.load('/hud/local-wakeword/multi_jarvis_v9.3.zip', '/hud/local-wakeword/melspectrogram.onnx');
-    engine.setL1(true);
-    engine.setL3(true);
-    localWakeEngine = engine;
     try {
+      await engine.load('/hud/local-wakeword/multi_jarvis_v9.3.zip', '/hud/local-wakeword/melspectrogram.onnx');
+      // Loading can take several seconds; never start a microphone engine after
+      // hands-free has been disabled, muted, or superseded by another lifecycle.
+      if (lifecycleGeneration !== localWakeLifecycleGeneration || !handsFreeEnabled || isMicMuted || wakeCaptureAwaitingReview || document.visibilityState === 'hidden') {
+        try { engine.stop(); } catch { /* release best-effort */ }
+        return;
+      }
+      engine.setL1(true);
+      engine.setL3(true);
+      localWakeEngine = engine;
       await engine.start((word, probability) => {
-        if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+        if (lifecycleGeneration !== localWakeLifecycleGeneration || localWakeEngine !== engine || !handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
         if (String(word || '').toLowerCase().includes('jarvis')) {
           void handleLocalWakeDetected(Number(probability) || 0);
         }
       });
+      if (lifecycleGeneration !== localWakeLifecycleGeneration || localWakeEngine !== engine || !handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') {
+        try { engine.stop(); } catch { /* release best-effort */ }
+        if (localWakeEngine === engine) localWakeEngine = null;
+        return;
+      }
       handsFreeStandby = true;
       updateHandsFreeButtons();
       setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded.');
     } catch (error) {
       try { engine.stop(); } catch { /* release best-effort */ }
-      localWakeEngine = null;
+      if (localWakeEngine === engine) localWakeEngine = null;
       throw error;
     }
   })();
   try { await localWakeStartPromise; }
-  finally { localWakeStartPromise = null; }
+  finally {
+    localWakeStartPromise = null;
+    // If the user re-enabled hands-free while an older start was unwinding,
+    // give the new lifecycle a fresh start rather than leaving it stuck idle.
+    if (handsFreeEnabled && !isMicMuted && !localWakeEngine && !wakeCaptureAwaitingReview && document.visibilityState !== 'hidden') {
+      scheduleHandsFreeRestart();
+    }
+  }
 }
 
 function stopHandsFreeStandby() {
+  localWakeLifecycleGeneration += 1;
   if (handsFreeRestartTimer) {
     clearTimeout(handsFreeRestartTimer);
     handsFreeRestartTimer = null;
@@ -330,21 +361,18 @@ async function handleLocalWakeDetected(probability) {
   setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
   const wakeConsent = document.getElementById('allow-wake-browser-speech');
   wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
-  const continueAfterGreeting = () => {
-    if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') return;
-    if (isSpeaking) {
-      handsFreeRestartTimer = setTimeout(continueAfterGreeting, 200);
-      return;
-    }
-    if (wakeConsent?.checked) {
-      startVoiceCapture('wake');
-    } else {
-      setAssistantState('WAKE PHRASE DETECTED', 'Wake detection was local. Enable separate post-wake browser-speech consent to speak a command, or use push-to-talk/text input.');
-      scheduleHandsFreeRestart();
-    }
-  };
-  await speakResponse('Hi sir, I am ready to work.');
-  handsFreeRestartTimer = setTimeout(continueAfterGreeting, 150);
+  if (!wakeConsent?.checked) {
+    await speakResponse('Hi sir, I am ready to work.');
+    setAssistantState('WAKE PHRASE DETECTED', 'Wake detection is local, but spoken commands need the separate post-wake browser-speech consent checkbox. Enable it for this session, or use text input.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+
+  // Start command recognition immediately after local wake detection so the
+  // remaining words in a single utterance such as “Hey Jarvis, open Notepad”
+  // are not lost while the greeting is playing. The greeting is spoken after
+  // capture; the recognized directive still passes through the policy gateway.
+  startVoiceCapture('wake');
 }
 
 function enableWakeDetection() {
@@ -380,7 +408,10 @@ function disableWakeDetection() {
 }
 
 function startHandsFreeStandby() {
-  if (!handsFreeEnabled || !speechRecognitionConstructor) return;
+  // The browser-based fallback must follow the same foreground-only rule as
+  // the local wake engine. Do not open a recognition session from a delayed
+  // callback while the HUD is hidden.
+  if (!handsFreeEnabled || !speechRecognitionConstructor || isMicMuted || document.visibilityState === 'hidden') return;
   stopHandsFreeStandby();
   const recognizer = new speechRecognitionConstructor();
   recognizer.continuous = true;
@@ -388,12 +419,12 @@ function startHandsFreeStandby() {
   recognizer.lang = 'en-US';
 
   recognizer.onstart = () => {
-    if (!handsFreeEnabled || !handsFreeStandby) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled || !handsFreeStandby) return;
     setAssistantState('STANDBY', 'Listening for wake phrase…');
   };
 
   recognizer.onresult = (event) => {
-    if (!handsFreeEnabled || !handsFreeStandby || isSubmitting) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled || !handsFreeStandby || isSubmitting) return;
     let transcript = '';
     for (let index = 0; index < event.results.length; index++) {
       transcript += event.results[index][0].transcript;
@@ -425,7 +456,7 @@ function startHandsFreeStandby() {
   };
 
   recognizer.onerror = (event) => {
-    if (!handsFreeEnabled) return;
+    if (handsFreeRecognizer !== recognizer || !handsFreeEnabled) return;
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       setAssistantState('MICROPHONE DENIED', 'Allow microphone access for this site in browser settings, then enable listening again.');
       disableWakeDetection();
@@ -451,16 +482,22 @@ function startHandsFreeStandby() {
       if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
         handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+        if (handsFreeEnabled && handsFreeStandby && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
       }, 900);
     }
   };
 
   recognizer.onend = () => {
-    if (!handsFreeEnabled || !handsFreeStandby) return;
+    // A stopped/replaced recognizer can emit onend asynchronously. Only the
+    // current recognizer may schedule its successor, preventing overlapping
+    // browser microphone sessions during wake/capture transitions.
+    if (handsFreeRecognizer !== recognizer) return;
     handsFreeRecognizer = null;
+    if (!handsFreeEnabled || !handsFreeStandby) return;
+    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
     handsFreeRestartTimer = setTimeout(() => {
-      if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+      handsFreeRestartTimer = null;
+      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
     }, 400);
   };
 
@@ -468,10 +505,12 @@ function startHandsFreeStandby() {
   try {
     recognizer.start();
   } catch (error) {
-    handsFreeRecognizer = null;
+    if (handsFreeRecognizer === recognizer) handsFreeRecognizer = null;
     if (handsFreeEnabled && handsFreeStandby) {
+      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
       handsFreeRestartTimer = setTimeout(() => {
-        if (handsFreeEnabled && handsFreeStandby) startHandsFreeStandby();
+        handsFreeRestartTimer = null;
+        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
       }, 800);
     }
   }
@@ -514,9 +553,10 @@ function initSpeechRecognition() {
   }
 }
 
-function createSpeechRecognizer(captureGeneration) {
+function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   const recognizer = new speechRecognitionConstructor();
   let finalTranscript = '';
+  let captureFinished = false;
   recognizer.continuous = false;
   recognizer.interimResults = true;
   recognizer.lang = 'en-US';
@@ -530,8 +570,9 @@ function createSpeechRecognizer(captureGeneration) {
 
   recognizer.onresult = (event) => {
     if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
-    // All voice modes are review-first: recognized text never executes automatically.
-    // Keep finalized segments separate from interim hypotheses to avoid duplicated words.
+    // Push-to-talk remains review-first; consented post-wake capture can dispatch
+    // through the policy gateway. Keep finalized segments separate from interim
+    // hypotheses to avoid duplicated words.
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (result.isFinal) finalTranscript += result[0].transcript + ' ';
@@ -569,6 +610,17 @@ function createSpeechRecognizer(captureGeneration) {
       setAssistantState('MICROPHONE PERMISSION REQUIRED', 'Allow microphone access for this site in browser settings, then retry voice input.');
       return;
     }
+    if (mode === 'wake') {
+      // Any non-network, non-permission wake-capture error makes the transcript
+      // uncertain. Invalidate callbacks and discard it rather than allowing
+      // onend to auto-submit a partial command.
+      const shouldRecover = handsFreeEnabled && !isMicMuted;
+      cancelVoiceCapture();
+      const failure = describeSpeechRecognitionError(event.error);
+      setAssistantState('VOICE CAPTURE INTERRUPTED — COMMAND NOT SENT', `${failure.detail} No command was sent; the partial transcript was discarded.`);
+      if (shouldRecover) scheduleHandsFreeRestart();
+      return;
+    }
     if (isHandsFreeEnabled && !isMicMuted) {
       isListening = false;
       if (voiceTimeoutId) { clearTimeout(voiceTimeoutId); voiceTimeoutId = null; }
@@ -584,7 +636,10 @@ function createSpeechRecognizer(captureGeneration) {
   };
 
   recognizer.onend = () => {
-    if (captureGeneration !== voiceCaptureGeneration) return;
+    // Some browser implementations can emit overlapping terminal events. Process
+    // a capture's final transcript at most once so a wake command is never double-submitted.
+    if (captureGeneration !== voiceCaptureGeneration || captureFinished) return;
+    captureFinished = true;
     isListening = false;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
@@ -598,16 +653,47 @@ function createSpeechRecognizer(captureGeneration) {
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
+    } else if (!isMicMuted && finalTranscript.trim() && mode === 'wake') {
+      // Local wake detection plus the separate session consent authorizes
+      // capturing this spoken directive. Dispatch it to the existing policy
+      // gateway automatically; the gateway can still deny or require approval.
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ')
+        .replace(/^(?:hey|hello|hi)\s+jarvis\b[,.!?;: -]*/i, '').trim();
+      wakeCaptureAwaitingReview = false;
+      document.getElementById('transcript-input').value = '';
+      document.getElementById('transcript-box').classList.add('hidden');
+      void (async () => {
+        await speakResponse('Hi sir, I am ready to work.');
+        const speechDeadline = Date.now() + 8000;
+        while (isSpeaking && Date.now() < speechDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (recognizedCommand) {
+          setAssistantState('COMMAND RECEIVED', recognizedCommand);
+          await submitDirective(recognizedCommand);
+        } else {
+          setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
+          scheduleHandsFreeRestart();
+        }
+      })();
     } else if (!isMicMuted && finalTranscript.trim()) {
-      // Recognition only fills the review field. A voice transcript must never
-      // be dispatched until the user explicitly presses EXECUTE DIRECTIVE.
-      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ');
+      // Push-to-talk remains review-first; only post-wake commands are sent
+      // directly to the policy gateway after explicit session consent.
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ');
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
     } else if (wakeCaptureAwaitingReview && handsFreeEnabled && !isMicMuted) {
       wakeCaptureAwaitingReview = false;
-      scheduleHandsFreeRestart();
+      void (async () => {
+        await speakResponse('Hi sir, I am ready to work.');
+        const speechDeadline = Date.now() + 8000;
+        while (isSpeaking && Date.now() < speechDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
+        scheduleHandsFreeRestart();
+      })();
     }
   };
 
@@ -688,10 +774,19 @@ function handleHandsFreeTranscript(rawTranscript) {
 }
 
 function scheduleHandsFreeRestart() {
+  // Do not queue microphone work while the HUD is backgrounded. Capture
+  // cancellation can itself request recovery, so gate both scheduling and
+  // timer execution on visibility; the visibilitychange handler retries when
+  // the user returns to the HUD.
+  if (document.visibilityState === 'hidden') {
+    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
+    handsFreeRestartTimer = null;
+    return;
+  }
   if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
   handsFreeRestartTimer = setTimeout(() => {
     handsFreeRestartTimer = null;
-    if (!handsFreeEnabled || isMicMuted || isSpeaking || isListening || isSubmitting || wakeCaptureAwaitingReview) return;
+    if (document.visibilityState === 'hidden' || !handsFreeEnabled || isMicMuted || isSpeaking || isListening || isSubmitting || wakeCaptureAwaitingReview) return;
     startLocalWakeEngine().catch((error) => {
       setAssistantState('LOCAL WAKE WORD UNAVAILABLE', error instanceof Error ? error.message : 'Could not restart local wake detection.');
       disableWakeDetection();
@@ -714,8 +809,7 @@ function disableHandsFree() {
   const button = document.getElementById('btn-hands-free');
   if (button) { button.textContent = 'HANDS-FREE CAPTURE: OFF'; button.setAttribute('aria-pressed', 'false'); }
   cancelVoiceCapture();
-  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-  isSpeaking = false;
+  cancelSpeechOutput();
   updateHandsFreeButtons();
   setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped.');
 }
@@ -753,21 +847,37 @@ function startVoiceCapture(mode = 'push-to-talk') {
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
   const captureGeneration = ++voiceCaptureGeneration;
   try {
-    speechRecognizer = createSpeechRecognizer(captureGeneration);
+    speechRecognizer = createSpeechRecognizer(captureGeneration, mode);
     speechRecognizer.start();
     void startAudioMeter();
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
+      if (mode === 'wake') {
+        // A timed-out hands-free utterance may be incomplete. Abort it rather
+        // than letting recognizer.onend dispatch a partial command automatically.
+        cancelVoiceCapture();
+        setAssistantState('VOICE TIME LIMIT — COMMAND NOT SENT', 'The post-wake capture reached 15 seconds. No command was sent; wake detection will recover for another attempt.');
+        return;
+      }
       stopVoiceCapture(isHandsFreeEnabled ? 'HANDS-FREE STANDBY' : 'VOICE TIME LIMIT', isHandsFreeEnabled ? 'Refreshing the browser recognition session.' : 'The 15-second capture limit was reached. Review the transcript before sending.');
     }, 15000);
   } catch (e) {
     isListening = false;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    document.getElementById('btn-ptt').classList.remove('active');
     voiceCaptureGeneration++;
     if (voiceTimeoutId) clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
     speechRecognizer = null;
-    setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
+    stopAudioMeter();
+    if (mode === 'wake') {
+      wakeCaptureAwaitingReview = false;
+      setAssistantState('VOICE START FAILED', 'The browser could not start post-wake speech recognition. No command was sent; local wake detection will retry. You can also use text input.');
+      scheduleHandsFreeRestart();
+    } else {
+      setAssistantState('VOICE START FAILED', 'The browser could not start speech recognition. Use text input instead.');
+    }
   }
 }
 
@@ -801,12 +911,14 @@ function cancelVoiceCapture() {
     clearTimeout(voiceTimeoutId);
     voiceTimeoutId = null;
   }
-  if (speechRecognizer) {
+  const recognizerToAbort = speechRecognizer;
+  speechRecognizer = null;
+  stopAudioMeter();
+  if (recognizerToAbort) {
     try {
-      speechRecognizer.abort();
-      stopAudioMeter();
+      recognizerToAbort.abort();
     } catch (e) {
-      // ignore
+      // The capture generation is invalidated even if the browser cannot abort.
     }
   }
   document.getElementById('reactor-container').classList.remove('listening');
@@ -908,15 +1020,43 @@ async function submitDirective(text) {
 }
 
 
+function cancelSpeechOutput() {
+  // Invalidate any synthesis request that is still awaiting a network response.
+  speechOutputGeneration += 1;
+  if (handsFreeRestartTimer) {
+    clearTimeout(handsFreeRestartTimer);
+    handsFreeRestartTimer = null;
+  }
+  if (activeSpeechAudio) {
+    try {
+      activeSpeechAudio.pause();
+      activeSpeechAudio.removeAttribute('src');
+      activeSpeechAudio.load();
+    } catch { /* Best-effort stop; cleanup below still releases the object URL. */ }
+  }
+  if (activeSpeechCleanup) activeSpeechCleanup();
+  else {
+    if (activeSpeechAudioUrl) URL.revokeObjectURL(activeSpeechAudioUrl);
+    activeSpeechAudioUrl = null;
+    activeSpeechAudio = null;
+  }
+  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  isSpeaking = false;
+}
+
 async function speakResponse(message) {
   const text = String(message || '').trim();
   if (!text || isMicMuted || !speechOutputEnabled) return;
-  isSpeaking = false;
+  // A new response supersedes earlier speech and invalidates stale async TTS work.
+  cancelSpeechOutput();
+  const generation = speechOutputGeneration;
+  const stillAllowed = () => generation === speechOutputGeneration && !isMicMuted && speechOutputEnabled;
   if (!localTtsUnavailable && currentSession && window.JarvisDeviceCrypto?.signedFetch) {
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/voice/synthesize', {
         method: 'POST', body: { text: text.slice(0, 1200) },
       });
+      if (!stillAllowed()) return;
       if (!response.ok) {
         // A failing local provider will not be retried for every response.
         // Browser speech synthesis is the graceful fallback for this session.
@@ -924,28 +1064,47 @@ async function speakResponse(message) {
         throw new Error(`Local TTS returned HTTP ${response.status}`);
       }
       const blob = await response.blob();
+      if (!stillAllowed()) return;
       if (blob.type.includes('audio/wav') && blob.size > 44) {
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        const releaseUrl = () => URL.revokeObjectURL(url);
-        audio.addEventListener('ended', releaseUrl, { once: true });
-        audio.addEventListener('error', releaseUrl, { once: true });
+        let playbackFinished = false;
+        const finishPlayback = () => {
+          if (playbackFinished) return;
+          playbackFinished = true;
+          if (activeSpeechAudio === audio) {
+            activeSpeechAudio = null;
+            activeSpeechAudioUrl = null;
+            activeSpeechCleanup = null;
+          }
+          URL.revokeObjectURL(url);
+          isSpeaking = false;
+          if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
+        };
+        activeSpeechAudio = audio;
+        activeSpeechAudioUrl = url;
+        activeSpeechCleanup = finishPlayback;
+        // Attach terminal handlers before play(): short clips can finish quickly,
+        // and media errors after play() resolves must still release speech state.
+        audio.addEventListener('ended', finishPlayback, { once: true });
+        audio.addEventListener('error', finishPlayback, { once: true });
         try {
-          await audio.play();
           isSpeaking = true;
-          audio.addEventListener('ended', () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); }, { once: true });
+          await audio.play();
           return;
         } catch (playError) {
-          releaseUrl();
+          finishPlayback();
           throw playError;
         }
       }
       localTtsUnavailable = true;
       throw new Error('Local TTS returned an invalid audio response');
     } catch (error) {
+      if (!stillAllowed()) return;
       console.warn('Local neural TTS unavailable; using browser speech synthesis.', error);
     }
   }
+  if (!stillAllowed()) return;
   if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -953,8 +1112,13 @@ async function speakResponse(message) {
     utterance.lang = 'en-GB';
     utterance.rate = 0.92;
     utterance.pitch = 0.9;
-    utterance.onend = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
-    utterance.onerror = () => { isSpeaking = false; if (isHandsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart(); };
+    const finishSpeech = () => {
+      if (generation !== speechOutputGeneration) return;
+      isSpeaking = false;
+      if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
+    };
+    utterance.onend = finishSpeech;
+    utterance.onerror = finishSpeech;
     window.speechSynthesis.speak(utterance);
   }
 }

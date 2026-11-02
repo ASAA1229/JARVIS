@@ -63,7 +63,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Static allowlist plus unique Start menu app discovery is available; apps without Start menu entries and independent target-window verification remain unsupported.',
+    notes: 'Static allowlist plus unique Start menu discovery is available. Known Windows inbox apps (Settings, Microsoft Store, Photos, Clock) use conservative process-and-title identity hints for launch verification; unknown discovered apps remain partial because no trusted identity mapping exists.',
   },
   {
     id: 'desktop.ui-automation',
@@ -74,7 +74,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Foreground UI Automation inspection, exact-name InvokePattern, guarded ValuePattern reads (credential/financial fields redacted), and non-sensitive ValuePattern writes are available; universal coverage and target-app acceptance remain incomplete.',
+    notes: 'Foreground UI Automation inspection exposes AutomationId; read/click/set can select by AutomationId or exact control name and require a unique match. Credential/financial fields remain guarded; universal coverage and target-app acceptance remain incomplete.',
   },
   {
     id: 'desktop.text-and-clipboard',

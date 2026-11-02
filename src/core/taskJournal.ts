@@ -52,8 +52,18 @@ export class TaskJournal {
     if (!this.records.has(record.id) && this.records.size >= MAX_RECORDS) {
       throw new Error('Task journal is full; prune terminal records before creating more tasks.');
     }
+    const previous = this.records.get(record.id);
     this.records.set(record.id, this.clone(record));
-    this.persist();
+    try {
+      this.persist();
+    } catch {
+      // Keep the in-memory view aligned with the last durable checkpoint. Once
+      // persistence fails, fail closed rather than accepting divergent writes.
+      if (previous) this.records.set(record.id, previous);
+      else this.records.delete(record.id);
+      this.healthy = false;
+      throw new Error('Task journal persistence failed; writes are disabled to avoid diverging from durable checkpoints.');
+    }
   }
 
   get(taskId: string): TaskLifecycleRecord | undefined {
@@ -117,7 +127,16 @@ export class TaskJournal {
       typeof r.createdAt === 'number' && Number.isFinite(r.createdAt) &&
       typeof r.updatedAt === 'number' && Number.isFinite(r.updatedAt) &&
       (r.steps === undefined || (Array.isArray(r.steps) && r.steps.length <= 500)) &&
-      (r.operations === undefined || (Array.isArray(r.operations) && r.operations.length <= 100));
+      (r.operations === undefined || (Array.isArray(r.operations) && r.operations.length <= 100)) &&
+      (r.reconciliation === undefined || (
+        typeof r.reconciliation === 'object' && r.reconciliation !== null &&
+        ['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(r.reconciliation.disposition) &&
+        typeof r.reconciliation.note === 'string' && r.reconciliation.note.trim().length >= 8 &&
+        r.reconciliation.note.length <= 500 &&
+        typeof r.reconciliation.reviewedAt === 'number' && Number.isFinite(r.reconciliation.reviewedAt) &&
+        typeof r.reconciliation.reviewedBy === 'string' && r.reconciliation.reviewedBy.length > 0 &&
+        r.reconciliation.reviewedBy.length <= 160
+      ));
   }
 
   private clone<T>(value: T): T {

@@ -59,6 +59,8 @@ export interface TaskLifecycleRecord {
   origin?: 'interactive' | 'schedule';
   /** Per-step record: completed, failed, uncertain, blocked, skipped, cancelled. */
   steps?: WorkflowStepRecord[];
+  /** Owner-reviewed recovery note. This never authorizes automatic replay. */
+  reconciliation?: { disposition: 'confirmed_no_effect' | 'effect_observed' | 'still_unknown'; note: string; reviewedAt: number; reviewedBy: DeviceId };
 }
 
 export interface TaskResult {
@@ -213,6 +215,7 @@ export class JarvisCoreService {
     } catch {
       taskRecord.state = TaskState.AWAITING_RECOVERY;
       taskRecord.error = 'Request could not be durably audited; no operation was planned or executed';
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: taskRecord.error, verified: false };
     }
 
@@ -236,6 +239,7 @@ export class JarvisCoreService {
         taskRecord.state = TaskState.AWAITING_RECOVERY;
         taskRecord.error = 'Planning failed and the failure could not be durably audited; no host operation was executed';
       }
+      this.#persistTask(taskRecord);
       return {
         taskId,
         state: taskRecord.state,
@@ -252,6 +256,7 @@ export class JarvisCoreService {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = `Invalid AI plan proposal: ${(validation.errors || []).join('; ')}`;
       this.audit.record('PLANNING_SCHEMA_VIOLATION', { errorCount: validation.errors?.length || 0 }, device.id, taskId);
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
@@ -262,6 +267,7 @@ export class JarvisCoreService {
         operationCount: plan.operations.length,
         confidence: plan.confidence,
       }, device.id, taskId);
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: plan.explanation };
     }
 
@@ -285,7 +291,7 @@ export class JarvisCoreService {
     return this.#evaluateAndProceed(taskId, opRequest, device.id);
   }
 
-  #recordStep(task: TaskLifecycleRecord, status: WorkflowStepStatus, outcome?: VerificationOutcome, message?: string): void {
+  #recordStep(task: TaskLifecycleRecord, status: WorkflowStepStatus, outcome?: VerificationOutcome, message?: string): boolean {
     if (!task.steps) task.steps = [];
     task.steps.push({
       index: task.operationIndex ?? 0,
@@ -295,7 +301,7 @@ export class JarvisCoreService {
       at: Date.now(),
       message: message ? message.slice(0, 160) : undefined,
     });
-    this.#persistTask(task);
+    return this.#persistTask(task);
   }
 
   /** Persist a checkpoint before further work; a failed write stops dependent steps. */
@@ -352,7 +358,11 @@ export class JarvisCoreService {
           policyResult.riskTier
         );
         taskRecord.approvalId = approval.id;
-        this.#recordStep(taskRecord, 'awaiting_approval', undefined, policyResult.reason);
+        const checkpointed = this.#recordStep(taskRecord, 'awaiting_approval', undefined, policyResult.reason);
+        if (!checkpointed) {
+          try { this.policy.invalidateApprovals({ taskId }, 'TASK_CHECKPOINT_FAILED'); } catch { /* State guard still prevents execution. */ }
+          return { taskId, state: taskRecord.state, message: taskRecord.error || 'Approval state could not be checkpointed; execution is blocked.', verified: false };
+        }
         this.notifications.push('warning', 'approval_required', `Approval needed for ${opRequest.operation} (risk ${policyResult.riskTier}).`, { taskId, deviceId });
         return {
           taskId,
@@ -366,6 +376,7 @@ export class JarvisCoreService {
         this.audit.record('TASK_DENIED', { reason: policyResult.reason }, deviceId, taskId);
         this.#recordStep(taskRecord, 'blocked', undefined, policyResult.reason);
         this.#skipRemainingSteps(taskRecord);
+        this.#persistTask(taskRecord);
         this.notifications.push('error', 'task_blocked', `Blocked by policy: ${opRequest.operation}.`, { taskId, deviceId });
         return { taskId, state: taskRecord.state, message: policyResult.reason || 'Policy denied execution' };
       }
@@ -393,6 +404,7 @@ export class JarvisCoreService {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'Execution blocked: persisted device state is unhealthy';
       this.audit.record('EXECUTION_BLOCKED_DEVICE_STATE_UNHEALTHY', { reason: this.identity.getStateError() }, taskRecord.deviceId, taskId);
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
@@ -402,6 +414,7 @@ export class JarvisCoreService {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'Device revoked or inactive before execution';
       this.audit.record('EXECUTION_BLOCKED_DEVICE_REVOKED', {}, taskRecord.deviceId, taskId);
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
@@ -410,6 +423,7 @@ export class JarvisCoreService {
     if (!auditIntegrity.valid) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = `Execution blocked: Audit chain integrity violation (${auditIntegrity.reason})`;
+      this.#persistTask(taskRecord);
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
@@ -428,6 +442,7 @@ export class JarvisCoreService {
       this.activeExecutionTokens.delete(taskId);
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'Execution blocked because the audit record could not be persisted';
+      this.#persistTask(taskRecord);
       return {
         taskId,
         state: taskRecord.state,
@@ -641,6 +656,7 @@ export class JarvisCoreService {
     } catch {
       taskRecord.state = TaskState.AWAITING_RECOVERY;
       taskRecord.error = 'Execution outcome could not be durably audited and must be reconciled';
+      this.#persistTask(taskRecord);
       return {
         taskId,
         state: taskRecord.state,
@@ -685,6 +701,15 @@ export class JarvisCoreService {
     // continue past a failure or an ambiguous result.
     if (verification.honestOutcome !== VerificationOutcome.VERIFIED_SUCCESS) this.#skipRemainingSteps(taskRecord);
     taskRecord.updatedAt = Date.now();
+    if (!this.#persistTask(taskRecord)) {
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error || 'Final task checkpoint failed; reconcile before retrying.',
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
     if (taskRecord.state === TaskState.COMPLETED) {
       this.notifications.push('info', 'task_completed', `Completed and verified: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
     } else if (taskRecord.state === TaskState.FAILED) {
@@ -743,13 +768,26 @@ export class JarvisCoreService {
 
     this.#assertApproverPermission(approval, approver, 'APPROVAL_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
+    const pendingTask = this.tasks.get(approval.taskId);
+    if (!pendingTask) throw new Error('Associated task not found');
+    // An approval record alone is not enough: checkpoint/audit failure or a
+    // concurrent cancellation may have moved the task out of AWAITING_APPROVAL.
+    // Reject before consuming the approval or reaching any adapter.
+    if (pendingTask.state !== TaskState.AWAITING_APPROVAL) {
+      this.audit.record('APPROVAL_FAILED_TASK_NOT_PENDING', {
+        approvalId,
+        taskState: pendingTask.state,
+      }, approver.id, pendingTask.id);
+      throw new Error('Task is no longer awaiting approval');
+    }
+
     if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
       const expiredTask = this.tasks.get(approval.taskId);
       if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
         expiredTask.state = TaskState.EXPIRED;
         expiredTask.updatedAt = Date.now();
-        this.#persistTask(expiredTask);
         this.#skipRemainingSteps(expiredTask);
+        this.#persistTask(expiredTask);
         this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: expiredTask.id, deviceId: expiredTask.deviceId });
       }
     }
@@ -759,8 +797,7 @@ export class JarvisCoreService {
       throw new Error(resolveRes.error);
     }
 
-    const task = this.tasks.get(approval.taskId);
-    if (!task) throw new Error('Associated task not found');
+    const task = pendingTask;
 
     const opRequest: OperationRequest = {
       operation: approval.operation,
@@ -795,6 +832,22 @@ export class JarvisCoreService {
 
     this.#assertApproverPermission(approval, approver, 'REJECTION_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
+    // A pending approval must not be able to mutate a task that was cancelled,
+    // interrupted, expired, or moved into recovery after the approval was issued.
+    // Check before consuming/rejecting the approval, matching approveTask's guard.
+    const pendingTask = this.tasks.get(approval.taskId);
+    if (!pendingTask) {
+      this.audit.record('REJECTION_FAILED_TASK_NOT_FOUND', { approvalId }, approver.id, approval.taskId);
+      throw new Error('Associated task not found');
+    }
+    if (pendingTask.state !== TaskState.AWAITING_APPROVAL) {
+      this.audit.record('REJECTION_FAILED_TASK_NOT_PENDING', {
+        approvalId,
+        taskState: pendingTask.state,
+      }, approver.id, pendingTask.id);
+      throw new Error('Task is no longer awaiting approval');
+    }
+
     const resolveRes = this.policy.resolveApproval(approvalId, false, approver.id);
     if (!resolveRes.success) {
       throw new Error(resolveRes.error || 'Approval could not be rejected');
@@ -806,9 +859,93 @@ export class JarvisCoreService {
       task.updatedAt = Date.now();
       this.#recordStep(task, 'cancelled', undefined, 'Rejected by approver');
       this.#skipRemainingSteps(task);
+      this.#persistTask(task);
+      if (task.state !== TaskState.REJECTED) {
+        return { success: false, message: task.error || 'Rejection checkpoint failed; task requires recovery.' };
+      }
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
     return { success: true, message: 'Task rejected' };
+  }
+
+  /**
+   * Records an authenticated human reconciliation decision for an interrupted or
+   * ambiguous task. This closes/annotates the record only; it never resumes or
+   * replays an operation. "effect_observed" is intentionally PARTIAL, not COMPLETED,
+   * because a user note is not independent application-level verification.
+   */
+  public reconcileTask(
+    taskId: TaskId,
+    sessionId: SessionId,
+    disposition: 'confirmed_no_effect' | 'effect_observed' | 'still_unknown',
+    note: string,
+  ): { success: boolean; taskId: TaskId; state: TaskState; message: string } {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const reviewer = auth.device;
+    if (!auth.valid || !reviewer) {
+      this.audit.record('TASK_RECOVERY_RECONCILE_DENIED', { reason: 'INVALID_SESSION' });
+      throw new Error('Session is not authenticated');
+    }
+    if (!['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(disposition)) {
+      throw new Error('Recovery disposition is invalid');
+    }
+    if (typeof note !== 'string' || note.trim().length < 8 || note.length > 500) {
+      throw new Error('Recovery note must be 8–500 characters');
+    }
+
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error('Task not found');
+    if (task.deviceId !== reviewer.id && !reviewer.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('TASK_RECOVERY_RECONCILE_DENIED', { reason: 'NOT_TASK_OWNER', taskId }, reviewer.id, taskId);
+      throw new Error('Only the requesting device or an owner device can reconcile this task');
+    }
+    if (task.state !== TaskState.AWAITING_RECOVERY && task.state !== TaskState.INTERRUPTED) {
+      throw new Error('Task is not awaiting recovery');
+    }
+
+    // Do not put the potentially sensitive user note into the audit log.
+    this.audit.record('TASK_RECOVERY_RECONCILED', {
+      disposition,
+      noteLength: note.trim().length,
+      previousState: task.state,
+      automaticReplay: false,
+    }, reviewer.id, taskId);
+
+    task.reconciliation = {
+      disposition,
+      note: note.trim(),
+      reviewedAt: Date.now(),
+      reviewedBy: reviewer.id,
+    };
+    task.updatedAt = Date.now();
+    if (disposition === 'confirmed_no_effect') {
+      task.state = TaskState.FAILED;
+      task.error = 'Manual review recorded that no side effect occurred. This task is closed; submit a new request if needed. It will not be replayed.';
+    } else if (disposition === 'effect_observed') {
+      task.state = TaskState.PARTIAL;
+      task.error = 'A possible side effect was observed during manual reconciliation. The task remains unverified and was not replayed.';
+    } else {
+      task.state = TaskState.AWAITING_RECOVERY;
+      task.error = 'The outcome remains unknown. No retry or dependent workflow step was started.';
+    }
+
+    if (!this.#persistTask(task)) {
+      return {
+        success: false,
+        taskId,
+        state: task.state,
+        message: task.error || 'Recovery decision could not be durably checkpointed.',
+      };
+    }
+    this.notifications.push(
+      disposition === 'still_unknown' ? 'warning' : 'info',
+      'task_recovery_reviewed',
+      disposition === 'still_unknown'
+        ? 'Task recovery reviewed, but the outcome remains unknown. No retry was started.'
+        : 'Task recovery review recorded. JARVIS did not replay the task.',
+      { taskId, deviceId: task.deviceId },
+    );
+    return { success: true, taskId, state: task.state, message: task.error || 'Recovery review recorded; no operation was replayed.' };
   }
 
   /**
@@ -839,6 +976,9 @@ export class JarvisCoreService {
       task.updatedAt = Date.now();
       this.#recordStep(task, 'cancelled', undefined, 'Cancelled by user');
       this.#skipRemainingSteps(task);
+      if (!this.#persistTask(task) || task.state !== TaskState.CANCELLED) {
+        return { success: false, message: task.error || 'Cancellation checkpoint failed; task state requires recovery.', state: task.state };
+      }
       this.audit.record('TASK_CANCELLED', { taskId }, requester.id, taskId);
       this.notifications.push('info', 'task_cancelled', 'A task was cancelled before it ran.', { taskId, deviceId: task.deviceId });
       return { success: true, message: 'Task cancelled; nothing was executed.', state: task.state };
@@ -952,6 +1092,10 @@ export class JarvisCoreService {
       schedules: { active: this.scheduler.activeCount },
       notifications: this.notifications.size,
     };
+  }
+
+  public hasDurableTaskJournal(): boolean {
+    return this.taskJournal !== undefined;
   }
 
   public getTask(taskId: TaskId): TaskLifecycleRecord | undefined {

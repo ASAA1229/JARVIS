@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { buildControlActionScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
@@ -130,6 +131,15 @@ test('discovered Start-menu launch never claims verified success without process
   assert.equal(noWindow.outcome, 'PARTIAL_SUCCESS');
   assert.equal((noWindow.evidence as Record<string, unknown>).newWindowDetected, false);
   assert.equal((noWindow.evidence as Record<string, unknown>).targetWindowVerified, false);
+});
+
+test('Windows app launcher does not return raw exception messages or unbounded invalid input', () => {
+  const source = readFileSync(new URL('../src/adapters/windowsAppLauncher.ts', import.meta.url), 'utf8');
+  assert.match(source, /Application launch failed; no verified success is reported/);
+  assert.match(source, /Start-menu application launch failed; no verified success is reported/);
+  assert.doesNotMatch(source, /Launch execution error: \`\${String\(err\)\}\`/);
+  assert.doesNotMatch(source, /error: error instanceof Error \? error\.message : String\(error\)/);
+  assert.match(source, /requestedType: typeof appId, requestedLength:/);
 });
 
 test('planner routes an explicit named-control read to the guarded desktop operation', async () => {
