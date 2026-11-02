@@ -432,3 +432,8 @@ Implemented on `new`: non-permission, non-network errors during post-wake browse
 ## Voice/HUD follow-up — local speech playback terminal-state cleanup (2026-11-02)
 
 Implemented on `new`: local TTS audio now registers its ended/error handlers before playback begins and uses a one-shot cleanup path to revoke the object URL, clear `isSpeaking`, and schedule hands-free recovery where appropriate. This addresses a short-clip race where playback could finish before the completion handler was attached, plus media errors that could leave speech state stuck. Tests remain paused; runtime playback, browser compatibility, and Windows MSI acceptance are not verified.
+
+
+## Voice/HUD follow-up — speech-output cancellation and privacy controls (2026-11-02)
+
+Implemented on `new`: disabling voice output or switching hands-free off now cancels browser speech synthesis and active local TTS audio, revokes its object URL, clears pending wake-restart timers, and resets speaking state. A generation guard prevents an in-flight local TTS request from starting playback after voice output has been disabled or superseded by a newer response. Tests remain paused; runtime/browser and MSI acceptance are not verified.
