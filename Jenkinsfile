@@ -140,7 +140,7 @@ pipeline {
                   }
                 }
               }
-              foreach ($file in @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')) {
+              foreach ($file in $releaseFiles) {
                 $uri = "$target/$file"
                 Invoke-WebRequest -Uri $uri -Method Put -InFile $file -Headers $headers -UseBasicParsing | Out-Null
                 $download = Join-Path $verificationDir $file
