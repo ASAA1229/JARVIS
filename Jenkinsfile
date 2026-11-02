@@ -12,6 +12,9 @@ pipeline {
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
   }
+  parameters {
+    booleanParam(name: 'ENABLE_POLICY_SIGNING', defaultValue: false, description: 'Sign manifest-ignore with the configured Ed25519 Jenkins credentials.')
+  }
   stages {
     stage('Checkout') {
       steps {
@@ -56,6 +59,36 @@ pipeline {
         archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256', fingerprint: true
       }
     }
+    stage('Sign manifest-ignore policy (optional)') {
+      when {
+        expression { return params.ENABLE_POLICY_SIGNING }
+      }
+      steps {
+        withCredentials([
+          string(credentialsId: 'manifest-ignore-private-key', variable: 'MANIFEST_IGNORE_PRIVATE_KEY'),
+          string(credentialsId: 'manifest-ignore-public-key', variable: 'MANIFEST_IGNORE_PUBLIC_KEY')
+        ]) {
+          powershell '''
+            $ErrorActionPreference = "Stop"
+            $privatePath = Join-Path $env:TEMP "jarvis-policy-private-$env:BUILD_NUMBER.pem"
+            $publicPath = Join-Path $env:WORKSPACE ".manifest-ignore-public.pem"
+            try {
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
+              node scripts/policy-signature.mjs sign "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $privatePath
+              if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signing failed." }
+              node scripts/policy-signature.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $publicPath
+              if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signature verification failed." }
+              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" "-" "jarvis-manifest-ignore.sig" $publicPath
+              if ($LASTEXITCODE -ne 0) { throw "Signed customer release verification failed." }
+            } finally {
+              Remove-Item -Force $privatePath -ErrorAction SilentlyContinue
+            }
+          '''
+          archiveArtifacts artifacts: 'jarvis-manifest-ignore.sig', fingerprint: true
+        }
+      }
+    }
     stage('Publish to Nexus (optional)') {
       when {
         expression { return env.NEXUS_RAW_REPOSITORY_URL?.trim() }
@@ -89,7 +122,9 @@ pipeline {
             New-Item -ItemType Directory -Force -Path $verificationDir | Out-Null
             try {
               # Do not silently replace an artifact at an already-used release path.
-              foreach ($file in @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')) {
+              $releaseFiles = @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')
+            if (Test-Path 'jarvis-manifest-ignore.sig' -PathType Leaf) { $releaseFiles += 'jarvis-manifest-ignore.sig' }
+            foreach ($file in $releaseFiles) {
                 $uri = "$target/$file"
                 try {
                   $existing = Invoke-WebRequest -Uri $uri -Method Head -Headers $headers -UseBasicParsing -ErrorAction Stop
@@ -120,7 +155,15 @@ pipeline {
               node scripts/artifact-integrity.mjs verify-hash (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
               node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
               $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
-              node scripts/customer-release-verifier.mjs verify (Join-Path $verificationDir 'jarvis-manifest-ignore.json') (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' $trustedPolicyHash
+              $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
+              if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
+                node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+                if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+              } else {
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' $trustedPolicyHash
+              }
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back customer release verification failed." }
             } finally {
               Remove-Item -Recurse -Force -LiteralPath $verificationDir -ErrorAction SilentlyContinue
               Remove-Variable pair, encoded, headers -ErrorAction SilentlyContinue
@@ -137,6 +180,9 @@ pipeline {
     }
     failure {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
+    }
+    always {
+      powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
     }
   }
 }
