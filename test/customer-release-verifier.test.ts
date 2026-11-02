@@ -47,7 +47,7 @@ describe('customer release verification order', () => {
       writeFileSync(publicPath, publicKey.export({ type: 'spki', format: 'pem' }));
       run(signer, ['sign', policy, signaturePath, privatePath]);
       const signedGood = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '-', signaturePath, publicPath]);
-      assert.match(signedGood.stdout, /Stage 1 PASSED:[\\s\\S]*Stage 2 PASSED:[\\s\\S]*Stage 3 PASSED/);
+      assert.match(signedGood.stdout, /Stage 1 PASSED:[\s\S]*Stage 2 PASSED:[\s\S]*Stage 3 PASSED/);
       const originalPolicy = readFileSync(policy);
       writeFileSync(policy, Buffer.concat([originalPolicy, Buffer.from(' ')]));
       run(integrity, ['hash', policy, policySum]);
