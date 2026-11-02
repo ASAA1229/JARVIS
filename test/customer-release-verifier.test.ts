@@ -51,10 +51,12 @@ describe('customer release verification order', () => {
       assert.match(signedGood.stdout, /Stage 1 PASSED:[\s\S]*Stage 2 PASSED:[\s\S]*Stage 3 PASSED/);
       const originalPolicy = readFileSync(policy);
       writeFileSync(policy, Buffer.concat([originalPolicy, Buffer.from(' ')]));
+      rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
       const signedTamper = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '-', signaturePath, publicPath], false);
       assert.match(signedTamper.stderr, /Ed25519 signature verification failed/);
       writeFileSync(policy, originalPolicy);
+      rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
       run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '0'.repeat(64)], false);
     } finally {
