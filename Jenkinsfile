@@ -7,10 +7,20 @@ pipeline {
   }
   environment {
     PROJECT_NAME = 'JARVIS'
+<<<<<<< HEAD
+=======
+    REQUIRE_BUILD_PROVENANCE = 'true'
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
     ARTIFACT_FILE = 'jarvis-build.tar.gz'
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
   }
+<<<<<<< HEAD
+=======
+  parameters {
+    booleanParam(name: 'ENABLE_POLICY_SIGNING', defaultValue: false, description: 'Sign manifest-ignore with the configured Ed25519 Jenkins credentials.')
+  }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
   stages {
     stage('Checkout') {
       steps {
@@ -46,8 +56,48 @@ pipeline {
           node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
           node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
           node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+<<<<<<< HEAD
         '''
         archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256', fingerprint: true
+=======
+          node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
+          node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
+          node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
+          $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
+          node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
+        '''
+        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256', fingerprint: true
+      }
+    }
+    stage('Sign manifest-ignore policy (optional)') {
+      when {
+        expression { return params.ENABLE_POLICY_SIGNING }
+      }
+      steps {
+        withCredentials([
+          string(credentialsId: 'manifest-ignore-private-key', variable: 'MANIFEST_IGNORE_PRIVATE_KEY'),
+          string(credentialsId: 'manifest-ignore-public-key', variable: 'MANIFEST_IGNORE_PUBLIC_KEY')
+        ]) {
+          powershell '''
+            $ErrorActionPreference = "Stop"
+            $privatePath = Join-Path $env:TEMP "jarvis-policy-private-$env:BUILD_NUMBER.pem"
+            $publicPath = Join-Path $env:WORKSPACE ".manifest-ignore-public.pem"
+            try {
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
+              node scripts/policy-signature.mjs sign "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $privatePath
+              if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signing failed." }
+              node scripts/policy-signature.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $publicPath
+              if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signature verification failed." }
+              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" "-" "jarvis-manifest-ignore.sig" $publicPath
+              if ($LASTEXITCODE -ne 0) { throw "Signed customer release verification failed." }
+            } finally {
+              Remove-Item -Force $privatePath -ErrorAction SilentlyContinue
+            }
+          '''
+          archiveArtifacts artifacts: 'jarvis-manifest-ignore.sig', fingerprint: true
+        }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
       }
     }
     stage('Publish to Nexus (optional)') {
@@ -59,6 +109,7 @@ pipeline {
           powershell '''
             $ErrorActionPreference = "Stop"
             $base = $env:NEXUS_RAW_REPOSITORY_URL.TrimEnd('/')
+<<<<<<< HEAD
             $target = "$base/jarvis/$env:BUILD_NUMBER"
             $pair = $env:NEXUS_USER + ':' + $env:NEXUS_PASSWORD
             $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
@@ -68,6 +119,78 @@ pipeline {
               Write-Output "Published $file to Nexus build $env:BUILD_NUMBER"
             }
             Remove-Variable pair, encoded, headers
+=======
+            $repositoryUri = $null
+            if (-not [Uri]::TryCreate($base, [UriKind]::Absolute, [ref]$repositoryUri)) {
+              throw "NEXUS_RAW_REPOSITORY_URL must be a valid absolute HTTPS repository URL."
+            }
+            if ($repositoryUri.Scheme -ne [Uri]::UriSchemeHttps -or
+                [string]::IsNullOrWhiteSpace($repositoryUri.Host) -or
+                -not [string]::IsNullOrEmpty($repositoryUri.UserInfo) -or
+                -not [string]::IsNullOrEmpty($repositoryUri.Query) -or
+                -not [string]::IsNullOrEmpty($repositoryUri.Fragment)) {
+              throw "NEXUS_RAW_REPOSITORY_URL must use HTTPS and must not contain embedded credentials, query parameters, or fragments."
+            }
+            if ([string]::IsNullOrWhiteSpace($env:GIT_COMMIT)) {
+              throw "Git commit metadata is required for immutable Nexus publication paths."
+            }
+            $commit = $env:GIT_COMMIT.Substring(0, [Math]::Min(12, $env:GIT_COMMIT.Length))
+            $projectPath = $env:PROJECT_NAME.ToLowerInvariant()
+            $target = "$base/$projectPath/$env:BUILD_NUMBER-$commit"
+            $pair = $env:NEXUS_USER + ':' + $env:NEXUS_PASSWORD
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
+            $headers = @{ Authorization = "Basic $encoded" }
+            $verificationDir = Join-Path $env:WORKSPACE ".nexus-verify"
+            New-Item -ItemType Directory -Force -Path $verificationDir | Out-Null
+            try {
+              # Do not silently replace an artifact at an already-used release path.
+              $releaseFiles = @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')
+            if (Test-Path 'jarvis-manifest-ignore.sig' -PathType Leaf) { $releaseFiles += 'jarvis-manifest-ignore.sig' }
+            foreach ($file in $releaseFiles) {
+                $uri = "$target/$file"
+                try {
+                  $existing = Invoke-WebRequest -Uri $uri -Method Head -Headers $headers -UseBasicParsing -ErrorAction Stop
+                  throw "Refusing to overwrite existing Nexus release asset: $uri (HTTP $([int]$existing.StatusCode)). Use a new build number or investigate the existing release."
+                } catch {
+                  $statusCode = $null
+                  if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                  }
+                  if ($statusCode -ne 404) {
+                    if ($_.Exception.Message -like 'Refusing to overwrite existing Nexus release asset:*') { throw }
+                    throw "Could not safely establish that Nexus release asset is absent: $uri. HTTP status: $statusCode. Publication stopped."
+                  }
+                }
+              }
+              foreach ($file in $releaseFiles) {
+                $uri = "$target/$file"
+                Invoke-WebRequest -Uri $uri -Method Put -InFile $file -Headers $headers -UseBasicParsing | Out-Null
+                $download = Join-Path $verificationDir $file
+                Invoke-WebRequest -Uri $uri -Method Get -OutFile $download -Headers $headers -UseBasicParsing | Out-Null
+                $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash
+                $remoteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash
+                if ($localHash -ne $remoteHash) {
+                  throw "Nexus read-back SHA-256 mismatch for $file."
+                }
+                Write-Output "Published and verified $file at immutable build path $env:BUILD_NUMBER-$commit"
+              }
+              node scripts/artifact-integrity.mjs verify-hash (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
+              node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
+              $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
+              $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
+              if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
+                node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+                if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+              } else {
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' $trustedPolicyHash
+              }
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back customer release verification failed." }
+            } finally {
+              Remove-Item -Recurse -Force -LiteralPath $verificationDir -ErrorAction SilentlyContinue
+              Remove-Variable pair, encoded, headers -ErrorAction SilentlyContinue
+            }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
           '''
         }
       }
@@ -76,9 +199,19 @@ pipeline {
   post {
     success {
       echo 'JARVIS pipeline succeeded; artifact checksums and manifest were verified.'
+<<<<<<< HEAD
+=======
+      echo "Release traceability: project=${env.PROJECT_NAME}; build=${env.BUILD_NUMBER}; commit=${env.GIT_COMMIT}; artifact=${env.ARTIFACT_FILE}; manifest=${env.MANIFEST_FILE}; checksum=${env.CHECKSUM_FILE}."
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
     }
     failure {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
     }
+<<<<<<< HEAD
+=======
+    always {
+      powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
+    }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
   }
 }

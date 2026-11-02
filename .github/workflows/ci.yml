@@ -18,6 +18,13 @@ jobs:
   validate:
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      PROJECT_NAME: JARVIS
+      GIT_COMMIT: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      REQUIRE_BUILD_PROVENANCE: 'true'
+      MANIFEST_IGNORE_PRIVATE_KEY: ${{ secrets.MANIFEST_IGNORE_PRIVATE_KEY }}
+      MANIFEST_IGNORE_PUBLIC_KEY: ${{ secrets.MANIFEST_IGNORE_PUBLIC_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -45,6 +52,32 @@ jobs:
           node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
           node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+<<<<<<< HEAD
+=======
+          node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
+          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
+            $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
+            $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
+            try {
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
+              node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
+              node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
+              node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
+            } finally {
+              Remove-Item -Force $privatePath, $publicPath -ErrorAction SilentlyContinue
+            }
+          } else {
+            Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
+          }
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -53,6 +86,19 @@ jobs:
             jarvis-build.tar.gz
             jarvis-manifest.json
             jarvis-build.tar.gz.sha256
+<<<<<<< HEAD
+=======
+            jarvis-manifest-ignore.json
+            jarvis-manifest-ignore.json.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload signed manifest-ignore policy
+        if: hashFiles('jarvis-manifest-ignore.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-policy-signature-${{ github.run_number }}
+          path: jarvis-manifest-ignore.sig
+>>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
           if-no-files-found: error
           retention-days: 7
 
