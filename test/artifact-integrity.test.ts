@@ -13,7 +13,7 @@ function run(args: string[], expectSuccess = true) {
   const result = spawnSync(process.execPath, [utility, ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, PROJECT_NAME: 'integrity-test', GIT_COMMIT: 'test-commit', BUILD_NUMBER: 'test-build' },
+    env: { ...process.env, PROJECT_NAME: 'integrity-test', GIT_COMMIT: 'test-commit', BUILD_NUMBER: 'test-build', REQUIRE_BUILD_PROVENANCE: 'false' },
   });
   if (expectSuccess) {
     assert.equal(result.status, 0, result.stderr || result.stdout);
