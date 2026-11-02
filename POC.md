@@ -207,3 +207,8 @@ Disabling voice output or hands-free now stops active local TTS and browser spee
 ### Hands-free recognizer lifecycle update — 2026-11-02
 
 Stale callbacks from stopped/replaced browser wake recognizers are now ignored; restart scheduling is owned by the active recognizer and its timer is cleared safely before a successor starts. This reduces the risk of overlapping recognition sessions during wake-word and command-capture transitions. Tests remain paused and runtime/MSI acceptance is pending.
+
+
+### Local wake-engine lifecycle update — 2026-11-02
+
+Local wake model loading and engine startup now verify that their lifecycle is still current after asynchronous waits. Stale starts are stopped rather than enabling wake listening after hands-free was disabled or microphone privacy mode was activated. If hands-free is re-enabled during an old startup, a fresh attempt is scheduled after it unwinds. Tests remain paused; runtime/MSI acceptance is pending.
