@@ -33,6 +33,8 @@ let localWakeAssetsPromise = null;
 let localWakeStartPromise = null;
 let localWakeLifecycleGeneration = 0;
 let wakeCaptureAwaitingReview = false;
+let wakeCommandRetryCount = 0;
+const MAX_WAKE_COMMAND_RETRIES = 1;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
 const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop jarvis', 'jarvis stop', 'goodbye jarvis', 'go to sleep jarvis'];
@@ -357,6 +359,7 @@ function stopHandsFreeStandby() {
 
 async function handleLocalWakeDetected(probability) {
   if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+  wakeCommandRetryCount = 0;
   handsFreeStandby = false;
   stopHandsFreeStandby();
   updateHandsFreeButtons();
@@ -686,20 +689,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       wakeCaptureAwaitingReview = false;
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
-      void (async () => {
-        await speakResponse('Hi sir, I am ready to work.');
-        const speechDeadline = Date.now() + 8000;
-        while (isSpeaking && Date.now() < speechDeadline) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        if (recognizedCommand) {
-          setAssistantState('COMMAND RECEIVED', recognizedCommand);
-          await submitDirective(recognizedCommand);
-        } else {
-          setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
-          scheduleHandsFreeRestart();
-        }
-      })();
+      void completeWakeCapture(recognizedCommand);
     } else if (!isMicMuted && finalTranscript.trim()) {
       // Push-to-talk remains review-first; only post-wake commands are sent
       // directly to the policy gateway after explicit session consent.
@@ -709,19 +699,44 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
     } else if (wakeCaptureAwaitingReview && handsFreeEnabled && !isMicMuted) {
       wakeCaptureAwaitingReview = false;
-      void (async () => {
-        await speakResponse('Hi sir, I am ready to work.');
-        const speechDeadline = Date.now() + 8000;
-        while (isSpeaking && Date.now() < speechDeadline) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        setAssistantState('NO COMMAND RECOGNIZED', 'Wake phrase detected, but no command was transcribed. Try again or use the text input.');
-        scheduleHandsFreeRestart();
-      })();
+      void completeWakeCapture('');
     }
   };
 
   return recognizer;
+}
+
+
+/**
+ * Completes a post-wake capture. If the recognizer starts too late to hear
+ * the command spoken immediately after the wake phrase, give the owner one
+ * explicit second-command window after the acknowledgement. This remains
+ * consent-gated and still submits only through the signed policy-gateway path.
+ */
+async function completeWakeCapture(command) {
+  await speakResponse('Hi sir, I am ready to work.');
+  const speechDeadline = Date.now() + 8000;
+  while (isSpeaking && Date.now() < speechDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  if (command) {
+    wakeCommandRetryCount = 0;
+    setAssistantState('COMMAND RECEIVED', command);
+    await submitDirective(command);
+    return;
+  }
+
+  if (handsFreeEnabled && !isMicMuted && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
+    wakeCommandRetryCount += 1;
+    setAssistantState('READY FOR COMMAND', 'I heard the wake phrase. Please say your command now.');
+    startVoiceCapture('wake');
+    return;
+  }
+
+  wakeCommandRetryCount = 0;
+  setAssistantState('NO COMMAND RECOGNIZED', 'No command was captured. Wake detection is restarting; try again or use text input.');
+  scheduleHandsFreeRestart();
 }
 
 /**
