@@ -266,7 +266,7 @@ try {
   }
   await hud.locator('#btn-hands-free-toggle').click();
   await hud.waitForFunction(() => {
-    const state = document.querySelector('#hud-state-main')?.textContent || '';
+    const state = document.querySelector('#hud-state-label')?.textContent || '';
     return /LOCAL WAKE WORD UNAVAILABLE|LOADING LOCAL WAKE ENGINE|LOCAL WAKE ACTIVE|STANDBY.*WAKE PHRASE READY/.test(state);
   }, { timeout: 10000 });
   if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
@@ -274,7 +274,7 @@ try {
   }
   await hud.locator('#btn-hands-free').click();
   await hud.waitForFunction(() => {
-    const state = document.querySelector('#hud-state-main')?.textContent || '';
+    const state = document.querySelector('#hud-state-label')?.textContent || '';
     return /LOCAL WAKE WORD UNAVAILABLE|LOADING LOCAL WAKE ENGINE|LOCAL WAKE ACTIVE|STANDBY.*WAKE PHRASE READY|HANDS-FREE DISABLED/.test(state);
   }, { timeout: 10000 });
   if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
