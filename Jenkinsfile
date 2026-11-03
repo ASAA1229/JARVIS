@@ -32,30 +32,38 @@ pipeline {
     stage('Build and test') {
       steps {
         bat 'npm run build'
-        // Match hosted CI: existing Prettier-only formatting debt is tracked separately.
-      bat 'npm run lint -- --rule "prettier/prettier: off"'
+        bat 'npm run lint'
         bat 'npm test'
+        bat 'npm run test:browser'
       }
     }
     stage('Package and verify integrity') {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
-          $artifactDir = 'dist'
-          if (!(Test-Path $artifactDir -PathType Container)) {
+          if (!(Test-Path "dist" -PathType Container)) {
             throw "Expected TypeScript build output directory 'dist' was not created."
           }
-          tar -czf "$env:ARTIFACT_FILE" -C "$artifactDir" .
-          $env:PROJECT_NAME = "jarvis"
-          node scripts/artifact-integrity.mjs create "$artifactDir" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
-          node scripts/artifact-integrity.mjs verify "$artifactDir" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
+          tar -czf "$env:ARTIFACT_FILE" -C "dist" .
+          if ($LASTEXITCODE -ne 0) { throw "Release package creation failed." }
+          $env:PROJECT_NAME = "JARVIS"
+          node scripts/artifact-integrity.mjs create "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
+          if ($LASTEXITCODE -ne 0) { throw "Manifest creation failed." }
+          node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
+          if ($LASTEXITCODE -ne 0) { throw "Manifest verification failed." }
           node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+          if ($LASTEXITCODE -ne 0) { throw "Artifact hashing failed." }
           node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+          if ($LASTEXITCODE -ne 0) { throw "Artifact checksum verification failed." }
           node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
+          if ($LASTEXITCODE -ne 0) { throw "Release verification failed." }
           node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
+          if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy creation failed." }
           node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
+          if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy hashing failed." }
           $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
-          node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "$artifactDir" $trustedPolicyHash
+          node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
+          if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
         '''
         archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256', fingerprint: true
       }
@@ -80,8 +88,7 @@ pipeline {
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signing failed." }
               node scripts/policy-signature.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signature verification failed." }
-              $artifactDir = 'dist'
-              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "$artifactDir" "-" "jarvis-manifest-ignore.sig" $publicPath
+              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" "-" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Signed customer release verification failed." }
             } finally {
               Remove-Item -Force $privatePath -ErrorAction SilentlyContinue
@@ -125,8 +132,8 @@ pipeline {
             try {
               # Do not silently replace an artifact at an already-used release path.
               $releaseFiles = @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')
-              if (Test-Path 'jarvis-manifest-ignore.sig' -PathType Leaf) { $releaseFiles += 'jarvis-manifest-ignore.sig' }
-              foreach ($file in $releaseFiles) {
+            if (Test-Path 'jarvis-manifest-ignore.sig' -PathType Leaf) { $releaseFiles += 'jarvis-manifest-ignore.sig' }
+            foreach ($file in $releaseFiles) {
                 $uri = "$target/$file"
                 try {
                   $existing = Invoke-WebRequest -Uri $uri -Method Head -Headers $headers -UseBasicParsing -ErrorAction Stop
@@ -155,17 +162,16 @@ pipeline {
                 Write-Output "Published and verified $file at immutable build path $env:BUILD_NUMBER-$commit"
               }
               node scripts/artifact-integrity.mjs verify-hash (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back checksum verification failed." }
               node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
               # Inspect archive paths before extraction to block path traversal.
               $archivePath = Join-Path $verificationDir $env:ARTIFACT_FILE
               $archiveEntries = & tar -tzf $archivePath
               if ($LASTEXITCODE -ne 0) { throw "Could not list the downloaded Nexus package archive." }
               foreach ($entry in $archiveEntries) {
-                $normalizedEntry = ([string]$entry).Replace('\\', '/')
-                if ([string]::IsNullOrWhiteSpace($normalizedEntry) -or
-                    $normalizedEntry.StartsWith('/') -or
-                    $normalizedEntry -match '^[A-Za-z]:' -or
-                    ($normalizedEntry -split '/') -contains '..') {
+                $normalizedEntry = ([string]$entry).Replace('\', '/')
+                if ([string]::IsNullOrWhiteSpace($normalizedEntry) -or $normalizedEntry.StartsWith('/') -or $normalizedEntry -match '^[A-Za-z]:' -or ($normalizedEntry -split '/') -contains '..') {
                   throw "Unsafe archive member path rejected: $entry"
                 }
               }
@@ -173,9 +179,9 @@ pipeline {
               New-Item -ItemType Directory -Force -Path $downloadedPackageDir | Out-Null
               & tar -xzf $archivePath -C $downloadedPackageDir
               if ($LASTEXITCODE -ne 0) { throw "Failed to extract the downloaded Nexus package." }
+              $artifactDir = $downloadedPackageDir
               $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
               $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
-              $artifactDir = $downloadedPackageDir
               if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
                 node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
                 if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
