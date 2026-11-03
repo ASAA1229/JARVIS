@@ -434,8 +434,19 @@ function startHandsFreeStandby() {
   // the local wake engine. Do not open a recognition session from a delayed
   // callback while the HUD is hidden.
   if (!handsFreeEnabled || !speechRecognitionConstructor || isMicMuted || document.visibilityState === 'hidden') return;
+  // stopHandsFreeStandby() resets the shared standby flag while releasing any
+  // prior engine/recognizer. Restore it before wiring callbacks, all of which
+  // require an active standby lifecycle.
   stopHandsFreeStandby();
-  const recognizer = new speechRecognitionConstructor();
+  handsFreeStandby = true;
+  updateHandsFreeButtons();
+  let recognizer;
+  try {
+    recognizer = new speechRecognitionConstructor();
+  } catch (error) {
+    scheduleBrowserWakeRetry();
+    return;
+  }
   recognizer.continuous = true;
   recognizer.interimResults = false;
   recognizer.lang = 'en-US';
