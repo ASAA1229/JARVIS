@@ -455,3 +455,9 @@ Implemented on `new`: wake-recovery scheduling now refuses to queue microphone s
 ## Voice/HUD follow-up — browser fallback visibility guards (2026-11-02)
 
 Implemented on `new`: browser-based hands-free standby now checks visibility and microphone mute state before creating a recognition session. Restart timers triggered by recognition errors, end events, or synchronous start failures re-check those conditions before restarting. This prevents delayed fallback callbacks from reopening microphone recognition while the HUD is hidden or privacy mute is active. Tests remain paused; runtime/browser and MSI acceptance are not verified.
+
+
+### Browser wake-recognition retry safety
+- Browser-based wake recognition now uses bounded exponential retry delays and pauses after five consecutive unsuccessful session endings, rather than repeatedly reopening the microphone.
+- A usable transcript resets the retry counter. Local wake-word detection remains separate; browser speech recognition still requires its explicit consent setting.
+- Runtime/browser acceptance testing has not been run; verify recovery, pause, resume, mute, and hidden-tab behavior on the target MSI before treating this as validated.
