@@ -559,7 +559,9 @@ function handleHandsFreeStop() {
   if (isListening) cancelVoiceCapture();
   setAssistantState('STOPPED', 'Hands-free listening stopped; standby is ready for a new wake phrase.');
   updateHandsFreeButtons();
-  if (handsFreeEnabled) startHandsFreeStandby();
+  // Resume the on-device wake engine, not the legacy browser SpeechRecognition
+  // standby path. Wake-word monitoring must remain local and foreground-only.
+  if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
 }
 
 function initSpeechRecognition() {
