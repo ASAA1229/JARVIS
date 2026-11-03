@@ -520,13 +520,10 @@ function startHandsFreeStandby() {
     recognizer.start();
   } catch (error) {
     if (handsFreeRecognizer === recognizer) handsFreeRecognizer = null;
-    if (handsFreeEnabled && handsFreeStandby) {
-      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-      handsFreeRestartTimer = setTimeout(() => {
-        handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-      }, 800);
-    }
+    // Synchronous start failures must share the same bounded retry budget as
+    // asynchronous onerror/onend failures; otherwise a rejected start() can
+    // reopen the microphone forever on a fixed 800 ms loop.
+    if (handsFreeEnabled && handsFreeStandby) scheduleBrowserWakeRetry();
   }
 }
 
