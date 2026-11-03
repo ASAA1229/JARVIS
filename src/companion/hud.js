@@ -21,6 +21,8 @@ let handsFreeEnabled = false;
 let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
+let browserWakeRetryCount = 0;
+const MAX_BROWSER_WAKE_RETRIES = 5;
 let localTtsUnavailable = false;
 let activeSpeechAudio = null;
 let activeSpeechAudioUrl = null;
@@ -407,6 +409,26 @@ function disableWakeDetection() {
   setAssistantState('HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped. Push-to-talk remains available.');
 }
 
+function scheduleBrowserWakeRetry() {
+  if (document.visibilityState === 'hidden' || !handsFreeEnabled || !handsFreeStandby || isMicMuted) return;
+  if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
+  if (browserWakeRetryCount >= MAX_BROWSER_WAKE_RETRIES) {
+    handsFreeRestartTimer = null;
+    setAssistantState('WAKE LISTENING PAUSED', 'Browser wake recognition repeatedly ended without a usable transcript. Listening is paused to avoid a microphone retry loop. Resume listening or use push-to-talk/text input.');
+    handsFreeStandby = false;
+    updateHandsFreeButtons();
+    return;
+  }
+  const delay = Math.min(8000, 700 * (2 ** browserWakeRetryCount));
+  browserWakeRetryCount += 1;
+  handsFreeRestartTimer = setTimeout(() => {
+    handsFreeRestartTimer = null;
+    if (document.visibilityState !== 'hidden' && handsFreeEnabled && handsFreeStandby && !isMicMuted && !handsFreeRecognizer) {
+      startHandsFreeStandby();
+    }
+  }, delay);
+}
+
 function startHandsFreeStandby() {
   // The browser-based fallback must follow the same foreground-only rule as
   // the local wake engine. Do not open a recognition session from a delayed
@@ -431,6 +453,7 @@ function startHandsFreeStandby() {
     }
     const normalized = normalizeSpeechText(transcript);
     if (!normalized) return;
+    browserWakeRetryCount = 0;
 
     if (isStopPhrase(normalized)) {
       handleHandsFreeStop();
@@ -438,6 +461,7 @@ function startHandsFreeStandby() {
     }
 
     if (isWakePhrase(normalized)) {
+      browserWakeRetryCount = 0;
       const wakePatterns = [/\bhey jarvis\b/, /\bhello jarvis\b/, /\bhi jarvis\b/, /\bi am here\b/, /\bim here\b/];
       let command = normalized;
       for (const pattern of wakePatterns) {
@@ -478,13 +502,7 @@ function startHandsFreeStandby() {
     } else {
       setAssistantState('VOICE RECOGNITION ERROR', `Recognition failed: ${event.error}. You can retry or use text input.`);
     }
-    if (handsFreeStandby && handsFreeEnabled) {
-      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-      handsFreeRestartTimer = setTimeout(() => {
-        handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-      }, 900);
-    }
+    if (handsFreeStandby && handsFreeEnabled) scheduleBrowserWakeRetry();
   };
 
   recognizer.onend = () => {
@@ -493,12 +511,8 @@ function startHandsFreeStandby() {
     // browser microphone sessions during wake/capture transitions.
     if (handsFreeRecognizer !== recognizer) return;
     handsFreeRecognizer = null;
-    if (!handsFreeEnabled || !handsFreeStandby) return;
-    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-    handsFreeRestartTimer = setTimeout(() => {
-      handsFreeRestartTimer = null;
-      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-    }, 400);
+    if (!handsFreeEnabled || !handsFreeStandby || handsFreeRestartTimer) return;
+    scheduleBrowserWakeRetry();
   };
 
   handsFreeRecognizer = recognizer;
