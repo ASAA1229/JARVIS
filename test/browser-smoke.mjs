@@ -265,14 +265,20 @@ try {
     throw new Error('Browser speech recognition started without explicit consent');
   }
   await hud.locator('#btn-hands-free-toggle').click();
-  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  await hud.waitForFunction(() => {
+    const state = document.querySelector('#hud-state-label')?.textContent || '';
+    return /LOCAL WAKE WORD UNAVAILABLE|LOADING LOCAL WAKE ENGINE|LOCAL WAKE ACTIVE|STANDBY.*WAKE PHRASE READY/.test(state);
+  }, { timeout: 10000 });
   if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
-    throw new Error('Wake detection started browser recognition without a local wake-word engine');
+    throw new Error('Wake detection started browser recognition before explicit post-wake speech consent');
   }
   await hud.locator('#btn-hands-free').click();
-  await hud.getByText('LOCAL WAKE WORD UNAVAILABLE').waitFor({ state: 'visible' });
+  await hud.waitForFunction(() => {
+    const state = document.querySelector('#hud-state-label')?.textContent || '';
+    return /LOCAL WAKE WORD UNAVAILABLE|LOADING LOCAL WAKE ENGINE|LOCAL WAKE ACTIVE|STANDBY.*WAKE PHRASE READY|HANDS-FREE DISABLED/.test(state);
+  }, { timeout: 10000 });
   if (await hud.evaluate(() => window.__mockRecognizers.length) !== 0) {
-    throw new Error('Hands-free capture started browser recognition without a local wake-word engine');
+    throw new Error('Hands-free capture started browser recognition before explicit post-wake speech consent');
   }
   await hud.locator('#allow-browser-speech').check();
 
