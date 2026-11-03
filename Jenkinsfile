@@ -80,7 +80,7 @@ pipeline {
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signing failed." }
               node scripts/policy-signature.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signature verification failed." }
-              $artifactDir = @(".output", "dist") | Where-Object { Test-Path $_ -PathType Container } | Select-Object -First 1
+              $artifactDir = 'dist'
               node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "$artifactDir" "-" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Signed customer release verification failed." }
             } finally {
@@ -175,8 +175,7 @@ pipeline {
               if ($LASTEXITCODE -ne 0) { throw "Failed to extract the downloaded Nexus package." }
               $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
               $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
-              $artifactDir = @('.output', 'dist') | Where-Object { Test-Path $_ -PathType Container } | Select-Object -First 1
-              if (!$artifactDir) { throw 'Build output directory missing during Nexus read-back verification.' }
+              $artifactDir = $downloadedPackageDir
               if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
                 node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
                 if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
