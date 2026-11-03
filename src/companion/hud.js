@@ -21,6 +21,8 @@ let handsFreeEnabled = false;
 let handsFreeStandby = false;
 let handsFreeRecognizer = null;
 let handsFreeRestartTimer = null;
+let browserWakeRetryCount = 0;
+const MAX_BROWSER_WAKE_RETRIES = 5;
 let localTtsUnavailable = false;
 let activeSpeechAudio = null;
 let activeSpeechAudioUrl = null;
@@ -407,13 +409,44 @@ function disableWakeDetection() {
   setAssistantState('HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped. Push-to-talk remains available.');
 }
 
+function scheduleBrowserWakeRetry() {
+  if (document.visibilityState === 'hidden' || !handsFreeEnabled || !handsFreeStandby || isMicMuted) return;
+  if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
+  if (browserWakeRetryCount >= MAX_BROWSER_WAKE_RETRIES) {
+    handsFreeRestartTimer = null;
+    setAssistantState('WAKE LISTENING PAUSED', 'Browser wake recognition repeatedly ended without a usable transcript. Listening is paused to avoid a microphone retry loop. Resume listening or use push-to-talk/text input.');
+    handsFreeStandby = false;
+    updateHandsFreeButtons();
+    return;
+  }
+  const delay = Math.min(8000, 700 * (2 ** browserWakeRetryCount));
+  browserWakeRetryCount += 1;
+  handsFreeRestartTimer = setTimeout(() => {
+    handsFreeRestartTimer = null;
+    if (document.visibilityState !== 'hidden' && handsFreeEnabled && handsFreeStandby && !isMicMuted && !handsFreeRecognizer) {
+      startHandsFreeStandby();
+    }
+  }, delay);
+}
+
 function startHandsFreeStandby() {
   // The browser-based fallback must follow the same foreground-only rule as
   // the local wake engine. Do not open a recognition session from a delayed
   // callback while the HUD is hidden.
   if (!handsFreeEnabled || !speechRecognitionConstructor || isMicMuted || document.visibilityState === 'hidden') return;
+  // stopHandsFreeStandby() resets the shared standby flag while releasing any
+  // prior engine/recognizer. Restore it before wiring callbacks, all of which
+  // require an active standby lifecycle.
   stopHandsFreeStandby();
-  const recognizer = new speechRecognitionConstructor();
+  handsFreeStandby = true;
+  updateHandsFreeButtons();
+  let recognizer;
+  try {
+    recognizer = new speechRecognitionConstructor();
+  } catch (error) {
+    scheduleBrowserWakeRetry();
+    return;
+  }
   recognizer.continuous = true;
   recognizer.interimResults = false;
   recognizer.lang = 'en-US';
@@ -431,6 +464,7 @@ function startHandsFreeStandby() {
     }
     const normalized = normalizeSpeechText(transcript);
     if (!normalized) return;
+    browserWakeRetryCount = 0;
 
     if (isStopPhrase(normalized)) {
       handleHandsFreeStop();
@@ -438,6 +472,7 @@ function startHandsFreeStandby() {
     }
 
     if (isWakePhrase(normalized)) {
+      browserWakeRetryCount = 0;
       const wakePatterns = [/\bhey jarvis\b/, /\bhello jarvis\b/, /\bhi jarvis\b/, /\bi am here\b/, /\bim here\b/];
       let command = normalized;
       for (const pattern of wakePatterns) {
@@ -478,13 +513,7 @@ function startHandsFreeStandby() {
     } else {
       setAssistantState('VOICE RECOGNITION ERROR', `Recognition failed: ${event.error}. You can retry or use text input.`);
     }
-    if (handsFreeStandby && handsFreeEnabled) {
-      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-      handsFreeRestartTimer = setTimeout(() => {
-        handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-      }, 900);
-    }
+    if (handsFreeStandby && handsFreeEnabled) scheduleBrowserWakeRetry();
   };
 
   recognizer.onend = () => {
@@ -493,12 +522,8 @@ function startHandsFreeStandby() {
     // browser microphone sessions during wake/capture transitions.
     if (handsFreeRecognizer !== recognizer) return;
     handsFreeRecognizer = null;
-    if (!handsFreeEnabled || !handsFreeStandby) return;
-    if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-    handsFreeRestartTimer = setTimeout(() => {
-      handsFreeRestartTimer = null;
-      if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-    }, 400);
+    if (!handsFreeEnabled || !handsFreeStandby || handsFreeRestartTimer) return;
+    scheduleBrowserWakeRetry();
   };
 
   handsFreeRecognizer = recognizer;
@@ -506,13 +531,10 @@ function startHandsFreeStandby() {
     recognizer.start();
   } catch (error) {
     if (handsFreeRecognizer === recognizer) handsFreeRecognizer = null;
-    if (handsFreeEnabled && handsFreeStandby) {
-      if (handsFreeRestartTimer) clearTimeout(handsFreeRestartTimer);
-      handsFreeRestartTimer = setTimeout(() => {
-        handsFreeRestartTimer = null;
-        if (handsFreeEnabled && handsFreeStandby && !handsFreeRecognizer && document.visibilityState !== 'hidden' && !isMicMuted) startHandsFreeStandby();
-      }, 800);
-    }
+    // Synchronous start failures must share the same bounded retry budget as
+    // asynchronous onerror/onend failures; otherwise a rejected start() can
+    // reopen the microphone forever on a fixed 800 ms loop.
+    if (handsFreeEnabled && handsFreeStandby) scheduleBrowserWakeRetry();
   }
 }
 
@@ -537,7 +559,9 @@ function handleHandsFreeStop() {
   if (isListening) cancelVoiceCapture();
   setAssistantState('STOPPED', 'Hands-free listening stopped; standby is ready for a new wake phrase.');
   updateHandsFreeButtons();
-  if (handsFreeEnabled) startHandsFreeStandby();
+  // Resume the on-device wake engine, not the legacy browser SpeechRecognition
+  // standby path. Wake-word monitoring must remain local and foreground-only.
+  if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
 }
 
 function initSpeechRecognition() {
