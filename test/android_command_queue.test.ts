@@ -58,3 +58,29 @@ test('inventory results are defensive copies and excessive app lists are rejecte
   result[0].apps![0].label = 'tampered';
   assert.equal(queue.resultsForRequester('owner')[0].apps![0].label, 'Settings');
 });
+
+
+test('expired commands remain visible as EXPIRED until retention cleanup', async () => {
+  const queue = new AndroidCommandQueue();
+  const command = queue.create('phone-a', 'owner', 1000);
+  await new Promise((resolve) => setTimeout(resolve, 1050));
+  assert.equal(queue.claimNext('phone-a'), undefined);
+  assert.equal(queue.complete('phone-a', command.id, []), false);
+  assert.equal(queue.resultsForRequester('owner')[0].state, 'EXPIRED');
+});
+
+test('revoking either endpoint cancels pending and claimed commands without leaking inventory', () => {
+  const queue = new AndroidCommandQueue();
+  const pending = queue.create('phone-a', 'owner-a');
+  const claimed = queue.create('phone-b', 'owner-b');
+  queue.claimNext('phone-b');
+
+  assert.equal(queue.cancelForDevice('phone-a'), 1);
+  assert.equal(queue.cancelForDevice('owner-b'), 1);
+  assert.equal(queue.claimNext('phone-a'), undefined);
+  assert.equal(queue.complete('phone-b', claimed.id, [{ label: 'Settings', packageName: 'com.android.settings' }]), false);
+  assert.equal(queue.resultsForRequester('owner-a')[0].state, 'CANCELLED');
+  assert.equal(queue.resultsForRequester('owner-b')[0].state, 'CANCELLED');
+  assert.equal(queue.cancelForDevice('unknown-device'), 0);
+  assert.notEqual(pending.id, claimed.id);
+});

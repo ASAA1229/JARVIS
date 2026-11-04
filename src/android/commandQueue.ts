@@ -5,6 +5,8 @@ export interface AndroidInventoryApp {
   packageName: string;
 }
 
+export type AndroidInventoryCommandState = 'PENDING' | 'CLAIMED' | 'COMPLETED' | 'EXPIRED' | 'CANCELLED';
+
 export interface AndroidInventoryCommand {
   id: string;
   operation: 'android.app.list';
@@ -12,9 +14,10 @@ export interface AndroidInventoryCommand {
   requesterDeviceId: string;
   createdAt: number;
   expiresAt: number;
-  state: 'PENDING' | 'CLAIMED' | 'COMPLETED' | 'EXPIRED';
+  state: AndroidInventoryCommandState;
   claimedAt?: number;
   completedAt?: number;
+  cancelledAt?: number;
   apps?: AndroidInventoryApp[];
 }
 
@@ -26,6 +29,7 @@ export class AndroidCommandQueue {
   private readonly commands = new Map<string, AndroidInventoryCommand>();
   private readonly maxCommands = 200;
   private readonly maxAppsPerCommand = 300;
+  private readonly retentionMs = 10 * 60_000;
 
   create(targetDeviceId: string, requesterDeviceId: string, ttlMs = 60_000): AndroidInventoryCommand {
     this.prune();
@@ -72,17 +76,38 @@ export class AndroidCommandQueue {
     return true;
   }
 
+  /** Cancel work involving a revoked device, whether it requested or was targeted by it. */
+  cancelForDevice(deviceId: string): number {
+    this.prune();
+    if (!this.isDeviceId(deviceId)) return 0;
+    let cancelled = 0;
+    const now = Date.now();
+    for (const command of this.commands.values()) {
+      if ((command.targetDeviceId === deviceId || command.requesterDeviceId === deviceId) &&
+          (command.state === 'PENDING' || command.state === 'CLAIMED')) {
+        command.state = 'CANCELLED';
+        command.cancelledAt = now;
+        delete command.apps;
+        cancelled++;
+      }
+    }
+    return cancelled;
+  }
+
   resultsForRequester(requesterDeviceId: string): Array<{
-    id: string; targetDeviceId: string; state: AndroidInventoryCommand['state'];
-    createdAt: number; completedAt?: number; apps?: AndroidInventoryApp[];
+    id: string; targetDeviceId: string; state: AndroidInventoryCommandState;
+    createdAt: number; expiresAt: number; completedAt?: number; cancelledAt?: number; apps?: AndroidInventoryApp[];
   }> {
     this.prune();
     if (!this.isDeviceId(requesterDeviceId)) return [];
     return Array.from(this.commands.values())
       .filter((item) => item.requesterDeviceId === requesterDeviceId)
       .slice(-30)
-      .map(({ id, targetDeviceId, state, createdAt, completedAt, apps }) => ({
-        id, targetDeviceId, state, createdAt, completedAt, ...(apps ? { apps: apps.map((app) => ({ ...app })) } : {}),
+      .map(({ id, targetDeviceId, state, createdAt, expiresAt, completedAt, cancelledAt, apps }) => ({
+        id, targetDeviceId, state, createdAt, expiresAt,
+        ...(completedAt ? { completedAt } : {}),
+        ...(cancelledAt ? { cancelledAt } : {}),
+        ...(apps ? { apps: apps.map((app) => ({ ...app })) } : {}),
       }));
   }
 
@@ -103,7 +128,12 @@ export class AndroidCommandQueue {
   private prune(): void {
     const now = Date.now();
     for (const [id, command] of this.commands) {
-      if (now >= command.expiresAt || (command.state === 'COMPLETED' && now - (command.completedAt ?? now) > 10 * 60_000)) {
+      if (now >= command.expiresAt && (command.state === 'PENDING' || command.state === 'CLAIMED')) {
+        command.state = 'EXPIRED';
+        delete command.apps;
+      }
+      const terminalAt = command.completedAt ?? command.cancelledAt ?? command.expiresAt;
+      if (['COMPLETED', 'EXPIRED', 'CANCELLED'].includes(command.state) && now - terminalAt > this.retentionMs) {
         this.commands.delete(id);
       }
     }
