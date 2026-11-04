@@ -20,7 +20,7 @@ const MAX_PIPER_STDERR_BYTES = 8 * 1024;
  */
 export function validatePiperWav(audio: Buffer): string | undefined {
   if (audio.length < 44 || audio.length > MAX_PIPER_AUDIO_BYTES) {
-    return `Speech audio must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
+    return `Speech audio size must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
   }
   if (audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
     return 'Piper output is not a RIFF/WAVE file.';
