@@ -651,6 +651,13 @@ export class JarvisServer {
         }
         // Immediately invalidate that device's approvals, schedules and running tasks.
         this.jarvis.onDeviceRevoked(deviceId);
+        const cancelledAndroidCommands = this.androidCommands.cancelForDevice(deviceId);
+        if (cancelledAndroidCommands > 0) {
+          this.jarvis.audit.record('ANDROID_COMMANDS_CANCELLED_DEVICE_REVOKED', {
+            revokedDeviceId: deviceId,
+            cancelledCount: cancelledAndroidCommands,
+          }, auth.device.id);
+        }
         return this.jsonResponse(res, 200, { success: true });
       }
 
