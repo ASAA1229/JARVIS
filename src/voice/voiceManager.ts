@@ -18,6 +18,7 @@ export interface VoicePrivacyPolicy {
   continuousListeningAllowed: boolean;
   wakeWordEnabled: boolean;
   maxCaptureDurationSeconds: number;
+  maxTranscriptionDurationSeconds: number;
   privacyNotice: string;
 }
 
@@ -33,12 +34,14 @@ export class VoiceManager {
   private isMuted = false;
   private currentTranscript = '';
   private captureTimeout: ReturnType<typeof setTimeout> | null = null;
+  private transcriptionTimeout: ReturnType<typeof setTimeout> | null = null;
   private captureGeneration = 0;
 
   public readonly policy: VoicePrivacyPolicy = {
     continuousListeningAllowed: false,
     wakeWordEnabled: false,
     maxCaptureDurationSeconds: 15,
+    maxTranscriptionDurationSeconds: 10,
     privacyNotice: 'Microphone is active only during an explicitly started capture. No continuous recording or wake-word listening is enabled by this manager.',
   };
 
@@ -101,6 +104,7 @@ export class VoiceManager {
   /** Cancels capture and discards its transcript. */
   public cancelCapture(): void {
     this.clearCaptureTimeout();
+    this.clearTranscriptionTimeout();
     this.captureGeneration += 1;
     this.currentTranscript = '';
     this.state = this.isMuted ? SpeechState.DISABLED : SpeechState.IDLE;
@@ -119,14 +123,32 @@ export class VoiceManager {
   public beginTranscription(): boolean {
     if (this.isMuted || this.state !== SpeechState.LISTENING) return false;
     this.clearCaptureTimeout();
-    this.captureGeneration += 1;
+    this.clearTranscriptionTimeout();
+
+    const durationSeconds = this.policy.maxTranscriptionDurationSeconds;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 120) {
+      this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.ERROR;
+      return false;
+    }
+
+    const generation = ++this.captureGeneration;
     this.state = SpeechState.TRANSCRIBING;
+    this.transcriptionTimeout = setTimeout(() => {
+      if (generation !== this.captureGeneration || this.state !== SpeechState.TRANSCRIBING) return;
+
+      this.transcriptionTimeout = null;
+      this.captureGeneration += 1;
+      // A stalled recognizer must not lock voice input indefinitely. Keep any
+      // partial text for explicit review; never dispatch it automatically.
+      this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
+    }, durationSeconds * 1000);
     return true;
   }
 
   /** Completes transcription and makes the recognized text available for review. */
   public finishTranscription(): boolean {
     if (this.isMuted || this.state !== SpeechState.TRANSCRIBING) return false;
+    this.clearTranscriptionTimeout();
     this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
     return true;
   }
@@ -163,6 +185,13 @@ export class VoiceManager {
     if (this.captureTimeout !== null) {
       clearTimeout(this.captureTimeout);
       this.captureTimeout = null;
+    }
+  }
+
+  private clearTranscriptionTimeout(): void {
+    if (this.transcriptionTimeout !== null) {
+      clearTimeout(this.transcriptionTimeout);
+      this.transcriptionTimeout = null;
     }
   }
 }
