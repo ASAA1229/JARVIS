@@ -22,7 +22,7 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 | ID | Epic | Priority | Current disposition | Primary outcome |
 |---|---|---:|---|---|
 | JARVIS-E01 | Security, Identity & Approval Foundation | P0 | In progress — acceptance open | Every action is authenticated, authorized, auditable and safely revocable |
-| JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | In progress — target MSI validation open | Reliable local wake, consented capture, clear HUD and verified speech output |
+| JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | In progress — lifecycle hardening implemented; tests/device validation open | Reliable local wake, consented capture, clear HUD and verified speech output |
 | JARVIS-E03 | Windows Desktop Control | P1 | In progress — real-app acceptance open | Safe, bounded control of supported Windows applications |
 | JARVIS-E04 | Multi-Step Execution & Recovery | P1 | In progress — lifecycle/fault acceptance open | Durable workflows that stop safely and recover through human review |
 | JARVIS-E05 | Android Companion & Cross-Device Control | P1 | In progress — both-phone acceptance open | Two independently secured phones can approve/control permitted laptop tasks |
@@ -54,6 +54,8 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 **Goal:** Deliver a dependable “Hey Jarvis” experience while making microphone, speech-provider, execution and result states visible and controllable.
 
 **Existing implementation areas:** HUD, push-to-talk, transcript review, local wake runtime setup/integration, optional local STT/TTS adapters, consent, cancellation and recognizer lifecycle hardening.
+
+**Development progress — 2026-11-05:** VoiceManager lifecycle hardening and focused regression tests have been added on `new`. Tests are not yet executed; target-device acceptance remains open.
 
 **Remaining outcomes**
 - Install and verify the local wake engine/model on the MSI.
