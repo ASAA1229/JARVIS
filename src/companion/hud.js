@@ -1331,6 +1331,7 @@ async function resolveHudApproval(approvalId, approved) {
       if (result.success !== true) throw new Error(result.message || result.error || 'Server did not confirm the rejection');
       card.remove();
       updateApprovalCountBadge();
+      refreshTaskHistory();
       setAssistantState('DIRECTIVE REJECTED', result.message || 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
       setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
@@ -1342,6 +1343,7 @@ async function resolveHudApproval(approvalId, approved) {
         result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
       card.remove();
       updateApprovalCountBadge();
+      refreshTaskHistory();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
@@ -1349,6 +1351,7 @@ async function resolveHudApproval(approvalId, approved) {
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
       card.remove();
       updateApprovalCountBadge();
+      refreshTaskHistory();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
