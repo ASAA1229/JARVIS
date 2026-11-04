@@ -107,3 +107,29 @@ test('unique expected-window selection returns no target when nothing matches', 
   assert.equal(selection.window, undefined);
   assert.equal(selection.matchCount, 0);
 });
+
+
+test('ambiguous existing app windows prevent arbitrary focus and duplicate launch', async () => {
+  const second: WindowInfo = { pid: 4101, processName: 'Notepad', title: 'draft.txt - Notepad' };
+  let focusCalls = 0;
+  const windows = {
+    snapshot: async () => [notepad, second],
+    focusWindow: async () => {
+      focusCalls += 1;
+      return {
+        success: true,
+        outcome: VerificationOutcome.VERIFIED_SUCCESS,
+        evidence: { foregroundFocusVerified: true },
+      };
+    },
+  } as unknown as import('../src/adapters/windowsWindows.js').WindowsWindowManager;
+
+  const result = await new WindowsAppLauncherAdapter(windows).launchApp('notepad');
+
+  assert.equal(focusCalls, 0);
+  assert.equal(result.success, true);
+  assert.equal(result.outcome, VerificationOutcome.PARTIAL_SUCCESS);
+  assert.equal(result.evidence?.duplicateLaunchPrevented, true);
+  assert.equal(result.evidence?.ambiguousWindowCount, 2);
+  assert.match(result.error ?? '', /multiple existing windows/i);
+});
