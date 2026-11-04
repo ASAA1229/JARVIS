@@ -287,3 +287,13 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - If focus cannot be verified, the action is reported as a failure rather than claiming the app opened. Ambiguous/multiple matches are not arbitrarily focused.
 - Added regression tests for successful existing-window reuse and failed focus verification. Tests are authored but not executed in this environment.
 
+
+## Development increment — single-use approval interaction hardening
+
+**Implementation:** `src/companion/hud.js`  
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- HUD approval cards now disable both resolution controls while the signed approval/rejection request is in flight and ignore duplicate clicks for the same approval ID.
+- Controls are restored only after the request settles and only when the card remains present. Terminal task outcomes remove the card; an unknown/non-terminal outcome keeps it visible and is explicitly labelled as not complete.
+- Network/server ambiguity is not presented as success. The operator is told to refresh task status before retrying, because the server may already have consumed the single-use approval.
+- Development-only change. Automated tests and target-device checks were intentionally not run in this increment.
