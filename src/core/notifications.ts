@@ -12,6 +12,7 @@ export type NotificationKind =
   | 'task_completed'
   | 'task_failed'
   | 'task_uncertain'
+  | 'task_recovery_reviewed'
   | 'task_blocked'
   | 'task_cancelled'
   | 'task_expired'

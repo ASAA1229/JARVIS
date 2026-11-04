@@ -165,14 +165,30 @@ pipeline {
               if ($LASTEXITCODE -ne 0) { throw "Nexus read-back checksum verification failed." }
               node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
               if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
+              # Inspect archive paths before extraction to block path traversal.
+              $archivePath = Join-Path $verificationDir $env:ARTIFACT_FILE
+              $archiveEntries = & tar -tzf $archivePath
+              if ($LASTEXITCODE -ne 0) { throw "Could not list the downloaded Nexus package archive." }
+              foreach ($entry in $archiveEntries) {
+                $normalizedEntry = ([string]$entry).Replace('\', '/')
+                if ([string]::IsNullOrWhiteSpace($normalizedEntry) -or $normalizedEntry.StartsWith('/') -or $normalizedEntry -match '^[A-Za-z]:' -or ($normalizedEntry -split '/') -contains '..') {
+                  throw "Unsafe archive member path rejected: $entry"
+                }
+              }
+              $downloadedPackageDir = Join-Path $verificationDir 'downloaded-package'
+              New-Item -ItemType Directory -Force -Path $downloadedPackageDir | Out-Null
+              & tar -xzf $archivePath -C $downloadedPackageDir
+              if ($LASTEXITCODE -ne 0) { throw "Failed to extract the downloaded Nexus package." }
+              $artifactDir = $downloadedPackageDir
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
               $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
               $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
               if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
                 node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
                 if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $artifactDir '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
               } else {
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) 'dist' $trustedPolicyHash
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $artifactDir $trustedPolicyHash
               }
               if ($LASTEXITCODE -ne 0) { throw "Nexus read-back customer release verification failed." }
             } finally {

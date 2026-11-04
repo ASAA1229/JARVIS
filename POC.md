@@ -220,3 +220,11 @@ Hands-free wake recovery no longer queues a restart while the HUD document is hi
 ### Browser wake fallback visibility update — 2026-11-02
 
 The browser-based hands-free fallback now refuses to start recognition while the HUD is hidden or microphone privacy mode is enabled. Its delayed error/end/start-failure recovery callbacks recheck visibility and mute state before opening a new recognition session, matching the local wake engine's foreground-only behavior. Tests remain paused; browser runtime and Windows MSI acceptance are unverified.
+
+
+### Browser wake-recognition retry safety
+- Synchronous `recognizer.start()` exceptions now use the same bounded exponential retry budget as asynchronous recognition errors and session endings, preventing an unbounded fixed-interval restart loop.
+
+- Browser-based wake recognition now uses bounded exponential retry delays and pauses after five consecutive unsuccessful session endings, rather than repeatedly reopening the microphone.
+- A usable transcript resets the retry counter. Local wake-word detection remains separate; browser speech recognition still requires its explicit consent setting.
+- Runtime/browser acceptance testing has not been run; verify recovery, pause, resume, mute, and hidden-tab behavior on the target MSI before treating this as validated.
