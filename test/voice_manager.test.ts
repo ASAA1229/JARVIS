@@ -33,12 +33,8 @@ test('voice manager moves through transcription without extending capture deadli
   assert.equal(manager.beginTranscription(), true);
   assert.equal(manager.getState(), SpeechState.TRANSCRIBING);
   manager.updateTranscript('Recognized command');
-  manager.stopPushToTalk();
-
-  // stopPushToTalk is deliberately a no-op after capture has entered
-  // transcription; the owner must cancel or use the transcript flow's
-  // explicit completion path rather than guessing that capture has ended.
-  assert.equal(manager.getState(), SpeechState.TRANSCRIBING);
+  assert.equal(manager.finishTranscription(), true);
+  assert.equal(manager.getState(), SpeechState.CONFIRMING);
   manager.dispose();
 });
 
