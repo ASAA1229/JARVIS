@@ -1,8 +1,145 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
-**Updated:** 2026-10-24  
-**Baseline:** source tree 6222e1964774c78e6853d6113335b1a3f0284881; documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c; dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc  
-**Rule:** A capability does not move to POC.md as accepted until its acceptance criteria pass with recorded evidence. No new requirements document is needed for this gap closure; update this file and the existing project docs.
+**Status snapshot:** 2026-11-05  
+**Branch reviewed:** `new`  
+**Reviewed branch head:** `bc362a6f3a608985480509c849411cd6dc15e7b4`  
+**Overall status:** **IN PROGRESS — NOT RELEASE-READY**
+
+> This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
+
+## Current work-left summary
+
+1. Close the **Voice Interaction & Cinematic HUD** epic with target-MSI wake, capture, consent, TTS/STT, resource and browser acceptance.
+2. Complete the **Security, Identity & Approval** adversarial/lifecycle review and prove exact-head tests.
+3. Close **Windows Desktop Control** through real target-process binding, safe foreground interaction, and independently verified application outcomes.
+4. Complete **Advanced Multi-Step Execution & Recovery** fault injection, crash/restart and partial-side-effect reconciliation.
+5. Finish **Android Companion & Cross-Device Control** software/build work, then independently enroll and revoke both physical phones.
+6. Complete **Memory, Privacy & Personalization** lifecycle, retrieval, retention, deletion and cross-device behavior.
+7. Finish existing **AI, Integrations & Productivity Automation** boundaries and end-to-end workflows already represented in the repository.
+8. Run exact-head build, typecheck, unit/integration tests, browser smoke, Android build and target-device acceptance; reconcile all project documentation.
+
+## Evidence rules
+
+- `IMPLEMENTED`: relevant source exists; does not imply tested or accepted.
+- `TEST-AUTHORED`: regression coverage exists; does not imply it has executed.
+- `CI-VERIFIED`: completed CI run for the exact commit is green.
+- `DEVICE-VERIFIED`: the named real target device and scenario passed with recorded evidence.
+- `ACCEPTED`: all applicable implementation, test, CI, device and security gates passed.
+- `BLOCKED`: an external dependency prevents progress; record owner/action and evidence.
+- Do not convert a status based on assumption. Record commit SHA, environment, command/run, expected/actual result and limitation.
+
+## Immediate branch and validation checkpoint
+
+- The `new` branch exists and was inspected at `bc362a6f3a608985480509c849411cd6dc15e7b4`.
+- The latest Actions run surfaced in this review was for earlier head `51ae06426bfb8fd4779f3b46b0dade856e56cfec` and concluded failure. It is not a current-head result.
+- Exact-head CI for the reviewed commit is **not established** by this documentation pass.
+- No physical-device acceptance is implied.
+- Work in this request is documentation-only; no application source or tests were changed.
+
+## Prioritized remaining-work register
+
+### P0 — Security, identity and approval foundation
+
+- [ ] Re-run the complete security/build/test suite on the exact current `new` head.
+- [ ] Audit every state-changing route and adapter path to prove there is no policy-gateway bypass.
+- [ ] Exercise approval approve/reject/expiry, duplicate and concurrent resolution, stale task state, replay, parameter/task/device binding and persistence failure.
+- [ ] Verify session expiry, immediate revocation, independent device identity/permissions and fail-closed security-state handling.
+- [ ] Complete route-by-route authorization and error/secret-redaction review plus adversarial tests.
+- [ ] Define and test owner recovery for TOTP/authenticator loss, device-management loss and owner-token rotation.
+- [ ] Verify audit-chain tampering, audit-write failure and recovery behavior.
+- [ ] Preserve hard restrictions: financial/payment apps, credential entry, unrestricted shell, admin elevation, security bypass and voice-only high-risk authorization.
+
+### P1 — Voice Interaction & Cinematic HUD (active development priority)
+
+- [ ] Run the local wake-word setup on the target MSI; record runtime/model versions and integrity checks.
+- [ ] Verify microphone permissions, wake accuracy, false positives/negatives, startup/restart, mute, stop, hidden-tab, sleep/resume and cancellation.
+- [ ] Measure CPU, RAM, latency and battery/resource impact during standby and active capture.
+- [ ] Validate wake → acknowledgement → separately consented speech capture → authenticated request → policy decision → execution/result end-to-end.
+- [ ] Verify push-to-talk transcript review and explicit submit; test no-speech, timeout, duplicate callbacks, late results, network/microphone errors and cancellation.
+- [ ] Verify the exact acknowledgement: `Hi sir, I am ready to work.`
+- [ ] Install/configure local Piper TTS and optional local STT; verify audible playback/recognition and interruption on the MSI.
+- [ ] Document browser/vendor speech processing. Do not claim local-only speech unless all audio processing is proven local.
+- [ ] Verify HUD accessibility, keyboard operation, responsive layout, visible mic/listening state and privacy controls.
+- [ ] Run browser smoke and focused tests on exact head when CI runners are available.
+
+### P1 — Windows Desktop Control
+
+- [ ] Verify allowlisted Notepad/Calculator/Paint launch via the authenticated real request path on Windows 11.
+- [ ] Prove target process/window identity before typing or invoking controls; abort if focus changes or target is ambiguous.
+- [ ] Test UI Automation discovery and unique selector enforcement across standard and custom-rendered applications.
+- [ ] Verify clipboard read/write, paste, hotkeys, zoom, click, set-value, cancellation and timeout behavior in real applications.
+- [ ] Independently verify saved/accepted outcomes; keep acknowledgements partial when evidence is absent.
+- [ ] Exercise inaccessible controls, unexpected windows, app crash, user focus changes and interrupted execution.
+- [ ] Validate payment/credential protection beyond process/title heuristics; retain explicit exclusions.
+- [ ] Document the supported application matrix and unsupported control types.
+
+### P1 — Advanced Multi-Step Execution & Recovery
+
+- [ ] Audit every task lifecycle transition and ensure durable journal writes precede dependent side effects.
+- [ ] Fault-inject journal write, audit write, process crash, cancellation, revocation and concurrent approval failures.
+- [ ] Test restart recovery for every non-terminal state; clear stale approvals and never replay automatically.
+- [ ] Exercise partial external side effects and prove that unknown outcomes remain `AWAITING_RECOVERY`.
+- [ ] Verify reconciliation dispositions: confirmed no effect, effect observed (partial only), and still unknown.
+- [ ] Verify recovery UI/API permissions, encrypted notes, redaction and audit evidence.
+- [ ] Confirm no dependent step runs after a failed checkpoint or uncertain result.
+- [ ] Keep automatic resume/retry disabled for non-idempotent or uncertain actions.
+
+### P1 — Android Companion & Cross-Device Control
+
+- [ ] Build and install the native Android app on both actual phones.
+- [ ] Enroll each phone independently; prove unique Android Keystore-backed keys, device identity, sessions and permission scopes.
+- [ ] Verify signed transport, nonce/replay protection, expiry, owner approval, cancellation and immediate revocation.
+- [ ] Revoke phone A and prove phone B remains independently authorized; prove revoked A cannot reconnect or replay queued commands.
+- [ ] Test laptop offline/asleep/restart and phone network changes; reject stale state-changing commands on reconnect.
+- [ ] Validate queue TTL, bounded payloads, duplicate completion, acknowledgement and failure recovery.
+- [ ] Verify companion approval notifications and deep links without granting the phone broader authority.
+- [ ] Record Android OS/device versions, app build, test evidence and limitations. iOS remains future scope.
+
+### P1 — Memory, Privacy & Personalization
+
+- [ ] Complete memory create/read/update/delete lifecycle through signed, policy-gated APIs.
+- [ ] Verify encryption, integrity, category restrictions, TTL/retention and credential/payment-data rejection.
+- [ ] Implement/verify semantic retrieval with bounded context and permission-aware access.
+- [ ] Define conflict resolution and synchronization between laptop and both phones.
+- [ ] Verify deletion from primary storage, indexes, caches, exports and backups; document any retention boundary.
+- [ ] Test memory export/backup and restore without exposing keys or plaintext secrets.
+- [ ] Ensure cloud AI receives only task-authorized context and never receives continuous microphone audio.
+
+### P1/P2 — AI, Integrations & Productivity Automation
+
+- [ ] Verify local AI endpoint configuration, timeout/unavailable behavior and deterministic fallback.
+- [ ] Ensure model output is treated as untrusted advisory data and cannot bypass planner schema validation or policy checks.
+- [ ] Add explicit opt-in for each cloud provider/use; verify key handling via environment only and no committed secrets.
+- [ ] Complete only the integrations already in repository scope; document unsupported APIs and required user permissions.
+- [ ] Verify existing schedule creation/list/cancel, notifications and recurring-task persistence/restart behavior.
+- [ ] Test task cancellation, retries, idempotency and safe failure across existing workflows.
+- [ ] Keep financial/payment actions excluded and do not silently install apps or send communications.
+
+### P2 — Release, compatibility and resource acceptance
+
+- [ ] Run exact-head Node build, TypeScript check, complete automated suite and browser security smoke.
+- [ ] Run Python utility tests and Android Gradle build where applicable.
+- [ ] Run dependency/security audit and record findings; do not claim zero vulnerabilities without output.
+- [ ] Validate supported Windows/browser/Android versions and graceful unsupported-platform behavior.
+- [ ] Measure idle/active CPU, memory, disk, network and battery impact against the balanced-resource target.
+- [ ] Complete accessibility, keyboard-only, screen-size and error-state checks.
+- [ ] Produce final evidence-based audit; update README, POC, POC2 and cross-device status together.
+- [ ] Keep `main` untouched; integration remains PR-only to `dev`.
+
+## Scope and sequencing rules
+
+1. Finish the existing epics before opening unrelated feature streams.
+2. Prioritize software-testable implementation and development work first; retain tests and acceptance criteria as mandatory gates, but do not describe unexecuted tests as passing.
+3. Physical-device steps are explicit owner acceptance tasks and cannot be substituted with hosted CI.
+4. No new cloud spend or paid dependency is assumed. Local-first and free-only operation remain project constraints.
+5. Do not weaken security controls to make a demo pass.
+6. No PR is created unless explicitly requested. If requested, non-main work targets `dev`; never automate a merge to `dev` or `main`.
+
+---
+
+## Historical gap and implementation log
+
+The historical sections below are retained for traceability. Their status notes describe the state at the time they were written; use the 2026-11-05 register above for current prioritization.
 
 ## Existing Epic Closure Plan — 2026-10-30
 
