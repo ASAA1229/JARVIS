@@ -276,3 +276,14 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Routes allowlisted Notepad, Calculator and Paint commands through their existing application IDs; generic app discovery remains constrained to the existing safe app-name character set and policy/approval flow.
 - Added regression cases for punctuated and polite launch phrasing.
 - No Windows application was launched during this code-only change. Tests, exact-head CI and MSI acceptance remain pending.
+
+## Development increment — existing application window reuse
+
+**Implementation:** src/adapters/windowsAppLauncher.ts, test/windows-app-launcher-window-matching.test.ts  
+**Status:** IMPLEMENTED / REGRESSION-TEST-AUTHORED / EXECUTION PENDING
+
+- An explicit launch request now checks the current desktop snapshot before spawning a process.
+- If exactly one window matches the allowlisted application identity, JARVIS focuses that existing window and reports success only when Windows confirms foreground focus.
+- If focus cannot be verified, the action is reported as a failure rather than claiming the app opened. Ambiguous/multiple matches are not arbitrarily focused.
+- Added regression tests for successful existing-window reuse and failed focus verification. Tests are authored but not executed in this environment.
+
