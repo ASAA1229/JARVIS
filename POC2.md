@@ -637,3 +637,13 @@ The earlier run also contained these failures; their fixes are in the branch his
 - The approval/recovery path now checks task state before resolving an approval.
 
 **Not yet verified:** no successful Actions run has been observed for the current `new` head. Do not mark JARVIS CI green until a fresh exact-head run completes.
+
+## Voice-to-app execution — session feedback gap
+
+**Status:** IMPLEMENTED / TEST-AUTHORED / VALIDATION PENDING
+
+- The HUD now gives an audible and visible “directive not sent” explanation when no authenticated device session is restored. It no longer leaves the operator with only the wake acknowledgement in that failure case.
+- An explicit “open Notepad” request is planned as app:launch; policy approval is a separate required stage where applicable. The app must not launch merely because the wake phrase was detected.
+- Remaining validation: confirm browser speech capture receives the command after local wake detection, confirm the signed /api/request call, inspect the approval card, approve it, and verify the Notepad window on the MSI.
+- Automated tests have not yet been run on the latest commit. Do not treat this increment as end-to-end verified.
+
