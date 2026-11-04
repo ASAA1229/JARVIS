@@ -17,6 +17,8 @@ let activeVoiceCaptureMode = null;
 const approvalResolutionsInFlight = new Set();
 // Prevent duplicate manual reconciliation submissions for the same task.
 const recoveryReviewsInFlight = new Set();
+// Prevent duplicate cancellation requests while a task stop is being acknowledged.
+const taskCancellationsInFlight = new Set();
 let isHandsFreeEnabled = false;
 let isWaitingForWakeCommand = false;
 let isSpeaking = false;
@@ -1563,11 +1565,61 @@ function renderTaskHistory(tasks) {
     }
     card.appendChild(details);
 
+    if (['EXECUTING', 'AWAITING_APPROVAL', 'CREATED', 'APPROVED'].includes(rawState)) {
+      card.appendChild(createTaskCancellationControl(task.id, rawState));
+    }
+
     if (RECOVERY_TASK_STATES.has(rawState)) {
       card.appendChild(createTaskRecoveryControls(task.id));
     }
     container.appendChild(card);
   }
+}
+
+function createTaskCancellationControl(taskId, taskState) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'task-cancel-control';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'hud-btn-mini task-cancel-button';
+  button.textContent = taskState === 'EXECUTING' ? 'STOP WORKFLOW' : 'CANCEL TASK';
+  const status = document.createElement('p');
+  status.className = 'task-recovery-status';
+  status.setAttribute('role', 'status');
+  button.addEventListener('click', async () => {
+    const key = String(taskId);
+    if (taskCancellationsInFlight.has(key)) return;
+    if (!window.JarvisDeviceCrypto?.signedFetch) {
+      status.textContent = 'Secure device session unavailable. No cancellation request was sent.';
+      return;
+    }
+    taskCancellationsInFlight.add(key);
+    button.disabled = true;
+    status.textContent = taskState === 'EXECUTING'
+      ? 'Requesting interruption. The current operation may have an external effect; remaining steps will be stopped.'
+      : 'Submitting authenticated cancellation…';
+    try {
+      const response = await window.JarvisDeviceCrypto.signedFetch('/api/task/cancel', {
+        method: 'POST',
+        body: { taskId },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.message || result.error || 'Cancellation was not confirmed');
+      }
+      const state = typeof result.state === 'string' ? result.state.replaceAll('_', ' ') : 'status pending refresh';
+      status.textContent = String(result.message || 'Cancellation accepted') + ' Current state: ' + state + '.';
+      addFeedItem('pending', 'Cancellation requested for task ' + key + '. ' + String(result.message || '') + ' No dependent workflow step should continue.');
+      await refreshTaskHistory();
+    } catch (error) {
+      status.textContent = 'Cancellation not confirmed: ' + (error instanceof Error ? error.message : 'Request failed') + '. Refresh task status before taking further action.';
+    } finally {
+      taskCancellationsInFlight.delete(key);
+      button.disabled = false;
+    }
+  });
+  wrapper.append(button, status);
+  return wrapper;
 }
 
 function createTaskRecoveryControls(taskId) {
