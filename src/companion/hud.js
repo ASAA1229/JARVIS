@@ -1061,6 +1061,7 @@ async function submitDirective(text) {
     });
     const data = await readApiResponse(res);
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
+    refreshTaskHistory(); // Keep the task timeline aligned with the server's authoritative state.
     if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       speakResponse(data.message || 'I need your approval before performing that action.');
