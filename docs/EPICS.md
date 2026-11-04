@@ -197,3 +197,7 @@ The voice manager now has an independent transcription timeout and stale-callbac
 
 The HUD now visibly and audibly explains when a voice directive cannot be submitted because no authenticated device session is restored. The request is explicitly marked as not sent and the pipeline shows the session gate as failed. Regression assertions were added. This is not end-to-end voice-to-app completion: command capture, signed request, approval and Windows launch still require exact-head automated and MSI acceptance evidence.
 
+
+## E02 implementation note — natural-language app launch normalization
+
+Planner now strips trailing punctuation and common polite suffixes before resolving explicit app-launch requests. Regression cases cover `Open Notepad.`, `Hey Jarvis, open Calculator please.` and `Run Paint for me`. Implementation and test source are on `new`; tests have not been executed and MSI acceptance remains open.
