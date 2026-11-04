@@ -670,8 +670,18 @@ export class JarvisCoreService {
       ? 'completed'
       : verification.honestOutcome === VerificationOutcome.VERIFIED_FAILURE ? 'failed' : 'uncertain';
     this.#recordStep(taskRecord, stepStatus, verification.honestOutcome, verification.message);
-    if (taskRecord.state === TaskState.AWAITING_RECOVERY && taskRecord.interrupted) {
-      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+
+    // Cancellation is a workflow boundary: even if an adapter ignores AbortSignal
+    // and later returns, the current result is uncertain and no dependent step may run.
+    if (rawResult.interrupted || taskRecord.interrupted) {
+      taskRecord.state = TaskState.INTERRUPTED;
+      taskRecord.interrupted = true;
+      taskRecord.error = 'Execution was interrupted. The current side effect may have occurred; remaining workflow steps were skipped. Reconcile before submitting any new request.';
+      this.#skipRemainingSteps(taskRecord);
+      if (!this.#persistTask(taskRecord)) {
+        return { taskId, state: taskRecord.state, message: taskRecord.error || 'Interruption checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+      }
+      return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.UNCERTAIN, verified: false };
     }
 
     const hasNextStep = taskRecord.operations !== undefined && taskRecord.operationIndex !== undefined &&
