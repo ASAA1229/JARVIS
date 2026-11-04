@@ -688,7 +688,6 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     }
     activeVoiceCaptureMode = null;
     isListening = false;
-    activeVoiceCaptureMode = null;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
       clearTimeout(voiceTimeoutId);
@@ -886,7 +885,7 @@ function hasSpeechConsent(mode) {
 }
 
 function revokeSpeechConsent(mode) {
-  if (activeVoiceCaptureMode !== mode || !isListening) return;
+  if (activeVoiceCaptureMode !== mode) return;
   cancelVoiceCapture();
   setAssistantState('VOICE CONSENT REVOKED — CAPTURE STOPPED', mode === 'wake'
     ? 'Post-wake browser speech consent was withdrawn. Capture was cancelled and its transcript discarded; local wake detection may remain enabled.'
@@ -944,6 +943,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
     }, 15000);
   } catch (e) {
     isListening = false;
+    activeVoiceCaptureMode = null;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     document.getElementById('reactor-container').classList.remove('listening');
     document.getElementById('btn-ptt').classList.remove('active');
