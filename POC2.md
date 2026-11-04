@@ -51,7 +51,7 @@
 
 ### P1 — Voice Interaction & Cinematic HUD (active development priority)
 
-**Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks and invalid duration. Tests are authored only; execution is pending.
+**Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. The active HUD also cancels capture/discards the transcript on consent revocation and rechecks consent before a post-wake command can be dispatched. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks, invalid duration and HUD consent guards. Tests are authored only; execution is pending.
 
 - [ ] Run the local wake-word setup on the target MSI; record runtime/model versions and integrity checks.
 - [ ] Verify microphone permissions, wake accuracy, false positives/negatives, startup/restart, mute, stop, hidden-tab, sleep/resume and cancellation.
