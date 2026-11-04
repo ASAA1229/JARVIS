@@ -150,6 +150,12 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);
+    assert.match(jsText, /function hasSpeechConsent\(mode\)/);
+    assert.match(jsText, /function revokeSpeechConsent\(mode\)/);
+    assert.match(jsText, /pushToTalkConsent\?\.addEventListener\('change'/);
+    assert.match(jsText, /wakeSpeechConsent\?\.addEventListener\('change'/);
+    assert.match(jsText, /if \(!hasSpeechConsent\(mode\)\)\s*\{\s*revokeSpeechConsent\(mode\);/);
+    assert.match(jsText, /VOICE CONSENT REVOKED — COMMAND NOT SENT/);
     assert.doesNotMatch(jsText, /(?:card|item|entry)\.innerHTML\s*=/i);
     assert.doesNotMatch(jsText, /onclick=/i);
     const appRes = await fetch(`http://127.0.0.1:${TEST_PORT}/app.js`);
