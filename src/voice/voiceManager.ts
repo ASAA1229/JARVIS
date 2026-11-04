@@ -21,89 +21,121 @@ export interface VoicePrivacyPolicy {
   privacyNotice: string;
 }
 
+export interface VoiceCaptureStartResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+const MAX_TRANSCRIPT_LENGTH = 1200;
+
 export class VoiceManager {
   private state: SpeechState = SpeechState.IDLE;
-  private isMuted: boolean = false;
-  private currentTranscript: string = '';
+  private isMuted = false;
+  private currentTranscript = '';
   private captureTimeout: ReturnType<typeof setTimeout> | null = null;
+  private captureGeneration = 0;
 
   public readonly policy: VoicePrivacyPolicy = {
     continuousListeningAllowed: false,
     wakeWordEnabled: false,
     maxCaptureDurationSeconds: 15,
-    privacyNotice: 'Microphone is active ONLY during push-to-talk. No continuous recording or wake-word listening is active.',
+    privacyNotice: 'Microphone is active only during an explicitly started capture. No continuous recording or wake-word listening is enabled by this manager.',
   };
 
   /**
-   * Starts push-to-talk voice capture with safety bounds.
+   * Starts one bounded push-to-talk capture.
+   *
+   * A second start is rejected while a capture or transcript review is active;
+   * it must never silently replace an in-flight transcript.
    */
-  public startPushToTalk(onTimeout?: () => void): { allowed: boolean; reason?: string } {
+  public startPushToTalk(onTimeout?: () => void): VoiceCaptureStartResult {
     if (this.isMuted) {
       this.state = SpeechState.DISABLED;
       return { allowed: false, reason: 'Microphone is currently muted by user privacy control.' };
     }
 
-    this.state = SpeechState.LISTENING;
-    this.currentTranscript = '';
+    if (this.state === SpeechState.LISTENING
+      || this.state === SpeechState.TRANSCRIBING
+      || this.state === SpeechState.CONFIRMING) {
+      return { allowed: false, reason: 'A voice capture or transcript review is already active.' };
+    }
 
-    // Safety timeout: automatically cancel capture after max duration
-    if (this.captureTimeout) clearTimeout(this.captureTimeout);
+    const durationSeconds = this.policy.maxCaptureDurationSeconds;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 120) {
+      return { allowed: false, reason: 'Voice capture duration must be greater than 0 and no more than 120 seconds.' };
+    }
+
+    this.clearCaptureTimeout();
+    const generation = ++this.captureGeneration;
+    this.currentTranscript = '';
+    this.state = SpeechState.LISTENING;
+
     this.captureTimeout = setTimeout(() => {
-      if (this.state === SpeechState.LISTENING) {
-        this.stopPushToTalk();
-        if (onTimeout) onTimeout();
+      if (generation !== this.captureGeneration || this.state !== SpeechState.LISTENING) return;
+
+      this.captureTimeout = null;
+      this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
+      this.captureGeneration += 1;
+
+      // The timeout has already stopped this capture. A callback failure must
+      // not resurrect capture state or affect a later session.
+      try {
+        onTimeout?.();
+      } catch {
+        // Timeout notification is advisory; privacy timeout enforcement wins.
       }
-    }, this.policy.maxCaptureDurationSeconds * 1000);
+    }, durationSeconds * 1000);
 
     return { allowed: true };
   }
 
-  /**
-   * Stops active capture.
-   */
+  /** Stops active microphone capture and preserves non-empty text for review. */
   public stopPushToTalk(): void {
-    if (this.captureTimeout) {
-      clearTimeout(this.captureTimeout);
-      this.captureTimeout = null;
-    }
-    if (this.state === SpeechState.LISTENING) {
-      this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
-    }
+    if (this.state !== SpeechState.LISTENING) return;
+
+    this.clearCaptureTimeout();
+    this.captureGeneration += 1;
+    this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
   }
 
-  /**
-   * Cancels active capture and discards transcript.
-   */
+  /** Cancels capture and discards its transcript. */
   public cancelCapture(): void {
-    if (this.captureTimeout) {
-      clearTimeout(this.captureTimeout);
-      this.captureTimeout = null;
-    }
-    this.state = SpeechState.IDLE;
+    this.clearCaptureTimeout();
+    this.captureGeneration += 1;
     this.currentTranscript = '';
+    this.state = this.isMuted ? SpeechState.DISABLED : SpeechState.IDLE;
   }
 
   /**
-   * Updates recognized transcript.
+   * Records a transcript only while the current capture is active.
+   * Input is bounded to the same maximum length accepted by the HUD voice path.
    */
   public updateTranscript(text: string): void {
-    if (this.state === SpeechState.LISTENING || this.state === SpeechState.TRANSCRIBING) {
-      this.currentTranscript = text.trim();
-    }
+    if (this.state !== SpeechState.LISTENING && this.state !== SpeechState.TRANSCRIBING) return;
+    this.currentTranscript = text.trim().slice(0, MAX_TRANSCRIPT_LENGTH);
   }
 
-  /**
-   * Toggles hard mute state.
-   */
+  /** Moves an active capture into transcription without extending its deadline. */
+  public beginTranscription(): boolean {
+    if (this.isMuted || this.state !== SpeechState.LISTENING) return false;
+    this.state = SpeechState.TRANSCRIBING;
+    return true;
+  }
+
+  /** Toggles the hard privacy mute; muting always cancels and discards active work. */
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
     if (this.isMuted) {
       this.cancelCapture();
-      this.state = SpeechState.DISABLED;
     } else {
       this.state = SpeechState.IDLE;
     }
     return this.isMuted;
+  }
+
+  /** Releases timers when the owning UI/service is disposed. */
+  public dispose(): void {
+    this.cancelCapture();
   }
 
   public getState(): SpeechState {
@@ -116,5 +148,12 @@ export class VoiceManager {
 
   public getCurrentTranscript(): string {
     return this.currentTranscript;
+  }
+
+  private clearCaptureTimeout(): void {
+    if (this.captureTimeout !== null) {
+      clearTimeout(this.captureTimeout);
+      this.captureTimeout = null;
+    }
   }
 }
