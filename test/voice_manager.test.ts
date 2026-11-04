@@ -128,3 +128,62 @@ test('timeout notification errors do not break privacy timeout enforcement', asy
   assert.equal(manager.getState(), SpeechState.IDLE);
   manager.dispose();
 });
+
+
+test('stalled transcription times out and preserves partial text for explicit review', async () => {
+  const manager = new VoiceManager();
+  manager.policy.maxTranscriptionDurationSeconds = 0.01;
+
+  manager.startPushToTalk();
+  assert.equal(manager.beginTranscription(), true);
+  manager.updateTranscript('Open Notepad');
+
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert.equal(manager.getState(), SpeechState.CONFIRMING);
+  assert.equal(manager.getCurrentTranscript(), 'Open Notepad');
+  assert.equal(manager.startPushToTalk().allowed, false);
+  manager.dispose();
+});
+
+test('empty stalled transcription returns to idle and allows a fresh capture', async () => {
+  const manager = new VoiceManager();
+  manager.policy.maxTranscriptionDurationSeconds = 0.01;
+
+  manager.startPushToTalk();
+  assert.equal(manager.beginTranscription(), true);
+
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert.equal(manager.getState(), SpeechState.IDLE);
+  assert.equal(manager.getCurrentTranscript(), '');
+  assert.equal(manager.startPushToTalk().allowed, true);
+  manager.dispose();
+});
+
+test('completed transcription clears its timeout and cannot be changed by a stale timer', async () => {
+  const manager = new VoiceManager();
+  manager.policy.maxTranscriptionDurationSeconds = 0.03;
+
+  manager.startPushToTalk();
+  assert.equal(manager.beginTranscription(), true);
+  manager.updateTranscript('Verified command');
+  assert.equal(manager.finishTranscription(), true);
+
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(manager.getState(), SpeechState.CONFIRMING);
+  assert.equal(manager.getCurrentTranscript(), 'Verified command');
+  manager.dispose();
+});
+
+test('invalid transcription duration fails closed without leaving a stuck processing state', () => {
+  const manager = new VoiceManager();
+  manager.policy.maxTranscriptionDurationSeconds = 0;
+
+  manager.startPushToTalk();
+  assert.equal(manager.beginTranscription(), false);
+  assert.equal(manager.getState(), SpeechState.ERROR);
+  assert.equal(manager.startPushToTalk().allowed, true);
+  manager.dispose();
+});
