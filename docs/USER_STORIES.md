@@ -364,3 +364,17 @@ A story is done only when:
 - If no unique existing window is found, the normal allowlisted launch and post-launch verification path remains in effect.
 - Tests cover existing-window reuse and focus failure; target-Windows acceptance covers both already-open and cold-launch scenarios.
 
+
+
+### JARVIS-US-036 — Prevent duplicate approval resolution and report uncertain outcomes
+**As the owner,** I want approval controls to prevent overlapping submissions and clearly distinguish approval processing from verified task completion, so that a double-click or network interruption does not mislead me about whether an action ran.
+
+**Acceptance criteria**
+- Both approval-card actions are disabled while a resolution request for that approval ID is in flight.
+- A second click for the same approval ID while the first request is pending is ignored.
+- Controls are restored only after the request settles and only if the card remains present.
+- A rejection is acknowledged only when the server confirms `success: true`.
+- An approved task is labelled completed only when state is `COMPLETED`, success is true, outcome is `VERIFIED_SUCCESS`, and verified is true.
+- Terminal failed/rejected/expired/cancelled/partial/recovery states are not presented as successful completion.
+- Unknown or non-terminal outcomes remain visibly unresolved; communication ambiguity instructs the owner to refresh task status before retrying.
+- No test or CI result is implied by implementation alone.
