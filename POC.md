@@ -322,3 +322,16 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Successful reconciliation now explains the selected disposition separately from the server-returned state. `effect_observed` is explicitly not described as independently verified completion; `still_unknown` remains unresolved; `confirmed_no_effect` is not replayed.
 - The task list is refreshed after a confirmed reconciliation and the outcome is recorded in the execution feed. No retry, resume, or replay behavior is introduced.
 - No tests, build, lint, CI, or target-device validation were run for this increment.
+
+
+## Development increment — explicit HUD stop/cancel controls and workflow interruption boundary
+
+**Implementation:** `src/core/service.ts`, companion HUD  \
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added task-card stop controls for executing workflows and cancellation controls for tasks that have not started execution or are waiting for approval.
+- Stop/cancel requests use the existing authenticated, signed `POST /api/task/cancel` endpoint; duplicate in-flight requests for one task are suppressed.
+- The core now treats an interrupted adapter result as a hard workflow boundary: it records the current step as uncertain, marks all remaining planned steps as skipped, persists the interrupted state, and returns without evaluating or starting another step.
+- The HUD warns that the current operation may already have produced an external effect. It never describes interruption as rollback or proof that the effect did not happen.
+- Failed/ambiguous cancellation responses instruct the owner to refresh task status before taking further action.
+- No tests, build, lint, CI, or device validation were run for this increment.
