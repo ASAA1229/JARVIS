@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "matrix_id": "REPLACE_WITH_ACI_APPROVED_ID",
+  "matrix_version": "REPLACE_WITH_APPROVED_VERSION",
+  "checks": [
+    {
+      "id": "operating-system-family",
+      "field": "operating_system",
+      "operator": "one_of",
+      "expected": ["REPLACE_WITH_APPROVED_VALUE"],
+      "description": "Populate only from the approved compatibility specification."
+    }
+  ]
+}
