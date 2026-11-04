@@ -182,3 +182,11 @@ The browser companion now exposes a Recovery Review panel for tasks in AWAITING_
 A stale-approval guard was also added: approval resolution now requires the associated task to remain in AWAITING_APPROVAL. This prevents an orphaned approval record from authorizing execution after a task has moved to recovery/cancelled/another state.
 
 **Not yet accepted:** exact-head CI, browser interaction against a completed run, crash/restart and partial-side-effect tests, and target MSI interaction remain unverified. This does not change the Android limitations above; both physical phones still require secure HTTPS connectivity, independent enrollment, revocation-isolation and reconnect tests.
+
+## Cross-device revocation hardening — 2026-11-05
+
+- Android inventory commands now transition to an explicit `EXPIRED` state when their deadline passes. Terminal command records remain visible to the requesting device for a bounded retention window, then are pruned.
+- Device revocation now cancels every pending or claimed inventory command where the revoked device was either requester or target. Cancellation clears any stored app inventory and is recorded in the audit chain.
+- Regression coverage was added for expired-result visibility, requester/target cancellation, and rejection of completion after cancellation.
+- Scope remains intentionally read-only: this does not enable remote app launch, background execution, notifications, SMS, calls, or general Android control.
+- This is software-side hardening only. Exact-head CI, HTTPS connectivity, independent enrollment/revocation on both physical phones, and real-device acceptance remain outstanding.
