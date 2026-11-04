@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WindowsAppLauncherAdapter, matchesExpectedAppWindow, selectUniqueExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+import { WindowsAppLauncherAdapter, discoveredLaunchResult, matchesExpectedAppWindow, selectUniqueExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { VerificationOutcome } from '../src/core/types.js';
 import type { WindowInfo } from '../src/adapters/windowsWindows.js';
 
@@ -132,4 +132,28 @@ test('ambiguous existing app windows prevent arbitrary focus and duplicate launc
   assert.equal(result.evidence?.duplicateLaunchPrevented, true);
   assert.equal(result.evidence?.ambiguousWindowCount, 2);
   assert.match(result.error ?? '', /multiple existing windows/i);
+});
+
+
+test('discovered Start-menu launch is partial when no trusted process identity is available', () => {
+  const result = discoveredLaunchResult(
+    { Name: 'Third-party Editor', AppID: 'Vendor.Editor' },
+    { pid: 5100, processName: 'editor', title: 'Editor' },
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.outcome, VerificationOutcome.PARTIAL_SUCCESS);
+  assert.equal(result.evidence?.targetWindowVerified, false);
+  assert.match(result.error ?? '', /cannot independently verify/i);
+});
+
+test('discovered Start-menu launch verifies only a window matching the trusted identity', () => {
+  const result = discoveredLaunchResult(
+    { Name: 'Settings', AppID: 'windows.immersivecontrolpanel' },
+    { pid: 5200, processName: 'SystemSettings', title: 'Settings' },
+    { processNames: ['SystemSettings'], titleContains: 'Settings' },
+  );
+
+  assert.equal(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+  assert.equal(result.evidence?.targetWindowVerified, true);
 });
