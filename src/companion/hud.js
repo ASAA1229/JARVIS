@@ -15,6 +15,8 @@ let isSubmitting = false;
 let activeVoiceCaptureMode = null;
 // Prevent duplicate submissions for a single-use approval.
 const approvalResolutionsInFlight = new Set();
+// Prevent duplicate manual reconciliation submissions for the same task.
+const recoveryReviewsInFlight = new Set();
 let isHandsFreeEnabled = false;
 let isWaitingForWakeCommand = false;
 let isSpeaking = false;
@@ -1491,34 +1493,61 @@ function renderTaskHistory(tasks) {
     header.className = 'task-history-card-header';
     const operation = document.createElement('strong');
     operation.textContent = String(task.operation || 'Task');
+    const rawState = String(task.state || 'UNKNOWN');
     const state = document.createElement('span');
-    state.className = 'task-history-state state-' + String(task.state || 'UNKNOWN').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    state.textContent = String(task.state || 'UNKNOWN').replaceAll('_', ' ');
+    state.className = 'task-history-state state-' + rawState.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    state.textContent = rawState.replaceAll('_', ' ');
     header.append(operation, state);
+
     const meta = document.createElement('div');
     meta.className = 'task-history-meta';
-    const created = Number(task.updatedAt || task.createdAt);
-    meta.textContent = (Number.isFinite(created) && created > 0 ? new Date(created).toLocaleString() : 'Time unavailable') +
-      ' · ' + String(task.origin || 'unknown origin');
+    meta.textContent = String(task.origin || 'unknown origin');
     card.append(header, meta);
 
+    // A dedicated, expandable detail view deliberately allowlists display fields.
+    const details = document.createElement('details');
+    details.className = 'task-history-detail';
+    const summary = document.createElement('summary');
+    summary.textContent = 'TASK DETAILS';
+    const detailGrid = document.createElement('dl');
+    detailGrid.className = 'task-history-detail-grid';
+    const addDetail = (label, value) => {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const description = document.createElement('dd');
+      description.textContent = value;
+      detailGrid.append(term, description);
+    };
+    const formatTaskTime = (value) => {
+      const timestamp = Number(value);
+      return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toLocaleString() : 'Unavailable';
+    };
+    addDetail('Task reference', String(task.id || 'Unavailable'));
+    addDetail('Operation', String(task.operation || 'Unavailable'));
+    addDetail('Current state', rawState.replaceAll('_', ' '));
+    addDetail('Origin', String(task.origin || 'Unknown'));
+    addDetail('Created', formatTaskTime(task.createdAt));
+    addDetail('Last updated', formatTaskTime(task.updatedAt));
+    details.append(summary, detailGrid);
+
     if (Array.isArray(task.steps) && task.steps.length) {
-      const steps = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = 'Execution steps (' + task.steps.length + ')';
-      const list = document.createElement('ol');
-      list.className = 'task-history-steps';
+      const steps = document.createElement('ol');
+      steps.className = 'task-history-steps';
       for (const step of task.steps) {
         const item = document.createElement('li');
-        const status = String(step.status || 'unknown').replaceAll('_', ' ');
-        item.textContent = status + (step.message ? ' — ' + String(step.message) : '');
-        list.appendChild(item);
+        const statusText = String(step.status || 'unknown').replaceAll('_', ' ');
+        const messageText = typeof step.message === 'string' ? step.message : '';
+        item.textContent = statusText + (messageText ? ' — ' + messageText : '');
+        steps.appendChild(item);
       }
-      steps.append(summary, list);
-      card.appendChild(steps);
+      const stepHeading = document.createElement('h4');
+      stepHeading.className = 'task-history-step-heading';
+      stepHeading.textContent = 'STEP TIMELINE';
+      details.append(stepHeading, steps);
     }
+    card.appendChild(details);
 
-    if (RECOVERY_TASK_STATES.has(String(task.state))) {
+    if (RECOVERY_TASK_STATES.has(rawState)) {
       card.appendChild(createTaskRecoveryControls(task.id));
     }
     container.appendChild(card);
@@ -1529,7 +1558,7 @@ function createTaskRecoveryControls(taskId) {
   const form = document.createElement('form');
   form.className = 'task-recovery-form';
   const label = document.createElement('label');
-  label.textContent = 'Manual recovery review (does not retry or resume the task)';
+  label.textContent = 'Manual recovery review (does not retry, resume, or replay the task)';
   const disposition = document.createElement('select');
   disposition.required = true;
   disposition.setAttribute('aria-label', 'Recovery decision');
@@ -1561,29 +1590,42 @@ function createTaskRecoveryControls(taskId) {
   form.append(label, note, submit, status);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (submit.disabled) return;
-    if (note.value.trim().length < 8) {
-      status.textContent = 'Please provide at least 8 characters of observation.';
+    if (submit.disabled || recoveryReviewsInFlight.has(String(taskId))) return;
+    const observation = note.value.trim();
+    if (observation.length < 8 || observation.length > 500) {
+      status.textContent = 'Please provide an observation between 8 and 500 characters.';
       return;
     }
+    recoveryReviewsInFlight.add(String(taskId));
     submit.disabled = true;
+    disposition.disabled = true;
+    note.disabled = true;
     status.textContent = 'Submitting authenticated recovery review…';
+    const selectedDisposition = disposition.value;
     try {
       const response = await window.JarvisDeviceCrypto.signedFetch('/api/task/reconcile', {
         method: 'POST',
-        body: { taskId, disposition: disposition.value, note: note.value.trim() },
+        body: { taskId, disposition: selectedDisposition, note: observation },
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result.success !== true) {
         throw new Error(result.error || result.message || 'Recovery review was not confirmed');
       }
-      status.textContent = 'Review saved. Task state: ' + String(result.state || 'updated') + '. No action was replayed.';
-      addFeedItem('pending', 'Manual recovery review recorded for task ' + taskId + ': ' + String(result.state || 'updated'));
+      const stateText = typeof result.state === 'string' ? result.state.replaceAll('_', ' ') : 'not returned by server';
+      const dispositionText = {
+        confirmed_no_effect: 'No effect was confirmed; the task was not replayed.',
+        effect_observed: 'An effect was observed; this is not independent verification of completion.',
+        still_unknown: 'The outcome remains unknown and requires further review.',
+      }[selectedDisposition];
       await refreshTaskHistory();
+      addFeedItem('pending', 'Recovery review saved for task ' + String(taskId) + '. ' + dispositionText + ' Server state: ' + stateText + '. No action was retried or resumed.');
     } catch (error) {
       status.textContent = 'Review not confirmed: ' + (error instanceof Error ? error.message : 'Request failed');
     } finally {
+      recoveryReviewsInFlight.delete(String(taskId));
       submit.disabled = false;
+      disposition.disabled = false;
+      note.disabled = false;
     }
   });
   return form;
