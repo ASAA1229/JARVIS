@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Reviewed branch head:** `bc362a6f3a608985480509c849411cd6dc15e7b4`  
+**Reviewed branch head:** `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 > This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
@@ -21,7 +21,7 @@ The `new` branch contains the following implementation areas. These are reposito
 
 ## Verification and evidence status
 
-- Branch head inspected: `bc362a6f3a608985480509c849411cd6dc15e7b4`.
+- Branch head inspected: `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`.
 - The latest Actions run surfaced during this review was for an earlier `new` head (`51ae06426bfb8fd4779f3b46b0dade856e56cfec`) and concluded **failure**. It is not evidence about the current head.
 - No completed build/test/browser-smoke result for the exact reviewed head was established in this documentation pass.
 - Physical MSI voice, Windows UI, resource, and microphone acceptance is outstanding.
