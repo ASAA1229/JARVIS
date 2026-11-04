@@ -221,3 +221,8 @@ The companion HUD now consumes the authenticated task-list endpoint and renders 
 ## E01/E04 implementation note — task detail and recovery transition clarity
 
 Task history cards now include an expandable detail view with safe task metadata and step summaries, excluding raw parameters and result payloads. Manual reconciliation is guarded against duplicate in-flight submissions per task. Successful responses distinguish the chosen disposition from the server-returned state, with explicit language that an observed effect is not independently verified completion and no action is retried/resumed/replayed. Validation remains pending by instruction.
+
+
+## E01/E04 implementation note — explicit stop and workflow interruption boundary
+
+The companion task history now exposes authenticated stop controls for executing workflows and cancellation for pending/approval tasks. Duplicate stop requests are suppressed per task. The core treats interruption as a hard workflow boundary: the current step remains uncertain, dependent steps are recorded as skipped, and execution returns without evaluating another step. UI copy does not imply rollback or absence of external effects. Implementation only; validation remains open.
