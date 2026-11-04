@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Reviewed branch head:** `bc362a6f3a608985480509c849411cd6dc15e7b4`  
+**Reviewed branch head:** `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
@@ -30,7 +30,7 @@
 
 ## Immediate branch and validation checkpoint
 
-- The `new` branch exists and was inspected at `bc362a6f3a608985480509c849411cd6dc15e7b4`.
+- The `new` branch exists and was inspected at `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`.
 - The latest Actions run surfaced in this review was for earlier head `51ae06426bfb8fd4779f3b46b0dade856e56cfec` and concluded failure. It is not a current-head result.
 - Exact-head CI for the reviewed commit is **not established** by this documentation pass.
 - No physical-device acceptance is implied.
