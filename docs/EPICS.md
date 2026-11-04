@@ -201,3 +201,8 @@ The HUD now visibly and audibly explains when a voice directive cannot be submit
 ## E02 implementation note — natural-language app launch normalization
 
 Planner now strips trailing punctuation and common polite suffixes before resolving explicit app-launch requests. Regression cases cover `Open Notepad.`, `Hey Jarvis, open Calculator please.` and `Run Paint for me`. Implementation and test source are on `new`; tests have not been executed and MSI acceptance remains open.
+
+## E03/E02 implementation note — existing app window reuse
+
+The Windows app launcher now detects a unique existing allowlisted window and requests verified foreground focus before attempting a new process spawn. This addresses singleton/reused-process behavior that could otherwise produce a launch acknowledgement without a newly observed PID. Multiple matches are not arbitrarily selected; failed focus is not reported as success. Regression tests were added but remain unexecuted pending CI and MSI validation.
+
