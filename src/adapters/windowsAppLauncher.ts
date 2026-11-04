@@ -78,6 +78,15 @@ export function matchesExpectedAppWindow(
     window.title.toLowerCase().includes(match.titleContains.toLowerCase());
 }
 
+/** A focus target is safe only when exactly one window has the trusted app identity. */
+export function selectUniqueExpectedAppWindow(
+  windows: WindowInfo[],
+  app: Pick<AllowlistedApp, 'windowMatch'>,
+): { window?: WindowInfo; matchCount: number } {
+  const matches = windows.filter((window) => matchesExpectedAppWindow(window, app));
+  return { window: matches.length === 1 ? matches[0] : undefined, matchCount: matches.length };
+}
+
 export class WindowsAppLauncherAdapter {
   constructor(
     private readonly windows: Pick<WindowsWindowManager, 'snapshot' | 'focusWindow'> = new WindowsWindowManager(),
@@ -279,10 +288,10 @@ export class WindowsAppLauncherAdapter {
       // one trusted window matches this allowlisted app identity.
       if (app.windowMatch) {
         try {
-          const existingMatches = (await this.windows.snapshot(signal))
-            .filter((window) => matchesExpectedAppWindow(window, app));
-          if (existingMatches.length === 1) {
-            const focused = await this.windows.focusWindow({ pid: existingMatches[0].pid }, signal);
+          const selection = selectUniqueExpectedAppWindow(await this.windows.snapshot(signal), app);
+          if (selection.window) {
+            const existingWindow = selection.window;
+            const focused = await this.windows.focusWindow({ pid: existingWindow.pid }, signal);
             if (focused.success && focused.outcome === VerificationOutcome.VERIFIED_SUCCESS) {
               return {
                 success: true,
@@ -290,24 +299,24 @@ export class WindowsAppLauncherAdapter {
                 data: {
                   appId: app.id,
                   name: app.name,
-                  pid: existingMatches[0].pid,
+                  pid: existingWindow.pid,
                   status: 'Existing application window focused',
-                  windowTitle: existingMatches[0].title,
+                  windowTitle: existingWindow.title,
                 },
                 evidence: {
                   existingWindowReused: true,
-                  windowPid: existingMatches[0].pid,
-                  windowProcess: existingMatches[0].processName,
+                  windowPid: existingWindow.pid,
+                  windowProcess: existingWindow.processName,
                   mechanism: 'unique trusted app-window match + verified foreground focus',
                 },
               };
             }
-          } else if (existingMatches.length > 1) {
+          } else if (selection.matchCount > 1) {
             return {
               success: true,
               outcome: VerificationOutcome.PARTIAL_SUCCESS,
               data: { appId: app.id, name: app.name, status: 'Launch requested; multiple existing windows matched' },
-              evidence: { existingWindowReused: true, ambiguousWindowCount: existingMatches.length, focusAttempted: false },
+              evidence: { existingWindowReused: true, ambiguousWindowCount: selection.matchCount, focusAttempted: false },
               error: 'Multiple existing windows match this application; JARVIS did not choose one to focus.',
             };
           }
