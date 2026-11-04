@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Latest development checkpoint:** `09b45366318ed27ee109b8635d56b0448c65b3c8`  
+**Latest code checkpoint:** `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
@@ -30,7 +30,7 @@
 
 ## Immediate branch and validation checkpoint
 
-- The `new` branch includes voice lifecycle implementation commits through `09b45366318ed27ee109b8635d56b0448c65b3c8`.
+- The `new` branch includes voice lifecycle and consent-revocation changes through `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`.
 - `src/voice/voiceManager.ts` was hardened and `test/voice_manager.test.ts` was added.
 - Focused voice-manager tests are authored but have **not yet been executed**.
 - The CI workflow is manual-dispatch / PR-to-dev; no exact-head CI run is available from the surfaced Actions history.
