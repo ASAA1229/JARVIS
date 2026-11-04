@@ -675,3 +675,15 @@ The earlier run also contained these failures; their fixes are in the branch his
 - Interrupted and recovery-pending tasks now expose the existing manual reconciliation endpoint. The owner can record `confirmed_no_effect`, `effect_observed`, or `still_unknown` with a required observation note.
 - Reconciliation is review/annotation only; the HUD does not retry, resume, or replay the task. Server-side ownership, authentication, durable-journal and note validation remain authoritative.
 - Per instruction, no tests or CI were run. UI and MSI acceptance remain outstanding.
+
+
+## Development increment — task details and recovery transition clarity
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added an expandable detail view for each task, including task reference, operation, state, origin, created/updated timestamps, and safe step summaries.
+- Kept task parameters and result payloads out of the HUD.
+- Prevented overlapping manual reconciliation requests for the same task.
+- Recovery feedback now names the submitted disposition and displays the state returned by the server. Observed effects are not represented as verified completion, and unknown outcomes remain explicitly unresolved.
+- Refreshes task history after a confirmed review; no action is retried, resumed, or replayed.
+- Per instruction, no tests, build, lint, CI, or device validation were run.
