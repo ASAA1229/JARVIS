@@ -1,77 +1,83 @@
 # JARVIS POC — Current Implemented Baseline
 
-**Updated:** 2026-10-24  
-**Source reviewed:** application source baseline 6222e1964774c78e6853d6113335b1a3f0284881; documentation reconciliation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c. PR #14 status-refresh documentation was merged to dev at d5fc9cc42e0476dcf24d85ea6d95815fb592497e.  
+**Status snapshot:** 2026-11-05  
+**Branch reviewed:** `new`  
+**Reviewed branch head:** `bc362a6f3a608985480509c849411cd6dc15e7b4`  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
-This document records repository-visible implementation and hosted CI evidence. A green CI run does not establish real Windows, microphone, telephony, or Android-device acceptance.
+> This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
 
-## Implemented repository baseline
+## Current implementation snapshot (2026-11-05)
 
-- Node.js 24 + TypeScript modular-monolith backend.
-- Browser-based companion/HUD with text fallback and explicit push-to-talk flow.
-- Device identity/session protocol using Ed25519, signed requests, timestamp/nonce replay protection, enrollment proof-of-possession, owner approval, TOTP step-up, and device/session revocation paths.
-- Default-deny PolicyGateway, operation allowlist, permission checks, task-scoped approvals, single-use approval handling, and parameter/task/device binding checks.
-- Hash-chained audit records, redaction, integrity verification, persistence handling, and fail-closed behavior when required security state is unhealthy.
-- Read-only Windows system information for selected OS, memory, battery, and disk queries.
-- Windows application launch adapter with a small static allowlist (Notepad, Calculator, Paint) and constrained Start-menu discovery.
-- Windows foreground-window interaction adapter for text paste, selected-text copy, allowlisted hotkeys, zoom shortcuts, window/control inspection, and InvokePattern/ValuePattern actions selected by a unique control name or UI Automation AutomationId.
-- Encrypted local personal-memory store with categories, TTL, integrity validation, and conservative rejection of credential/payment-like content.
-- Optional local Piper TTS endpoint and browser speech-synthesis fallback.
-- Official-store search-link generation; this is discovery/handoff, not silent app installation.
-- Capability registry distinguishing implemented, partial, planned, and restricted features.
-- Automated unit/integration tests and a browser smoke harness.
+The `new` branch contains the following implementation areas. These are repository observations, not blanket acceptance claims:
 
-## Current hosted CI evidence
+- **Backend and security:** Node.js 24 / TypeScript modular monolith; signed device sessions and identity primitives; default-deny policy gateway; scoped approvals; audit-chain integrity and redaction; revocation and security-state persistence.
+- **Windows:** allowlisted app launch, foreground-window interaction, UI Automation-based control discovery/actions, clipboard and keyboard helpers, zoom, and system-information adapters. Universal application coverage and real application outcome verification are not complete.
+- **Voice/HUD:** browser companion/HUD, text and push-to-talk paths, consent controls, local wake-word runtime setup/integration, local TTS/STT adapters, and lifecycle/cancellation/retry hardening. The complete wake → capture → policy → execution → verified-result flow still requires MSI acceptance. Browser speech recognition may use a browser/vendor service after explicit consent.
+- **Android/cross-device:** a native Android application and companion API/identity/queue code are present in the repository. This is not evidence of successful installation, independent enrollment, secure transport, revocation, or remote control on both physical phones.
+- **Workflow execution:** planner, scheduler, encrypted task journal, recovery states, and a human-reviewed reconciliation endpoint/panel are present. This is not an automatic resume engine; uncertain actions must never be replayed.
+- **Memory and conversation:** encrypted local personal-memory storage, authenticated conversational route, configurable OpenAI-compatible endpoint (local endpoint by default), and companion memory/schedule/notification UI foundations. Full semantic retrieval, cross-device conflict handling, verified deletion/retention, and robust unattended automation remain incomplete.
+- **Quality assets:** TypeScript/Python/Android source, unit and integration tests, browser smoke tests, and CI workflow are present. Tests authored in the repository must not be called passing until executed on the exact branch head.
 
-- new documentation head f82ff59da540cc011bf0ac77b93d4e75263d3445: [CI run 40099759927](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099759927) completed successfully.
-- dev integration head d5fc9cc42e0476dcf24d85ea6d95815fb592497e: [CI run 40099889438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099889438) completed successfully.
-- The same integration commit passed CI on fix ([run 40099901244](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099901244)) and test ([run 40099904367](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099904367)). enhancement points to the same commit.
-- PR #14 (status/documentation refresh) merged into dev at d5fc9cc42e0476dcf24d85ea6d95815fb592497e.
-- These are repository automation results, not physical-device acceptance. npm audit remains unverified.
+## Verification and evidence status
 
-## Capability boundaries — do not overstate
+- Branch head inspected: `bc362a6f3a608985480509c849411cd6dc15e7b4`.
+- The latest Actions run surfaced during this review was for an earlier `new` head (`51ae06426bfb8fd4779f3b46b0dade856e56cfec`) and concluded **failure**. It is not evidence about the current head.
+- No completed build/test/browser-smoke result for the exact reviewed head was established in this documentation pass.
+- Physical MSI voice, Windows UI, resource, and microphone acceptance is outstanding.
+- Both Android phones still require independent installation/enrollment/transport/revocation acceptance.
+- No production-readiness claim is made.
+
+## Capability boundaries
 
 ### Voice and HUD
-- The browser companion provides explicit push-to-talk and text fallback.
-- Browser speech recognition may use browser/vendor or cloud processing; local-only recognition is not guaranteed.
-- Always-ready local wake-word listening is a target requirement, not an accepted current capability. The voice manager defaults wake-word listening off.
-- Piper TTS is optional and requires a compatible executable and model; actual audible playback and voice quality on the target laptop remain unverified.
+
+- Local wake-word setup and integration code exist, but the actual engine/model must be installed and exercised on the target MSI.
+- Browser speech recognition is a separate opt-in path and may involve browser/vendor/cloud processing; do not describe it as local-only.
+- Push-to-talk transcript review, consent revocation, hidden-tab cleanup, bounded retries, and cancellation safeguards exist in source. Validate their real browser/device behavior.
+- Piper TTS and optional local STT require compatible binaries/models and audible/recognition acceptance on the laptop.
+- The required wake acknowledgement is: `Hi sir, I am ready to work.`
 
 ### Windows desktop
-- Start-menu discovery now uses conservative process-and-title identity hints for selected inbox apps (Settings, Microsoft Store, Photos, Clock); unknown discovered apps remain partial rather than being reported as independently verified.
-- Desktop interaction targets the current foreground window.
-- UI Automation depends on accessible controls. Read/click/set can use an exact control name or a discovered AutomationId, and the chosen selector must resolve to exactly one control. Custom-rendered or inaccessible controls may not be operable.
-- Paste, hotkey and zoom acknowledgements do not prove the destination accepted or saved content; those outcomes remain partial unless independently verified.
-- Foreground process/window-name checks for financial/payment apps are defense in depth, not complete semantic detection.
-- This is not yet a universal desktop agent for every installed application.
 
-### Android, communications and productivity
-- The repository contains a browser companion, not a completed native Android device agent.
-- Physical enrollment and revocation on both Android phones are not accepted.
-- WhatsApp, SMS, normal cellular calls, VoIP calls, Teams messaging/meetings, email sending, calendar scheduling, and general Microsoft 365 workflows do not have complete end-to-end integrations in this POC.
-- No native iOS implementation is in current scope.
-- Store search produces official destinations; it does not silently install applications.
+- Launch and UI Automation are constrained; they are not universal remote-desktop control.
+- Controls must resolve uniquely. Custom-rendered, inaccessible, elevated, or unsupported controls may not be operable.
+- A successful API/adapter acknowledgement is not proof that the target application accepted or saved the change.
+- Financial/payment applications, credential entry, unrestricted shell execution, administrator elevation, and security bypass remain excluded.
 
-### Memory and automation
-- The encrypted memory store is a foundation, not the complete user-facing lifecycle. Cross-device sync, semantic retrieval, conflict-resolution UI, retention workflows, and verified deletion across backups remain incomplete.
-- Durable long-running workflow orchestration, recurring schedules, unattended recovery, and conditional automation are not complete.
-- AI planning is deterministic/advisory in this version; planner output has no direct execution authority and must pass policy checks.
+### Android and cross-device
 
-## Security properties to preserve
+- Native Android source is present, but both actual phones must be independently enrolled and tested.
+- Each phone must have a separate key, identity, session, permission set, and revocation path.
+- Remote control must remain authenticated, signed, replay-resistant, owner-approved where required, cancellable, and revocable.
+- Native iOS is future scope, not part of current acceptance.
 
-- No administrator privileges, unrestricted shell execution, security-control bypass, or voice-only high-risk authentication.
-- Payment/financial application automation remains restricted.
-- Every state-changing operation must pass the policy gateway and its applicable approval rules.
-- Approval must remain bound to the task, device, operation, canonical parameters and expiry.
-- Stop dependent workflow steps on failure or uncertainty; retry/rollback only when safe.
-- Do not report success without outcome evidence.
-- Keep main protected; development changes use non-main branches and PRs to dev.
+### Workflow, memory, and AI
+
+- Recovery is human-reviewed reconciliation, not automatic replay or generic resume.
+- Memory storage is a foundation; lifecycle UX, semantic retrieval, cross-device synchronization/conflict handling, retention and verified deletion remain open.
+- AI output is advisory/planning input only. It receives no direct execution authority and every action must pass the policy gateway.
+- Cloud AI/speech must remain explicit, task-scoped opt-in; no continuous cloud audio upload.
+
+## Security invariants
+
+- Default-deny policy gateway for every state-changing action.
+- No unrestricted shell, administrator privileges, credential/payment automation, or security-control bypass.
+- Approval remains bound to task, device, operation, canonical parameters and expiry; single-use semantics must remain intact.
+- Audit integrity and required security persistence fail closed.
+- Stop dependent steps on failure or uncertainty; never auto-replay an uncertain side effect.
+- Do not report completion without independent outcome evidence.
+- `main` remains production-protected; development work stays on authorized non-main branches and PRs target `dev`.
 
 ## POC completion gate
 
-The POC remains **NOT COMPLETE** until the blockers in [POC2.md](POC2.md) have acceptance evidence, target Windows interaction and voice behavior are verified, both Android devices pass required security tests, the application-integration boundaries are demonstrated, and exact-source CI is green. Move a capability to accepted status only after its real action and verification path pass.
+The POC remains **NOT COMPLETE** until all existing epics in [docs/EPICS.md](docs/EPICS.md) meet their acceptance criteria, exact-head CI passes, required target-device evidence is recorded, and all residual restrictions are documented. Use [POC2.md](POC2.md) as the detailed remaining-work checklist. Do not mark an item complete solely because implementation code or a test file exists.
 
+---
+
+## Historical implementation and audit log
+
+The sections below are retained as historical implementation notes. Where an older note conflicts with the 2026-11-05 snapshot above, the newer snapshot and the detailed current gap register in POC2.md take precedence.
 
 ## Conversational response layer — 2026-10-25
 
