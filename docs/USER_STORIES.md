@@ -378,3 +378,18 @@ A story is done only when:
 - Terminal failed/rejected/expired/cancelled/partial/recovery states are not presented as successful completion.
 - Unknown or non-terminal outcomes remain visibly unresolved; communication ambiguity instructs the owner to refresh task status before retrying.
 - No test or CI result is implied by implementation alone.
+
+
+### JARVIS-US-037 — Review task history and reconcile interrupted work from the HUD
+**As the owner,** I want to review recent task states and record a manual recovery decision from the companion HUD, so that interrupted or uncertain work can be reconciled without accidentally replaying an action.
+
+**Acceptance criteria**
+- The HUD retrieves recent task records through the authenticated task-list endpoint and supports manual refresh.
+- Task history refreshes after directive submission and approval resolution, and periodically while the HUD is active.
+- Task cards show operation, state, origin, timestamps, and expandable step summaries without exposing task parameters or result payloads.
+- Only `AWAITING_RECOVERY` and `INTERRUPTED` tasks show the manual reconciliation form.
+- The owner can submit only the server-supported dispositions: `confirmed_no_effect`, `effect_observed`, or `still_unknown`.
+- A note of 8–500 characters is required and submission uses the signed API request.
+- The UI clearly states that reconciliation is a human review/annotation and never retries, resumes, or replays the task.
+- API authentication, task ownership, durable journal availability, and input validation remain enforced by the server.
+- Tests and target-device acceptance are separate gates; implementation alone does not mark this story accepted.
