@@ -382,7 +382,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     // 2. Application launch requests.
     // Require an explicit launch verb: merely asking about an application must
     // never cause a state-changing app:launch operation.
-    const launchIntent = /^\s*(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
+    const launchIntent = /^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
     const launchTarget = launchIntent?.[1]?.trim() ?? '';
     if (launchTarget && /^(?:notepad|note\s*pad)$/i.test(launchTarget)) {
       return {
@@ -429,7 +429,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    const genericOpen = requestText.match(/^\s*(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
+    const genericOpen = requestText.match(/^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
     if (genericOpen && genericOpen[1].trim()) {
       const appName = genericOpen[1].trim();
       if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
