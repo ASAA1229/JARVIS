@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Reviewed branch head:** `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`  
+**Latest development checkpoint:** `09b45366318ed27ee109b8635d56b0448c65b3c8`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
@@ -30,11 +30,11 @@
 
 ## Immediate branch and validation checkpoint
 
-- The `new` branch exists and was inspected at `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`.
-- The latest Actions run surfaced in this review was for earlier head `51ae06426bfb8fd4779f3b46b0dade856e56cfec` and concluded failure. It is not a current-head result.
-- Exact-head CI for the reviewed commit is **not established** by this documentation pass.
+- The `new` branch includes voice lifecycle implementation commits through `09b45366318ed27ee109b8635d56b0448c65b3c8`.
+- `src/voice/voiceManager.ts` was hardened and `test/voice_manager.test.ts` was added.
+- Focused voice-manager tests are authored but have **not yet been executed**.
+- The CI workflow is manual-dispatch / PR-to-dev; no exact-head CI run is available from the surfaced Actions history.
 - No physical-device acceptance is implied.
-- Work in this request is documentation-only; no application source or tests were changed.
 
 ## Prioritized remaining-work register
 
@@ -50,6 +50,8 @@
 - [ ] Preserve hard restrictions: financial/payment apps, credential entry, unrestricted shell, admin elevation, security bypass and voice-only high-risk authorization.
 
 ### P1 — Voice Interaction & Cinematic HUD (active development priority)
+
+**Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks and invalid duration. Tests are authored only; execution is pending.
 
 - [ ] Run the local wake-word setup on the target MSI; record runtime/model versions and integrity checks.
 - [ ] Verify microphone permissions, wake accuracy, false positives/negatives, startup/restart, mute, stop, hidden-tab, sleep/resume and cancellation.
