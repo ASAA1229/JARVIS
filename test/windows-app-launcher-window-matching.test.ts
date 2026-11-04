@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WindowsAppLauncherAdapter, matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+import { WindowsAppLauncherAdapter, matchesExpectedAppWindow, selectUniqueExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { VerificationOutcome } from '../src/core/types.js';
 import type { WindowInfo } from '../src/adapters/windowsWindows.js';
 
@@ -80,4 +80,30 @@ test('launching an app does not claim success when its existing window cannot be
   assert.equal(result.outcome, VerificationOutcome.VERIFIED_FAILURE);
   assert.match(result.error ?? '', /already open.*could not verify/i);
   assert.equal(result.evidence?.reusedExistingWindow, true);
+});
+
+test('unique expected-window selection returns the sole trusted match', () => {
+  const other: WindowInfo = { pid: 4200, processName: 'Explorer', title: 'File Explorer' };
+  const selection = selectUniqueExpectedAppWindow([other, notepad], {
+    windowMatch: { processNames: ['notepad'], titleContains: 'Notepad' },
+  });
+  assert.equal(selection.window?.pid, notepad.pid);
+  assert.equal(selection.matchCount, 1);
+});
+
+test('unique expected-window selection refuses ambiguous matches', () => {
+  const second: WindowInfo = { pid: 4101, processName: 'Notepad', title: 'draft.txt - Notepad' };
+  const selection = selectUniqueExpectedAppWindow([notepad, second], {
+    windowMatch: { processNames: ['notepad'], titleContains: 'Notepad' },
+  });
+  assert.equal(selection.window, undefined);
+  assert.equal(selection.matchCount, 2);
+});
+
+test('unique expected-window selection returns no target when nothing matches', () => {
+  const selection = selectUniqueExpectedAppWindow([], {
+    windowMatch: { processNames: ['notepad'], titleContains: 'Notepad' },
+  });
+  assert.equal(selection.window, undefined);
+  assert.equal(selection.matchCount, 0);
 });
