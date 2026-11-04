@@ -664,3 +664,14 @@ The earlier run also contained these failures; their fixes are in the branch his
 - A verified terminal response removes the card; non-terminal/unknown outcomes remain visible and cannot be mistaken for task completion.
 - Communication ambiguity is reported as unknown, with an explicit instruction to refresh task status before retrying. This avoids treating a possibly-consumed single-use approval as safely retryable.
 - Per current instruction, no tests or CI were run. Exact-head validation and MSI acceptance remain outstanding.
+
+## Development increment — task timeline and recovery review in HUD
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added a recent-task panel backed by the authenticated task-list API, with manual refresh and periodic refresh.
+- Timeline refreshes after new directives and approval decisions so the HUD can catch server-side state transitions instead of relying only on local messages.
+- Task cards expose safe status metadata and expandable workflow step summaries; raw task parameters and result payloads are not rendered.
+- Interrupted and recovery-pending tasks now expose the existing manual reconciliation endpoint. The owner can record `confirmed_no_effect`, `effect_observed`, or `still_unknown` with a required observation note.
+- Reconciliation is review/annotation only; the HUD does not retry, resume, or replay the task. Server-side ownership, authentication, durable-journal and note validation remain authoritative.
+- Per instruction, no tests or CI were run. UI and MSI acceptance remain outstanding.
