@@ -351,3 +351,16 @@ A story is done only when:
 - Completing, cancelling, muting or disposing transcription clears its timeout.
 - A stale timeout cannot change the state of a later capture.
 - Invalid transcription timeout configuration fails closed and allows a later fresh capture.
+
+### JARVIS-US-035 — Reuse and verify an already-open application
+**As the owner,** I want “open [application]” to bring an already-running application to the foreground when its window is uniquely identifiable, so that JARVIS does not create duplicate processes or report a launch that was not visibly completed.
+
+**Acceptance criteria**
+- Before spawning an allowlisted application, JARVIS takes a fresh visible-window snapshot.
+- If exactly one window matches the allowlisted process identity and title constraints, JARVIS focuses that exact PID.
+- Success is reported only when foreground focus is verified by Windows.
+- If focus fails, JARVIS reports failure and does not claim that the application is ready.
+- Multiple matching windows are never selected arbitrarily.
+- If no unique existing window is found, the normal allowlisted launch and post-launch verification path remains in effect.
+- Tests cover existing-window reuse and focus failure; target-Windows acceptance covers both already-open and cold-launch scenarios.
+
