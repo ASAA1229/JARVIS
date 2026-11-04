@@ -230,9 +230,18 @@ export class WindowsAppLauncherAdapter {
       let knownWindows: WindowInfo[] = [];
       try { knownWindows = await this.windows.snapshot(signal); } catch { /* verification will be PARTIAL */ }
       const knownPids = new Set(knownWindows.map((window) => window.pid));
-      const existingMatches = knownWindows.filter((window) => matchesExpectedAppWindow(window, app));
-      if (existingMatches.length === 1) {
-        const existing = existingMatches[0];
+      const existingSelection = selectUniqueExpectedAppWindow(knownWindows, app);
+      if (existingSelection.matchCount > 1) {
+        return {
+          success: true,
+          outcome: VerificationOutcome.PARTIAL_SUCCESS,
+          data: { appId: app.id, name: app.name, status: 'Already running; multiple matching windows found' },
+          evidence: { reusedExistingWindow: false, ambiguousWindowCount: existingSelection.matchCount, focusAttempted: false, duplicateLaunchPrevented: true },
+          error: 'Multiple existing windows match this application; JARVIS did not choose one or launch a duplicate.',
+        };
+      }
+      if (existingSelection.window) {
+        const existing = existingSelection.window;
         const focused = await this.windows.focusWindow({ pid: existing.pid }, signal);
         if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
           return {
