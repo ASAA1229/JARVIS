@@ -1022,8 +1022,11 @@ function handleTextSubmit() {
 
 async function submitDirective(text) {
   if (!currentSession) {
-    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before submitting directives.');
-    addFeedItem('failed', 'Directive not sent: no authenticated session.');
+    const message = 'Secure device enrollment is required before I can submit or execute directives. No action was sent.';
+    setAssistantState('SESSION UNAVAILABLE — DIRECTIVE NOT SENT', message);
+    addFeedItem('failed', message);
+    setPipeline({ sent: 'bad' }, 'No authenticated device session; the request never reached the policy gateway.');
+    speakResponse(message);
     return;
   }
   if (isSubmitting) return;
