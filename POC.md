@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Reviewed branch head:** `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`  
+**Latest development checkpoint:** `09b45366318ed27ee109b8635d56b0448c65b3c8` (includes the voice lifecycle hardening commits)  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 > This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
@@ -13,7 +13,7 @@ The `new` branch contains the following implementation areas. These are reposito
 
 - **Backend and security:** Node.js 24 / TypeScript modular monolith; signed device sessions and identity primitives; default-deny policy gateway; scoped approvals; audit-chain integrity and redaction; revocation and security-state persistence.
 - **Windows:** allowlisted app launch, foreground-window interaction, UI Automation-based control discovery/actions, clipboard and keyboard helpers, zoom, and system-information adapters. Universal application coverage and real application outcome verification are not complete.
-- **Voice/HUD:** browser companion/HUD, text and push-to-talk paths, consent controls, local wake-word runtime setup/integration, local TTS/STT adapters, and lifecycle/cancellation/retry hardening. The complete wake → capture → policy → execution → verified-result flow still requires MSI acceptance. Browser speech recognition may use a browser/vendor service after explicit consent.
+- **Voice/HUD:** browser companion/HUD, text and push-to-talk paths, consent controls, local wake-word runtime setup/integration, local TTS/STT adapters, and lifecycle/cancellation/retry hardening. The reusable `VoiceManager` now rejects overlapping capture/review sessions, uses generation-guarded bounded timeouts, keeps mute fail-closed, caps transcripts, and exposes explicit transcription completion. The complete wake → capture → policy → execution → verified-result flow still requires MSI acceptance. Browser speech recognition may use a browser/vendor service after explicit consent.
 - **Android/cross-device:** a native Android application and companion API/identity/queue code are present in the repository. This is not evidence of successful installation, independent enrollment, secure transport, revocation, or remote control on both physical phones.
 - **Workflow execution:** planner, scheduler, encrypted task journal, recovery states, and a human-reviewed reconciliation endpoint/panel are present. This is not an automatic resume engine; uncertain actions must never be replayed.
 - **Memory and conversation:** encrypted local personal-memory storage, authenticated conversational route, configurable OpenAI-compatible endpoint (local endpoint by default), and companion memory/schedule/notification UI foundations. Full semantic retrieval, cross-device conflict handling, verified deletion/retention, and robust unattended automation remain incomplete.
@@ -21,9 +21,10 @@ The `new` branch contains the following implementation areas. These are reposito
 
 ## Verification and evidence status
 
-- Branch head inspected: `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`.
-- The latest Actions run surfaced during this review was for an earlier `new` head (`51ae06426bfb8fd4779f3b46b0dade856e56cfec`) and concluded **failure**. It is not evidence about the current head.
-- No completed build/test/browser-smoke result for the exact reviewed head was established in this documentation pass.
+- Latest branch head observed after the voice changes: `09b45366318ed27ee109b8635d56b0448c65b3c8`.
+- Added focused unit coverage in `test/voice_manager.test.ts`; tests are **authored, not yet executed** in this environment.
+- The latest Actions runs surfaced for `new` are older commits and failed; no exact-head CI result is available. The workflow is configured for manual dispatch and PRs into `dev`, not every push to `new`.
+- Physical MSI voice, Windows UI, resource, and microphone acceptance remains outstanding.
 - Physical MSI voice, Windows UI, resource, and microphone acceptance is outstanding.
 - Both Android phones still require independent installation/enrollment/transport/revocation acceptance.
 - No production-readiness claim is made.
