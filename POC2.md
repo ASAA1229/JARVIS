@@ -72,6 +72,13 @@ Complete these phases in order; phase numbers organize existing work and do not 
 - [ ] Validate app launch, notifications, SMS/telephony capabilities and any accessibility-based automation against the actual Android versions and user-enabled permissions.
 - [ ] Keep remote access disabled until secure transport and end-to-end authorization are proven.
 
+### Android command-channel progress — 2026-11-05
+
+- Implemented explicit command expiry visibility and bounded retention for the existing read-only Android app-inventory channel.
+- Device revocation now cancels pending/claimed inventory commands involving that device (as requester or target), clears command results, and records an audit event.
+- Added queue regression tests for expiry visibility, cancellation, and post-cancellation completion rejection.
+- These changes do not close the Android epic: exact-head CI and two-physical-phone enrollment, revocation-isolation, HTTPS transport, and target-device acceptance are still required.
+
 ## P1 — Universal application and communications coverage
 
 The target is capability-based discovery for all installed and built-in apps on Windows and both Android phones. This is a staged goal, not a claim that all apps expose automation interfaces.
