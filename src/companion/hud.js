@@ -888,7 +888,10 @@ function startVoiceCapture(mode = 'push-to-talk') {
   try {
     speechRecognizer = createSpeechRecognizer(captureGeneration, mode);
     speechRecognizer.start();
-    void startAudioMeter();
+    // SpeechRecognition owns the microphone stream. Opening a second
+    // getUserMedia stream for the decorative level meter can trigger a second
+    // permission prompt or contend with the recognizer on Windows browsers.
+    // Keep the waveform in its honest “capturing / no level data” state.
     voiceTimeoutId = setTimeout(() => {
       if (!isListening || captureGeneration !== voiceCaptureGeneration) return;
       if (mode === 'wake') {
