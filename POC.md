@@ -256,3 +256,14 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Completion, cancellation, mute and disposal clear the transcription timer; generation checks prevent stale callbacks from affecting later captures.
 - Added regression tests for partial-text timeout, empty timeout recovery, completed-transcription timer cleanup and invalid timeout configuration.
 - Tests have been authored but not executed in this session; exact-head CI and Windows/browser runtime verification remain pending.
+
+## Development increment — voice directive session diagnostics
+
+**Implementation:** src/companion/hud.js, test/voice_hud.test.ts  
+**Status:** IMPLEMENTED / REGRESSION-TEST-AUTHORED / EXECUTION PENDING
+
+- When a wake/voice directive reaches the HUD without a restored authenticated device session, the HUD now reports that the directive was not sent, updates the pipeline as blocked before policy evaluation, adds a failure-feed entry, and speaks the reason where speech output is available.
+- This closes a silent-feedback gap: a wake acknowledgement must not be mistaken for successful command submission.
+- The planner maps explicit “open Notepad” requests to the existing app:launch operation. The server then applies policy and can require explicit approval; the HUD must show the approval card before launch.
+- Tests were extended to assert the unauthenticated-session feedback path. They are authored but have not been executed; exact-head CI and MSI acceptance remain pending.
+
