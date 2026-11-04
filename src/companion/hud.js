@@ -51,6 +51,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initWaveformCanvas();
   await ensureEnrolledDevice();
   pollStatus();
+  refreshTaskHistory();
+  setInterval(refreshTaskHistory, 15000);
   setInterval(pollStatus, 3000);
   setInterval(pollAudit, 4000);
 });
@@ -58,6 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
   const btnPtt = document.getElementById('btn-ptt');
   const btnSend = document.getElementById('btn-hud-send');
+  document.getElementById('btn-refresh-tasks')?.addEventListener('click', () => refreshTaskHistory());
   const textInput = document.getElementById('hud-text-input');
   const btnMute = document.getElementById('btn-toggle-mic-mute');
   const btnHandsFreeToggle = document.getElementById('btn-hands-free-toggle');
@@ -1428,6 +1431,159 @@ setInterval(() => {
   const speaking = String(isSpeaking);
   if (document.body.dataset.speaking !== speaking) document.body.dataset.speaking = speaking;
 }, 250);
+
+let taskHistoryRefreshInFlight = false;
+const RECOVERY_TASK_STATES = new Set(['AWAITING_RECOVERY', 'INTERRUPTED']);
+const TERMINAL_TASK_STATES = new Set(['COMPLETED', 'FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL']);
+
+async function refreshTaskHistory() {
+  const container = document.getElementById('hud-task-history');
+  const refreshButton = document.getElementById('btn-refresh-tasks');
+  if (!container || taskHistoryRefreshInFlight) return;
+  if (!currentSession || !window.JarvisDeviceCrypto?.signedFetch) {
+    container.textContent = 'Secure device session unavailable. Task history was not requested.';
+    return;
+  }
+
+  taskHistoryRefreshInFlight = true;
+  if (refreshButton) {
+    refreshButton.disabled = true;
+    refreshButton.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const response = await window.JarvisDeviceCrypto.signedFetch('/api/tasks', { method: 'GET' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Task history request failed (HTTP ' + response.status + ')');
+    const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    renderTaskHistory(tasks);
+  } catch (error) {
+    container.textContent = 'Task history unavailable: ' + (error instanceof Error ? error.message : 'Request failed');
+  } finally {
+    taskHistoryRefreshInFlight = false;
+    if (refreshButton) {
+      refreshButton.disabled = false;
+      refreshButton.removeAttribute('aria-busy');
+    }
+  }
+}
+
+function renderTaskHistory(tasks) {
+  const container = document.getElementById('hud-task-history');
+  if (!container) return;
+  container.replaceChildren();
+  if (!tasks.length) {
+    const empty = document.createElement('div');
+    empty.className = 'task-history-empty';
+    empty.textContent = 'No recent tasks for this device.';
+    container.appendChild(empty);
+    return;
+  }
+
+  // API returns at most 30 records scoped to this device (or owner-managed devices).
+  for (const task of tasks.slice().reverse()) {
+    const card = document.createElement('article');
+    card.className = 'task-history-card';
+    const header = document.createElement('div');
+    header.className = 'task-history-card-header';
+    const operation = document.createElement('strong');
+    operation.textContent = String(task.operation || 'Task');
+    const state = document.createElement('span');
+    state.className = 'task-history-state state-' + String(task.state || 'UNKNOWN').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    state.textContent = String(task.state || 'UNKNOWN').replaceAll('_', ' ');
+    header.append(operation, state);
+    const meta = document.createElement('div');
+    meta.className = 'task-history-meta';
+    const created = Number(task.updatedAt || task.createdAt);
+    meta.textContent = (Number.isFinite(created) && created > 0 ? new Date(created).toLocaleString() : 'Time unavailable') +
+      ' · ' + String(task.origin || 'unknown origin');
+    card.append(header, meta);
+
+    if (Array.isArray(task.steps) && task.steps.length) {
+      const steps = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Execution steps (' + task.steps.length + ')';
+      const list = document.createElement('ol');
+      list.className = 'task-history-steps';
+      for (const step of task.steps) {
+        const item = document.createElement('li');
+        const status = String(step.status || 'unknown').replaceAll('_', ' ');
+        item.textContent = status + (step.message ? ' — ' + String(step.message) : '');
+        list.appendChild(item);
+      }
+      steps.append(summary, list);
+      card.appendChild(steps);
+    }
+
+    if (RECOVERY_TASK_STATES.has(String(task.state))) {
+      card.appendChild(createTaskRecoveryControls(task.id));
+    }
+    container.appendChild(card);
+  }
+}
+
+function createTaskRecoveryControls(taskId) {
+  const form = document.createElement('form');
+  form.className = 'task-recovery-form';
+  const label = document.createElement('label');
+  label.textContent = 'Manual recovery review (does not retry or resume the task)';
+  const disposition = document.createElement('select');
+  disposition.required = true;
+  disposition.setAttribute('aria-label', 'Recovery decision');
+  for (const [value, text] of [
+    ['confirmed_no_effect', 'Confirmed: no effect occurred'],
+    ['effect_observed', 'Effect observed'],
+    ['still_unknown', 'Still unknown'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    disposition.appendChild(option);
+  }
+  const note = document.createElement('textarea');
+  note.required = true;
+  note.minLength = 8;
+  note.maxLength = 500;
+  note.rows = 2;
+  note.placeholder = 'Add an 8–500 character note describing what you observed.';
+  note.setAttribute('aria-label', 'Recovery review note');
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'hud-btn-mini';
+  submit.textContent = 'SAVE REVIEW';
+  const status = document.createElement('p');
+  status.className = 'task-recovery-status';
+  status.setAttribute('role', 'status');
+  label.appendChild(disposition);
+  form.append(label, note, submit, status);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    if (note.value.trim().length < 8) {
+      status.textContent = 'Please provide at least 8 characters of observation.';
+      return;
+    }
+    submit.disabled = true;
+    status.textContent = 'Submitting authenticated recovery review…';
+    try {
+      const response = await window.JarvisDeviceCrypto.signedFetch('/api/task/reconcile', {
+        method: 'POST',
+        body: { taskId, disposition: disposition.value, note: note.value.trim() },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.error || result.message || 'Recovery review was not confirmed');
+      }
+      status.textContent = 'Review saved. Task state: ' + String(result.state || 'updated') + '. No action was replayed.';
+      addFeedItem('pending', 'Manual recovery review recorded for task ' + taskId + ': ' + String(result.state || 'updated'));
+      await refreshTaskHistory();
+    } catch (error) {
+      status.textContent = 'Review not confirmed: ' + (error instanceof Error ? error.message : 'Request failed');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  return form;
+}
 
 function addFeedItem(type, message, details) {
   const feed = document.getElementById('hud-tasks-feed');
