@@ -211,3 +211,8 @@ The Windows app launcher now detects a unique existing allowlisted window and re
 ## E01/E02 implementation note — approval card single-use handling
 
 The HUD approval flow now guards each approval ID against concurrent resolution requests, disables both card actions while the signed request is in flight, and restores controls only when the request settles and the card remains present. Verified terminal outcomes remove the card; non-terminal/unknown outcomes remain visible and are labelled as not complete. Communication ambiguity is never described as success and instructs the operator to refresh task status before retrying. This is implementation-only; tests and device acceptance were not run.
+
+
+## E01/E03 implementation note — task history and recovery review surfaced in HUD
+
+The companion HUD now consumes the authenticated task-list endpoint and renders recent task state, operation, origin, timestamps, and expandable step summaries. It refreshes after directive/approval activity, periodically, and on demand. Tasks in `AWAITING_RECOVERY` or `INTERRUPTED` expose the existing signed manual reconciliation endpoint with the three supported dispositions and required observation note. The UI explicitly states that reconciliation does not replay or resume an action; server-side ownership, journal and validation checks remain authoritative. Implementation only; no tests or device validation were run.
