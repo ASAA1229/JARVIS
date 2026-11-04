@@ -89,7 +89,7 @@ export function selectUniqueExpectedAppWindow(
 
 export class WindowsAppLauncherAdapter {
   constructor(
-    private readonly windows: Pick<WindowsWindowManager, 'snapshot' | 'focusWindow'> = new WindowsWindowManager(),
+    private readonly windows: Pick<WindowsWindowManager, 'snapshot' | 'focusWindow' | 'waitForNewWindow'> = new WindowsWindowManager(),
   ) {}
 
   // Explicit allowlist of launchable applications
@@ -438,21 +438,63 @@ export class WindowsAppLauncherAdapter {
         return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: "Multiple applications matched '" + query + "'. Ask for the exact app name.", evidence: { query, candidates: matches.map((candidate) => candidate.Name) } };
       }
       const selected = matches[0];
-      let knownPids = new Set<number>();
-      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
+      let knownWindows: WindowInfo[] = [];
+      try { knownWindows = await this.windows.snapshot(signal); } catch { /* verification will be PARTIAL */ }
+      const knownPids = new Set(knownWindows.map((window) => window.pid));
+      const expectedIdentity = discoveredWindowIdentity(selected.Name);
+      if (expectedIdentity) {
+        const existing = selectUniqueExpectedAppWindow(knownWindows, { windowMatch: expectedIdentity });
+        if (existing.matchCount > 1) {
+          return {
+            success: true,
+            outcome: VerificationOutcome.PARTIAL_SUCCESS,
+            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; multiple matching windows found' },
+            evidence: { existingWindowDetected: true, ambiguousWindowCount: existing.matchCount, focusAttempted: false, duplicateLaunchPrevented: true },
+            error: 'Multiple existing windows match this application; JARVIS did not choose one or launch a duplicate.',
+          };
+        }
+        if (existing.window) {
+          const focused = await this.windows.focusWindow({ pid: existing.window.pid }, signal);
+          if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+            return {
+              ...focused,
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application is already open, but JARVIS could not verify its existing window was brought forward.',
+              evidence: { ...focused.evidence, existingWindowDetected: true, reusedExistingWindow: true },
+            };
+          }
+          return {
+            success: true,
+            outcome: VerificationOutcome.VERIFIED_SUCCESS,
+            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; existing window focused', windowPid: existing.window.pid, windowTitle: existing.window.title },
+            evidence: { existingWindowDetected: true, reusedExistingWindow: true, foregroundFocusVerified: true },
+          };
+        }
+      }
       await execFileAsync('explorer.exe', ['shell:AppsFolder\\' + selected.AppID], {
         timeout: 8_000, windowsHide: true, signal,
       });
       let newWindow: WindowInfo | undefined;
-      const expectedIdentity = discoveredWindowIdentity(selected.Name);
       if (expectedIdentity) {
         const deadline = Date.now() + 8_000;
         while (Date.now() < deadline && !signal?.aborted) {
           try {
             const windows = await this.windows.snapshot(signal);
-            newWindow = windows.find((window) =>
+            const freshWindows = windows.filter((window) =>
               !knownPids.has(window.pid) &&
               matchesExpectedAppWindow(window, { windowMatch: expectedIdentity }));
+            const selection = selectUniqueExpectedAppWindow(freshWindows, { windowMatch: expectedIdentity });
+            if (selection.matchCount > 1) {
+              return {
+                success: true,
+                outcome: VerificationOutcome.PARTIAL_SUCCESS,
+                data: { name: selected.Name, appId: selected.AppID, status: 'Launch requested; multiple matching windows appeared' },
+                evidence: { newWindowDetected: true, ambiguousWindowCount: selection.matchCount, focusAttempted: false },
+                error: 'Multiple new windows match this application; JARVIS cannot safely identify a single target.',
+              };
+            }
+            newWindow = selection.window;
           } catch { newWindow = undefined; }
           if (newWindow) break;
           await delay(400, undefined, { signal }).catch(() => undefined);
