@@ -1269,11 +1269,24 @@ function updateMuteControl() {
 
 function renderApprovalCard(approvalId, taskId, requestText, message) {
   const slot = document.getElementById('hud-approvals-slot');
-  document.getElementById('hud-no-approvals-hint').classList.add('hidden');
+  const emptyHint = document.getElementById('hud-no-approvals-hint');
+  if (!slot || !emptyHint || !approvalId) return;
 
-  const card = document.createElement('div');
+  // A retried response must not create duplicate controls for a single-use approval.
+  const existing = document.getElementById('hud-appr-' + approvalId);
+  if (existing) {
+    existing.querySelector('.hud-approval-description').textContent = String(message || '');
+    existing.focus();
+    return;
+  }
+
+  emptyHint.classList.add('hidden');
+  const card = document.createElement('section');
   card.className = 'hud-approval-card';
   card.id = 'hud-appr-' + approvalId;
+  card.tabIndex = -1;
+  card.setAttribute('role', 'region');
+  card.setAttribute('aria-label', 'Approval required for directive');
 
   const directive = document.createElement('div');
   directive.className = 'hud-approval-directive';
@@ -1289,17 +1302,20 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
   const approve = document.createElement('button');
   approve.className = 'hud-btn hud-btn-cyan';
   approve.textContent = 'CONFIRM & EXECUTE';
+  approve.setAttribute('aria-label', 'Confirm and execute this exact directive');
   approve.addEventListener('click', () => resolveHudApproval(approvalId, true));
 
   const reject = document.createElement('button');
   reject.className = 'hud-btn hud-btn-danger';
   reject.textContent = 'DENY';
+  reject.setAttribute('aria-label', 'Deny this exact directive');
   reject.addEventListener('click', () => resolveHudApproval(approvalId, false));
 
   actions.append(approve, reject);
   card.append(directive, description, actions);
   slot.appendChild(card);
   updateApprovalCountBadge();
+  card.focus();
 }
 
 async function resolveHudApproval(approvalId, approved) {
