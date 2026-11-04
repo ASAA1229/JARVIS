@@ -297,3 +297,15 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Controls are restored only after the request settles and only when the card remains present. Terminal task outcomes remove the card; an unknown/non-terminal outcome keeps it visible and is explicitly labelled as not complete.
 - Network/server ambiguity is not presented as success. The operator is told to refresh task status before retrying, because the server may already have consumed the single-use approval.
 - Development-only change. Automated tests and target-device checks were intentionally not run in this increment.
+
+## Development increment — HUD task history and manual recovery workflow
+
+**Implementation:** `src/companion/hud.html`, `src/companion/hud.js`, `src/companion/hud.css`  
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Connected the HUD to the authenticated `GET /api/tasks` endpoint. The recent-task panel refreshes on startup, after directive/approval resolution, on demand, and periodically while the HUD is open.
+- Task cards show operation, state, update time, origin, and expandable step status/message details. They do not display task parameters or execution result payloads.
+- `AWAITING_RECOVERY` and `INTERRUPTED` tasks expose a manual review form with the server-supported dispositions and an 8–500 character observation note.
+- Reconciliation uses the signed `POST /api/task/reconcile` route. The UI explicitly states that this records a human review only and does not retry or resume the original action.
+- Recovery controls are shown only for eligible task states. API authorization, task ownership, durable journal availability, and validation remain enforced server-side.
+- No tests, CI, or target-device validation were run for this development increment.
