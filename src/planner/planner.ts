@@ -383,7 +383,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     // Require an explicit launch verb: merely asking about an application must
     // never cause a state-changing app:launch operation.
     const launchIntent = /^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
-    const launchTarget = launchIntent?.[1]?.trim() ?? '';
+    const launchTarget = launchIntent?.[1]?.trim()
+      .replace(/[.!?,;:]+$/g, '')
+      .replace(/\\s+(?:please|for me)$/i, '')
+      .trim() ?? '';
     if (launchTarget && /^(?:notepad|note\s*pad)$/i.test(launchTarget)) {
       return {
         intent: 'Launch Notepad application',
@@ -429,9 +432,9 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    const genericOpen = requestText.match(/^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
-    if (genericOpen && genericOpen[1].trim()) {
-      const appName = genericOpen[1].trim();
+    const genericOpen = /^[A-Za-z0-9][A-Za-z0-9 ._+()\\-]{0,79}$/.test(launchTarget);
+    if (genericOpen && launchTarget) {
+      const appName = launchTarget;
       if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
         return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
       }
