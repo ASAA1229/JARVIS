@@ -568,3 +568,25 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   opacity: 0.55;
   cursor: wait;
 }
+
+
+/* Explicit task stop/cancel controls */
+.task-cancel-control {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 100, 100, 0.22);
+}
+.task-cancel-button {
+  justify-self: start;
+  border-color: rgba(255, 120, 120, 0.55);
+  color: #ffb0b0;
+}
+.task-cancel-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.task-cancel-control .task-recovery-status {
+  color: #ffc1a1;
+}
