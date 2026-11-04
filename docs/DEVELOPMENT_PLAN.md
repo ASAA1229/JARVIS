@@ -16,4 +16,4 @@ Use these documents as the source of truth for planning and delivery:
 5. Keep physical Windows/Android acceptance separate from hosted CI.
 6. Do not open unrelated epics until the existing epic exit gates are closed.
 
-**Current planning baseline:** branch `new`, reviewed head `bc362a6f3a608985480509c849411cd6dc15e7b4`, 2026-11-05. Overall project remains **IN PROGRESS / NOT RELEASE-READY**.
+**Current planning baseline:** branch `new`, reviewed head `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`, 2026-11-05. Overall project remains **IN PROGRESS / NOT RELEASE-READY**.
