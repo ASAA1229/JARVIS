@@ -235,3 +235,14 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Browser-based wake recognition now uses bounded exponential retry delays and pauses after five consecutive unsuccessful session endings, rather than repeatedly reopening the microphone.
 - A usable transcript resets the retry counter. Local wake-word detection remains separate; browser speech recognition still requires its explicit consent setting.
 - Runtime/browser acceptance testing has not been run; verify recovery, pause, resume, mute, and hidden-tab behavior on the target MSI before treating this as validated.
+
+## Development increment — safe application intent routing
+
+**Implementation commit:** `09b45366318ed27ee109b8635d56b0448c65b3c8`  
+**Status:** IMPLEMENTED / TEST-AUTHORED / CI PENDING
+
+- Changed the local planner so a known app name alone is not enough to create an `app:launch` operation; an explicit launch verb is required.
+- Added support for `open`, `launch`, `start`, `run` and `bring up` phrasing, including a leading Hey/Hello/Hi JARVIS wake phrase.
+- Kept known apps mapped to their allowlisted IDs and left generic app discovery on its existing policy/approval path.
+- Added regression cases for informational mentions and explicit voice-style launch commands.
+- Exact-head CI and real MSI voice-to-app execution have not yet been verified.
