@@ -647,3 +647,11 @@ The earlier run also contained these failures; their fixes are in the branch his
 - Remaining validation: confirm browser speech capture receives the command after local wake detection, confirm the signed /api/request call, inspect the approval card, approve it, and verify the Notepad window on the MSI.
 - Automated tests have not yet been run on the latest commit. Do not treat this increment as end-to-end verified.
 
+## Voice-to-app follow-up — already-open application handling
+
+**Status:** IMPLEMENTED / TEST-AUTHORED / VALIDATION PENDING
+
+- Fixed a launch-verification gap for apps that reuse an existing process/window: a unique matching existing window is now focused and verified instead of relying only on detecting a new PID.
+- Multiple matching windows are not selected arbitrarily. Focus failure is surfaced as failure, not success.
+- Added two focused regression tests. Still pending: run the full suite, exact-head CI, and test a cold launch plus already-open Notepad on the MSI.
+
