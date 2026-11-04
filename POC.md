@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Latest development checkpoint:** `09b45366318ed27ee109b8635d56b0448c65b3c8` (includes the voice lifecycle hardening commits)  
+**Latest code checkpoint:** `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9` (includes the voice lifecycle hardening commits)  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 > This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
