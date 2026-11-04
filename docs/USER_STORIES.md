@@ -340,3 +340,14 @@ A story is done only when:
 5. Security/privacy restrictions remain satisfied.
 6. POC.md, POC2.md and the relevant epic/story status are updated.
 7. No claim exceeds the evidence.
+
+### JARVIS-US-034 — Bounded transcription and recovery
+**As the owner,** I want stalled speech transcription to time out safely, so that voice input cannot remain locked indefinitely and partial text is never executed without review.
+
+**Acceptance criteria**
+- Transcription has a configurable, validated maximum duration independent of microphone capture duration.
+- A stalled transcription transitions to transcript review when partial text exists, otherwise returns to idle.
+- Partial transcripts are never automatically dispatched when the timeout fires.
+- Completing, cancelling, muting or disposing transcription clears its timeout.
+- A stale timeout cannot change the state of a later capture.
+- Invalid transcription timeout configuration fails closed and allows a later fresh capture.
