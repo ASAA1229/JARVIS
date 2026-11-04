@@ -152,6 +152,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /discardVoiceResult/);
     assert.match(jsText, /function hasSpeechConsent\(mode\)/);
     assert.match(jsText, /function revokeSpeechConsent\(mode\)/);
+    assert.match(jsText, /if \(activeVoiceCaptureMode !== mode\) return;/);
     assert.match(jsText, /pushToTalkConsent\?\.addEventListener\('change'/);
     assert.match(jsText, /wakeSpeechConsent\?\.addEventListener\('change'/);
     assert.match(jsText, /if \(!hasSpeechConsent\(mode\)\)\s*\{\s*revokeSpeechConsent\(mode\);/);
