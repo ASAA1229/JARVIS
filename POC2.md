@@ -620,3 +620,20 @@ Implemented on `new`: browser-based hands-free standby now checks visibility and
 - Kept known apps mapped to their allowlisted IDs and left generic app discovery on its existing policy/approval path.
 - Added regression cases for informational mentions and explicit voice-style launch commands.
 - Exact-head CI and real MSI voice-to-app execution have not yet been verified.
+
+## CI failure triage — remediation applied, rerun pending
+
+The latest surfaced JARVIS CI run (`41890545131`) is for an earlier commit, not the current branch head. Android build, dependency audit, TypeScript build and TypeScript check passed in that run; the automated suite failed.
+
+Remediation applied on `new`:
+- Removed a duplicated second copy of the artifact-integrity test suite that redeclared module-level constants.
+- Aligned the Piper WAV size-validation message with the test's size-specific diagnostic.
+- Corrected the rejection test to assert the documented initial `approved: false` state for a newly created approval.
+- Updated the HUD regression assertion to validate actual separation of final and interim speech-recognition segments rather than depending on a comment string.
+
+The earlier run also contained these failures; their fixes are in the branch history:
+- Voice capture timeout was cleared before transcription completion.
+- A test expected an obsolete HUD source comment; current source uses explicit `result.isFinal` and interim-result filtering.
+- The approval/recovery path now checks task state before resolving an approval.
+
+**Not yet verified:** no successful Actions run has been observed for the current `new` head. Do not mark JARVIS CI green until a fresh exact-head run completes.
