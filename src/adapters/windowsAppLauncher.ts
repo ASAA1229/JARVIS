@@ -252,7 +252,49 @@ export class WindowsAppLauncherAdapter {
           evidence: { pid, processName: app.processName, newWindowDetected: true, windowPid: appWindow.pid, mechanism: 'window snapshot before/after launch', timestamp: Date.now() },
         };
       }
-      // No new window: a process check alone cannot prove a usable window exists.
+      // The app may reuse an already-open process/window. Only focus when exactly
+      // one trusted window matches this allowlisted app identity.
+      if (app.windowMatch) {
+        try {
+          const existingMatches = (await this.windows.snapshot(signal))
+            .filter((window) => matchesExpectedAppWindow(window, app));
+          if (existingMatches.length === 1) {
+            const focused = await this.windows.focusWindow({ pid: existingMatches[0].pid }, signal);
+            if (focused.success && focused.outcome === VerificationOutcome.VERIFIED_SUCCESS) {
+              return {
+                success: true,
+                outcome: VerificationOutcome.VERIFIED_SUCCESS,
+                data: {
+                  appId: app.id,
+                  name: app.name,
+                  pid: existingMatches[0].pid,
+                  status: 'Existing application window focused',
+                  windowTitle: existingMatches[0].title,
+                },
+                evidence: {
+                  existingWindowReused: true,
+                  windowPid: existingMatches[0].pid,
+                  windowProcess: existingMatches[0].processName,
+                  mechanism: 'unique trusted app-window match + verified foreground focus',
+                },
+              };
+            }
+          } else if (existingMatches.length > 1) {
+            return {
+              success: true,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              data: { appId: app.id, name: app.name, status: 'Launch requested; multiple existing windows matched' },
+              evidence: { existingWindowReused: true, ambiguousWindowCount: existingMatches.length, focusAttempted: false },
+              error: 'Multiple existing windows match this application; JARVIS did not choose one to focus.',
+            };
+          }
+        } catch {
+          // A failed snapshot/focus must not be treated as launch verification.
+        }
+      }
+
+      // No uniquely verified usable window: a process check alone cannot prove
+      // that the user-visible application is ready for input.
       await delay(300, undefined, { signal });
       const isRunning = await this.verifyProcessRunning(app.processName, pid, signal);
 
