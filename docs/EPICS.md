@@ -188,3 +188,7 @@ Update the summary table and the relevant exit gate whenever implementation evid
 - CI run URL and exact commit, if available.
 - Device/environment evidence, if applicable.
 - Remaining blockers and owner action.
+
+## E02 implementation note — bounded transcription recovery
+
+The voice manager now has an independent transcription timeout and stale-callback guard. See JARVIS-US-034. Implementation and regression tests are present on `new`; execution, exact-head CI and target-MSI verification are still pending.
