@@ -192,3 +192,8 @@ Update the summary table and the relevant exit gate whenever implementation evid
 ## E02 implementation note — bounded transcription recovery
 
 The voice manager now has an independent transcription timeout and stale-callback guard. See JARVIS-US-034. Implementation and regression tests are present on `new`; execution, exact-head CI and target-MSI verification are still pending.
+
+## E02 implementation note — voice-to-app session feedback
+
+The HUD now visibly and audibly explains when a voice directive cannot be submitted because no authenticated device session is restored. The request is explicitly marked as not sent and the pipeline shows the session gate as failed. Regression assertions were added. This is not end-to-end voice-to-app completion: command capture, signed request, approval and Windows launch still require exact-head automated and MSI acceptance evidence.
+
