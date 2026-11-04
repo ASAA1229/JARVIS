@@ -309,3 +309,16 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Reconciliation uses the signed `POST /api/task/reconcile` route. The UI explicitly states that this records a human review only and does not retry or resume the original action.
 - Recovery controls are shown only for eligible task states. API authorization, task ownership, durable journal availability, and validation remain enforced server-side.
 - No tests, CI, or target-device validation were run for this development increment.
+
+
+## Development increment — task detail view and explicit recovery transitions
+
+**Implementation:** HUD task history and recovery review  \
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added an expandable task-detail view with an allowlist of safe metadata: task reference, operation, current state, origin, creation time, last update, and step status/message timeline.
+- Task parameters and result payloads remain excluded from the detail view.
+- Recovery submissions are guarded against duplicate in-flight requests for the same task.
+- Successful reconciliation now explains the selected disposition separately from the server-returned state. `effect_observed` is explicitly not described as independently verified completion; `still_unknown` remains unresolved; `confirmed_no_effect` is not replayed.
+- The task list is refreshed after a confirmed reconciliation and the outcome is recorded in the execution feed. No retry, resume, or replay behavior is introduced.
+- No tests, build, lint, CI, or target-device validation were run for this increment.
