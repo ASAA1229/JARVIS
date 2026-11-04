@@ -379,8 +379,12 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       return { intent: 'Copy selected text from the foreground application', operations: [{ operation: 'desktop:copy_selection', parameters: {}, justification: 'User explicitly requested copying the current selection' }], confidence: 0.82, explanation: 'Will copy the foreground selection after approval; clipboard data may be sensitive.' };
     }
 
-    // 2. Application launch requests
-    if (/\b(notepad|note\s*pad|notes)\b/.test(text)) {
+    // 2. Application launch requests.
+    // Require an explicit launch verb: merely asking about an application must
+    // never cause a state-changing app:launch operation.
+    const launchIntent = /^\s*(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
+    const launchTarget = launchIntent?.[1]?.trim() ?? '';
+    if (launchTarget && /^(?:notepad|note\s*pad)$/i.test(launchTarget)) {
       return {
         intent: 'Launch Notepad application',
         operations: [
@@ -395,7 +399,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(calc|calculator)\b/.test(text)) {
+    if (launchTarget && /^(?:calc|calculator)$/i.test(launchTarget)) {
       return {
         intent: 'Launch Calculator application',
         operations: [
@@ -410,7 +414,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(paint|draw)\b/.test(text)) {
+    if (launchTarget && /^paint$/i.test(launchTarget)) {
       return {
         intent: 'Launch Paint application',
         operations: [
@@ -425,7 +429,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    const genericOpen = requestText.match(/^\s*(?:please\s+)?open\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
+    const genericOpen = requestText.match(/^\s*(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
     if (genericOpen && genericOpen[1].trim()) {
       const appName = genericOpen[1].trim();
       if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
