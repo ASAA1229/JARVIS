@@ -245,3 +245,14 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - Kept known apps mapped to their allowlisted IDs and left generic app discovery on its existing policy/approval path.
 - Added regression cases for informational mentions and explicit voice-style launch commands.
 - Exact-head CI and real MSI voice-to-app execution have not yet been verified.
+
+## Development increment — bounded voice transcription lifecycle
+
+**Implementation:** `src/voice/voiceManager.ts`, `test/voice_manager.test.ts`  
+**Status:** IMPLEMENTED / TEST-AUTHORED / EXECUTION PENDING
+
+- Added a separate configurable transcription deadline (`maxTranscriptionDurationSeconds`, default 10 seconds), independent of microphone capture duration.
+- Stalled recognition now returns to idle when no text exists, or preserves partial text in confirmation state for explicit review.
+- Completion, cancellation, mute and disposal clear the transcription timer; generation checks prevent stale callbacks from affecting later captures.
+- Added regression tests for partial-text timeout, empty timeout recovery, completed-transcription timer cleanup and invalid timeout configuration.
+- Tests have been authored but not executed in this session; exact-head CI and Windows/browser runtime verification remain pending.
