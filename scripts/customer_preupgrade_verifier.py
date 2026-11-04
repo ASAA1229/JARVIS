@@ -52,12 +52,12 @@ def regular_file(path: Path, label: str) -> None:
 def safe_relative_path(raw: Any) -> str:
     if not isinstance(raw, str) or not raw or "\x00" in raw or "\\" in raw:
         raise VerificationError("Manifest contains an invalid relative file path")
-    value = PurePosixPath(raw)
-    if value.is_absolute() or any(part in ("", ".", "..") for part in value.parts):
+    segments = raw.split("/")
+    if raw.startswith("/") or any(part in ("", ".", "..") for part in segments):
         raise VerificationError(f"Unsafe manifest path: {raw!r}")
     if re.match(r"^[A-Za-z]:", raw):
         raise VerificationError(f"Absolute manifest path is not allowed: {raw!r}")
-    return value.as_posix()
+    return PurePosixPath(*segments).as_posix()
 
 
 def inventory(root: Path) -> dict[str, dict[str, Any]]:
