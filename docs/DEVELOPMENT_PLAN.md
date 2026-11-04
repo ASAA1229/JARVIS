@@ -16,4 +16,4 @@ Use these documents as the source of truth for planning and delivery:
 5. Keep physical Windows/Android acceptance separate from hosted CI.
 6. Do not open unrelated epics until the existing epic exit gates are closed.
 
-**Current planning baseline:** branch `new`, latest observed code checkpoint `09b45366318ed27ee109b8635d56b0448c65b3c8`, 2026-11-05. Voice lifecycle hardening is implemented; focused tests are authored but not yet executed. Overall project remains **IN PROGRESS / NOT RELEASE-READY**.
+**Current planning baseline:** branch `new`, latest code checkpoint `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`, 2026-11-05. Voice lifecycle hardening and HUD consent-revocation safeguards are implemented; focused tests are authored but not yet executed. Overall project remains **IN PROGRESS / NOT RELEASE-READY**.
