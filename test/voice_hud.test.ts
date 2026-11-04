@@ -150,6 +150,10 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /All voice modes are review-first/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /SESSION UNAVAILABLE — DIRECTIVE NOT SENT/);
+    assert.match(jsText, /A retried response must not create duplicate controls/);
+    assert.match(jsText, /card.setAttribute\('role', 'region'\)/);
+    assert.match(jsText, /card.focus\(\)/);
+    assert.match(jsText, /Confirm and execute this exact directive/);
     assert.match(jsText, /No authenticated device session; the request never reached the policy gateway/);
     assert.match(jsText, /speakResponse\\(message\\)/);
     assert.match(jsText, /15000/);
