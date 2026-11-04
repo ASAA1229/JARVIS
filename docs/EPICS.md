@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-05  
 **Planning branch:** `new`  
-**Baseline:** `bc362a6f3a608985480509c849411cd6dc15e7b4`  
+**Baseline:** `bb952c853a998e71d4ddc14ab73fdf5631f2c29a`  
 **Overall:** Existing epics remain open until their acceptance gates are met.
 
 This register organizes the epics already present in `POC2.md`; it does not introduce unrelated feature streams. Source code and authored tests are implementation evidence only. See [POC.md](../POC.md) for the implemented baseline, [POC2.md](../POC2.md) for the detailed work-left checklist, and [USER_STORIES.md](USER_STORIES.md) for story-level acceptance criteria.
