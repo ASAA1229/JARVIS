@@ -79,7 +79,9 @@ export function matchesExpectedAppWindow(
 }
 
 export class WindowsAppLauncherAdapter {
-  private readonly windows = new WindowsWindowManager();
+  constructor(
+    private readonly windows: Pick<WindowsWindowManager, 'snapshot' | 'focusWindow'> = new WindowsWindowManager(),
+  ) {}
 
   // Explicit allowlist of launchable applications
   private readonly allowlist: Map<string, AllowlistedApp> = new Map([
@@ -212,11 +214,32 @@ export class WindowsAppLauncherAdapter {
           interrupted: true,
         };
       }
-      // Snapshot existing windows so a launch can be verified by a window that did not
-      // exist before. Failure here (for example a locked desktop) only lowers the
-      // verification level; it never turns into a claimed success.
-      let knownPids = new Set<number>();
-      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
+      // Capture the current desktop once. Besides identifying new windows after
+      // launch, this lets "open Notepad" bring an already-open, unambiguous window
+      // forward instead of spawning a process that may hand off to an existing
+      // singleton and then fail the new-PID verification.
+      let knownWindows: WindowInfo[] = [];
+      try { knownWindows = await this.windows.snapshot(signal); } catch { /* verification will be PARTIAL */ }
+      const knownPids = new Set(knownWindows.map((window) => window.pid));
+      const existingMatches = knownWindows.filter((window) => matchesExpectedAppWindow(window, app));
+      if (existingMatches.length === 1) {
+        const existing = existingMatches[0];
+        const focused = await this.windows.focusWindow({ pid: existing.pid }, signal);
+        if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+          return {
+            ...focused,
+            success: false,
+            error: 'The application is already open, but JARVIS could not verify that its existing window was brought forward. ' + (focused.error || ''),
+            evidence: { ...focused.evidence, appId: app.id, reusedExistingWindow: true },
+          };
+        }
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: { appId: app.id, name: app.name, pid: existing.pid, status: 'Already running; existing window focused', windowPid: existing.pid, windowProcess: existing.processName, windowTitle: existing.title },
+          evidence: { appId: app.id, pid: existing.pid, processName: existing.processName, existingWindowDetected: true, reusedExistingWindow: true, mechanism: 'unique existing window snapshot and verified foreground focus', timestamp: Date.now() },
+        };
+      }
 
       // Spawn process detached, WITHOUT shell: true (preventing shell injection attacks)
       const child = spawn(app.executable, [], {
