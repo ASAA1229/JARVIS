@@ -55,7 +55,7 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 
 **Existing implementation areas:** HUD, push-to-talk, transcript review, local wake runtime setup/integration, optional local STT/TTS adapters, consent, cancellation and recognizer lifecycle hardening.
 
-**Development progress — 2026-11-05:** VoiceManager lifecycle hardening and focused regression tests have been added on `new`. Tests are not yet executed; target-device acceptance remains open.
+**Development progress — 2026-11-05:** VoiceManager lifecycle hardening and HUD consent-revocation guards have been added on `new`, with focused regression tests. Tests are not yet executed; target-device acceptance remains open.
 
 **Remaining outcomes**
 - Install and verify the local wake engine/model on the MSI.
