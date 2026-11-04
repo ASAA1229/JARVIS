@@ -180,6 +180,7 @@ pipeline {
               & tar -xzf $archivePath -C $downloadedPackageDir
               if ($LASTEXITCODE -ne 0) { throw "Failed to extract the downloaded Nexus package." }
               $artifactDir = $downloadedPackageDir
+              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
               $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
               $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
               if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
