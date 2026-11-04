@@ -406,3 +406,16 @@ A story is done only when:
 - `effect_observed` is not described as independently verified completion; `still_unknown` remains unresolved; `confirmed_no_effect` does not trigger replay.
 - Task history refreshes after a confirmed review, and the UI never retries, resumes, or replays the task.
 - Tests and target-device acceptance remain separate gates; implementation alone does not mark this story accepted.
+
+
+### JARVIS-US-039 — Stop a workflow and prevent dependent steps from running
+**As the owner,** I want to stop a running workflow or cancel a pending task from the companion HUD, so that no later dependent action starts after I request cancellation.
+
+**Acceptance criteria**
+- Executing tasks expose a stop/interruption control; created and approval-pending tasks expose cancellation.
+- Requests use the authenticated signed cancellation endpoint and enforce task ownership/owner permissions server-side.
+- Duplicate in-flight stop/cancel requests for the same task are suppressed.
+- An interrupted current operation is treated as uncertain because its external effect may already have occurred.
+- Remaining planned workflow steps are recorded as skipped and no later step is evaluated or executed.
+- The HUD distinguishes interruption from rollback and directs the owner to reconcile uncertain effects.
+- Tests, cancellation race/fault injection, and target-device acceptance remain separate gates.
