@@ -7,6 +7,8 @@ test('planner normalizes polite and punctuated common app launch requests', asyn
   const context = { requesterName: 'launch-phrasing-test', timestamp: Date.now() };
   const cases = [
     ['Open Notepad.', 'notepad'],
+    ['Hey Jarvis open Notepad', 'notepad'],
+    ['Hey Jarvis, open Notepad.', 'notepad'],
     ['Hey Jarvis, open Calculator please.', 'calc'],
     ['Run Paint for me', 'mspaint'],
   ] as const;
