@@ -267,3 +267,12 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - The planner maps explicit “open Notepad” requests to the existing app:launch operation. The server then applies policy and can require explicit approval; the HUD must show the approval card before launch.
 - Tests were extended to assert the unauthenticated-session feedback path. They are authored but have not been executed; exact-head CI and MSI acceptance remain pending.
 
+## Development increment — natural-language app launch normalization
+
+**Implementation:** `src/planner/planner.ts`, `test/planner-launch-phrasing.test.ts`  
+**Status:** IMPLEMENTED / TEST-AUTHORED / EXECUTION PENDING
+
+- Normalizes trailing punctuation and common polite suffixes ("please", "for me") before matching application launch intents.
+- Routes allowlisted Notepad, Calculator and Paint commands through their existing application IDs; generic app discovery remains constrained to the existing safe app-name character set and policy/approval flow.
+- Added regression cases for punctuated and polite launch phrasing.
+- No Windows application was launched during this code-only change. Tests, exact-head CI and MSI acceptance remain pending.
