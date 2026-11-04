@@ -206,3 +206,8 @@ Planner now strips trailing punctuation and common polite suffixes before resolv
 
 The Windows app launcher now detects a unique existing allowlisted window and requests verified foreground focus before attempting a new process spawn. This addresses singleton/reused-process behavior that could otherwise produce a launch acknowledgement without a newly observed PID. Multiple matches are not arbitrarily selected; failed focus is not reported as success. Regression tests were added but remain unexecuted pending CI and MSI validation.
 
+
+
+## E01/E02 implementation note — approval card single-use handling
+
+The HUD approval flow now guards each approval ID against concurrent resolution requests, disables both card actions while the signed request is in flight, and restores controls only when the request settles and the card remains present. Verified terminal outcomes remove the card; non-terminal/unknown outcomes remain visible and are labelled as not complete. Communication ambiguity is never described as success and instructs the operator to refresh task status before retrying. This is implementation-only; tests and device acceptance were not run.
