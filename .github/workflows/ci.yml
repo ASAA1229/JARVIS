@@ -1,0 +1,136 @@
+name: JARVIS CI
+
+on:
+  # Avoid an email-producing workflow run for every small implementation commit.
+  # Run manually during development, and automatically for reviewable PRs into dev.
+  workflow_dispatch:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PROJECT_NAME: JARVIS
+      GIT_COMMIT: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      REQUIRE_BUILD_PROVENANCE: 'true'
+      MANIFEST_IGNORE_PRIVATE_KEY: ${{ secrets.MANIFEST_IGNORE_PRIVATE_KEY }}
+      MANIFEST_IGNORE_PUBLIC_KEY: ${{ secrets.MANIFEST_IGNORE_PUBLIC_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Dependency security audit
+        run: npm audit --audit-level=moderate
+      - name: TypeScript build
+        run: npm run build
+      - name: TypeScript check
+        run: npm run lint
+      - name: Automated test suite
+        run: npm test
+      - name: Browser security smoke test
+        run: npm run test:browser
+      - name: Create and verify SHA-256 build manifest
+        shell: pwsh
+        run: |
+          tar -czf jarvis-build.tar.gz -C dist .
+          node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
+          node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
+          node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Package hashing failed.' }
+          node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Package checksum verification failed.' }
+          node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
+          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy creation failed.' }
+          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy hashing failed.' }
+          $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
+          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          if ($LASTEXITCODE -ne 0) { throw 'Customer release verification failed.' }
+          if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
+            $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
+            $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
+            try {
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
+              node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
+              node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
+              node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
+            } finally {
+              Remove-Item -Force $privatePath, $publicPath -ErrorAction SilentlyContinue
+            }
+          } else {
+            Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
+          }
+      - name: Upload verified build package and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-build-${{ github.run_number }}
+          path: |
+            jarvis-build.tar.gz
+            jarvis-manifest.json
+            jarvis-build.tar.gz.sha256
+            jarvis-manifest-ignore.json
+            jarvis-manifest-ignore.json.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload signed manifest-ignore policy
+        if: hashFiles('jarvis-manifest-ignore.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-policy-signature-${{ github.run_number }}
+          path: jarvis-manifest-ignore.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  android-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Assemble native Android companion
+        run: gradle -p android-app :app:assembleDebug
+      - name: Publish debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-android-companion-debug
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
