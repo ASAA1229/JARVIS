@@ -385,7 +385,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const launchIntent = /^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
     const launchTarget = launchIntent?.[1]?.trim()
       .replace(/[.!?,;:]+$/g, '')
-      .replace(/\\s+(?:please|for me)$/i, '')
+      .replace(/\s+(?:please|for me)$/i, '')
       .trim() ?? '';
     if (launchTarget && /^(?:notepad|note\s*pad)$/i.test(launchTarget)) {
       return {
@@ -432,7 +432,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    const genericOpen = /^[A-Za-z0-9][A-Za-z0-9 ._+()\\-]{0,79}$/.test(launchTarget);
+    const genericOpen = /^[A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}$/.test(launchTarget);
     if (genericOpen && launchTarget) {
       const appName = launchTarget;
       if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
