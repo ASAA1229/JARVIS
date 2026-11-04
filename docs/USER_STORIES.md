@@ -393,3 +393,16 @@ A story is done only when:
 - The UI clearly states that reconciliation is a human review/annotation and never retries, resumes, or replays the task.
 - API authentication, task ownership, durable journal availability, and input validation remain enforced by the server.
 - Tests and target-device acceptance are separate gates; implementation alone does not mark this story accepted.
+
+
+### JARVIS-US-038 — Inspect task details and understand recovery transitions
+**As the owner,** I want a dedicated expandable task-detail view and precise recovery feedback, so that I can understand a task's lifecycle and the meaning of a manual reconciliation decision without confusing observation with verified completion.
+
+**Acceptance criteria**
+- Each recent task exposes an expandable detail view containing task reference, operation, current state, origin, creation/update timestamps, and available step status/message history.
+- Only explicitly allowlisted metadata is displayed; raw task parameters and result payloads remain hidden.
+- Recovery review submission is protected against duplicate in-flight requests for the same task.
+- Successful reconciliation feedback names the selected disposition and displays the state returned by the server when available.
+- `effect_observed` is not described as independently verified completion; `still_unknown` remains unresolved; `confirmed_no_effect` does not trigger replay.
+- Task history refreshes after a confirmed review, and the UI never retries, resumes, or replays the task.
+- Tests and target-device acceptance remain separate gates; implementation alone does not mark this story accepted.
