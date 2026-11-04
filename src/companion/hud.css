@@ -526,3 +526,45 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   font-size: 0.68rem;
   overflow-wrap: anywhere;
 }
+
+
+/* Expandable task detail view and recovery outcome feedback */
+.task-history-detail {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(91, 203, 230, 0.18);
+  color: #9fc4d4;
+  font-size: 0.68rem;
+}
+.task-history-detail > summary {
+  color: var(--cyan);
+  cursor: pointer;
+  font: 700 0.64rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.task-history-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(5rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 0.3rem 0.55rem;
+  margin: 0.55rem 0;
+}
+.task-history-detail-grid dt {
+  color: var(--text-muted, #8fa9b8);
+}
+.task-history-detail-grid dd {
+  margin: 0;
+  color: var(--text-primary, #d9f5ff);
+  overflow-wrap: anywhere;
+}
+.task-history-step-heading {
+  margin: 0.65rem 0 0.25rem;
+  color: var(--cyan);
+  font: 700 0.62rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.task-recovery-form button:disabled,
+.task-recovery-form select:disabled,
+.task-recovery-form textarea:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
