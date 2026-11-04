@@ -427,3 +427,102 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   .hud-btn-mini { flex: 1 1 calc(50% - 8px); min-height: 40px; }
   .hud-plate { padding-inline: 12px; }
 }
+
+
+/* Recent task history and manual recovery review */
+.task-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.hud-task-history {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 30rem;
+  overflow: auto;
+  padding: 0.2rem 0.1rem 0.5rem;
+}
+.task-history-empty {
+  color: var(--text-muted, #8fa9b8);
+  font-size: 0.78rem;
+  padding: 0.65rem;
+}
+.task-history-card {
+  min-width: 0;
+  border: 1px solid rgba(91, 203, 230, 0.2);
+  border-radius: 0.45rem;
+  background: rgba(5, 19, 30, 0.62);
+  padding: 0.65rem;
+}
+.task-history-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-primary, #d9f5ff);
+  font-size: 0.78rem;
+}
+.task-history-state {
+  flex: 0 0 auto;
+  border: 1px solid rgba(130, 170, 190, 0.35);
+  border-radius: 2rem;
+  padding: 0.12rem 0.4rem;
+  color: #a9c4d1;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+.task-history-state.state-completed { color: #8ce9bb; border-color: rgba(80, 220, 150, 0.4); }
+.task-history-state.state-failed,
+.task-history-state.state-expired,
+.task-history-state.state-rejected,
+.task-history-state.state-cancelled { color: #ff9e9e; border-color: rgba(255, 100, 100, 0.4); }
+.task-history-state.state-awaiting_recovery,
+.task-history-state.state-interrupted,
+.task-history-state.state-partial { color: #ffd38a; border-color: rgba(255, 190, 90, 0.45); }
+.task-history-meta {
+  margin-top: 0.3rem;
+  color: var(--text-muted, #8fa9b8);
+  font-size: 0.67rem;
+  overflow-wrap: anywhere;
+}
+.task-history-card details {
+  margin-top: 0.45rem;
+  color: #9fc4d4;
+  font-size: 0.7rem;
+}
+.task-history-card summary { cursor: pointer; }
+.task-history-steps { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+.task-history-steps li { margin: 0.2rem 0; overflow-wrap: anywhere; }
+.task-recovery-form {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 190, 90, 0.25);
+}
+.task-recovery-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: #ffd38a;
+  font-size: 0.68rem;
+}
+.task-recovery-form select,
+.task-recovery-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(91, 203, 230, 0.35);
+  border-radius: 0.25rem;
+  background: rgba(1, 12, 20, 0.9);
+  color: #d9f5ff;
+  padding: 0.45rem;
+  font: inherit;
+  font-size: 0.72rem;
+}
+.task-recovery-form textarea { resize: vertical; }
+.task-recovery-status {
+  margin: 0;
+  color: #a9c4d1;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
