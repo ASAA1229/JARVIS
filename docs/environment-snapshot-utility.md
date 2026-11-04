@@ -44,7 +44,7 @@ renamed into place so an incomplete output is not presented as a completed snaps
 Run from repository root:
 
 ```sh
-python3 -m unittest tests.test_environment_snapshot -v
+python3 -m unittest discover -s tests -p 'test_environment_snapshot.py' -v
 ```
 
 AIX command execution must still be validated on an actual supported AIX host before
