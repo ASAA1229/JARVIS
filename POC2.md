@@ -655,3 +655,12 @@ The earlier run also contained these failures; their fixes are in the branch his
 - Multiple matching windows are not selected arbitrarily. Focus failure is surfaced as failure, not success.
 - Added two focused regression tests. Still pending: run the full suite, exact-head CI, and test a cold launch plus already-open Notepad on the MSI.
 
+
+## Development increment — approval card concurrency and outcome clarity
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- The HUD now prevents concurrent resolution requests for the same approval and disables the card controls during the request.
+- A verified terminal response removes the card; non-terminal/unknown outcomes remain visible and cannot be mistaken for task completion.
+- Communication ambiguity is reported as unknown, with an explicit instruction to refresh task status before retrying. This avoids treating a possibly-consumed single-use approval as safely retryable.
+- Per current instruction, no tests or CI were run. Exact-head validation and MSI acceptance remain outstanding.
