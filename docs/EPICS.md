@@ -216,3 +216,8 @@ The HUD approval flow now guards each approval ID against concurrent resolution 
 ## E01/E03 implementation note — task history and recovery review surfaced in HUD
 
 The companion HUD now consumes the authenticated task-list endpoint and renders recent task state, operation, origin, timestamps, and expandable step summaries. It refreshes after directive/approval activity, periodically, and on demand. Tasks in `AWAITING_RECOVERY` or `INTERRUPTED` expose the existing signed manual reconciliation endpoint with the three supported dispositions and required observation note. The UI explicitly states that reconciliation does not replay or resume an action; server-side ownership, journal and validation checks remain authoritative. Implementation only; no tests or device validation were run.
+
+
+## E01/E04 implementation note — task detail and recovery transition clarity
+
+Task history cards now include an expandable detail view with safe task metadata and step summaries, excluding raw parameters and result payloads. Manual reconciliation is guarded against duplicate in-flight submissions per task. Successful responses distinguish the chosen disposition from the server-returned state, with explicit language that an observed effect is not independently verified completion and no action is retried/resumed/replayed. Validation remains pending by instruction.
