@@ -140,7 +140,8 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /MICROPHONE UNAVAILABLE/);
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
-    assert.match(jsText, /finalized segments separate from interim hypotheses/);
+    assert.match(jsText, /if \(result\.isFinal\) finalTranscript \+=/);
+    assert.match(jsText, /filter\(\(result\) => !result\.isFinal\)/);
     assert.match(jsText, /Review or edit the recognized command, then select EXECUTE DIRECTIVE/);
     assert.match(jsText, /VOICE CONSENT REQUIRED/);
     assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);
