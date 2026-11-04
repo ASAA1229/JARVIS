@@ -12,6 +12,7 @@ let voiceTimeoutId = null;
 let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
 let isSubmitting = false;
+let activeVoiceCaptureMode = null;
 let isHandsFreeEnabled = false;
 let isWaitingForWakeCommand = false;
 let isSpeaking = false;
@@ -62,6 +63,8 @@ function setupEventListeners() {
   const btnMotion = document.getElementById('btn-toggle-motion');
   const btnHandsFree = document.getElementById('btn-hands-free');
   const btnSpeech = document.getElementById('btn-speech-output');
+  const pushToTalkConsent = document.getElementById('allow-browser-speech');
+  const wakeSpeechConsent = document.getElementById('allow-wake-browser-speech');
   const reactorCore = document.getElementById('reactor-core');
 
   // Click-to-toggle voice capture: a normal click must not stop recognition immediately.
@@ -69,6 +72,13 @@ function setupEventListeners() {
     if (isListening) stopVoiceCapture();
     else startVoiceCapture();
   };
+  pushToTalkConsent?.addEventListener('change', () => {
+    if (!pushToTalkConsent.checked) revokeSpeechConsent('push-to-talk');
+  });
+  wakeSpeechConsent?.addEventListener('change', () => {
+    if (!wakeSpeechConsent.checked) revokeSpeechConsent('wake');
+  });
+
   btnPtt.addEventListener('click', toggleVoiceCapture);
   reactorCore.addEventListener('click', toggleVoiceCapture);
   reactorCore.addEventListener('keydown', (e) => {
@@ -596,7 +606,12 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   };
 
   recognizer.onresult = (event) => {
-    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
+    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult) return;
+    if (!hasSpeechConsent(mode)) {
+      revokeSpeechConsent(mode);
+      return;
+    }
+    if (isMicMuted || isSpeaking) return;
     // Push-to-talk remains review-first; consented post-wake capture can dispatch
     // through the policy gateway. Keep finalized segments separate from interim
     // hypotheses to avoid duplicated words.
@@ -667,7 +682,13 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     // a capture's final transcript at most once so a wake command is never double-submitted.
     if (captureGeneration !== voiceCaptureGeneration || captureFinished) return;
     captureFinished = true;
+    if (!hasSpeechConsent(mode)) {
+      revokeSpeechConsent(mode);
+      return;
+    }
+    activeVoiceCaptureMode = null;
     isListening = false;
+    activeVoiceCaptureMode = null;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
       clearTimeout(voiceTimeoutId);
@@ -721,13 +742,19 @@ async function completeWakeCapture(command) {
   }
 
   if (command) {
+    if (!hasSpeechConsent('wake')) {
+      wakeCommandRetryCount = 0;
+      setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Post-wake browser speech consent was withdrawn before dispatch. No command was sent.');
+      scheduleHandsFreeRestart();
+      return;
+    }
     wakeCommandRetryCount = 0;
     setAssistantState('COMMAND RECEIVED', command);
     await submitDirective(command);
     return;
   }
 
-  if (handsFreeEnabled && !isMicMuted && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
+  if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
     wakeCommandRetryCount += 1;
     setAssistantState('READY FOR COMMAND', 'I heard the wake phrase. Please say your command now.');
     startVoiceCapture('wake');
@@ -853,15 +880,26 @@ function disableHandsFree() {
   setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped.');
 }
 
+function hasSpeechConsent(mode) {
+  const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
+  return document.getElementById(consentId)?.checked === true;
+}
+
+function revokeSpeechConsent(mode) {
+  if (activeVoiceCaptureMode !== mode || !isListening) return;
+  cancelVoiceCapture();
+  setAssistantState('VOICE CONSENT REVOKED — CAPTURE STOPPED', mode === 'wake'
+    ? 'Post-wake browser speech consent was withdrawn. Capture was cancelled and its transcript discarded; local wake detection may remain enabled.'
+    : 'Push-to-talk browser speech consent was withdrawn. Capture was cancelled and its transcript discarded.');
+}
+
 function startVoiceCapture(mode = 'push-to-talk') {
   if (isMicMuted) {
     setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute the microphone before starting voice capture.');
     return;
   }
   if (isListening) return;
-  const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
-  const browserSpeechConsent = document.getElementById(consentId);
-  if (!browserSpeechConsent || !browserSpeechConsent.checked) {
+  if (!hasSpeechConsent(mode)) {
     setAssistantState('VOICE CONSENT REQUIRED', mode === 'wake'
       ? 'Local wake detection succeeded, but post-wake browser speech consent is not enabled. Use push-to-talk or text input.'
       : 'Browser speech recognition may send captured audio to a vendor service. Check the one-session consent box before using push-to-talk, or use text input.');
@@ -883,6 +921,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
   document.getElementById('transcript-input').value = '';
   document.getElementById('transcript-box').classList.add('hidden');
   isListening = true;
+  activeVoiceCaptureMode = mode;
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
   const captureGeneration = ++voiceCaptureGeneration;
   try {
@@ -946,6 +985,7 @@ function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit 
 
 function cancelVoiceCapture() {
   isListening = false;
+  activeVoiceCaptureMode = null;
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
   discardVoiceResult = true;
   voiceCaptureGeneration++;
