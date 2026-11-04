@@ -115,10 +115,19 @@ export class VoiceManager {
     this.currentTranscript = text.trim().slice(0, MAX_TRANSCRIPT_LENGTH);
   }
 
-  /** Moves an active capture into transcription without extending its deadline. */
+  /** Ends microphone capture and marks the bounded transcript-processing phase. */
   public beginTranscription(): boolean {
     if (this.isMuted || this.state !== SpeechState.LISTENING) return false;
+    this.clearCaptureTimeout();
+    this.captureGeneration += 1;
     this.state = SpeechState.TRANSCRIBING;
+    return true;
+  }
+
+  /** Completes transcription and makes the recognized text available for review. */
+  public finishTranscription(): boolean {
+    if (this.isMuted || this.state !== SpeechState.TRANSCRIBING) return false;
+    this.state = this.currentTranscript ? SpeechState.CONFIRMING : SpeechState.IDLE;
     return true;
   }
 
