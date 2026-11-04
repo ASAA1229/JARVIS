@@ -13,6 +13,8 @@ let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
 let isSubmitting = false;
 let activeVoiceCaptureMode = null;
+// Prevent duplicate submissions for a single-use approval.
+const approvalResolutionsInFlight = new Set();
 let isHandsFreeEnabled = false;
 let isWaitingForWakeCommand = false;
 let isSpeaking = false;
@@ -1295,13 +1297,24 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
 }
 
 async function resolveHudApproval(approvalId, approved) {
-  const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
-  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
-
+  // Approval records are single-use. Ignore rapid duplicate clicks while the
+  // signed request is in flight, rather than sending competing resolutions.
+  if (approvalResolutionsInFlight.has(approvalId)) return;
+  const card = document.getElementById('hud-appr-' + approvalId);
+  if (!card) return;
   if (!currentSession) {
     setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before approvals can be submitted.');
     return;
   }
+
+  approvalResolutionsInFlight.add(approvalId);
+  const controls = Array.from(card.querySelectorAll('button'));
+  controls.forEach((button) => {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+  });
+  const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
+  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
@@ -1309,18 +1322,13 @@ async function resolveHudApproval(approvalId, approved) {
       body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
-    }
-    if (!approved && result.success !== true) {
-      throw new Error(result.message || result.error || 'Server did not confirm the rejection');
-    }
+    if (!res.ok) throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
 
     if (!approved) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      if (result.success !== true) throw new Error(result.message || result.error || 'Server did not confirm the rejection');
+      card.remove();
       updateApprovalCountBadge();
-      setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
+      setAssistantState('DIRECTIVE REJECTED', result.message || 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
       setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
       speakResponse('The directive was rejected.');
@@ -1329,31 +1337,39 @@ async function resolveHudApproval(approvalId, approved) {
 
     if (result.state === 'COMPLETED' && result.success === true &&
         result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
       speakResponse(result.message || 'The approved task completed and was verified.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      card.remove();
       updateApprovalCountBadge();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
       speakResponse(result.message || 'The approved task did not complete.');
     } else {
+      // An accepted approval is not proof of execution. Keep the pending card
+      // available while the task's terminal state remains unknown.
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
-      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified. Refresh task status before relying on it.');
     }
   } catch (err) {
     setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
-    addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
-    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify before retrying.');
+    addFeedItem('failed', 'Approval state could not be confirmed. Refresh task status before retrying.');
+    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify task status before retrying.');
     speakResponse(err instanceof Error ? err.message : 'Approval status could not be confirmed.');
+  } finally {
+    approvalResolutionsInFlight.delete(approvalId);
+    if (card.isConnected) {
+      controls.forEach((button) => {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      });
+    }
   }
 }
 
