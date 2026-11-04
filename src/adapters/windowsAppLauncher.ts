@@ -439,9 +439,21 @@ export class WindowsAppLauncherAdapter {
       }
       const selected = matches[0];
       let knownWindows: WindowInfo[] = [];
-      try { knownWindows = await this.windows.snapshot(signal); } catch { /* verification will be PARTIAL */ }
+      let initialSnapshotVerified = false;
+      try {
+        knownWindows = await this.windows.snapshot(signal);
+        initialSnapshotVerified = true;
+      } catch { /* do not launch a known app when existing-window state is unknown */ }
       const knownPids = new Set(knownWindows.map((window) => window.pid));
       const expectedIdentity = discoveredWindowIdentity(selected.Name);
+      if (expectedIdentity && !initialSnapshotVerified) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'JARVIS could not inspect existing windows, so it did not launch the discovered application.',
+          evidence: { appId: selected.AppID, existingWindowStateKnown: false, launchPrevented: true },
+        };
+      }
       if (expectedIdentity) {
         const existing = selectUniqueExpectedAppWindow(knownWindows, { windowMatch: expectedIdentity });
         if (existing.matchCount > 1) {
