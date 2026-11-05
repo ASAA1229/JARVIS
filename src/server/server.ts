@@ -540,37 +540,6 @@ export class JarvisServer {
           ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
           : [];
 
-        // Specialized advisory profiles are invoked only after signed-request authentication.
-        // Their output is data only; all state-changing requests continue to JarvisCoreService.
-        const agentRoute = routeAgentRequest(text.trim());
-        if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
-          const adapter = createConfiguredAgentModelAdapter();
-          if (adapter) {
-            const agentResult = await runAgent({
-              request: text.trim(),
-              profile: agentRoute.profile,
-              context: conversationMemory.map((item) => ({ label: item.category, content: item.content })),
-            }, adapter);
-            if (agentResult.status === 'completed') {
-              const response = agentResult.response;
-              const message = 'summary' in response
-                ? response.summary
-                : 'goal' in response
-                  ? response.goal + (response.steps.length ? '\\n' + response.steps.map((step, index) => (index + 1) + '. ' + step.title + ': ' + step.description).join('\\n') : '')
-                  : 'candidates' in response
-                    ? response.candidates.map((candidate) => candidate.toolId + ': ' + candidate.rationale).join('\\n') || 'No supported tool was identified.'
-                    : 'The agent completed the request.';
-              this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, auth.device.id);
-              return this.jsonResponse(res, 200, {
-                state: 'ANSWERED',
-                message,
-                data: { kind: 'agent', profile: agentResult.profile, response },
-              });
-            }
-            this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', { profile: agentRoute.profile, status: agentResult.status }, auth.device.id);
-          }
-        }
-
         // Do not allocate conversation state for commands routed to the execution planner.
         if (isActionRequest(text.trim())) {
           const result = await this.jarvis.submitRequest(sessionId, text.trim());
@@ -580,6 +549,46 @@ export class JarvisServer {
         return await this.conversationSessions.runExclusive(lockId, async () => {
           const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
           if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
+
+          // Advisory agents share the same device-bound conversation thread and lock.
+          // Only a small recent slice is supplied as untrusted context; it never grants tool authority.
+          const agentRoute = routeAgentRequest(text.trim());
+          if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
+            const adapter = createConfiguredAgentModelAdapter();
+            if (adapter) {
+              const recentHistory = conversation.history.slice(-3).map((message) => ({
+                label: 'conversation_' + message.role,
+                content: message.content,
+              }));
+              const agentResult = await runAgent({
+                request: text.trim(),
+                profile: agentRoute.profile,
+                context: [
+                  ...conversationMemory.map((item) => ({ label: item.category, content: item.content })),
+                  ...recentHistory,
+                ].slice(0, 8),
+              }, adapter);
+              if (agentResult.status === 'completed') {
+                const response = agentResult.response;
+                const message = 'summary' in response
+                  ? response.summary
+                  : 'goal' in response
+                    ? response.goal + (response.steps.length ? '\\n' + response.steps.map((step, index) => (index + 1) + '. ' + step.title + ': ' + step.description).join('\\n') : '')
+                    : 'candidates' in response
+                      ? response.candidates.map((candidate) => candidate.toolId + ': ' + candidate.rationale).join('\\n') || 'No supported tool was identified.'
+                      : 'The agent completed the request.';
+                this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), message);
+                this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, auth.device.id);
+                return this.jsonResponse(res, 200, {
+                  state: 'ANSWERED',
+                  message,
+                  data: { kind: 'agent', profile: agentResult.profile, conversationId: conversation.id, response },
+                });
+              }
+              this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', { profile: agentRoute.profile, status: agentResult.status }, auth.device.id);
+            }
+          }
+
           const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
           if (conversationalResult) {
             if (conversationalResult.persistInHistory) {
