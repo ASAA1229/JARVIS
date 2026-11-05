@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-05  
 **Planning branch:** `new`  
-**Latest code checkpoint:** `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`  
+**Latest code checkpoint:** `3a05cd087eb53cf32fd0d090b583646eaccd4962`  
 **Overall:** Existing epics remain open until their acceptance gates are met.
 
 This register organizes the epics already present in `POC2.md`; it does not introduce unrelated feature streams. Source code and authored tests are implementation evidence only. See [POC.md](../POC.md) for the implemented baseline, [POC2.md](../POC2.md) for the detailed work-left checklist, and [USER_STORIES.md](USER_STORIES.md) for story-level acceptance criteria.
