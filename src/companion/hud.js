@@ -12,6 +12,8 @@ let voiceTimeoutId = null;
 let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
 let isSubmitting = false;
+// Keep one conversational thread active for this HUD page session.
+let activeConversationId = null;
 let activeVoiceCaptureMode = null;
 // Prevent duplicate submissions for a single-use approval.
 const approvalResolutionsInFlight = new Set();
@@ -1136,10 +1138,13 @@ async function submitDirective(text) {
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      body: { text },
+      body: { text, ...(activeConversationId ? { conversationId: activeConversationId } : {}) },
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
+    if (data.data?.kind === 'conversation' && typeof data.data.conversationId === 'string') {
+      activeConversationId = data.data.conversationId;
+    }
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
     refreshTaskHistory(); // Keep the task timeline aligned with the server's authoritative state.
     if (data.state === 'ANSWERED') {
