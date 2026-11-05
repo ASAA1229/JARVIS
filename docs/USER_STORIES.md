@@ -1,6 +1,7 @@
 # JARVIS — User Stories and Acceptance Criteria
 
-**Updated:** 2026-11-05  
+**Updated:** 2026-11-05
+**Latest planning checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac` on branch `new`  
 **Planning branch:** `new`  
 **Status convention:** Stories are **OPEN** until their acceptance criteria are evidenced. Existing source code may partially satisfy a story; that does not make it accepted.
 
@@ -432,3 +433,88 @@ A story is done only when:
 - If the approval checkpoint fails, execution is blocked and the task remains in recovery; the approval is invalidated where possible.
 - Concurrent/stale approval, rejection, cancellation and revocation requests cannot move a task backwards into an executable state.
 - Tests, fault injection and target-device acceptance remain separate gates; implementation alone does not mark this story accepted.
+
+## Additional AI-agent and conversation stories — JARVIS-E07
+
+### JARVIS-US-041 — Use versioned role-separated prompts
+**As the owner,** I want JARVIS to construct prompts using explicit system, developer and user roles with versioned templates, so that agent behavior is consistent, reviewable and safely maintainable.
+
+**Acceptance criteria**
+- Each supported prompt has a stable identifier, explicit version and declared message roles.
+- System instructions, application/developer rules and user/task data remain separate.
+- Required template variables are validated; missing or unexpected variables fail safely.
+- User content, conversation history, retrieved memory and tool results are treated as untrusted data, never as instructions that override higher-priority policy.
+- Prompt changes are traceable to a version; no hidden reasoning or secrets are exposed in outputs or logs.
+
+### JARVIS-US-042 — Validate structured agent responses
+**As the owner,** I want each agent profile to return a strict, machine-readable response contract, so that malformed or unexpected model output cannot flow into JARVIS workflows.
+
+**Acceptance criteria**
+- Each profile has a versioned schema with required fields, types, bounds and no undeclared properties where strictness is required.
+- Responses are parsed and validated locally before use.
+- Invalid, refused, oversized or incomplete output is rejected or handled through a safe fallback.
+- Confidence, clarification and safety fields have documented semantics.
+- Raw model text is never treated as an executable instruction.
+
+### JARVIS-US-043 — Route requests to the appropriate advisory agent
+**As the owner,** I want JARVIS to route planning, tool-selection, summarization and developer-assistance requests to the appropriate agent profile, so that each task receives focused behavior.
+
+**Acceptance criteria**
+- Routing is deterministic, bounded and observable through safe metadata.
+- Ambiguous requests ask for clarification or use a safe general response.
+- Advisory agents cannot call desktop/device adapters or perform state changes.
+- Requests with execution intent continue through the existing planner and policy gateway.
+- Agent timeout, unavailable model and invalid output produce an honest fallback without bypassing authorization.
+
+### JARVIS-US-044 — Prefer local AI inference and gate remote providers
+**As the owner,** I want local inference to be the default and remote AI to require explicit configuration, so that routine assistance does not incur mandatory cloud cost or disclose personal context unexpectedly.
+
+**Acceptance criteria**
+- Local endpoint and model selection are explicit and configurable.
+- Remote endpoints remain blocked unless the owner deliberately enables them.
+- Remote requests receive only task-authorized, minimum-necessary context.
+- API keys are supplied through local environment configuration and never committed or returned.
+- Timeout, refusal, network failure and unavailable-model cases fail safely without pretending a model response was generated.
+
+### JARVIS-US-045 — Maintain bounded device-isolated conversation history
+**As the owner,** I want JARVIS to preserve recent conversation turns for continuity while isolating sessions by authenticated device, so that follow-up requests have relevant context without unbounded retention.
+
+**Acceptance criteria**
+- A conversation session is bound to the authenticated device identity.
+- History contains only visible user and assistant turns; system/developer prompts and hidden reasoning are excluded.
+- Message count, individual message size, total history size and session lifetime are bounded.
+- History trimming preserves complete user/assistant turns.
+- Session expiry, capacity eviction and device revocation cannot expose another device's conversation.
+- Clear-conversation requests are authenticated, ownership-checked and serialized against in-flight messages.
+
+### JARVIS-US-046 — Preserve conversation ordering and truthful persistence
+**As the owner,** I want concurrent messages to be processed in order and fallback responses handled honestly, so that conversation context is not corrupted or misleading.
+
+**Acceptance criteria**
+- Requests for the same conversation are serialized.
+- Clearing a conversation cannot race with an in-flight turn and recreate stale history.
+- Only responses eligible for persistence are appended to history.
+- Model-unavailable/configuration fallbacks are not stored as if they were substantive assistant answers.
+- Session limits and eviction are enforced without leaking locks or unbounded state.
+
+### JARVIS-US-047 — Validate tool-selection candidates against trusted capabilities
+**As the owner,** I want tool-selection agents to choose only capabilities that JARVIS actually supports, so that invented or restricted tool names cannot enter an execution plan.
+
+**Acceptance criteria**
+- Every candidate identifier resolves to the authoritative capability catalogue.
+- Unknown and restricted capabilities are rejected.
+- Risk, approval requirements, platform support and device-agent requirements are sourced from the server-side catalogue, not trusted from model output.
+- Candidate selection remains advisory and does not itself invoke a capability.
+- Final execution still requires planner validation and policy-gateway authorization.
+
+### JARVIS-US-048 — Validate task-plan dependency graphs
+**As the owner,** I want generated task plans to have valid dependency graphs, so that workflows cannot contain missing references, cycles or ambiguous ordering.
+
+**Acceptance criteria**
+- Step identifiers are unique and dependencies reference existing steps.
+- Self-dependencies and duplicate dependencies are rejected.
+- Cycles are rejected and valid plans have a deterministic topological order.
+- A plan marked ready contains at least one actionable step.
+- Plan size, step descriptions and dependency counts are bounded.
+- Generated plans remain proposals until reviewed and authorized by the execution pipeline.
+
