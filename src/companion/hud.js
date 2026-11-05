@@ -1142,7 +1142,7 @@ async function submitDirective(text) {
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
-    if (data.data?.kind === 'conversation' && typeof data.data.conversationId === 'string') {
+    if (typeof data.data?.conversationId === 'string') {
       activeConversationId = data.data.conversationId;
     }
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
