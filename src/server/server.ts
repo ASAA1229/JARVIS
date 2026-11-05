@@ -692,7 +692,19 @@ export class JarvisServer {
         const tasks = this.jarvis.listTasks()
           .filter((task) => manager || task.deviceId === auth.device!.id)
           .slice(-30)
-          .map((task) => ({ id: task.id, state: task.state, operation: task.operation, origin: task.origin, createdAt: task.createdAt, updatedAt: task.updatedAt, steps: task.steps || [] }));
+          .map((task) => ({
+            id: task.id,
+            state: task.state,
+            operation: task.operation,
+            origin: task.origin,
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            steps: task.steps || [],
+            // Only expose the exact directive and single-use approval token while consent is pending.
+            ...(task.state === TaskState.AWAITING_APPROVAL && task.approvalId
+              ? { approvalId: task.approvalId, requestText: task.requestText }
+              : {}),
+          }));
         return this.jsonResponse(res, 200, { tasks });
       }
 
