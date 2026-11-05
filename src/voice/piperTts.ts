@@ -60,7 +60,7 @@ export class PiperTtsProvider {
     if (!normalized || normalized.length > 1200) {
       throw new Error('Speech text must contain 1–1200 characters.');
     }
-    if (/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(normalized)) {
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(normalized)) {
       throw new Error('Speech text contains unsupported control characters.');
     }
 
@@ -128,7 +128,7 @@ export class PiperTtsProvider {
         }
         resolve(audio);
       });
-      child.stdin.end(normalized + '\\n');
+      child.stdin.end(normalized + '\n');
     });
   }
 }
