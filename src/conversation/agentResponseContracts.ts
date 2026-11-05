@@ -189,10 +189,12 @@ export function parseTaskPlanResponse(value: unknown): TaskPlanResponse | null {
     && isText(step.id, 40) && isText(step.title, 160) && isText(step.description, 1200)
     && isTextList(step.dependencies, 30, 40)
     && typeof step.approvalRequired === 'boolean'
-    && ['low', 'medium', 'high'].includes(String(step.risk)));
+    && ['low', 'medium', 'high'].includes(String(step.risk))
+    // Medium- and high-risk proposals must visibly request owner approval.
+    && (step.risk === 'low' || step.approvalRequired === true));
   if (!validSteps || !hasValidPlanDependencies(value.steps) ||
     !isQuestion(value.clarification) || !isConfidence(value.confidence)) return null;
-  if (value.status === 'ready' && value.steps.length === 0) return null;
+  if (value.status === 'ready' && (value.steps.length === 0 || value.clarification !== null)) return null;
   if (value.status === 'needs_clarification' && !value.clarification) return null;
   if (value.status === 'unsupported' && value.steps.length) return null;
   return value as unknown as TaskPlanResponse;
