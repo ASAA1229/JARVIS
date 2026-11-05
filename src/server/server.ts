@@ -624,7 +624,15 @@ export class JarvisServer {
                   },
                 });
               }
-              this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', { profile: agentRoute.profile, status: agentResult.status }, auth.device.id);
+              this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', {
+                profile: agentRoute.profile,
+                status: agentResult.status,
+                failureCode: agentResult.status === 'invalid_response' || agentResult.status === 'unavailable'
+                  ? agentResult.failureCode
+                  : 'unexpected_agent_route',
+                requestLength: text.trim().length,
+                contextItemCount: Math.min(8, conversationMemory.length + recentHistory.length),
+              }, auth.device.id);
             }
           }
 
