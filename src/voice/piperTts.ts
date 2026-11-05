@@ -55,7 +55,7 @@ export function validatePiperWav(audio: Buffer): string | undefined {
 export class PiperTtsProvider {
   constructor(private readonly config: PiperConfig) {}
 
-  async synthesize(text: string): Promise<Buffer> {
+  async synthesize(text: string, signal?: AbortSignal): Promise<Buffer> {
     const normalized = text.trim();
     if (!normalized || normalized.length > 1200) {
       throw new Error('Speech text must contain 1–1200 characters.');
@@ -63,6 +63,8 @@ export class PiperTtsProvider {
     if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(normalized)) {
       throw new Error('Speech text contains unsupported control characters.');
     }
+
+    if (signal?.aborted) throw new Error('Local speech generation was cancelled.');
 
     const child = spawn(this.config.executable, ['--model', this.config.model, '--output_file', '-'], {
       shell: false,
@@ -77,7 +79,11 @@ export class PiperTtsProvider {
     let settled = false;
 
     return await new Promise<Buffer>((resolve, reject) => {
-      const cleanup = (): void => clearTimeout(timer);
+      const onAbort = (): void => fail(new Error('Local speech generation was cancelled.'));
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      };
       const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
@@ -89,6 +95,7 @@ export class PiperTtsProvider {
         fail(new Error('Local speech generation timed out.'));
       }, timeoutMs);
 
+      signal?.addEventListener('abort', onAbort, { once: true });
       child.stdout.on('data', (chunk: Buffer) => {
         if (settled) return;
         stdoutBytes += chunk.length;
