@@ -124,6 +124,46 @@ export class WindowsAppLauncherAdapter {
         windowMatch: { processNames: ['mspaint'], titleContains: 'Paint' },
       },
     ],
+    [
+      'explorer',
+      {
+        id: 'explorer',
+        name: 'File Explorer',
+        executable: 'explorer.exe',
+        processName: 'explorer.exe',
+        windowMatch: { processNames: ['explorer'], titleContains: 'File Explorer' },
+      },
+    ],
+    [
+      'taskmgr',
+      {
+        id: 'taskmgr',
+        name: 'Task Manager',
+        executable: 'taskmgr.exe',
+        processName: 'Taskmgr.exe',
+        windowMatch: { processNames: ['taskmgr'], titleContains: 'Task Manager' },
+      },
+    ],
+    [
+      'cmd',
+      {
+        id: 'cmd',
+        name: 'Command Prompt',
+        executable: 'cmd.exe',
+        processName: 'cmd.exe',
+        windowMatch: { processNames: ['cmd'], titleContains: 'Command Prompt' },
+      },
+    ],
+    [
+      'powershell',
+      {
+        id: 'powershell',
+        name: 'PowerShell',
+        executable: 'powershell.exe',
+        processName: 'powershell.exe',
+        windowMatch: { processNames: ['powershell'], titleContains: 'Windows PowerShell' },
+      },
+    ],
   ]);
 
   /**
