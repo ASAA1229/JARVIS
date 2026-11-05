@@ -11,7 +11,7 @@ const expectedProcessStore = new AsyncLocalStorage<string | undefined>();
 const execFileAsync = promisify(execFile);
 
 export type DesktopAction =
-  | { operation: 'desktop:type_text'; parameters: { text: string } }
+  | { operation: 'desktop:type_text'; parameters: { text: string; expectProcess?: string } }
   | { operation: 'desktop:paste_text'; parameters: { text: string } }
   | { operation: 'desktop:hotkey'; parameters: { keys: string[] } }
   | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
