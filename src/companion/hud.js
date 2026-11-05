@@ -42,6 +42,8 @@ let localWakeLifecycleGeneration = 0;
 let wakeCaptureAwaitingReview = false;
 let wakeCommandRetryCount = 0;
 const MAX_WAKE_COMMAND_RETRIES = 1;
+// Keep browser transcripts bounded before they reach the signed request gateway.
+const MAX_VOICE_TRANSCRIPT_LENGTH = 240;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
 const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop jarvis', 'jarvis stop', 'goodbye jarvis', 'go to sleep jarvis'];
@@ -631,13 +633,19 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     // hypotheses to avoid duplicated words.
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
-      if (result.isFinal) finalTranscript += result[0].transcript + ' ';
+      if (result.isFinal) {
+        const segment = String(result[0]?.transcript || '').replace(/\\s+/g, ' ').trim();
+        if (segment) finalTranscript = `${finalTranscript} ${segment}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+      }
     }
     const interimTranscript = Array.from(event.results)
       .filter((result) => !result.isFinal)
-      .map((result) => result[0].transcript)
-      .join(' ');
-    const transcript = `${finalTranscript} ${interimTranscript}`.trim();
+      .map((result) => String(result[0]?.transcript || ''))
+      .join(' ')
+      .replace(/\\s+/g, ' ')
+      .trim()
+      .slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+    const transcript = `${finalTranscript} ${interimTranscript}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
     if (!transcript) return;
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
@@ -715,18 +723,15 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
     } else if (!isMicMuted && finalTranscript.trim() && mode === 'wake') {
-      // Local wake detection plus the separate session consent authorizes
-      // capturing this spoken directive. Dispatch it to the existing policy
-      // gateway automatically; the gateway can still deny or require approval.
-      const recognizedCommand = normalizeRecognizedCommand(finalTranscript);
+      // Dispatch only a bounded, finalized transcript; interim hypotheses are never executable.
+      const recognizedCommand = normalizeRecognizedCommand(finalTranscript.slice(0, MAX_VOICE_TRANSCRIPT_LENGTH));
       wakeCaptureAwaitingReview = false;
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
       void completeWakeCapture(recognizedCommand);
     } else if (!isMicMuted && finalTranscript.trim()) {
-      // Push-to-talk remains review-first; only post-wake commands are sent
-      // directly to the policy gateway after explicit session consent.
-      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ');
+      // Push-to-talk remains review-first and displays only finalized, bounded text.
+      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ').slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
