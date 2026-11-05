@@ -33,6 +33,7 @@ pipeline {
         bat 'node --version'
         bat 'npm --version'
         bat 'npm ci'
+        bat 'npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json'
       }
     }
     stage('Build') {
@@ -68,7 +69,7 @@ pipeline {
           node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
         '''
-        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256', fingerprint: true
+        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256,jarvis-dependencies.cdx.json', fingerprint: true
       }
     }
     stage('Sign manifest-ignore policy (optional)') {
