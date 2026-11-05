@@ -501,7 +501,13 @@ export class JarvisServer {
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
-        const cleared = this.conversationSessions.clear(body.conversationId, auth.device.id);
+        const deviceId = auth.device.id;
+        // Serialize clearing with message handling to prevent an in-flight response
+        // from persisting history after the clear operation completes.
+        const cleared = await this.conversationSessions.runExclusive(
+          body.conversationId,
+          () => Promise.resolve(this.conversationSessions.clear(body.conversationId, deviceId)),
+        );
         return this.jsonResponse(res, cleared ? 200 : 404, { success: cleared });
       }
 
