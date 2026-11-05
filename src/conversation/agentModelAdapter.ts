@@ -7,6 +7,50 @@ import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.
 const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
 const MAX_MODEL_CONTENT_LENGTH = 32 * 1024;
 
+export type AgentModelConfigStatus =
+  | { status: 'ready'; mode: 'local' | 'remote'; model: string; apiKeyConfigured: boolean }
+  | { status: 'disabled'; reason: 'invalid_url' | 'remote_not_opted_in' | 'insecure_remote_url' | 'invalid_model' };
+
+function readConfiguration() {
+  const rawUrl = process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1';
+  const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
+  const apiKey = process.env.JARVIS_AI_API_KEY;
+  let endpoint: URL;
+  try {
+    endpoint = new URL(rawUrl);
+  } catch {
+    return { status: { status: 'disabled', reason: 'invalid_url' } as AgentModelConfigStatus };
+  }
+
+  const local = endpoint.hostname === '127.0.0.1' || endpoint.hostname === 'localhost' || endpoint.hostname === '[::1]';
+  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password ||
+      endpoint.search || endpoint.hash) {
+    return { status: { status: 'disabled', reason: 'invalid_url' } as AgentModelConfigStatus };
+  }
+  if (!local && endpoint.protocol !== 'https:') {
+    return { status: { status: 'disabled', reason: 'insecure_remote_url' } as AgentModelConfigStatus };
+  }
+  if (!local && process.env.JARVIS_AI_ALLOW_REMOTE !== 'true') {
+    return { status: { status: 'disabled', reason: 'remote_not_opted_in' } as AgentModelConfigStatus };
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model)) {
+    return { status: { status: 'disabled', reason: 'invalid_model' } as AgentModelConfigStatus };
+  }
+
+  const baseUrl = endpoint.toString().replace(/\/$/, '');
+  return {
+    baseUrl,
+    model,
+    apiKey,
+    status: { status: 'ready', mode: local ? 'local' : 'remote', model, apiKeyConfigured: Boolean(apiKey) } as AgentModelConfigStatus,
+  };
+}
+
+/** Exposes only safe startup diagnostics; never returns endpoint or credential values. */
+export function getAgentModelConfigStatus(): AgentModelConfigStatus {
+  return readConfiguration().status;
+}
+
 async function readBoundedResponse(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
@@ -48,11 +92,9 @@ async function readBoundedResponse(response: Response): Promise<string> {
 }
 
 export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
-  const baseUrl = (process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, '');
-  const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
-  const apiKey = process.env.JARVIS_AI_API_KEY;
-  const local = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(baseUrl + '/');
-  if (!local && process.env.JARVIS_AI_ALLOW_REMOTE !== 'true') return null;
+  const config = readConfiguration();
+  if (config.status.status !== 'ready' || !('baseUrl' in config)) return null;
+  const { baseUrl, model, apiKey } = config;
 
   return {
     async generate(prompt, signal): Promise<unknown> {
@@ -77,12 +119,15 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
         throw new AgentModelProviderError('network');
       }
       if (!response.ok) throw new AgentModelProviderError('http', response.status);
+
       let payload: {
         choices?: Array<{ message?: { content?: unknown; refusal?: unknown } }>;
       };
       try {
-        payload = await response.json() as typeof payload;
-      } catch {
+        const body = await readBoundedResponse(response);
+        payload = JSON.parse(body) as typeof payload;
+      } catch (error) {
+        if (error instanceof AgentModelProviderError) throw error;
         throw new AgentModelProviderError('provider_response');
       }
       const message = payload.choices?.[0]?.message;
@@ -90,6 +135,9 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
         throw new AgentModelProviderError('refusal');
       }
       if (typeof message?.content !== 'string') throw new AgentModelProviderError('provider_response');
+      if (message.content.length > MAX_MODEL_CONTENT_LENGTH) {
+        throw new AgentModelProviderError('response_too_large');
+      }
       try {
         return JSON.parse(message.content) as unknown;
       } catch {
