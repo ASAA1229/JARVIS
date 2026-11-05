@@ -634,7 +634,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (result.isFinal) {
-        const segment = String(result[0]?.transcript || '').replace(/\\s+/g, ' ').trim();
+        const segment = String(result[0]?.transcript || '').replace(/\s+/g, ' ').trim();
         if (segment) finalTranscript = `${finalTranscript} ${segment}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
       }
     }
@@ -642,7 +642,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       .filter((result) => !result.isFinal)
       .map((result) => String(result[0]?.transcript || ''))
       .join(' ')
-      .replace(/\\s+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
       .slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
     const transcript = `${finalTranscript} ${interimTranscript}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
@@ -731,7 +731,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       void completeWakeCapture(recognizedCommand);
     } else if (!isMicMuted && finalTranscript.trim()) {
       // Push-to-talk remains review-first and displays only finalized, bounded text.
-      const recognizedCommand = finalTranscript.trim().replace(/\\s+/g, ' ').slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ').slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
