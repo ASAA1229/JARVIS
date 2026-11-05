@@ -27,9 +27,28 @@ const CONVERSATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab
 
 export class ConversationSessionStore {
   private readonly sessions = new Map<string, ConversationRecord>();
+  private readonly locks = new Map<string, Promise<void>>();
 
   public isValidId(value: unknown): value is string {
     return typeof value === 'string' && CONVERSATION_ID_PATTERN.test(value);
+  }
+
+  /**
+   * Serializes work for one conversation so concurrent messages cannot read
+   * the same stale history and then persist in the wrong order.
+   */
+  public async runExclusive<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(id) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.locks.set(id, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.locks.get(id) === current) this.locks.delete(id);
+    }
   }
 
   public getOrCreate(ownerDeviceId: string, requestedId?: string): { id: string; history: ConversationMessage[] } | null {
