@@ -342,6 +342,20 @@ export class JarvisCoreService {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
 
+    // Planning and approval are asynchronous boundaries. A user may cancel a
+    // CREATED task while the planner is running, or another lifecycle event may
+    // move it to a terminal/recovery state before policy evaluation resumes.
+    // Only a new workflow step or an explicitly approved step may proceed.
+    if (taskRecord.state !== TaskState.CREATED && taskRecord.state !== TaskState.APPROVED) {
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error || ('Workflow cannot proceed from state ' + taskRecord.state + '; no operation was started.'),
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
+
     const device = this.identity.getDevice(deviceId);
     if (!device) throw new Error('Device not found');
 
@@ -792,14 +806,32 @@ export class JarvisCoreService {
     }
 
     if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
-      const expiredTask = this.tasks.get(approval.taskId);
-      if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
-        expiredTask.state = TaskState.EXPIRED;
-        expiredTask.updatedAt = Date.now();
-        this.#skipRemainingSteps(expiredTask);
-        this.#persistTask(expiredTask);
-        this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: expiredTask.id, deviceId: expiredTask.deviceId });
+      if (pendingTask.state === TaskState.AWAITING_APPROVAL) {
+        pendingTask.state = TaskState.EXPIRED;
+        pendingTask.updatedAt = Date.now();
+        this.#skipRemainingSteps(pendingTask);
+        const checkpointed = this.#persistTask(pendingTask);
+        this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: pendingTask.id, deviceId: pendingTask.deviceId });
+        if (!checkpointed) {
+          return {
+            taskId: pendingTask.id,
+            success: false,
+            state: pendingTask.state,
+            message: pendingTask.error || 'Expired approval could not be checkpointed; execution remains blocked.',
+            outcome: VerificationOutcome.UNCERTAIN,
+            verified: false,
+          };
+        }
       }
+      this.audit.record('APPROVAL_FAILED_EXPIRED', { approvalId }, approver.id, pendingTask.id);
+      return {
+        taskId: pendingTask.id,
+        success: false,
+        state: pendingTask.state,
+        message: 'Approval has expired; no operation was started.',
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        verified: true,
+      };
     }
 
     const resolveRes = this.policy.resolveApproval(approvalId, true, approver.id);
@@ -808,6 +840,22 @@ export class JarvisCoreService {
     }
 
     const task = pendingTask;
+
+    // Persist the approval transition before policy evaluation can reach an
+    // adapter. If this checkpoint fails, fail closed and never start execution.
+    task.state = TaskState.APPROVED;
+    task.updatedAt = Date.now();
+    if (!this.#persistTask(task)) {
+      this.policy.invalidateApprovals({ taskId: task.id }, 'APPROVAL_CHECKPOINT_FAILED');
+      return {
+        taskId: task.id,
+        success: false,
+        state: task.state,
+        message: task.error || 'Approval could not be checkpointed; execution was blocked.',
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
 
     const opRequest: OperationRequest = {
       operation: approval.operation,
