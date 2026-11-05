@@ -698,3 +698,14 @@ The earlier run also contained these failures; their fixes are in the branch his
 - Tightened the execution lifecycle so an interrupted adapter outcome is always treated as uncertain, remaining dependent steps are recorded as skipped, and the workflow returns without starting another operation.
 - The UI explicitly distinguishes a stop request from rollback: an in-flight external effect may already have occurred and requires reconciliation.
 - No tests, build, lint, CI, or target-device validation were run.
+
+
+## Development increment — workflow state revalidation and approval checkpointing
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added a state gate at the policy-evaluation boundary. Only CREATED workflow steps and APPROVED steps can proceed; delayed planner results cannot revive cancelled, expired, interrupted, failed, or recovery-pending tasks.
+- Expired approvals now terminate the handler immediately after marking the task EXPIRED and skipping dependent steps. The operation is not evaluated or executed.
+- Approval acceptance is durably checkpointed as APPROVED before execution can begin. A failed checkpoint blocks execution and invalidates the approval where possible.
+- Added JARVIS-US-040. Concurrency/fault-injection tests and exact-head validation remain outstanding.
+- No tests, build, lint, CI, or device validation were run.
