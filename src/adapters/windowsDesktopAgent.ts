@@ -17,7 +17,7 @@ export type DesktopAction =
   | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
   | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
   | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
-  | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
+  | { operation: 'desktop:inspect_window'; parameters: { expectProcess?: string } }
   | { operation: 'desktop:read_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:click_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:set_value'; parameters: { name?: string; automationId?: string; text: string; expectProcess?: string } }
