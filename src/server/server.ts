@@ -13,7 +13,7 @@ import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '.
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
-import { answerConversationalMessage, isActionRequest } from '../conversation/conversationalAssistant.js';
+import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
@@ -572,13 +572,19 @@ export class JarvisServer {
         }
         const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
         if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
-        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory, conversation.history);
-        if (conversationalAnswer) {
-          this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalAnswer);
-          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
+        const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
+        if (conversationalResult) {
+          if (conversationalResult.persistInHistory) {
+            this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalResult.answer);
+          }
+          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', {
+            requestLength: text.trim().length,
+            responseLength: conversationalResult.answer.length,
+            persisted: conversationalResult.persistInHistory,
+          }, auth.device.id);
           return this.jsonResponse(res, 200, {
             state: 'ANSWERED',
-            message: conversationalAnswer,
+            message: conversationalResult.answer,
             data: { kind: 'conversation', conversationId: conversation.id },
           });
         }
