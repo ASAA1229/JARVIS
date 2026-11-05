@@ -6,6 +6,9 @@ import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.
 
 const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
 const MAX_MODEL_CONTENT_LENGTH = 32 * 1024;
+const MAX_RATE_LIMIT_RETRIES = 1;
+const MAX_RETRY_DELAY_MS = 2000;
+const DEFAULT_RETRY_DELAY_MS = 250;
 
 export type AgentModelConfigStatus =
   | { status: 'ready'; mode: 'local' | 'remote'; model: string; apiKeyConfigured: boolean }
@@ -49,6 +52,25 @@ function readConfiguration() {
 /** Exposes only safe startup diagnostics; never returns endpoint or credential values. */
 export function getAgentModelConfigStatus(): AgentModelConfigStatus {
   return readConfiguration().status;
+}
+
+function getRetryDelayMs(response: Response): number | null {
+  const retryAfter = response.headers.get('retry-after');
+  if (!retryAfter) return DEFAULT_RETRY_DELAY_MS;
+  const seconds = Number(retryAfter);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+  if (!Number.isFinite(delay) || delay < 0 || delay > MAX_RETRY_DELAY_MS) return null;
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new Error('agent_model_aborted'));
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const timer = setTimeout(() => { cleanup(); resolve(); }, delayMs);
+    const onAbort = () => { clearTimeout(timer); cleanup(); reject(new Error('agent_model_aborted')); };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function readBoundedResponse(response: Response): Promise<string> {
@@ -98,26 +120,36 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
 
   return {
     async generate(prompt, signal): Promise<unknown> {
-      let response: Response;
-      try {
-        response = await fetch(baseUrl + '/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: prompt.messages,
-          }),
-          signal,
-        });
-      } catch (error) {
-        if (signal.aborted) throw error;
-        throw new AgentModelProviderError('network');
+      let response: Response | undefined;
+      for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+        try {
+          response = await fetch(baseUrl + '/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.2,
+              response_format: { type: 'json_object' },
+              messages: prompt.messages,
+            }),
+            signal,
+          });
+        } catch {
+          if (signal.aborted) throw new Error('agent_model_aborted');
+          // Network failure is ambiguous; never retry a possibly accepted request.
+          throw new AgentModelProviderError('network');
+        }
+
+        if (response.status !== 429 || attempt === MAX_RATE_LIMIT_RETRIES) break;
+        const retryDelay = getRetryDelayMs(response);
+        if (retryDelay === null) break;
+        try { await response.body?.cancel(); } catch { /* best-effort cleanup */ }
+        await waitForRetry(retryDelay, signal);
       }
+      if (!response) throw new AgentModelProviderError('network');
       if (!response.ok) throw new AgentModelProviderError('http', response.status);
 
       let payload: {
