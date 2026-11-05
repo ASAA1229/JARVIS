@@ -73,10 +73,8 @@ pipeline {
           $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
           node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
-          node scripts/release-index.mjs "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE" "jarvis-dependencies.cdx.json" "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "jarvis-release-index.json"
           if ($LASTEXITCODE -ne 0) { throw "Release index creation failed." }
         '''
-        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256,jarvis-dependencies.cdx.json,jarvis-release-index.json', fingerprint: true
       }
     }
     stage('Sign manifest-ignore policy (optional)') {
