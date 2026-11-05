@@ -4,6 +4,49 @@
  */
 import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.js';
 
+const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
+const MAX_MODEL_CONTENT_LENGTH = 32 * 1024;
+
+async function readBoundedResponse(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new AgentModelProviderError('response_too_large');
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new AgentModelProviderError('response_too_large');
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new AgentModelProviderError('response_too_large');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
   const baseUrl = (process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, '');
   const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
