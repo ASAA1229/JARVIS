@@ -44,6 +44,7 @@ export type AgentFailureCode =
   | 'rate_limited'
   | 'provider_refusal'
   | 'provider_response'
+  | 'response_too_large'
   | 'adapter_unavailable';
 
 export type AgentRunResult =
@@ -52,7 +53,7 @@ export type AgentRunResult =
   | { status: 'unavailable'; profile: AgentPromptProfile; reason: string; failureCode: AgentFailureCode }
   | { status: 'gateway_required'; reason: string };
 
-export type AgentProviderFailureKind = 'network' | 'http' | 'refusal' | 'provider_response';
+export type AgentProviderFailureKind = 'network' | 'http' | 'refusal' | 'provider_response' | 'response_too_large';
 
 /** Safe, non-sensitive provider failure classification for fallback and audit. */
 export class AgentModelProviderError extends Error {
@@ -203,7 +204,9 @@ export async function runAgent(
             ? 'provider_refusal'
             : providerError?.kind === 'provider_response'
               ? 'provider_response'
-              : 'adapter_unavailable';
+              : providerError?.kind === 'response_too_large'
+                ? 'response_too_large'
+                : 'adapter_unavailable';
     const reason = failureCode === 'timeout'
       ? 'The model request timed out.'
       : failureCode === 'network'
