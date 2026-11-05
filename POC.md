@@ -2,12 +2,14 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Latest code checkpoint:** `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9` (includes the voice lifecycle hardening commits)  
+**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac` (branch head at this documentation refresh)  
 **Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
 
 > This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
 
 ## Current implementation snapshot (2026-11-05)
+
+**AI-agent and conversation update:** The `new` branch now includes versioned role-separated prompt contracts, strict structured response validation, a local-first OpenAI-compatible agent adapter, advisory-agent routing, bounded device-bound conversation sessions, ordered per-conversation request handling, and capability-catalogue validation for tool candidates. Task-plan dependency graphs are validated for unknown dependencies, duplicate/self references and cycles. These are implementation observations only; the AI workflows remain untested under the current pause instruction and are not release-accepted.
 
 The `new` branch contains the following implementation areas. These are repository observations, not blanket acceptance claims:
 
@@ -16,7 +18,7 @@ The `new` branch contains the following implementation areas. These are reposito
 - **Voice/HUD:** browser companion/HUD, text and push-to-talk paths, consent controls, local wake-word runtime setup/integration, local TTS/STT adapters, and lifecycle/cancellation/retry hardening. The reusable `VoiceManager` now rejects overlapping capture/review sessions, uses generation-guarded bounded timeouts, keeps mute fail-closed, caps transcripts, and exposes explicit transcription completion. The active HUD now cancels capture and discards the transcript when session speech consent is withdrawn, rechecks consent on recognition callbacks, and revalidates post-wake consent immediately before dispatch. The complete wake → capture → policy → execution → verified-result flow still requires MSI acceptance. Browser speech recognition may use a browser/vendor service after explicit consent.
 - **Android/cross-device:** a native Android application and companion API/identity/queue code are present in the repository. This is not evidence of successful installation, independent enrollment, secure transport, revocation, or remote control on both physical phones.
 - **Workflow execution:** planner, scheduler, encrypted task journal, recovery states, and a human-reviewed reconciliation endpoint/panel are present. This is not an automatic resume engine; uncertain actions must never be replayed.
-- **Memory and conversation:** encrypted local personal-memory storage, authenticated conversational route, configurable OpenAI-compatible endpoint (local endpoint by default), and companion memory/schedule/notification UI foundations. Full semantic retrieval, cross-device conflict handling, verified deletion/retention, and robust unattended automation remain incomplete.
+- **Memory and conversation:** encrypted local personal-memory storage, authenticated conversational route, configurable OpenAI-compatible endpoint (local endpoint by default), bounded device-isolated conversation history, per-conversation serialization, and companion memory/schedule/notification UI foundations. Versioned system/developer/user prompt separation, schema-validated conversational and specialist-agent responses, local-first advisory-agent routing, and server-side capability-catalogue checks are implemented. Full semantic retrieval, cross-device conflict handling, verified deletion/retention, and robust unattended automation remain incomplete.
 - **Quality assets:** TypeScript/Python/Android source, unit and integration tests, browser smoke tests, and CI workflow are present. Tests authored in the repository must not be called passing until executed on the exact branch head.
 
 ## Verification and evidence status
