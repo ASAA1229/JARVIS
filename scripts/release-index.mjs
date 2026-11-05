@@ -40,12 +40,12 @@ async function main() {
   }
 
   const checksum = (await readFile(checksumPath, 'utf8')).trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/);
-  if (!checksum || checksum[1] !== files.artifact.sha256 || checksum[2] !== files.artifact.name) {
+  if (checksumParts.length !== 2 || checksumParts[0] !== files.artifact.sha256 || checksumParts[1] !== files.artifact.name) {
     throw new Error('Artifact SHA-256 sidecar does not match the packaged artifact.');
   }
   const policyChecksum = (await readFile(policyChecksumPath, 'utf8')).trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/);
-  if (!policyChecksum || policyChecksum[1] !== files.manifestIgnorePolicy.sha256 ||
-      policyChecksum[2] !== files.manifestIgnorePolicy.name) {
+  if (policyChecksumParts.length !== 2 || policyChecksumParts[0] !== files.manifestIgnorePolicy.sha256 ||
+      policyChecksumParts[1] !== files.manifestIgnorePolicy.name) {
     throw new Error('Manifest-ignore policy SHA-256 sidecar does not match the policy file.');
   }
   if (!manifest.source || !manifest.ci || !manifest.project) {
