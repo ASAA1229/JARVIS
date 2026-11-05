@@ -350,3 +350,19 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - If the approval checkpoint fails, execution is blocked and the approval is invalidated where possible; the task remains in recovery.
 - Added JARVIS-US-040 to capture lifecycle checkpoint and stale-transition acceptance criteria.
 - No tests, build, lint, CI, or device validation were run.
+
+## Shared DevOps pipeline and artifact integrity — 2026-11-05
+
+**Status: IMPLEMENTED IN SOURCE / PIPELINE AND RELEASE ACCEPTANCE PENDING**
+
+The `new` branch now contains a shared artifact-integrity foundation aligned with the Portfolio project:
+- Build provenance manifests include project identity, source revision, branch, build number, CI provider/run metadata, and a deterministic release identity.
+- SHA-256 checksums and manifest verification are supported, with customer-package verification and authenticated manifest-ignore policy handling.
+- CycloneDX dependency SBOM generation and artifact packaging are integrated into repository workflow foundations.
+- GitHub Actions and Jenkins definitions include signing/checksum foundations, fail-fast command handling, and scoped signing credentials.
+- Jenkins temporary private-key files are cleaned up; GitHub Actions signing secrets are scoped to the signing step.
+- Strict provenance validation rejects missing/placeholder project identity, unsupported CI providers, malformed commit/build metadata, and mismatches against current CI environment values.
+
+**Not yet accepted:** manifest file-inventory schema hardening is the next source increment; exact-head CI/Jenkins execution and end-to-end artifact verification remain pending. Nexus publishing is explicitly paused and must remain disabled unless separately authorized. No tests, builds, pipeline runs, customer-package validation, or Nexus publishing were performed for this snapshot.
+
+The DevOps delivery backlog is tracked in [docs/EPICS.md](docs/EPICS.md), [docs/USER_STORIES.md](docs/USER_STORIES.md), and the remaining-work register in [POC2.md](POC2.md).
