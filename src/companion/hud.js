@@ -1142,7 +1142,12 @@ async function submitDirective(text) {
     const data = await readApiResponse(res);
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
     refreshTaskHistory(); // Keep the task timeline aligned with the server's authoritative state.
-    if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
+    if (data.state === 'ANSWERED') {
+      setAssistantState('JARVIS RESPONSE', data.message || 'I have a response for you.');
+      addFeedItem('success', data.message || 'I have a response for you.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'skip' }, 'Conversational response returned; no desktop action was requested.');
+      speakResponse(data.message || 'I have a response for you.');
+    } else if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
       speakResponse(data.message || 'I need your approval before performing that action.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
