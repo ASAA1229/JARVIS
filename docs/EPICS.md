@@ -247,3 +247,34 @@ The companion task history now exposes authenticated stop controls for executing
 ## E01/E04 implementation note — asynchronous workflow transition guards
 
 The core now rechecks task state when policy evaluation resumes after asynchronous planning/approval boundaries. A task cancelled while planning is pending cannot continue when the planner returns. Approval expiry is terminal for that request: the task is marked EXPIRED, dependent steps are skipped, and the handler returns without evaluating the operation. Successful approval is checkpointed as APPROVED before policy evaluation can reach an adapter; checkpoint failure blocks execution and invalidates the approval where possible. No tests, build, lint, CI, or device validation were run.
+
+## JARVIS-E08 — Shared DevOps Pipeline, Provenance & Artifact Integrity
+
+**Status:** IN PROGRESS — source implementation present; validation paused; Nexus publishing paused.
+
+**Goal:** Produce traceable, verifiable build artifacts consistently through GitHub Actions and Jenkins, and provide a safe customer-package verification path.
+
+**Implemented source scope**
+- Build provenance manifest with project/CI/source identity and deterministic release identity.
+- SHA-256 manifest/checksum verification and customer-package verification policy.
+- CycloneDX dependency SBOM generation and artifact packaging.
+- Jenkins and GitHub Actions signing/checksum integration foundations, scoped credentials, temporary-key cleanup, and fail-fast command handling.
+
+**Remaining development scope**
+- Harden manifest header and file-inventory schema validation before checksum verification.
+- Compare manifest inventory with actual archive members before claiming package-content integrity.
+- Complete actionable customer verification reports and failure-stage classification.
+- Keep provenance fields consistent across manifest, checksum, signature and CI context.
+- Document non-secret Jenkins/GitHub configuration and release/rollback operations.
+
+**Exit criteria**
+- Malformed or inconsistent manifest inventories are rejected before checksum acceptance.
+- Archive members match the declared inventory and every file's size/hash is verified.
+- Customer verification checks policy, manifest and package in the documented order and emits an actionable report.
+- Exact-head GitHub Actions and Jenkins runs produce verifiable artifacts, signatures, checksums and SBOM evidence.
+- Nexus remains disabled unless separately approved; production merge/deployment requires explicit owner approval.
+- Source code alone does not constitute acceptance; validation evidence is required when testing resumes.
+
+### E08 implementation note — provenance and signing foundations (2026-11-05)
+
+The shared artifact-integrity implementation validates explicit project identity, recognized CI provider, source commit/build metadata and current-environment consistency. Customer verification binds the authenticated policy to the manifest release identity. Pipeline definitions include SBOM, checksum/signing foundations and scoped temporary signing-key handling. Exact-head pipeline and package acceptance remain outstanding; testing is paused.
