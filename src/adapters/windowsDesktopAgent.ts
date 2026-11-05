@@ -12,11 +12,11 @@ const execFileAsync = promisify(execFile);
 
 export type DesktopAction =
   | { operation: 'desktop:type_text'; parameters: { text: string; expectProcess?: string } }
-  | { operation: 'desktop:paste_text'; parameters: { text: string } }
-  | { operation: 'desktop:hotkey'; parameters: { keys: string[] } }
-  | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
-  | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
-  | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
+  | { operation: 'desktop:paste_text'; parameters: { text: string; expectProcess?: string } }
+  | { operation: 'desktop:hotkey'; parameters: { keys: string[]; expectProcess?: string } }
+  | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset'; expectProcess?: string } }
+  | { operation: 'desktop:copy_selection'; parameters: { expectProcess?: string } }
+  | { operation: 'desktop:paste_clipboard'; parameters: { expectProcess?: string } }
   | { operation: 'desktop:inspect_window'; parameters: { expectProcess?: string } }
   | { operation: 'desktop:read_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:click_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
