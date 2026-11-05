@@ -47,36 +47,41 @@ jobs:
       - name: Create and verify SHA-256 build manifest
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-Node {
+            & node @args
+            if ($LASTEXITCODE -ne 0) { throw "Node command failed: node $($args -join ' ') (exit code $LASTEXITCODE)." }
+          }
           tar -czf jarvis-build.tar.gz -C dist .
-          node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Package creation failed.' }
+          Invoke-Node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
           if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
-          node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          Invoke-Node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
           if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
-          node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Package hashing failed.' }
-          node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Package checksum verification failed.' }
-          node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
-          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          Invoke-Node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
           if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy creation failed.' }
-          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          Invoke-Node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy hashing failed.' }
           $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
-          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw 'Customer release verification failed.' }
-          if ($LASTEXITCODE -ne 0) { throw 'Release index creation failed.' }
           if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
             $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
             $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
             try {
               [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
               [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
-              node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
+              Invoke-Node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
-              node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
+              Invoke-Node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
-              node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
             } finally {
               Remove-Item -Force $privatePath, $publicPath -ErrorAction SilentlyContinue
