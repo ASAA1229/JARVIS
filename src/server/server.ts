@@ -17,6 +17,7 @@ import { answerConversationalMessageResult, isActionRequest } from '../conversat
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
+import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -28,6 +29,7 @@ export class JarvisServer {
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
   private readonly conversationSessions = new ConversationSessionStore();
+  private readonly agentRequestLimiter = new AgentRequestLimiter();
 
   constructor(
     port: number = 3000,
@@ -556,6 +558,19 @@ export class JarvisServer {
           if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
             const adapter = createConfiguredAgentModelAdapter();
             if (adapter) {
+              const limit = this.agentRequestLimiter.consume(auth.device.id);
+              if (!limit.allowed) {
+                this.jarvis.audit.record('ADVISORY_AGENT_RATE_LIMITED', {
+                  profile: agentRoute.profile,
+                  retryAfterSeconds: limit.retryAfterSeconds,
+                }, auth.device.id);
+                res.setHeader('Retry-After', String(limit.retryAfterSeconds));
+                return this.jsonResponse(res, 429, {
+                  error: 'The advisory AI request limit has been reached for this device.',
+                  code: 'ADVISORY_AI_RATE_LIMITED',
+                  retryAfterSeconds: limit.retryAfterSeconds,
+                });
+              }
               const recentHistory = conversation.history.slice(-3).map((message) => ({
                 label: 'conversation_' + message.role,
                 content: message.content,
