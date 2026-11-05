@@ -35,6 +35,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Generate CycloneDX dependency SBOM
+        run: npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json
       - name: TypeScript build
         run: npm run build
       - name: Create and verify SHA-256 build manifest
@@ -86,6 +88,7 @@ jobs:
             jarvis-build.tar.gz.sha256
             jarvis-manifest-ignore.json
             jarvis-manifest-ignore.json.sha256
+            jarvis-dependencies.cdx.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload signed manifest-ignore policy
