@@ -14,7 +14,7 @@ import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
-import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
+import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
@@ -37,6 +37,8 @@ export class JarvisServer {
     statePath?: string
   ) {
     this.port = port;
+    const agentConfig = getAgentModelConfigStatus();
+    console.info('[JARVIS] Advisory AI configuration:', agentConfig);
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.personalMemory = this.jarvis.personalMemory;
