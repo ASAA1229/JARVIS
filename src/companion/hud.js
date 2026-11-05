@@ -1277,7 +1277,10 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
   // A retried response must not create duplicate controls for a single-use approval.
   const existing = document.getElementById('hud-appr-' + approvalId);
   if (existing) {
-    existing.querySelector('.hud-approval-description').textContent = String(message || '');
+    const directive = existing.querySelector('.hud-approval-directive');
+    const description = existing.querySelector('.hud-approval-description');
+    if (directive) directive.textContent = 'DIRECTIVE: ' + String(requestText);
+    if (description) description.textContent = String(message || '');
     existing.focus();
     return;
   }
