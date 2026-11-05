@@ -375,10 +375,17 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
       return { intent: 'Enter the saved owner name', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will enter the owner name saved in personal memory after approval.' };
     }
-    const launchAndType = requestText.match(/\bopen\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+[“"]?(.+?)[”"]?\s*$/i);
-    if (launchAndType && launchAndType[2].trim()) {
+    const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b\s*(?:and|then|,)?\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
+    if (launchAndType) {
       const appId = launchAndType[1].toLowerCase() === 'calculator' ? 'calc' : launchAndType[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
-      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: launchAndType[2].trim() }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.88, explanation: 'Will launch the requested allowlisted application and enter the supplied text after approval.' };
+      let suppliedText = launchAndType[2].trim();
+      if ((suppliedText.startsWith('"') && suppliedText.endsWith('"')) || (suppliedText.startsWith('“') && suppliedText.endsWith('”')) || (suppliedText.startsWith("'") && suppliedText.endsWith("'"))) {
+        suppliedText = suppliedText.slice(1, -1).trim();
+      }
+      if (!suppliedText || suppliedText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(suppliedText)) {
+        return { intent: 'Combined desktop instruction needs clearer text', operations: [], confidence: 0.96, explanation: 'The text to enter must be a single line containing 1–500 printable characters. No application was launched and no text was entered.', uncertainty: 'The requested text is empty, too long, or contains unsupported control characters.' };
+      }
+      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: suppliedText }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.9, explanation: 'Will launch the requested allowlisted application, verify its target window, and enter the supplied text only after approval.' };
     }
     const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s*$/i);
     if (typeMatch && typeMatch[1].trim()) {
