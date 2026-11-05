@@ -273,6 +273,15 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
+    if (/\b(?:what|which)\s+(?:app|application|program|window)\s+(?:is\s+)?(?:currently\s+)?(?:active|in\s+the\s+foreground)\b|\bwhat(?:'s| is)\s+(?:the\s+)?(?:active|current)\s+window\b|\bwhich\s+window\s+am\s+i\s+using\b/i.test(requestText)) {
+      return {
+        intent: 'Identify the active application window',
+        operations: [{ operation: 'desktop:inspect_window', parameters: {}, justification: 'Owner asked which application is currently active' }],
+        confidence: 0.9,
+        explanation: 'Will report the foreground application and window title, plus accessible control names; it will not read control values.',
+      };
+    }
+
     // Window discovery and focus.
     if (/\b(?:what|which)\s+(?:apps?|windows|applications|programs)\s+(?:are\s+)?(?:open|running)\b|\b(?:list|show)\s+(?:my\s+)?(?:open\s+)?windows\b/i.test(requestText)) {
       return { intent: 'List open application windows', operations: [{ operation: 'desktop:list_windows', parameters: {}, justification: 'Owner asked what is open' }], confidence: 0.88, explanation: 'Will list open window titles; payment and financial apps are excluded.' };
