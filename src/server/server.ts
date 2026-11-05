@@ -570,25 +570,28 @@ export class JarvisServer {
           const result = await this.jarvis.submitRequest(sessionId, text.trim());
           return this.jsonResponse(res, 200, result);
         }
-        const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
-        if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
-        const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
-        if (conversationalResult) {
-          if (conversationalResult.persistInHistory) {
-            this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalResult.answer);
+        const lockId = conversationId || 'unthreaded:' + auth.device.id + ':' + text.trim();
+        return await this.conversationSessions.runExclusive(lockId, async () => {
+          const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
+          if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
+          const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
+          if (conversationalResult) {
+            if (conversationalResult.persistInHistory) {
+              this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalResult.answer);
+            }
+            this.jarvis.audit.record('CONVERSATIONAL_ANSWER', {
+              requestLength: text.trim().length,
+              responseLength: conversationalResult.answer.length,
+              persisted: conversationalResult.persistInHistory,
+            }, auth.device.id);
+            return this.jsonResponse(res, 200, {
+              state: 'ANSWERED',
+              message: conversationalResult.answer,
+              data: { kind: 'conversation', conversationId: conversation.id },
+            });
           }
-          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', {
-            requestLength: text.trim().length,
-            responseLength: conversationalResult.answer.length,
-            persisted: conversationalResult.persistInHistory,
-          }, auth.device.id);
-          return this.jsonResponse(res, 200, {
-            state: 'ANSWERED',
-            message: conversationalResult.answer,
-            data: { kind: 'conversation', conversationId: conversation.id },
-          });
-        }
-        return this.jsonResponse(res, 200, await this.jarvis.submitRequest(sessionId, text.trim()));
+          return this.jsonResponse(res, 200, await this.jarvis.submitRequest(sessionId, text.trim()));
+        });
       }
 
       // Approve task
