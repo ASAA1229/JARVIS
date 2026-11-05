@@ -339,9 +339,20 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(inspect|describe|what is in)\s+(?:the\s+)?(?:current|active|foreground)\s+window\b/i.test(requestText)) {
-      return { intent: 'Inspect current foreground window controls', operations: [{ operation: 'desktop:inspect_window', parameters: {}, justification: 'User requested current-window context' }], confidence: 0.86, explanation: 'Will inspect accessible control names in the foreground window; control values are not read.' };
+    const inspectWindow = requestText.match(/\b(?:inspect|describe|show)\s+(?:(?:the\s+)?(?:current|active|foreground)\s+)?window(?:\s+in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i)
+      || requestText.match(/\b(?:inspect|describe|show)\s+(?:the\s+)?([A-Za-z0-9._-]{1,64})\s+window\s*$/i);
+    if (inspectWindow) {
+      const expectProcess = inspectWindow[1]?.replace(/\.exe$/i, '');
+      return {
+        intent: expectProcess ? 'Inspect a specifically named application window' : 'Inspect current foreground window controls',
+        operations: [{ operation: 'desktop:inspect_window', parameters: expectProcess ? { expectProcess } : {}, justification: expectProcess ? 'User explicitly named the application to inspect' : 'User requested current-window context' }],
+        confidence: 0.86,
+        explanation: expectProcess
+          ? 'Will inspect accessible control names only if the foreground process matches the named application; control values are not read.'
+          : 'Will inspect accessible control names in the foreground window; control values are not read.',
+      };
     }
+
     const clickControl = requestText.match(/\bclick\s+(?:the\s+)?(?:button|control)\s+(?:named\s+)?["“]?(.+?)["”]?\s*$/i);
     if (clickControl && clickControl[1].trim()) {
       const target = splitForegroundTarget(clickControl[1]);
