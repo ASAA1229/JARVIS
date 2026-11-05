@@ -39,6 +39,9 @@ export class ConversationSessionStore {
     if (existing) {
       if (existing.ownerDeviceId !== ownerDeviceId) return null;
       existing.updatedAt = Date.now();
+      // Map insertion order is used for capacity eviction; move active sessions to the end.
+      this.sessions.delete(id);
+      this.sessions.set(id, existing);
       return { id, history: existing.messages.map((message) => ({ ...message })) };
     }
     while (this.sessions.size >= MAX_SESSIONS) {
