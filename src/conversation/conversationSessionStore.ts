@@ -81,9 +81,11 @@ export class ConversationSessionStore {
       { role: 'user', content: userText.slice(0, MAX_MESSAGE_LENGTH), createdAt: now },
       { role: 'assistant', content: assistantText.slice(0, MAX_MESSAGE_LENGTH), createdAt: now },
     );
+    // Evict complete user/assistant turns so the retained history never starts
+    // with an orphaned assistant reply or ends with an unmatched user message.
     while (record.messages.length > MAX_MESSAGES ||
       record.messages.reduce((total, message) => total + message.content.length, 0) > MAX_HISTORY_CHARACTERS) {
-      record.messages.shift();
+      record.messages.splice(0, 2);
     }
     record.updatedAt = now;
     return true;
