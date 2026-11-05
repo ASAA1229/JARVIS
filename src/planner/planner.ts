@@ -371,6 +371,12 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
       return { intent: 'Launch Notepad and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId: 'notepad', text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will open Notepad and enter the owner name saved in personal memory after approval.' };
     }
+    const launchOwnerName = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+(?:my name|my full name)\s*$/i);
+    if (launchOwnerName) {
+      if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+      const appId = launchOwnerName[1].toLowerCase() === 'calculator' ? 'calc' : launchOwnerName[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
+      return { intent: 'Launch an allowlisted application and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: ownerName }, justification: 'Use verified owner profile data in the explicitly requested application' }], confidence: 0.95, explanation: 'Will launch the named application, verify its target window, and enter the saved owner name after approval.' };
+    }
     const ownerNameRequest = requestText.match(/\b(?:write|type|enter)\s+(?:my name|my full name)\s*(?:in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i);
     if (ownerNameRequest) {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
@@ -390,9 +396,13 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       }
       return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: suppliedText }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.9, explanation: 'Will launch the requested allowlisted application, verify its target window, and enter the supplied text only after approval.' };
     }
-    const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s*$/i);
+    const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)\s*$/i);
     if (typeMatch && typeMatch[1].trim()) {
-      return { intent: 'Enter explicit text in the foreground application', operations: [{ operation: 'desktop:type_text', parameters: { text: typeMatch[1].trim() }, justification: 'User provided the text to enter' }], confidence: 0.88, explanation: 'Will paste the explicitly supplied text into the foreground application after approval.' };
+      const target = splitForegroundTarget(typeMatch[1].trim());
+      const explicitText = target.name.replace(/^[“"']|[”"']$/g, '').trim();
+      if (!target.expectProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I will not type into whichever window happens to be active. Specify the destination, for example “type Hello in Notepad”.', uncertainty: 'No explicit destination process was supplied for text entry.' };
+      if (!explicitText || explicitText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(explicitText)) return { intent: 'Text entry needs clearer input', operations: [], confidence: 0.96, explanation: 'The text must contain 1–500 printable characters. No text was entered.', uncertainty: 'Text is empty, too long, or contains unsupported control characters.' };
+      return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess: target.expectProcess }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named application, after approval.' };
     }
     const pasteMatch = requestText.match(/\bpaste\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s+(?:here|there|into\s+(?:this|the\s+current)\s+(?:app|document|note))\s*$/i);
     if (pasteMatch && pasteMatch[1].trim()) {
