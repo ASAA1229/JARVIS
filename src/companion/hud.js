@@ -797,12 +797,12 @@ async function acknowledgeWakeAndSubmit(command) {
 function normalizeRecognizedCommand(value) {
   return String(value || '')
     .trim()
-    .replace(/^(?:(?:hey|hello|hi)\\s+jarvis[, ]*)+/i, '')
-    .replace(/^(?:(?:please\\s+)?(?:can|could|would)\\s+you\\s+)/i, '')
-    .replace(/^(?:please\\s+)/i, '')
-    .replace(/^(open|launch|start|run)\\s+up\\s+/i, '$1 ')
-    .replace(/\\s+(?:please|for me)[.!?]*$/i, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/^(?:(?:hey|hello|hi)\s+jarvis[, ]*)+/i, '')
+    .replace(/^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)/i, '')
+    .replace(/^(?:please\s+)/i, '')
+    .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
+    .replace(/\s+(?:please|for me)[.!?]*$/i, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
