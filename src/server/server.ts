@@ -16,6 +16,7 @@ import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
+import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -26,6 +27,7 @@ export class JarvisServer {
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
+  private readonly conversationSessions = new ConversationSessionStore();
 
   constructor(
     port: number = 3000,
@@ -499,7 +501,10 @@ export class JarvisServer {
         if (!this.isJsonObject(body)) {
           return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
         }
-        const { text } = body as { text: string };
+        const { text, conversationId } = body as { text: string; conversationId?: string };
+        if (conversationId !== undefined && !this.conversationSessions.isValidId(conversationId)) {
+          return this.jsonResponse(res, 400, { error: 'conversationId must be a valid conversation UUID' });
+        }
         if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
           return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
         }
@@ -546,13 +551,16 @@ export class JarvisServer {
           }
         }
 
-        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
+        const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
+        if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
+        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory, conversation.history);
         if (conversationalAnswer) {
+          this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalAnswer);
           this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
           return this.jsonResponse(res, 200, {
             state: 'ANSWERED',
             message: conversationalAnswer,
-            data: { kind: 'conversation' },
+            data: { kind: 'conversation', conversationId: conversation.id },
           });
         }
         const result = await this.jarvis.submitRequest(sessionId, text.trim());
