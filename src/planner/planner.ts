@@ -383,6 +383,15 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!expectProcess) return { intent: 'Zoom destination required', operations: [], confidence: 0.98, explanation: 'Name the application to zoom, for example “zoom in on Chrome”. JARVIS will not send shortcuts to an unknown foreground window.', uncertainty: 'No explicit destination process was supplied for zoom.' };
       return { intent: 'Zoom the named application', operations: [{ operation: 'desktop:zoom', parameters: { direction, expectProcess }, justification: 'User explicitly named the zoom direction and destination process' }], confidence: 0.9, explanation: 'Will send the zoom shortcut only if the foreground process matches the named application, after approval.' };
     }
+    const hotkeyRequest = requestText.match(/\b(?:press|hit)\s+(ctrl|control|alt|shift)(?:\s*\+\s*|\s+)(c|v|a|s|f|n|z|y|enter|tab|escape|esc)\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (hotkeyRequest) {
+      const modifier = hotkeyRequest[1].toLowerCase() === 'control' ? 'CTRL' : hotkeyRequest[1].toUpperCase();
+      const key = hotkeyRequest[2].toUpperCase() === 'ESCAPE' ? 'ESC' : hotkeyRequest[2].toUpperCase();
+      return { intent: 'Send an allowlisted shortcut to the named application', operations: [{ operation: 'desktop:hotkey', parameters: { keys: [modifier, key], expectProcess: hotkeyRequest[3].replace(/\.exe$/i, '') }, justification: 'User supplied an allowlisted key combination and named its destination process' }], confidence: 0.9, explanation: 'Will send the shortcut only if the foreground process matches the named application, after approval.' };
+    }
+    if (/\b(?:press|hit)\s+(?:ctrl|control|alt|shift)\b/i.test(requestText)) {
+      return { intent: 'Shortcut destination or key combination required', operations: [], confidence: 0.98, explanation: 'Provide a supported key combination and application, for example “press Ctrl+S in Notepad”.', uncertainty: 'The shortcut is incomplete or has no explicit destination process.' };
+    }
     const ownerName = (context.memory || []).map((item) => {
       const match = item.match(/\b(?:owner|user|my)\s+name\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{0,79})/i);
       return match?.[1]?.trim().replace(/[.!,;]+$/, '');
@@ -424,6 +433,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!explicitText || explicitText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(explicitText)) return { intent: 'Text entry needs clearer input', operations: [], confidence: 0.96, explanation: 'The text must contain 1–500 printable characters. No text was entered.', uncertainty: 'Text is empty, too long, or contains unsupported control characters.' };
       return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess: target.expectProcess }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named application, after approval.' };
     }
+    const pasteClipboard = requestText.match(/\bpaste\s+(?:the\s+)?clipboard\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (pasteClipboard) {
+      return { intent: 'Paste clipboard into the named application', operations: [{ operation: 'desktop:paste_clipboard', parameters: { expectProcess: pasteClipboard[1].replace(/\.exe$/i, '') }, justification: 'User explicitly named the clipboard paste destination' }], confidence: 0.9, explanation: 'Will paste only if the foreground process matches the named destination application.' };
+    }
     const pasteMatch = requestText.match(/\bpaste\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
     if (pasteMatch && pasteMatch[1].trim()) {
       return { intent: 'Paste explicit text in the named application', operations: [{ operation: 'desktop:paste_text', parameters: { text: pasteMatch[1].trim(), expectProcess: pasteMatch[2].replace(/\.exe$/i, '') }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will paste the supplied text only if the foreground process matches the named application, after approval.' };
@@ -435,10 +448,6 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (copySelection) {
       const expectProcess = copySelection[1].replace(/\.exe$/i, '');
       return { intent: 'Copy selected text from the named application', operations: [{ operation: 'desktop:copy_selection', parameters: { expectProcess }, justification: 'User explicitly named the source application for copying its current selection' }], confidence: 0.9, explanation: 'Will copy only if the foreground process matches the named source application; clipboard contents may be sensitive.' };
-    }
-    const pasteClipboard = requestText.match(/\bpaste\s+(?:the\s+)?clipboard\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
-    if (pasteClipboard) {
-      return { intent: 'Paste clipboard into the named application', operations: [{ operation: 'desktop:paste_clipboard', parameters: { expectProcess: pasteClipboard[1].replace(/\.exe$/i, '') }, justification: 'User explicitly named the clipboard paste destination' }], confidence: 0.9, explanation: 'Will paste only if the foreground process matches the named destination application.' };
     }
     if (/\bcopy\b/i.test(requestText)) {
       return { intent: 'Copy source application required', operations: [], confidence: 0.98, explanation: 'Name the application containing the selection, for example “copy selected text in Chrome”.', uncertainty: 'No explicit source process was supplied for clipboard copy.' };
