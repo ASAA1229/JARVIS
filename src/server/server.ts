@@ -9,7 +9,7 @@ import { Permission, TaskState } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
-import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
+import { JarvisPlatform, getCapability, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
@@ -570,19 +570,58 @@ export class JarvisServer {
               }, adapter);
               if (agentResult.status === 'completed') {
                 const response = agentResult.response;
+                // Model output supplies candidate IDs and reasoning only. All capability
+                // status, platform, risk and approval metadata comes from the trusted catalogue.
+                const capabilityDetails: Array<{
+                  toolId: string;
+                  name: string;
+                  description: string;
+                  platforms: readonly string[];
+                  status: string;
+                  risk: string;
+                  requiresApproval: boolean;
+                  requiresDeviceAgent: boolean;
+                }> = [];
+                if ('candidates' in response) {
+                  for (const candidate of response.candidates) {
+                    const capability = getCapability(candidate.toolId);
+                    if (!capability || capability.status === 'restricted') continue;
+                    capabilityDetails.push({
+                      toolId: capability.id,
+                      name: capability.name,
+                      description: capability.description,
+                      platforms: capability.platforms,
+                      status: capability.status,
+                      risk: capability.risk,
+                      requiresApproval: capability.requiresApproval,
+                      requiresDeviceAgent: capability.requiresDeviceAgent,
+                    });
+                  }
+                }
                 const message = 'summary' in response
                   ? response.summary
                   : 'goal' in response
                     ? response.goal + (response.steps.length ? '\\n' + response.steps.map((step, index) => (index + 1) + '. ' + step.title + ': ' + step.description).join('\\n') : '')
                     : 'candidates' in response
-                      ? response.candidates.map((candidate) => candidate.toolId + ': ' + candidate.rationale).join('\\n') || 'No supported tool was identified.'
+                      ? response.candidates.map((candidate) => {
+                        const capability = capabilityDetails.find((item) => item.toolId === candidate.toolId);
+                        if (!capability) return candidate.toolId + ': capability metadata unavailable; do not use.';
+                        const approval = capability.requiresApproval ? 'owner approval required' : 'no separate approval flag';
+                        return capability.name + ' (' + capability.status + ', ' + capability.risk + ' risk, ' + approval + ', platforms: ' + capability.platforms.join(', ') + '): ' + candidate.rationale;
+                      }).join('\\n') || 'No supported tool was identified.'
                       : 'The agent completed the request.';
                 this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), message);
                 this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, auth.device.id);
                 return this.jsonResponse(res, 200, {
                   state: 'ANSWERED',
                   message,
-                  data: { kind: 'agent', profile: agentResult.profile, conversationId: conversation.id, response },
+                  data: {
+                    kind: 'agent',
+                    profile: agentResult.profile,
+                    conversationId: conversation.id,
+                    response,
+                    ...(capabilityDetails.length ? { capabilityDetails } : {}),
+                  },
                 });
               }
               this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', { profile: agentRoute.profile, status: agentResult.status }, auth.device.id);
