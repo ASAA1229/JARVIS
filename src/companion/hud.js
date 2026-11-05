@@ -392,10 +392,18 @@ async function handleLocalWakeDetected(probability) {
     return;
   }
 
-  // Start command recognition immediately after local wake detection so the
-  // remaining words in a single utterance such as “Hey Jarvis, open Notepad”
-  // are not lost while the greeting is playing. The greeting is spoken after
-  // capture; the recognized directive still passes through the policy gateway.
+  // Acknowledge the wake phrase first, then listen for the next utterance.
+  // Interaction: "Hey Jarvis" -> greeting -> spoken command.
+  // The command remains consent-gated and is submitted only through the signed policy path.
+  wakeCaptureAwaitingReview = true;
+  await speakResponse('Hi sir, I am ready to work.');
+  await waitForSpeechOutput(8000);
+  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') ||
+      document.visibilityState === 'hidden') {
+    wakeCaptureAwaitingReview = false;
+    if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
+    return;
+  }
   startVoiceCapture('wake');
 }
 
@@ -505,7 +513,7 @@ function startHandsFreeStandby() {
         stopHandsFreeStandby();
         updateHandsFreeButtons();
         setAssistantState('COMMAND RECEIVED', command);
-        void submitDirective(command);
+        void acknowledgeWakeAndSubmit(command);
       } else {
         handleHandsFreeWake();
       }
@@ -564,11 +572,8 @@ function handleHandsFreeWake() {
   if (isSubmitting || isListening) return;
   handsFreeStandby = false;
   stopHandsFreeStandby();
-  setAssistantState('LISTENING...', 'Wake phrase detected. Speak your command.');
   updateHandsFreeButtons();
-  setTimeout(() => {
-    if (handsFreeEnabled && !isListening) startVoiceCapture();
-  }, 120);
+  void beginPostWakeCommandCapture();
 }
 
 function handleHandsFreeStop() {
@@ -713,8 +718,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       // Local wake detection plus the separate session consent authorizes
       // capturing this spoken directive. Dispatch it to the existing policy
       // gateway automatically; the gateway can still deny or require approval.
-      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ')
-        .replace(/^(?:hey|hello|hi)\s+jarvis\b[,.!?;: -]*/i, '').trim();
+      const recognizedCommand = normalizeRecognizedCommand(finalTranscript);
       wakeCaptureAwaitingReview = false;
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
@@ -742,13 +746,67 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
  * explicit second-command window after the acknowledgement. This remains
  * consent-gated and still submits only through the signed policy-gateway path.
  */
-async function completeWakeCapture(command) {
-  await speakResponse('Hi sir, I am ready to work.');
-  const speechDeadline = Date.now() + 8000;
-  while (isSpeaking && Date.now() < speechDeadline) {
+async function waitForSpeechOutput(maxWaitMs = 8000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (isSpeaking && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
 
+async function beginPostWakeCommandCapture() {
+  if (!handsFreeEnabled || isMicMuted || isSubmitting || isListening) return;
+  if (!hasSpeechConsent('wake')) {
+    await speakResponse('Hi sir, I am ready to work.');
+    setAssistantState('WAKE PHRASE DETECTED', 'Enable the separate post-wake browser-speech consent for spoken commands, or use text input.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+  wakeCaptureAwaitingReview = true;
+  setAssistantState('WAKE PHRASE DETECTED', 'Wake phrase detected. I will listen for your command after the greeting.');
+  await speakResponse('Hi sir, I am ready to work.');
+  await waitForSpeechOutput(8000);
+  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') || document.visibilityState === 'hidden') {
+    wakeCaptureAwaitingReview = false;
+    if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
+    return;
+  }
+  startVoiceCapture('wake');
+}
+
+async function acknowledgeWakeAndSubmit(command) {
+  const normalizedCommand = normalizeRecognizedCommand(command);
+  if (!normalizedCommand) {
+    await beginPostWakeCommandCapture();
+    return;
+  }
+  if (!hasSpeechConsent('wake') || isMicMuted) {
+    setAssistantState('VOICE CONSENT REQUIRED — COMMAND NOT SENT', 'Post-wake browser-speech consent is required. No command was sent.');
+    await speakResponse('Please enable voice command consent before I can process that request.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+  await speakResponse('Hi sir, I am ready to work.');
+  await waitForSpeechOutput(8000);
+  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake')) {
+    setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Voice consent changed before dispatch. No command was sent.');
+    return;
+  }
+  await submitDirective(normalizedCommand);
+}
+
+function normalizeRecognizedCommand(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^(?:(?:hey|hello|hi)\\s+jarvis[, ]*)+/i, '')
+    .replace(/^(?:(?:please\\s+)?(?:can|could|would)\\s+you\\s+)/i, '')
+    .replace(/^(?:please\\s+)/i, '')
+    .replace(/^(open|launch|start|run)\\s+up\\s+/i, '$1 ')
+    .replace(/\\s+(?:please|for me)[.!?]*$/i, '')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+async function completeWakeCapture(command) {
   if (command) {
     if (!hasSpeechConsent('wake')) {
       wakeCommandRetryCount = 0;
@@ -757,15 +815,28 @@ async function completeWakeCapture(command) {
       return;
     }
     wakeCommandRetryCount = 0;
-    setAssistantState('COMMAND RECEIVED', command);
-    await submitDirective(command);
+    const normalizedCommand = normalizeRecognizedCommand(command);
+    if (!normalizedCommand) {
+      await completeWakeCapture('');
+      return;
+    }
+    setAssistantState('COMMAND RECEIVED', normalizedCommand);
+    await submitDirective(normalizedCommand);
     return;
   }
 
   if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
     wakeCommandRetryCount += 1;
-    setAssistantState('READY FOR COMMAND', 'I heard the wake phrase. Please say your command now.');
-    startVoiceCapture('wake');
+    setAssistantState('READY FOR COMMAND', 'I did not catch that. Please say your command again.');
+    await speakResponse('I did not catch that. Please say your command again.');
+    await waitForSpeechOutput(6000);
+    if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && document.visibilityState !== 'hidden') {
+      startVoiceCapture('wake');
+    } else {
+      wakeCommandRetryCount = 0;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+    }
     return;
   }
 
