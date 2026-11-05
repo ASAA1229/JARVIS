@@ -32,15 +32,27 @@ function splitForegroundTarget(value: string): { name: string; expectProcess?: s
   return name ? { name, expectProcess } : { name: value.trim() };
 }
 function normalizeVoiceDirective(value: string): string {
-  return String(value || '')
+  let directive = String(value || '')
     .trim()
+    .replace(/[，。！？]/g, ' ')
+    .replace(/\s+/g, ' ')
     .replace(/^(?:(?:hey|hello|hi)\s+jarvis[, ]*)+/i, '')
-    .replace(/^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)/i, '')
-    .replace(/^(?:please\s+)/i, '')
+    .trim();
+
+  // Convert conversational launch requests into one explicit launch intent.
+  // This does not add any new executable operation or bypass policy checks.
+  directive = directive
+    .replace(/^(?:would you mind|can you|could you|would you|please)\s+(?:please\s+)?(?:get me|bring me|open|launch|start|run|fire up)\s+/i, 'open ')
+    .replace(/^(?:get me|bring me|fire up)\s+/i, 'open ')
     .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
-    .replace(/\s+(?:please|for me)[.!?]*$/i, '')
+    .replace(/^(?:i want you to|i need you to)\s+(open|launch|start|run)\s+/i, '$1 ')
+    .replace(/^(?:please)\s+(open|launch|start|run|bring up)\s+/i, '$1 ')
+    .replace(/\s+(?:please|for me|thanks|thank you)[.!?]*$/i, '')
+    .replace(/[.!?]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  return directive;
 }
 
 export class LocalHeuristicPlanner implements IAIPlannerProvider {
