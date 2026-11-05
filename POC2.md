@@ -736,3 +736,31 @@ The earlier run also contained these failures; their fixes are in the branch his
 - Approval acceptance is durably checkpointed as APPROVED before execution can begin. A failed checkpoint blocks execution and invalidates the approval where possible.
 - Added JARVIS-US-040. Concurrency/fault-injection tests and exact-head validation remain outstanding.
 - No tests, build, lint, CI, or device validation were run.
+
+## Shared DevOps pipeline and artifact integrity — remaining work (2026-11-05)
+
+**Current status: SOURCE IMPLEMENTATION IN PROGRESS; VALIDATION PAUSED; NEXUS PAUSED**
+
+### Implemented source baseline
+- Shared artifact-integrity tooling is present in `scripts/artifact-integrity.mjs`, including manifest creation/verification, SHA-256 handling, deterministic release identity, strict build-provenance validation, and CI metadata normalization.
+- Customer package verification is present in `scripts/customer-release-verifier.mjs`, including authenticated manifest-ignore policy handling and release-identity binding.
+- Jenkins pipeline definitions and GitHub Actions workflows include artifact packaging, CycloneDX SBOM generation, signing/checksum workflow foundations, and fail-fast command handling.
+- Signing credential exposure is narrowed to signing steps; temporary private-key files are cleaned up after use.
+- JARVIS and Portfolio maintain corresponding DevOps implementations, with project-specific workflow differences preserved.
+
+### Remaining development work
+1. **Manifest schema hardening:** validate manifest header fields, file inventory array/count consistency, safe relative paths, duplicate normalized paths, non-negative safe-integer sizes, and canonical SHA-256 values before checksum verification.
+2. **Archive inventory verification:** define and implement safe archive-member comparison so the manifest inventory can be checked against actual packaged files; do not claim per-file archive verification until implemented.
+3. **Customer delivery workflow:** complete the documented sequence for manifest-ignore policy, manifest validation, package checksum validation, and actionable failure reporting.
+4. **Provenance consistency:** keep project, repository, branch, commit, build number, CI provider and release identity consistent across manifest, signature, checksum and pipeline context.
+5. **Pipeline configuration:** document required Jenkins credentials/environment variables and GitHub Actions secrets by variable name only; never store secret values in the repository.
+6. **Operational evidence:** when validation resumes, execute exact-head GitHub Actions/Jenkins workflows, verify artifact contents, signatures, checksums and SBOM, and retain sanitized evidence.
+7. **Release/rollback guidance:** document how to reject/quarantine invalid packages, identify the failed validation stage, and recover without silently accepting partial artifacts.
+
+### Explicitly paused / excluded
+- Nexus publishing and Nexus credential/repository configuration remain paused; do not enable publishing or contact Nexus as part of routine development.
+- Tests, builds, lint, audits, CI execution, and device/customer acceptance remain paused by the current development-only instruction.
+- Do not update production branches, create PRs, merge, deploy, or publish without explicit approval.
+
+### Acceptance gate
+The DevOps POC is not complete until manifest schema and archive inventory are verified, customer-package validation produces reliable reports, exact-head pipeline execution succeeds, and the owner approves the recorded evidence. Source implementation alone is not acceptance.
