@@ -32,10 +32,24 @@ export type AgentResponse =
   | ToolCandidateResponse
   | AgentSummaryResponse;
 
+export type AgentFailureCode =
+  | 'invalid_input'
+  | 'request_too_large'
+  | 'prompt_unavailable'
+  | 'invalid_json'
+  | 'contract_mismatch'
+  | 'timeout'
+  | 'network'
+  | 'http_error'
+  | 'rate_limited'
+  | 'provider_refusal'
+  | 'provider_response'
+  | 'adapter_unavailable';
+
 export type AgentRunResult =
   | { status: 'completed'; profile: AgentPromptProfile; response: AgentResponse }
-  | { status: 'invalid_response'; profile: AgentPromptProfile; reason: string }
-  | { status: 'unavailable'; profile: AgentPromptProfile; reason: string }
+  | { status: 'invalid_response'; profile: AgentPromptProfile; reason: string; failureCode: AgentFailureCode }
+  | { status: 'unavailable'; profile: AgentPromptProfile; reason: string; failureCode: AgentFailureCode }
   | { status: 'gateway_required'; reason: string };
 
 export type AgentProviderFailureKind = 'network' | 'http' | 'refusal' | 'provider_response';
@@ -128,10 +142,10 @@ export async function runAgent(
   adapter: AgentModelAdapter,
 ): Promise<AgentRunResult> {
   if (!input || typeof input.request !== 'string' || !input.request.trim()) {
-    return { status: 'invalid_response', profile: input?.profile ?? 'developer_assistant', reason: 'A non-empty request is required.' };
+    return { status: 'invalid_response', profile: input?.profile ?? 'developer_assistant', reason: 'A non-empty request is required.', failureCode: 'invalid_input' };
   }
   if (input.request.length > MAX_REQUEST_LENGTH) {
-    return { status: 'invalid_response', profile: input.profile ?? 'developer_assistant', reason: 'The request exceeds the configured length limit.' };
+    return { status: 'invalid_response', profile: input.profile ?? 'developer_assistant', reason: 'The request exceeds the configured length limit.', failureCode: 'request_too_large' };
   }
 
   const classifiedRoute = routeAgentRequest(input.request);
@@ -148,7 +162,7 @@ export async function runAgent(
     context: (input.context ?? []).slice(0, MAX_CONTEXT_ITEMS),
   });
   if (!prompt) {
-    return { status: 'invalid_response', profile: route.profile, reason: 'The agent prompt could not be assembled from the registered profile.' };
+    return { status: 'invalid_response', profile: route.profile, reason: 'The agent prompt could not be assembled from the registered profile.', failureCode: 'prompt_unavailable' };
   }
 
   const timeoutMs = Number.isFinite(input.timeoutMs)
@@ -170,29 +184,40 @@ export async function runAgent(
     ]);
     const decoded = decodeModelValue(raw);
     if (decoded === null) {
-      return { status: 'invalid_response', profile: route.profile, reason: 'The model did not return valid JSON.' };
+      return { status: 'invalid_response', profile: route.profile, reason: 'The model did not return valid JSON.', failureCode: 'invalid_json' };
     }
     const response = validateForProfile(route.profile, decoded);
     if (!response) {
-      return { status: 'invalid_response', profile: route.profile, reason: 'The model response did not satisfy the selected agent contract.' };
+      return { status: 'invalid_response', profile: route.profile, reason: 'The model response did not satisfy the selected agent contract.', failureCode: 'contract_mismatch' };
     }
     return { status: 'completed', profile: route.profile, response };
   } catch (error) {
     const providerError = error instanceof AgentModelProviderError ? error : null;
-    const reason = controller.signal.aborted
-      ? 'The model request timed out.'
+    const failureCode = controller.signal.aborted
+      ? 'timeout'
       : providerError?.kind === 'network'
-        ? 'The configured model provider could not be reached.'
+        ? 'network'
         : providerError?.kind === 'http'
-          ? providerError.httpStatus === 429
-            ? 'The model provider rate-limited the request.'
-            : 'The model provider returned an unsuccessful HTTP response.'
+          ? providerError.httpStatus === 429 ? 'rate_limited' : 'http_error'
           : providerError?.kind === 'refusal'
-            ? 'The model provider declined the request.'
+            ? 'provider_refusal'
             : providerError?.kind === 'provider_response'
-              ? 'The model provider returned an unusable response.'
-              : 'The configured model adapter is unavailable.';
-    return { status: 'unavailable', profile: route.profile, reason };
+              ? 'provider_response'
+              : 'adapter_unavailable';
+    const reason = failureCode === 'timeout'
+      ? 'The model request timed out.'
+      : failureCode === 'network'
+        ? 'The configured model provider could not be reached.'
+        : failureCode === 'rate_limited'
+          ? 'The model provider rate-limited the request.'
+          : failureCode === 'http_error'
+            ? 'The model provider returned an unsuccessful HTTP response.'
+            : failureCode === 'provider_refusal'
+              ? 'The model provider declined the request.'
+              : failureCode === 'provider_response'
+                ? 'The model provider returned an unusable response.'
+                : 'The configured model adapter is unavailable.';
+    return { status: 'unavailable', profile: route.profile, reason, failureCode };
   } finally {
     if (timeout) clearTimeout(timeout);
   }
