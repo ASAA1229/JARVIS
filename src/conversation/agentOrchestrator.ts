@@ -38,6 +38,19 @@ export type AgentRunResult =
   | { status: 'unavailable'; profile: AgentPromptProfile; reason: string }
   | { status: 'gateway_required'; reason: string };
 
+export type AgentProviderFailureKind = 'network' | 'http' | 'refusal' | 'provider_response';
+
+/** Safe, non-sensitive provider failure classification for fallback and audit. */
+export class AgentModelProviderError extends Error {
+  constructor(
+    readonly kind: AgentProviderFailureKind,
+    readonly httpStatus?: number,
+  ) {
+    super('Agent model provider failure: ' + kind);
+    this.name = 'AgentModelProviderError';
+  }
+}
+
 export interface AgentModelAdapter {
   /** Return the model's structured JSON value or its raw JSON text. */
   generate(prompt: BuiltAgentPrompt, signal: AbortSignal): Promise<unknown>;
@@ -164,12 +177,22 @@ export async function runAgent(
       return { status: 'invalid_response', profile: route.profile, reason: 'The model response did not satisfy the selected agent contract.' };
     }
     return { status: 'completed', profile: route.profile, response };
-  } catch {
-    return {
-      status: 'unavailable',
-      profile: route.profile,
-      reason: controller.signal.aborted ? 'The model request timed out.' : 'The configured model adapter is unavailable.',
-    };
+  } catch (error) {
+    const providerError = error instanceof AgentModelProviderError ? error : null;
+    const reason = controller.signal.aborted
+      ? 'The model request timed out.'
+      : providerError?.kind === 'network'
+        ? 'The configured model provider could not be reached.'
+        : providerError?.kind === 'http'
+          ? providerError.httpStatus === 429
+            ? 'The model provider rate-limited the request.'
+            : 'The model provider returned an unsuccessful HTTP response.'
+          : providerError?.kind === 'refusal'
+            ? 'The model provider declined the request.'
+            : providerError?.kind === 'provider_response'
+              ? 'The model provider returned an unusable response.'
+              : 'The configured model adapter is unavailable.';
+    return { status: 'unavailable', profile: route.profile, reason };
   } finally {
     if (timeout) clearTimeout(timeout);
   }
