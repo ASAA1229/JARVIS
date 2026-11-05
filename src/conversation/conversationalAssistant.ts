@@ -7,6 +7,7 @@ import {
   buildConversationPrompt,
   parseConversationModelResponse,
   PromptMemoryItem,
+  PromptConversationMessage,
 } from './promptContract.js';
 
 export interface ConversationMemory extends PromptMemoryItem {}
@@ -54,7 +55,7 @@ function identityAnswer(text: string, memory: ConversationMemory[]): string | nu
 }
 
 
-async function generateWithConfiguredModel(text: string, memory: ConversationMemory[]): Promise<string | null> {
+async function generateWithConfiguredModel(text: string, memory: ConversationMemory[], history: PromptConversationMessage[]): Promise<string | null> {
   const baseUrl = (process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, '');
   const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
   const apiKey = process.env.JARVIS_AI_API_KEY;
@@ -65,6 +66,7 @@ async function generateWithConfiguredModel(text: string, memory: ConversationMem
   const messages = buildConversationPrompt({
     request: text,
     memories: isLocalEndpoint ? memory.slice(0, 5) : [],
+    history,
   });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
@@ -115,6 +117,7 @@ async function generateWithConfiguredModel(text: string, memory: ConversationMem
 export async function answerConversationalMessage(
   requestText: string,
   memory: ConversationMemory[] = [],
+  history: PromptConversationMessage[] = [],
 ): Promise<string | null> {
   const text = requestText.trim();
   if (!text || text.length > MAX_REQUEST_LENGTH || isActionRequest(text)) return null;
@@ -126,7 +129,10 @@ export async function answerConversationalMessage(
     .filter((item) => item && typeof item.content === 'string' && item.content.trim())
     .slice(0, 5)
     .map((item) => ({ content: item.content.slice(0, 500), category: item.category }));
-  const generated = await generateWithConfiguredModel(text, minimizedMemory);
+  const boundedHistory = history.slice(-20).filter((item) =>
+    (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.trim(),
+  ).map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }));
+  const generated = await generateWithConfiguredModel(text, minimizedMemory, boundedHistory);
   if (generated) return generated;
 
   return 'I can help with that, sir, but the configured conversational model did not return a valid response. Check that the local OpenAI-compatible model endpoint is running and that JARVIS_AI_BASE_URL and JARVIS_AI_MODEL are configured. No cloud model is used unless JARVIS_AI_ALLOW_REMOTE is explicitly enabled.';
