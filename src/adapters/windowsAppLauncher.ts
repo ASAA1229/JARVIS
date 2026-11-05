@@ -267,8 +267,28 @@ export class WindowsAppLauncherAdapter {
       // launch, this lets "open Notepad" bring an already-open, unambiguous window
       // forward instead of spawning a process that may hand off to an existing
       // singleton and then fail the new-PID verification.
-      let knownWindows: WindowInfo[] = [];
-      try { knownWindows = await this.windows.snapshot(signal); } catch { /* verification will be PARTIAL */ }
+      let knownWindows: WindowInfo[];
+      try {
+        knownWindows = await this.windows.snapshot(signal);
+      } catch (error) {
+        // Without a trustworthy baseline, JARVIS cannot know whether this app is
+        // already open or safely identify a newly created window. Fail closed:
+        // do not launch a duplicate or report an unverified action as success.
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'JARVIS could not inspect the current Windows desktop, so it did not launch the application. Retry when window inspection is available.',
+          failureKind: signal?.aborted ? 'cancelled' : 'unavailable',
+          interrupted: signal?.aborted || undefined,
+          evidence: {
+            appId: app.id,
+            operation: 'app:launch',
+            desktopSnapshotAvailable: false,
+            launchSkipped: true,
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+          },
+        };
+      }
       const knownPids = new Set(knownWindows.map((window) => window.pid));
       const existingSelection = selectUniqueExpectedAppWindow(knownWindows, app);
       if (existingSelection.matchCount > 1) {
