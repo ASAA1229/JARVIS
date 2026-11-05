@@ -151,6 +151,8 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /SESSION UNAVAILABLE — DIRECTIVE NOT SENT/);
     assert.match(jsText, /A retried response must not create duplicate controls/);
+    assert.match(jsText, /const directive = existing\.querySelector\('\.hud-approval-directive'\)/);
+    assert.match(jsText, /directive\.textContent = 'DIRECTIVE: ' \+ String\(requestText\)/);
     assert.match(jsText, /card.setAttribute\('role', 'region'\)/);
     assert.match(jsText, /card.focus\(\)/);
     assert.match(jsText, /Confirm and execute this exact directive/);
