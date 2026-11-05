@@ -454,14 +454,27 @@ export class JarvisServer {
         if (!provider) {
           return this.jsonResponse(res, 503, { error: 'Local Piper TTS is not configured', code: 'LOCAL_TTS_NOT_CONFIGURED' });
         }
+        const synthesisAbort = new AbortController();
+        const abortIfDisconnected = (): void => {
+          if (!res.writableEnded) synthesisAbort.abort();
+        };
+        res.once('close', abortIfDisconnected);
+        req.once('aborted', abortIfDisconnected);
         try {
-          const audio = await provider.synthesize(text);
+          const audio = await provider.synthesize(text, synthesisAbort.signal);
+          if (synthesisAbort.signal.aborted || res.destroyed) return;
           res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
           res.end(audio);
           return;
         } catch {
           // Piper stderr and spawn errors may disclose executable/model paths.
-          return this.jsonResponse(res, 502, { error: 'Local speech generation failed' });
+          if (!synthesisAbort.signal.aborted && !res.destroyed) {
+            return this.jsonResponse(res, 502, { error: 'Local speech generation failed' });
+          }
+          return;
+        } finally {
+          res.off('close', abortIfDisconnected);
+          req.off('aborted', abortIfDisconnected);
         }
       }
 
