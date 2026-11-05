@@ -45,6 +45,12 @@ pipeline {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
+          function Invoke-Node {
+            & node @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "Node command failed: node $($args -join ' ') (exit code $LASTEXITCODE)."
+            }
+          }
           $env:BUILD_REPOSITORY = $env:GIT_URL
           $env:BUILD_BRANCH = $env:GIT_BRANCH
           $env:BUILD_WORKFLOW = $env:JOB_NAME
@@ -56,25 +62,24 @@ pipeline {
           tar -czf "$env:ARTIFACT_FILE" -C "dist" .
           if ($LASTEXITCODE -ne 0) { throw "Release package creation failed." }
           $env:PROJECT_NAME = "JARVIS"
-          node scripts/artifact-integrity.mjs create "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
+          Invoke-Node scripts/artifact-integrity.mjs create "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
           if ($LASTEXITCODE -ne 0) { throw "Manifest creation failed." }
-          node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
+          Invoke-Node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
           if ($LASTEXITCODE -ne 0) { throw "Manifest verification failed." }
-          node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+          Invoke-Node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
           if ($LASTEXITCODE -ne 0) { throw "Artifact hashing failed." }
-          node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
+          Invoke-Node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
           if ($LASTEXITCODE -ne 0) { throw "Artifact checksum verification failed." }
-          node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
+          Invoke-Node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
           if ($LASTEXITCODE -ne 0) { throw "Release verification failed." }
-          node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
+          Invoke-Node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
           if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy creation failed." }
-          node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
+          Invoke-Node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
           if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy hashing failed." }
           $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
-          node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
+          Invoke-Node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
-          if ($LASTEXITCODE -ne 0) { throw "Release index creation failed." }
-        '''
+'''
       }
     }
     stage('Sign manifest-ignore policy (optional)') {
