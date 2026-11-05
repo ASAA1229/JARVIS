@@ -132,6 +132,43 @@ function isQuestion(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && value.length <= 500);
 }
 
+/** Validate that a generated plan is a usable acyclic dependency graph. */
+function hasValidPlanDependencies(steps: unknown[]): boolean {
+  const ids = new Set<string>();
+  for (const step of steps) {
+    if (!isRecord(step) || typeof step.id !== 'string' || ids.has(step.id)) return false;
+    ids.add(step.id);
+  }
+
+  const dependencies = new Map<string, string[]>();
+  for (const step of steps) {
+    if (!isRecord(step) || typeof step.id !== 'string' || !Array.isArray(step.dependencies)) return false;
+    const uniqueDependencies = new Set<string>();
+    for (const dependency of step.dependencies) {
+      if (typeof dependency !== 'string' || dependency === step.id ||
+        !ids.has(dependency) || uniqueDependencies.has(dependency)) return false;
+      uniqueDependencies.add(dependency);
+    }
+    dependencies.set(step.id, [...uniqueDependencies]);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): boolean => {
+    if (visiting.has(id)) return false;
+    if (visited.has(id)) return true;
+    visiting.add(id);
+    for (const dependency of dependencies.get(id) ?? []) {
+      if (!visit(dependency)) return false;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return true;
+  };
+
+  return [...ids].every(visit);
+}
+
 export function parseDeveloperAssistantResponse(value: unknown): DeveloperAssistantResponse | null {
   if (!isRecord(value) || !hasOnlyKeys(value, ['summary', 'findings', 'suggestedChanges', 'clarification', 'confidence'])) return null;
   if (!isText(value.summary) || !Array.isArray(value.findings) || value.findings.length > 20) return null;
@@ -151,7 +188,9 @@ export function parseTaskPlanResponse(value: unknown): TaskPlanResponse | null {
     && isTextList(step.dependencies, 30, 40)
     && typeof step.approvalRequired === 'boolean'
     && ['low', 'medium', 'high'].includes(String(step.risk)));
-  if (!validSteps || !isQuestion(value.clarification) || !isConfidence(value.confidence)) return null;
+  if (!validSteps || !hasValidPlanDependencies(value.steps) ||
+    !isQuestion(value.clarification) || !isConfidence(value.confidence)) return null;
+  if (value.status === 'ready' && value.steps.length === 0) return null;
   if (value.status === 'needs_clarification' && !value.clarification) return null;
   if (value.status === 'unsupported' && value.steps.length) return null;
   return value as unknown as TaskPlanResponse;
