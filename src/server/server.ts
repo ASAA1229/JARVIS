@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import QRCode from 'qrcode';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
-import { Permission } from '../core/types.js';
+import { Permission, TaskState } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
