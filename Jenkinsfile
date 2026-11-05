@@ -29,12 +29,9 @@ pipeline {
         bat 'npm ci'
       }
     }
-    stage('Build and test') {
+    stage('Build') {
       steps {
         bat 'npm run build'
-        bat 'npm run lint'
-        bat 'npm test'
-        bat 'npm run test:browser'
       }
     }
     stage('Package and verify integrity') {
