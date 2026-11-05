@@ -507,8 +507,10 @@ export class JarvisServer {
         }
         // Conversation requests are handled only after signed-session authentication.
         // Action-like directives continue through the existing planner and PolicyGateway.
+        // Supply only request-relevant memories to the conversational prompt.
+        // The memory store is encrypted and the model treats these records as untrusted data.
         const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
-          ? this.personalMemory.list().slice(0, 8).map((record) => ({ content: record.content, category: record.category }))
+          ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
           : [];
         const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
         if (conversationalAnswer) {
