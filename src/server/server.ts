@@ -14,6 +14,8 @@ import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
+import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
+import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -512,6 +514,38 @@ export class JarvisServer {
         const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
           ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
           : [];
+
+        // Specialized advisory profiles are invoked only after signed-request authentication.
+        // Their output is data only; all state-changing requests continue to JarvisCoreService.
+        const agentRoute = routeAgentRequest(text.trim());
+        if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
+          const adapter = createConfiguredAgentModelAdapter();
+          if (adapter) {
+            const agentResult = await runAgent({
+              request: text.trim(),
+              profile: agentRoute.profile,
+              context: conversationMemory.map((item) => ({ label: item.category, content: item.content })),
+            }, adapter);
+            if (agentResult.status === 'completed') {
+              const response = agentResult.response;
+              const message = 'summary' in response
+                ? response.summary
+                : 'goal' in response
+                  ? response.goal + (response.steps.length ? '\\n' + response.steps.map((step, index) => (index + 1) + '. ' + step.title + ': ' + step.description).join('\\n') : '')
+                  : 'candidates' in response
+                    ? response.candidates.map((candidate) => candidate.toolId + ': ' + candidate.rationale).join('\\n') || 'No supported tool was identified.'
+                    : 'The agent completed the request.';
+              this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, auth.device.id);
+              return this.jsonResponse(res, 200, {
+                state: 'ANSWERED',
+                message,
+                data: { kind: 'agent', profile: agentResult.profile, response },
+              });
+            }
+            this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', { profile: agentRoute.profile, status: agentResult.status }, auth.device.id);
+          }
+        }
+
         const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
         if (conversationalAnswer) {
           this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
