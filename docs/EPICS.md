@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-05  
 **Planning branch:** `new`  
-**Latest code checkpoint:** `3a05cd087eb53cf32fd0d090b583646eaccd4962`  
+**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac` (documentation refresh baseline)  
 **Overall:** Existing epics remain open until their acceptance gates are met.
 
 This register organizes the epics already present in `POC2.md`; it does not introduce unrelated feature streams. Source code and authored tests are implementation evidence only. See [POC.md](../POC.md) for the implemented baseline, [POC2.md](../POC2.md) for the detailed work-left checklist, and [USER_STORIES.md](USER_STORIES.md) for story-level acceptance criteria.
@@ -27,7 +27,7 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 | JARVIS-E04 | Multi-Step Execution & Recovery | P1 | In progress — lifecycle/fault acceptance open | Durable workflows that stop safely and recover through human review |
 | JARVIS-E05 | Android Companion & Cross-Device Control | P1 | In progress — both-phone acceptance open | Two independently secured phones can approve/control permitted laptop tasks |
 | JARVIS-E06 | Memory, Privacy & Personalization | P1 | In progress — lifecycle acceptance open | Private, useful, permission-aware memory with retention and deletion |
-| JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | In progress — end-to-end boundaries open | Useful local/cloud AI and existing integrations without policy bypass |
+| JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | In progress — prompt contracts, advisory agents and conversation continuity implemented; validation and provider/context gaps open | Useful local/cloud AI and existing integrations without policy bypass |
 | JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Open | Exact-head software, security, device and resource evidence |
 
 ---
@@ -165,6 +165,22 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 - No release-ready claim until hardware gates pass.
 
 ---
+
+## JARVIS-E07 implementation update — AI agent and prompt orchestration (2026-11-05)
+
+**Status:** IMPLEMENTED IN PART / VALIDATION NOT RUN
+
+The existing E07 scope now includes a more complete AI-agent foundation on branch `new`:
+- Versioned prompt registry with role-separated system, developer and user messages.
+- Strict response schemas and local validation for conversational, task-planning, tool-selection and summarization agents.
+- Advisory-agent orchestration that does not execute tools or desktop actions directly.
+- Local-first OpenAI-compatible model adapter; remote model use remains explicitly gated by configuration.
+- Bounded, authenticated, device-isolated conversation sessions with ordered request handling and safe history trimming.
+- Capability-catalogue validation for tool candidates and dependency-graph validation for task plans.
+
+**Remaining work:** provider compatibility/error handling, prompt-injection review across every profile, authoritative server-side capability metadata enrichment, plan consistency/risk annotations, conversation retention/deletion and multi-tab/restart/revocation lifecycle review.
+
+**Guardrail:** AI output remains untrusted advisory data. It cannot authorize or execute state-changing actions; the existing planner and policy gateway remain mandatory. No tests, build, lint, CI or device validation were run under the current pause instruction.
 
 ## Recommended execution order
 
