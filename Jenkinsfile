@@ -45,6 +45,11 @@ pipeline {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
+          $env:BUILD_REPOSITORY = $env:GIT_URL
+          $env:BUILD_BRANCH = $env:GIT_BRANCH
+          $env:BUILD_WORKFLOW = $env:JOB_NAME
+          $env:BUILD_RUN_ID = $env:BUILD_TAG
+          $env:BUILD_RUN_URL = $env:BUILD_URL
           if (!(Test-Path "dist" -PathType Container)) {
             throw "Expected TypeScript build output directory 'dist' was not created."
           }
