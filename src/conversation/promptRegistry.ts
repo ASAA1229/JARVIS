@@ -77,7 +77,7 @@ const definitions: readonly PromptDefinition[] = [
       'Use intent=conversation for a direct answer, intent=clarification when a required detail is missing, and intent=unsupported when this conversational layer cannot handle the request.',
       'confidence represents confidence in the conversational interpretation, not factual certainty or permission to act.',
     ].join(' '),
-  },,
+  },
   ...(['developer_assistant', 'task_planning', 'tool_selection', 'summarization'] as const).flatMap((profile) => {
     const profiles = {
       developer_assistant: {
