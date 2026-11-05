@@ -5,6 +5,7 @@
  * authorize execution, or replace the policy gateway.
  */
 import { resolvePrompt } from './promptRegistry.js';
+import { AGENT_RESPONSE_SCHEMAS } from './agentResponseContracts.js';
 
 export type AgentPromptProfile =
   | 'developer_assistant'
@@ -32,6 +33,7 @@ export interface BuiltAgentPrompt {
   profile: AgentPromptProfile;
   version: '1.0.0';
   responseSchemaId: string;
+  responseSchema: (typeof AGENT_RESPONSE_SCHEMAS)[keyof typeof AGENT_RESPONSE_SCHEMAS];
   messages: AgentPromptMessage[];
 }
 
@@ -75,6 +77,7 @@ export function buildAgentPrompt(input: AgentPromptInput): BuiltAgentPrompt | nu
     profile: input.profile,
     version,
     responseSchemaId: schemaId,
+    responseSchema: AGENT_RESPONSE_SCHEMAS[schemaId],
     messages: [
       { role: 'system', content: system.content },
       { role: 'developer', content: developer.content },
