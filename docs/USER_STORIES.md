@@ -518,3 +518,56 @@ A story is done only when:
 - Plan size, step descriptions and dependency counts are bounded.
 - Generated plans remain proposals until reviewed and authorized by the execution pipeline.
 
+
+## JARVIS-E08 — Shared DevOps Pipeline, Provenance & Artifact Integrity
+
+### JARVIS-US-041 — Generate traceable build provenance
+**As a release maintainer,** I want each build artifact to carry a machine-readable provenance manifest, so that its project, source revision and CI origin can be traced.
+
+**Acceptance criteria**
+- The manifest identifies project, repository, normalized branch, full source commit, build number and CI provider/run.
+- Required provenance fields are explicit, non-placeholder and validated.
+- In CI, manifest identity agrees with available environment metadata.
+- A deterministic release identity binds the manifest to its project/source/build identity.
+- Missing or inconsistent required provenance fails closed.
+
+### JARVIS-US-042 — Verify artifact contents and checksums
+**As a release maintainer,** I want manifest inventory and SHA-256 metadata validated before accepting an artifact, so that malformed or modified packages are rejected.
+
+**Acceptance criteria**
+- Manifest schema version and checksum algorithm are supported and validated.
+- File inventory is an array whose entry count matches the declared file count.
+- Each entry has a safe relative path, unique normalized path, non-negative safe-integer size and canonical SHA-256 digest.
+- Malformed inventory metadata is rejected before checksum verification.
+- Archive-member comparison verifies packaged files against the declared inventory; until implemented and evidenced, archive-content verification remains open.
+
+### JARVIS-US-043 — Verify customer-delivered packages against a release
+**As a customer-support or release operator,** I want a deterministic verification sequence and actionable report, so that delivery failures can be diagnosed without accepting an untrusted artifact.
+
+**Acceptance criteria**
+- The verifier authenticates and evaluates manifest-ignore policy before processing the manifest.
+- It validates manifest schema, provenance and release identity before package acceptance.
+- It verifies package checksum against trusted release metadata.
+- Failure output identifies the failed stage and reason without leaking secrets or private key material.
+- Legacy compatibility is explicit and does not weaken strict-provenance mode.
+
+### JARVIS-US-044 — Produce signed, SBOM-backed build artifacts through controlled CI
+**As a release maintainer,** I want GitHub Actions and Jenkins to produce consistent integrity metadata, signatures and dependency SBOMs, so that artifacts are traceable across supported CI providers.
+
+**Acceptance criteria**
+- Configured pipelines package artifact, manifest, checksum, signature metadata and CycloneDX SBOM as configured.
+- Signing secrets are scoped to signing operations and temporary private-key files are removed.
+- Pipeline commands fail immediately on tool errors and do not continue with incomplete outputs.
+- Required CI configuration is documented by variable name only; no secret values are committed.
+- Exact-head workflow execution and artifact inspection are recorded before acceptance.
+- Nexus publishing remains disabled until separately approved.
+
+### JARVIS-US-045 — Control release promotion and recovery
+**As the owner,** I want artifact promotion and rollback to require explicit authorization and recorded evidence, so that unverified builds cannot reach production.
+
+**Acceptance criteria**
+- Development artifacts remain on authorized development branches and do not automatically promote to production.
+- Invalid/incomplete packages can be rejected or quarantined with a recorded reason.
+- Recovery guidance identifies the failed stage and safe re-run boundary.
+- No production merge, deployment or Nexus publication occurs without explicit owner approval.
+- Validation and operational evidence remain pending while testing is paused.
