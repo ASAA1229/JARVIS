@@ -41,7 +41,7 @@ const MAX_AGENT_REQUEST_LENGTH = 12000;
 const MAX_CONTEXT_ITEMS = 8;
 const MAX_CONTEXT_ITEM_LENGTH = 1200;
 
-const PROFILE_SCHEMA_IDS: Record<AgentPromptProfile, string> = {
+const PROFILE_SCHEMA_IDS: Record<AgentPromptProfile, keyof typeof AGENT_RESPONSE_SCHEMAS> = {
   developer_assistant: 'jarvis.agent.response.v1',
   task_planning: 'jarvis.agent.plan.v1',
   tool_selection: 'jarvis.agent.tool_candidates.v1',
