@@ -2,7 +2,7 @@
 
 **Status snapshot:** 2026-11-05  
 **Branch reviewed:** `new`  
-**Latest code checkpoint:** `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`  
+**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
@@ -15,8 +15,9 @@
 4. Complete **Advanced Multi-Step Execution & Recovery** fault injection, crash/restart and partial-side-effect reconciliation.
 5. Finish **Android Companion & Cross-Device Control** software/build work, then independently enroll and revoke both physical phones.
 6. Complete **Memory, Privacy & Personalization** lifecycle, retrieval, retention, deletion and cross-device behavior.
-7. Finish existing **AI, Integrations & Productivity Automation** boundaries and end-to-end workflows already represented in the repository.
-8. Run exact-head build, typecheck, unit/integration tests, browser smoke, Android build and target-device acceptance; reconcile all project documentation.
+7. Complete the **AI Agent & Prompt Orchestration** implementation gaps within the existing E07 scope: provider resilience, richer context governance, agent routing coverage, and response-quality acceptance.
+8. Finish existing **AI, Integrations & Productivity Automation** boundaries and end-to-end workflows already represented in the repository.
+9. Run exact-head build, typecheck, unit/integration tests, browser smoke, Android build and target-device acceptance; reconcile all project documentation.
 
 ## Evidence rules
 
@@ -116,6 +117,32 @@
 - [ ] Verify existing schedule creation/list/cancel, notifications and recurring-task persistence/restart behavior.
 - [ ] Test task cancellation, retries, idempotency and safe failure across existing workflows.
 - [ ] Keep financial/payment actions excluded and do not silently install apps or send communications.
+
+### P1/P2 — AI agent, prompt contracts and conversation orchestration (implementation expanded; validation paused)
+
+**Implemented on `new` at checkpoint `0849597cd569ad288132ca66d1e6183e37eb02ac`:**
+- Versioned prompt registry and role-separated system, developer and user prompt construction.
+- Strict structured response contracts and local validation for conversational, task-planning, tool-selection and summarization profiles.
+- Advisory-agent routing separated from state-changing execution; action requests remain subject to the existing planner and policy gateway.
+- Local-first OpenAI-compatible agent adapter; remote endpoints remain blocked unless explicitly enabled by configuration.
+- Bounded conversation history tied to authenticated device sessions; only visible user/assistant turns are retained.
+- Per-conversation serialization, bounded session count/expiry, LRU eviction, complete-turn trimming, and authenticated conversation clearing.
+- Model-unavailable fallback responses are not persisted as conversational history.
+- Tool candidates are validated against the live capability catalogue; restricted or unknown capability IDs are rejected.
+- Task-plan dependency graphs reject missing, duplicate, self-referential and cyclic dependencies.
+
+**Remaining development / acceptance work:**
+- [ ] Review every prompt profile for injection boundaries, untrusted retrieved context, output minimization and explicit refusal behavior.
+- [ ] Improve provider compatibility and error classification without silently enabling remote inference or paid services.
+- [ ] Define deterministic routing coverage for mixed informational, planning, tool-selection and execution-intent requests.
+- [ ] Enrich tool-candidate results server-side from authoritative capability metadata; never trust model-supplied risk or approval metadata.
+- [ ] Tighten plan consistency rules (status/step consistency, bounded plan size, dependency ordering and risk/approval annotations).
+- [ ] Review conversation session lifecycle across HUD/companion reloads, concurrent tabs, device revocation and server restart.
+- [ ] Define retention, export and deletion behavior for conversation history and ensure it remains separate from long-term personal memory.
+- [ ] Keep model responses advisory only; all state-changing operations must pass the policy gateway.
+- [ ] After testing is explicitly resumed, run schema, routing, prompt-injection, concurrency and provider-failure tests on the exact branch head.
+
+**Current status:** implementation expanded; tests/build/lint/CI and device validation were not run because testing is paused. No agent capability is marked accepted.
 
 ### P2 — Release, compatibility and resource acceptance
 
