@@ -121,13 +121,13 @@ export async function runAgent(
     return { status: 'invalid_response', profile: input.profile ?? 'developer_assistant', reason: 'The request exceeds the configured length limit.' };
   }
 
+  const classifiedRoute = routeAgentRequest(input.request);
+  if (classifiedRoute.destination === 'policy_gateway') {
+    return { status: 'gateway_required', reason: classifiedRoute.reason };
+  }
   const route = input.profile
     ? { destination: 'agent' as const, profile: input.profile, reason: 'The caller explicitly selected an advisory profile.' }
-    : routeAgentRequest(input.request);
-
-  if (route.destination === 'policy_gateway') {
-    return { status: 'gateway_required', reason: route.reason };
-  }
+    : classifiedRoute;
 
   const prompt = buildAgentPrompt({
     profile: route.profile,
@@ -142,13 +142,19 @@ export async function runAgent(
     ? Math.min(Math.max(Number(input.timeoutMs), 1000), MAX_TIMEOUT_MS)
     : DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const raw = await adapter.generate(prompt, controller.signal);
-    if (controller.signal.aborted) {
-      return { status: 'unavailable', profile: route.profile, reason: 'The model request timed out.' };
-    }
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error('agent_model_timeout'));
+      }, timeoutMs);
+    });
+    const raw = await Promise.race([
+      adapter.generate(prompt, controller.signal),
+      timeoutPromise,
+    ]);
     const decoded = decodeModelValue(raw);
     if (decoded === null) {
       return { status: 'invalid_response', profile: route.profile, reason: 'The model did not return valid JSON.' };
@@ -165,6 +171,6 @@ export async function runAgent(
       reason: controller.signal.aborted ? 'The model request timed out.' : 'The configured model adapter is unavailable.',
     };
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
