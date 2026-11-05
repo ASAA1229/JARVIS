@@ -384,7 +384,7 @@ async function handleSendRequest() {
     });
 
     const data = await readApiResponse(res);
-    if (data.data?.kind === 'conversation' && typeof data.data.conversationId === 'string') {
+    if (typeof data.data?.conversationId === 'string') {
       activeConversationId = data.data.conversationId;
     }
     if (/^list (?:my )?schedules$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
