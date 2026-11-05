@@ -335,3 +335,16 @@ The browser-based hands-free fallback now refuses to start recognition while the
 - The HUD warns that the current operation may already have produced an external effect. It never describes interruption as rollback or proof that the effect did not happen.
 - Failed/ambiguous cancellation responses instruct the owner to refresh task status before taking further action.
 - No tests, build, lint, CI, or device validation were run for this increment.
+
+
+## Development increment — asynchronous workflow transition guards
+
+**Implementation:** src/core/service.ts  
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Re-checks task state when policy evaluation resumes after planner/approval asynchronous boundaries. A task cancelled while planning is pending cannot proceed when the planner later returns.
+- Approval expiry now marks the pending task EXPIRED, records remaining workflow steps as skipped, and returns immediately without policy evaluation or execution.
+- A successful approval is checkpointed as APPROVED before policy evaluation can reach an adapter.
+- If the approval checkpoint fails, execution is blocked and the approval is invalidated where possible; the task remains in recovery.
+- Added JARVIS-US-040 to capture lifecycle checkpoint and stale-transition acceptance criteria.
+- No tests, build, lint, CI, or device validation were run.
