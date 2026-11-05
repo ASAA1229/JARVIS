@@ -1,3 +1,5 @@
+import { getCapability } from '../capabilities/registry.js';
+
 /**
  * Strict response schemas and local validators for specialized JARVIS agents.
  * A valid model response is still advisory and never authorizes execution.
@@ -200,10 +202,16 @@ export function parseToolCandidateResponse(value: unknown): ToolCandidateRespons
   if (!isRecord(value) || !hasOnlyKeys(value, ['status', 'candidates', 'clarification', 'confidence'])) return null;
   if (!['candidates_found', 'no_supported_tool', 'needs_clarification'].includes(String(value.status))) return null;
   if (!Array.isArray(value.candidates) || value.candidates.length > 10) return null;
-  const validCandidates = value.candidates.every((candidate) => isRecord(candidate)
-    && hasOnlyKeys(candidate, ['toolId', 'purpose', 'rationale', 'requiredInputs'])
-    && isText(candidate.toolId, 120) && isText(candidate.purpose, 300)
-    && isText(candidate.rationale, 1000) && isTextList(candidate.requiredInputs, 20, 120));
+  const validCandidates = value.candidates.every((candidate) => {
+    if (!isRecord(candidate) || !hasOnlyKeys(candidate, ['toolId', 'purpose', 'rationale', 'requiredInputs']) ||
+      !isText(candidate.toolId, 120) || !isText(candidate.purpose, 300) ||
+      !isText(candidate.rationale, 1000) || !isTextList(candidate.requiredInputs, 20, 120)) return false;
+
+    // Model-proposed IDs must resolve to the live capability catalogue.
+    // Restricted capabilities are never offered as usable candidates.
+    const capability = getCapability(candidate.toolId);
+    return Boolean(capability && capability.status !== 'restricted');
+  });
   if (!validCandidates || !isQuestion(value.clarification) || !isConfidence(value.confidence)) return null;
   if (value.status === 'candidates_found' && !value.candidates.length) return null;
   if (value.status === 'no_supported_tool' && value.candidates.length) return null;
