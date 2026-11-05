@@ -14,6 +14,11 @@ export interface ConversationMemory extends PromptMemoryItem {}
 
 const MAX_REQUEST_LENGTH = 6000;
 
+export interface ConversationalAnswerResult {
+  answer: string;
+  persistInHistory: boolean;
+}
+
 function normalized(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -114,16 +119,16 @@ async function generateWithConfiguredModel(text: string, memory: ConversationMem
  * Returns a conversational answer when the request is not an action directive.
  * null means the existing policy-controlled planner should handle the request.
  */
-export async function answerConversationalMessage(
+export async function answerConversationalMessageResult(
   requestText: string,
   memory: ConversationMemory[] = [],
   history: PromptConversationMessage[] = [],
-): Promise<string | null> {
+): Promise<ConversationalAnswerResult | null> {
   const text = requestText.trim();
   if (!text || text.length > MAX_REQUEST_LENGTH || isActionRequest(text)) return null;
 
   const deterministic = identityAnswer(text, memory);
-  if (deterministic) return deterministic;
+  if (deterministic) return { answer: deterministic, persistInHistory: true };
 
   const minimizedMemory = memory
     .filter((item) => item && typeof item.content === 'string' && item.content.trim())
@@ -133,7 +138,20 @@ export async function answerConversationalMessage(
     (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.trim(),
   ).map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }));
   const generated = await generateWithConfiguredModel(text, minimizedMemory, boundedHistory);
-  if (generated) return generated;
+  if (generated) return { answer: generated, persistInHistory: true };
 
-  return 'I can help with that, sir, but the configured conversational model did not return a valid response. Check that the local OpenAI-compatible model endpoint is running and that JARVIS_AI_BASE_URL and JARVIS_AI_MODEL are configured. No cloud model is used unless JARVIS_AI_ALLOW_REMOTE is explicitly enabled.';
+  return {
+    answer: 'I can help with that, sir, but the configured conversational model did not return a valid response. Check that the local OpenAI-compatible model endpoint is running and that JARVIS_AI_BASE_URL and JARVIS_AI_MODEL are configured. No cloud model is used unless JARVIS_AI_ALLOW_REMOTE is explicitly enabled.',
+    persistInHistory: false,
+  };
+}
+
+/** Backwards-compatible string API for callers that only need the displayed answer. */
+export async function answerConversationalMessage(
+  requestText: string,
+  memory: ConversationMemory[] = [],
+  history: PromptConversationMessage[] = [],
+): Promise<string | null> {
+  const result = await answerConversationalMessageResult(requestText, memory, history);
+  return result?.answer ?? null;
 }
