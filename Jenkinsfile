@@ -13,6 +13,7 @@ pipeline {
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
   }
   parameters {
+    booleanParam(name: 'ENABLE_NEXUS_PUBLISH', defaultValue: false, description: 'Nexus publishing is paused; enable only after explicit approval and configuration.')
     booleanParam(name: 'ENABLE_POLICY_SIGNING', defaultValue: false, description: 'Sign manifest-ignore with the configured Ed25519 Jenkins credentials.')
   }
   stages {
@@ -104,7 +105,7 @@ pipeline {
       when {
         allOf {
           branch 'dev'
-          expression { return env.NEXUS_RAW_REPOSITORY_URL?.trim() }
+          expression { return params.ENABLE_NEXUS_PUBLISH && env.NEXUS_RAW_REPOSITORY_URL?.trim() }
         }
       }
       steps {
