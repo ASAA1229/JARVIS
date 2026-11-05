@@ -154,6 +154,13 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /card.setAttribute\('role', 'region'\)/);
     assert.match(jsText, /card.focus\(\)/);
     assert.match(jsText, /Confirm and execute this exact directive/);
+    assert.match(jsText, /function syncPendingApprovalCards\(tasks\)/);
+    assert.match(jsText, /syncPendingApprovalCards\(tasks\)/);
+    assert.match(jsText, /AWAITING_APPROVAL/);
+    assert.match(jsText, /This task is still awaiting your explicit approval/);
+    const serverSource = readFileSync('src/server/server.ts', 'utf8');
+    assert.match(serverSource, /task\.state === TaskState\.AWAITING_APPROVAL && task\.approvalId/);
+    assert.match(serverSource, /requestText: task\.requestText/);
     assert.match(jsText, /No authenticated device session; the request never reached the policy gateway/);
     assert.match(jsText, /speakResponse\\(message\\)/);
     assert.match(jsText, /15000/);
