@@ -13,7 +13,7 @@ import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '.
 import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
-import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
+import { answerConversationalMessage, isActionRequest } from '../conversation/conversationalAssistant.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
@@ -491,6 +491,20 @@ export class JarvisServer {
         }
       }
 
+      // Clear one conversation only after signed authentication; device ownership is enforced by the store.
+      if (req.method === 'POST' && url.pathname === '/api/conversation/clear') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || !this.conversationSessions.isValidId(body.conversationId)) {
+          return this.jsonResponse(res, 400, { error: 'A valid conversationId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const cleared = this.conversationSessions.clear(body.conversationId, auth.device.id);
+        return this.jsonResponse(res, cleared ? 200 : 404, { success: cleared });
+      }
+
       // Submit user request
       if (req.method === 'POST' && url.pathname === '/api/request') {
         const sessionId = req.headers['x-session-id'] as string;
@@ -551,6 +565,11 @@ export class JarvisServer {
           }
         }
 
+        // Do not allocate conversation state for commands routed to the execution planner.
+        if (isActionRequest(text.trim())) {
+          const result = await this.jarvis.submitRequest(sessionId, text.trim());
+          return this.jsonResponse(res, 200, result);
+        }
         const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
         if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
         const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory, conversation.history);
@@ -563,8 +582,7 @@ export class JarvisServer {
             data: { kind: 'conversation', conversationId: conversation.id },
           });
         }
-        const result = await this.jarvis.submitRequest(sessionId, text.trim());
-        return this.jsonResponse(res, 200, result);
+        return this.jsonResponse(res, 200, await this.jarvis.submitRequest(sessionId, text.trim()));
       }
 
       // Approve task
