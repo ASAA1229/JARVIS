@@ -4,6 +4,8 @@ let currentSession = null;
 let activeChallenge = null;
 let pendingApprovals = new Map();
 let isRequestSubmitting = false;
+// Keep one conversational thread active for this companion page session.
+let activeConversationId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
@@ -377,11 +379,14 @@ async function handleSendRequest() {
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      body: { text },
+      body: { text, ...(activeConversationId ? { conversationId: activeConversationId } : {}) },
       signal: controller.signal,
     });
 
     const data = await readApiResponse(res);
+    if (data.data?.kind === 'conversation' && typeof data.data.conversationId === 'string') {
+      activeConversationId = data.data.conversationId;
+    }
     if (/^list (?:my )?schedules$/i.test(text) && data.state === 'COMPLETED' && data.outcome === 'VERIFIED_SUCCESS') {
       renderSchedules(Array.isArray(data.data) ? data.data : []);
     }
