@@ -419,3 +419,16 @@ A story is done only when:
 - Remaining planned workflow steps are recorded as skipped and no later step is evaluated or executed.
 - The HUD distinguishes interruption from rollback and directs the owner to reconcile uncertain effects.
 - Tests, cancellation race/fault injection, and target-device acceptance remain separate gates.
+
+
+### JARVIS-US-040 — Enforce lifecycle checkpoints across asynchronous workflow boundaries
+**As the owner,** I want task state to be rechecked and durably checkpointed whenever planning or approval resumes, so that cancellation, expiry, revocation, or persistence failure cannot be bypassed by a delayed callback.
+
+**Acceptance criteria**
+- A task cancelled while planning is in progress cannot proceed to policy evaluation or execution when the planner later returns.
+- Policy evaluation proceeds only for a newly created workflow step or an explicitly approved task state.
+- Approval expiry moves the task to EXPIRED, records the skipped dependent steps, and returns without evaluating or executing the operation.
+- A successful approval is durably checkpointed as APPROVED before policy evaluation can reach an adapter.
+- If the approval checkpoint fails, execution is blocked and the task remains in recovery; the approval is invalidated where possible.
+- Concurrent/stale approval, rejection, cancellation and revocation requests cannot move a task backwards into an executable state.
+- Tests, fault injection and target-device acceptance remain separate gates; implementation alone does not mark this story accepted.
