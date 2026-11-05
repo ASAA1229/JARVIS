@@ -1479,6 +1479,7 @@ async function refreshTaskHistory() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Task history request failed (HTTP ' + response.status + ')');
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    syncPendingApprovalCards(tasks);
     renderTaskHistory(tasks);
   } catch (error) {
     container.textContent = 'Task history unavailable: ' + (error instanceof Error ? error.message : 'Request failed');
@@ -1489,6 +1490,26 @@ async function refreshTaskHistory() {
       refreshButton.removeAttribute('aria-busy');
     }
   }
+}
+
+function syncPendingApprovalCards(tasks) {
+  const pending = tasks.filter((task) =>
+    task && task.state === 'AWAITING_APPROVAL' &&
+    typeof task.approvalId === 'string' && task.approvalId.length > 0 &&
+    typeof task.requestText === 'string' && task.requestText.length > 0
+  );
+  const activeIds = new Set(pending.map((task) => task.approvalId));
+  document.querySelectorAll('#hud-approvals-slot .hud-approval-card').forEach((card) => {
+    const id = card.id.startsWith('hud-appr-') ? card.id.slice('hud-appr-'.length) : '';
+    if (!activeIds.has(id)) card.remove();
+  });
+  for (const task of pending) {
+    renderApprovalCard(task.approvalId, task.id, task.requestText,
+      'This task is still awaiting your explicit approval. Review the exact directive before confirming.');
+  }
+  const emptyHint = document.getElementById('hud-no-approvals-hint');
+  if (emptyHint) emptyHint.classList.toggle('hidden', pending.length > 0);
+  updateApprovalCountBadge();
 }
 
 function renderTaskHistory(tasks) {
