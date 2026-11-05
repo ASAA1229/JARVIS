@@ -226,3 +226,8 @@ Task history cards now include an expandable detail view with safe task metadata
 ## E01/E04 implementation note — explicit stop and workflow interruption boundary
 
 The companion task history now exposes authenticated stop controls for executing workflows and cancellation for pending/approval tasks. Duplicate stop requests are suppressed per task. The core treats interruption as a hard workflow boundary: the current step remains uncertain, dependent steps are recorded as skipped, and execution returns without evaluating another step. UI copy does not imply rollback or absence of external effects. Implementation only; validation remains open.
+
+
+## E01/E04 implementation note — asynchronous workflow transition guards
+
+The core now rechecks task state when policy evaluation resumes after asynchronous planning/approval boundaries. A task cancelled while planning is pending cannot continue when the planner returns. Approval expiry is terminal for that request: the task is marked EXPIRED, dependent steps are skipped, and the handler returns without evaluating the operation. Successful approval is checkpointed as APPROVED before policy evaluation can reach an adapter; checkpoint failure blocks execution and invalidates the approval where possible. No tests, build, lint, CI, or device validation were run.
