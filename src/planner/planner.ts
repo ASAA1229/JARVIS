@@ -31,6 +31,18 @@ function splitForegroundTarget(value: string): { name: string; expectProcess?: s
   const expectProcess = match[1].replace(/\.exe$/i, '');
   return name ? { name, expectProcess } : { name: value.trim() };
 }
+function normalizeVoiceDirective(value: string): string {
+  return String(value || '')
+    .trim()
+    .replace(/^(?:(?:hey|hello|hi)\s+jarvis[, ]*)+/i, '')
+    .replace(/^(?:(?:please\s+)?(?:can|could|would)\s+you\s+)/i, '')
+    .replace(/^(?:please\s+)/i, '')
+    .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
+    .replace(/\s+(?:please|for me)[.!?]*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public readonly name = 'local-heuristic-v1';
 
@@ -111,7 +123,8 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     return { valid: errors.length === 0, errors };
   }
 
-  public async generatePlan(requestText: string, context: MinimizedContext): Promise<PlanProposal> {
+  public async generatePlan(rawRequestText: string, context: MinimizedContext): Promise<PlanProposal> {
+    const requestText = normalizeVoiceDirective(rawRequestText);
     const text = requestText.toLowerCase().trim();
 
     const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
@@ -417,18 +430,26 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (launchTarget && /^paint$/i.test(launchTarget)) {
+    const builtInLaunchAliases: Array<{ names: RegExp; appId: string; displayName: string }> = [
+      { names: /^(?:paint|microsoft paint)$/i, appId: 'mspaint', displayName: 'Paint' },
+      { names: /^(?:file explorer|windows explorer|explorer)$/i, appId: 'explorer', displayName: 'File Explorer' },
+      { names: /^(?:task manager|windows task manager)$/i, appId: 'taskmgr', displayName: 'Task Manager' },
+      { names: /^(?:command prompt|cmd|cmd prompt)$/i, appId: 'cmd', displayName: 'Command Prompt' },
+      { names: /^(?:powershell|windows powershell)$/i, appId: 'powershell', displayName: 'PowerShell' },
+      { names: /^(?:chrome|google chrome)$/i, appId: 'Google Chrome', displayName: 'Google Chrome' },
+      { names: /^(?:edge|microsoft edge)$/i, appId: 'Microsoft Edge', displayName: 'Microsoft Edge' },
+    ];
+    const builtInAlias = builtInLaunchAliases.find((entry) => entry.names.test(launchTarget));
+    if (builtInAlias) {
       return {
-        intent: 'Launch Paint application',
-        operations: [
-          {
-            operation: 'app:launch',
-            parameters: { appId: 'mspaint' },
-            justification: 'User requested launching Paint',
-          },
-        ],
-        confidence: 0.95,
-        explanation: 'Interpreted as launching allowlisted Paint application',
+        intent: 'Launch ' + builtInAlias.displayName + ' application',
+        operations: [{
+          operation: 'app:launch',
+          parameters: { appId: builtInAlias.appId },
+          justification: 'User requested launching ' + builtInAlias.displayName,
+        }],
+        confidence: 0.93,
+        explanation: 'Interpreted as launching ' + builtInAlias.displayName + ' through the Windows application launcher.',
       };
     }
 
