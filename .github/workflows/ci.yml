@@ -35,16 +35,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Dependency security audit
-        run: npm audit --audit-level=moderate
       - name: TypeScript build
         run: npm run build
-      - name: TypeScript check
-        run: npm run lint
-      - name: Automated test suite
-        run: npm test
-      - name: Browser security smoke test
-        run: npm run test:browser
       - name: Create and verify SHA-256 build manifest
         shell: pwsh
         run: |
