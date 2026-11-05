@@ -371,9 +371,12 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
       return { intent: 'Launch Notepad and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId: 'notepad', text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will open Notepad and enter the owner name saved in personal memory after approval.' };
     }
-    if (/\b(?:write|type|enter)\s+(?:my name|my full name)\b/i.test(requestText)) {
+    const ownerNameRequest = requestText.match(/\b(?:write|type|enter)\s+(?:my name|my full name)\s*(?:in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i);
+    if (ownerNameRequest) {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
-      return { intent: 'Enter the saved owner name', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will enter the owner name saved in personal memory after approval.' };
+      const targetProcess = ownerNameRequest[1]?.replace(/\.exe$/i, '');
+      if (!targetProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I have the saved owner name, but I will not type into whichever window happens to be active. Say “type my name in Notepad” or name the exact target application.', uncertainty: 'No explicit destination process was supplied for text entry.' };
+      return { intent: 'Enter the saved owner name in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName, expectProcess: targetProcess }, justification: 'Use verified owner profile data and pin text entry to the explicitly named process' }], confidence: 0.95, explanation: 'Will enter the saved owner name only if the foreground window belongs to the named application, after approval.' };
     }
     const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b\s*(?:and|then|,)?\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
     if (launchAndType) {
