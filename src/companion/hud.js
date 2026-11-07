@@ -53,6 +53,11 @@ const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop 
 document.addEventListener('DOMContentLoaded', async () => {
   try { isMicMuted = localStorage.getItem('jarvis.mic-muted') === 'true'; } catch { /* Privacy controls remain session-local if storage is blocked. */ }
   initSpeechRecognition();
+  // Use browser speech synthesis directly when local Piper TTS is not configured.
+  fetch('/api/voice/status', { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((status) => { if (status && status.localTts === false) localTtsUnavailable = true; })
+    .catch(() => { /* keep trying local TTS; it falls back on failure */ });
   setupEventListeners();
   updateHandsFreeButtons();
   updateMuteControl();
@@ -332,7 +337,12 @@ async function startLocalWakeEngine() {
       }
       handsFreeStandby = true;
       updateHandsFreeButtons();
-      setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded.');
+      if (document.getElementById('allow-wake-browser-speech')?.checked) {
+        setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded. Say “Hey Jarvis, open Notepad”.');
+      } else {
+        highlightWakeConsent();
+        setAssistantState('LOCAL WAKE ACTIVE — VOICE COMMANDS OFF', '“Hey Jarvis” is detected locally, but spoken commands after it need the highlighted consent checkbox. Tick it to give commands by voice.');
+      }
     } catch (error) {
       try { engine.stop(); } catch { /* release best-effort */ }
       if (localWakeEngine === engine) localWakeEngine = null;
@@ -367,6 +377,16 @@ function stopHandsFreeStandby() {
   handsFreeStandby = false;
 }
 
+/** Draw attention to the post-wake speech consent checkbox the owner must tick. */
+function highlightWakeConsent() {
+  const box = document.getElementById('allow-wake-browser-speech');
+  const label = box?.closest('label');
+  if (!box || !label) return;
+  label.classList.add('consent-attention');
+  label.scrollIntoView({ block: 'nearest', behavior: document.body.classList.contains('reduced-motion') ? 'auto' : 'smooth' });
+  box.addEventListener('change', () => label.classList.remove('consent-attention'), { once: true });
+}
+
 async function handleLocalWakeDetected(probability) {
   if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
   wakeCommandRetryCount = 0;
@@ -377,8 +397,11 @@ async function handleLocalWakeDetected(probability) {
   const wakeConsent = document.getElementById('allow-wake-browser-speech');
   wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
   if (!wakeConsent?.checked) {
-    await speakResponse('Hi sir, I am ready to work.');
-    setAssistantState('WAKE PHRASE DETECTED', 'Wake detection is local, but spoken commands need the separate post-wake browser-speech consent checkbox. Enable it for this session, or use text input.');
+    // Do not claim readiness: without this consent no command can be captured, so
+    // say exactly what is missing and point at the control that fixes it.
+    highlightWakeConsent();
+    setAssistantState('VOICE COMMANDS ARE OFF — TICK THE CONSENT BOX', 'I heard “Hey Jarvis”, but spoken commands after the wake word are disabled. Tick “I separately allow browser speech recognition after local Hey Jarvis detection”, then say “Hey Jarvis, open Notepad” again — or type the command.');
+    await speakResponse('I heard you, but voice commands are switched off. Tick the box that allows speech after Hey Jarvis, then say it again.');
     scheduleHandsFreeRestart();
     return;
   }
@@ -1140,7 +1163,8 @@ async function submitDirective(text) {
       speakResponse(data.message || 'I have a response for you.');
     } else if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
-      speakResponse(data.message || 'I need your approval before performing that action.');
+      // Approval is a deliberate on-screen click (never voice-only), so say where to click.
+      speakResponse('Please confirm on screen: press Confirm and Execute to continue.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
       setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Waiting for your explicit approval. It is single-use and bound to this exact action.');

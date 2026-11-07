@@ -590,3 +590,13 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .task-cancel-control .task-recovery-status {
   color: #ffc1a1;
 }
+
+/* Shown when a wake word was heard but post-wake speech consent is off. */
+.hud-privacy-notice label.consent-attention {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px solid #ffb020;
+  border-radius: 4px;
+  color: #ffd27a;
+  font-weight: 600;
+}

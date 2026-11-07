@@ -460,6 +460,13 @@ export class JarvisServer {
       }
 
       // Local TTS is an authenticated, bounded operation; it has no execution authority.
+      // Lets the HUD skip local TTS when Piper is not configured (no 503s in the console).
+      // Reports a boolean only — never executable or model paths.
+      if (req.method === 'GET' && url.pathname === '/api/voice/status') {
+        let localTts = false;
+        try { localTts = Boolean(createConfiguredPiperProvider()); } catch { localTts = false; }
+        return this.jsonResponse(res, 200, { localTts });
+      }
       if (req.method === 'POST' && url.pathname === '/api/voice/synthesize') {
         const sessionId = req.headers['x-session-id'] as string;
         if (!sessionId) return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
