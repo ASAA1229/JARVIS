@@ -1,85 +1,88 @@
-# JARVIS POC — Current Implemented Baseline
+# JARVIS POC — Project Overview, Implementation Status and Remaining Work
 
-**Status snapshot:** 2026-11-05  
-**Branch reviewed:** `new`  
-**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac` (branch head at this documentation refresh)  
-**Overall acceptance:** **INCOMPLETE / NOT RELEASE-READY**
+**Repository:** `ASAA1229/JARVIS`  
+**Active documentation/development branch:** `new`  
+**Status snapshot:** 2026-11-07  
+**Latest changes recorded in this refresh:** Whisper cancellation/process cleanup `524e9a788c8eb5c9cd3aabb472cae8fc65702e5b`; transcription API disconnect cancellation `afd088ae959e21aabdc955161419c5f3efcd006b`.  
+**Overall status:** IN PROGRESS — substantial source implementation exists; testing, target-device acceptance and release acceptance are incomplete.
 
-> This document separates repository implementation from real-device acceptance. A source file, authored test, or green hosted workflow is not proof that a capability works on the owner's Windows laptop or Android phones. The detailed remaining-work register is in [POC2.md](POC2.md); the delivery plan is in [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md).
+## Read this first — what JARVIS is
 
-## Current implementation snapshot (2026-11-05)
+JARVIS is a local-first personal AI assistant and developer assistant intended to become a personal AI operating system. It combines a conversational AI layer, voice/HUD interaction, guarded Windows desktop automation, multi-step task workflows, personal memory, and an Android companion for approvals and selected cross-device operations.
 
-**AI-agent and conversation update:** The `new` branch now includes versioned role-separated prompt contracts, strict structured response validation, a local-first OpenAI-compatible agent adapter, advisory-agent routing, bounded device-bound conversation sessions, ordered per-conversation request handling, and capability-catalogue validation for tool candidates. Task-plan dependency graphs are validated for unknown dependencies, duplicate/self references and cycles. These are implementation observations only; the AI workflows remain untested under the current pause instruction and are not release-accepted.
+The primary execution device is the owner's Windows 11 MSI laptop. Two Android phones are intended as separately enrolled companion/approval devices. Native iOS is future scope.
 
-The `new` branch contains the following implementation areas. These are repository observations, not blanket acceptance claims:
+**Operating principles:** free-only/zero ongoing cost by default; local/offline processing for private and routine work; cloud AI or speech only when explicitly enabled for a task; no continuous cloud audio upload; no administrator elevation or unrestricted shell; no financial/payment automation; all state-changing actions pass through policy and approval controls; uncertain side effects are never automatically replayed.
 
-- **Backend and security:** Node.js 24 / TypeScript modular monolith; signed device sessions and identity primitives; default-deny policy gateway; scoped approvals; audit-chain integrity and redaction; revocation and security-state persistence.
-- **Windows:** allowlisted app launch, foreground-window interaction, UI Automation-based control discovery/actions, clipboard and keyboard helpers, zoom, and system-information adapters. Universal application coverage and real application outcome verification are not complete.
-- **Voice/HUD:** browser companion/HUD, text and push-to-talk paths, consent controls, local wake-word runtime setup/integration, local TTS/STT adapters, and lifecycle/cancellation/retry hardening. The reusable `VoiceManager` now rejects overlapping capture/review sessions, uses generation-guarded bounded timeouts, keeps mute fail-closed, caps transcripts, and exposes explicit transcription completion. The active HUD now cancels capture and discards the transcript when session speech consent is withdrawn, rechecks consent on recognition callbacks, and revalidates post-wake consent immediately before dispatch. The complete wake → capture → policy → execution → verified-result flow still requires MSI acceptance. Browser speech recognition may use a browser/vendor service after explicit consent.
-- **Android/cross-device:** a native Android application and companion API/identity/queue code are present in the repository. This is not evidence of successful installation, independent enrollment, secure transport, revocation, or remote control on both physical phones.
-- **Workflow execution:** planner, scheduler, encrypted task journal, recovery states, and a human-reviewed reconciliation endpoint/panel are present. This is not an automatic resume engine; uncertain actions must never be replayed.
-- **Memory and conversation:** encrypted local personal-memory storage, authenticated conversational route, configurable OpenAI-compatible endpoint (local endpoint by default), bounded device-isolated conversation history, per-conversation serialization, and companion memory/schedule/notification UI foundations. Versioned system/developer/user prompt separation, schema-validated conversational and specialist-agent responses, local-first advisory-agent routing, and server-side capability-catalogue checks are implemented. Full semantic retrieval, cross-device conflict handling, verified deletion/retention, and robust unattended automation remain incomplete.
-- **Quality assets:** TypeScript/Python/Android source, unit and integration tests, browser smoke tests, and CI workflow are present. Tests authored in the repository must not be called passing until executed on the exact branch head.
+## Status vocabulary used in this POC
 
-## Verification and evidence status
+| Status | Meaning |
+|---|---|
+| **IMPLEMENTED — NOT VERIFIED** | Source implementation is present, but the relevant tests/device/workflow acceptance has not been run on the current branch head. |
+| **PARTIALLY IMPLEMENTED — NOT VERIFIED** | Some foundations or paths exist; important behavior, integration or acceptance remains incomplete. |
+| **NOT IMPLEMENTED** | No complete implementation is currently evidenced; it remains development work. |
+| **VERIFIED** | The exact current branch revision has passed the relevant checks and acceptance evidence is recorded. No new item is marked VERIFIED by this documentation refresh. |
 
-- Latest branch head observed after the voice changes: `09b45366318ed27ee109b8635d56b0448c65b3c8`.
-- Added focused unit coverage in `test/voice_manager.test.ts`; tests are **authored, not yet executed** in this environment.
-- The latest Actions runs surfaced for `new` are older commits and failed; no exact-head CI result is available. The workflow is configured for manual dispatch and PRs into `dev`, not every push to `new`.
-- Physical MSI voice, Windows UI, resource, and microphone acceptance remains outstanding.
-- Both Android phones still require independent installation/enrollment/transport/revocation acceptance.
-- No production-readiness claim is made.
+A test file being present is not a passing test. A successful API response is not proof that an external application completed or saved an action.
 
-## Capability boundaries
+## Current status at a glance
 
-### Voice and HUD
+| Area | What exists in source | Current status / what remains |
+|---|---|---|
+| Backend, device identity and security | TypeScript/Node modular monolith, signed device sessions, identity primitives, default-deny policy, scoped approvals, audit integrity and persistence safeguards | Implemented foundations; exact-head automated and security acceptance not run |
+| Voice and HUD | HUD/companion, push-to-talk/transcript review, consent controls, local wake-word integration/setup, Piper TTS and local Whisper STT adapters, cancellation and lifecycle safeguards | Partially implemented; local runtime assets/models and MSI microphone/speaker end-to-end acceptance remain; known voice-to-app launch issue remains |
+| Windows desktop automation | Allowlisted app launch, foreground targeting, UI Automation control discovery/actions, clipboard/keyboard/zoom helpers and verification foundations | Partially implemented; target-window correctness, supported-app coverage and independent application outcome verification need device acceptance |
+| Multi-step workflows | Planner, scheduler, encrypted task journal/checkpoints, stop/cancel, task history/details and human-reviewed reconciliation | Foundations implemented; crash/restart, partial side effects and full recovery lifecycle remain unverified/incomplete |
+| Android companion | Native Android project, signed identity/API foundations, command queue and approval/revocation concepts | Partially implemented; install/enrollment/transport/revocation on both physical phones is not verified |
+| Memory and conversation | Encrypted local memory, authenticated conversation history, device isolation, serialization, local-first AI adapter and advisory-agent/prompt orchestration | Foundations implemented; semantic retrieval, verified deletion/retention and cross-device conflict/sync remain incomplete |
+| AI and integrations | Versioned role-separated prompts, structured response validation, advisory-agent routing and trusted capability-catalogue checks | Implemented in source; model/provider behavior and end-to-end agent workflows not verified; integrations remain limited |
+| DevOps and artifact integrity | Provenance manifests, SHA-256 inventory verification, archive/customer package verification, SBOM/signing pipeline foundations and release disposition records | Source implementation present; tests and exact-head GitHub Actions/Jenkins artifact acceptance paused; Nexus publishing disabled |
+| Release/device acceptance | Test suites, browser smoke assets and CI definitions exist in repository | Current testing pause means no current exact-head pass claim; laptop and phone acceptance remain outstanding |
 
-- Local wake-word setup and integration code exist, but the actual engine/model must be installed and exercised on the target MSI.
-- Browser speech recognition is a separate opt-in path and may involve browser/vendor/cloud processing; do not describe it as local-only.
-- Push-to-talk transcript review, consent revocation, hidden-tab cleanup, bounded retries, and cancellation safeguards exist in source. Validate their real browser/device behavior.
-- Piper TTS and optional local STT require compatible binaries/models and audible/recognition acceptance on the laptop.
-- The required wake acknowledgement is: `Hi sir, I am ready to work.`
+## What is developed but not yet tested
 
-### Windows desktop
+The current `new` branch includes source for the areas above. In particular, the latest voice increment now:
+- accepts an optional cancellation signal in the local Whisper provider;
+- handles cancellation before process launch and while Whisper is running;
+- cleans up process listeners and timeout state on completion;
+- terminates the Whisper subprocess on cancellation or timeout;
+- passes an abort signal from the authenticated transcription endpoint and cancels work when the request/response disconnects;
+- avoids auditing or writing a transcription response after the client has disconnected.
 
-- Launch and UI Automation are constrained; they are not universal remote-desktop control.
-- Controls must resolve uniquely. Custom-rendered, inaccessible, elevated, or unsupported controls may not be operable.
-- A successful API/adapter acknowledgement is not proof that the target application accepted or saved the change.
-- Financial/payment applications, credential entry, unrestricted shell execution, administrator elevation, and security bypass remain excluded.
+These changes were committed as `524e9a7` and `afd088a`. They were re-fetched from the repository after the commits. **No tests, build, lint, CI, or device validation were run.**
 
-### Android and cross-device
+Other implemented-but-unverified work includes signed authorization and policy controls, the task journal/reconciliation UI, voice consent/lifecycle handling, Windows UI Automation paths, conversation/agent orchestration, and DevOps manifest/archive verification. See [docs/EPICS.md](docs/EPICS.md) and [docs/USER_STORIES.md](docs/USER_STORIES.md) for item-level status.
 
-- Native Android source is present, but both actual phones must be independently enrolled and tested.
-- Each phone must have a separate key, identity, session, permission set, and revocation path.
-- Remote control must remain authenticated, signed, replay-resistant, owner-approved where required, cancellable, and revocable.
-- Native iOS is future scope, not part of current acceptance.
+## Not yet developed or not complete
 
-### Workflow, memory, and AI
+- Reliable end-to-end “Hey Jarvis, open Notepad” voice-to-intent-to-app execution. The wake phrase can respond, but the reported voice command does not reliably launch the requested app yet.
+- Full MSI acceptance of wake detection, microphone capture, local STT, Piper speech output, foreground-window targeting and verified application outcomes.
+- Independent installation, enrollment, secure communication and revocation acceptance for both Android phones.
+- Complete workflow crash/restart recovery and safe reconciliation for every partial/uncertain external side effect.
+- Full memory lifecycle: semantic retrieval, retention controls, verified deletion and cross-device conflict handling.
+- Broad productivity integrations and reliable unattended automation beyond the currently implemented bounded capabilities.
+- Exact-head automated test/build/lint/CI evidence and release acceptance. These activities are paused by owner instruction.
+- Production promotion, deployment and Nexus publishing. These remain disabled and require separate explicit approval.
 
-- Recovery is human-reviewed reconciliation, not automatic replay or generic resume.
-- Memory storage is a foundation; lifecycle UX, semantic retrieval, cross-device synchronization/conflict handling, retention and verified deletion remain open.
-- AI output is advisory/planning input only. It receives no direct execution authority and every action must pass the policy gateway.
-- Cloud AI/speech must remain explicit, task-scoped opt-in; no continuous cloud audio upload.
+## Verification policy and current pause
 
-## Security invariants
+**Development is currently stopped at the owner's request while the POC and user-story documentation is refreshed. Testing remains paused.** Do not run tests, builds, lint, audits, CI workflows, device checks or Nexus operations until explicitly resumed. Do not describe unexecuted checks as passed.
 
-- Default-deny policy gateway for every state-changing action.
-- No unrestricted shell, administrator privileges, credential/payment automation, or security-control bypass.
-- Approval remains bound to task, device, operation, canonical parameters and expiry; single-use semantics must remain intact.
-- Audit integrity and required security persistence fail closed.
-- Stop dependent steps on failure or uncertainty; never auto-replay an uncertain side effect.
-- Do not report completion without independent outcome evidence.
-- `main` remains production-protected; development work stays on authorized non-main branches and PRs target `dev`.
+## Branch and safety rules
 
-## POC completion gate
-
-The POC remains **NOT COMPLETE** until all existing epics in [docs/EPICS.md](docs/EPICS.md) meet their acceptance criteria, exact-head CI passes, required target-device evidence is recorded, and all residual restrictions are documented. Use [POC2.md](POC2.md) as the detailed remaining-work checklist. Do not mark an item complete solely because implementation code or a test file exists.
+- `main` is production-protected and is never updated automatically.
+- `dev` is the integration branch; approved pull requests from development branches target `dev`.
+- `new` is the current feature/development branch; `fix` is for authorized fixes; `test` is for testing/audit work.
+- No branch creation/switching, PR, merge, push to another branch, deployment or production change without explicit authorization.
+- No secrets or API keys are committed; owner-supplied credentials remain in local environment configuration.
 
 ---
 
 ## Historical implementation and audit log
 
-The sections below are retained as historical implementation notes. Where an older note conflicts with the 2026-11-05 snapshot above, the newer snapshot and the detailed current gap register in POC2.md take precedence.
+The historical notes below are retained as supporting implementation history. The current project overview, status classification, remaining work and verification pause at the beginning of this document take precedence over older snapshots.
+
+---
 
 ## Conversational response layer — 2026-10-25
 
