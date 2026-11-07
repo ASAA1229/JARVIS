@@ -36,9 +36,12 @@ pipeline {
         bat 'npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json'
       }
     }
-    stage('Build') {
+    stage('Build and test') {
       steps {
+        bat 'npm run lint'
         bat 'npm run build'
+        bat 'npm test'
+        bat 'npm run test:browser'
       }
     }
     stage('Package and verify integrity') {

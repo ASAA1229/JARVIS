@@ -40,8 +40,18 @@ jobs:
         run: npm ci
       - name: Generate CycloneDX dependency SBOM
         run: npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json
+      - name: Dependency security audit
+        run: npm audit --audit-level=moderate
+      - name: TypeScript check
+        run: npm run lint
       - name: TypeScript build
         run: npm run build
+      - name: Automated test suite
+        run: npm test
+      - name: Browser security smoke test
+        run: npm run test:browser
+      - name: Python release-tooling tests
+        run: python -m unittest discover -s tests -t . -v
       - name: Create and verify SHA-256 build manifest
         shell: pwsh
         env:
