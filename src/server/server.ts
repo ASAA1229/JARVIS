@@ -10,7 +10,7 @@ import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, getCapability, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
-import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
+import { PersonalMemoryStore, type MemoryCategory } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
 import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
@@ -498,6 +498,52 @@ export class JarvisServer {
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
         }
+        // Two-tier memory and consent-based learning (US-057/058). Owner device only.
+        const manager = this.jarvis.memoryManager;
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/manager') {
+          return this.jsonResponse(res, 200, { status: manager.status(), candidates: manager.listCandidates('pending') });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/learning') {
+          const enabled = (body as { enabled?: unknown }).enabled;
+          if (typeof enabled !== 'boolean') return this.jsonResponse(res, 400, { error: 'enabled must be a boolean' });
+          manager.setLearningEnabled(enabled);
+          this.jarvis.audit.record('MEMORY_LEARNING_TOGGLED', { enabled }, auth.device.id);
+          return this.jsonResponse(res, 200, { learningEnabled: manager.isLearningEnabled() });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/feedback') {
+          const { category, content, ref } = body as { category?: unknown; content?: unknown; ref?: unknown };
+          if (!['preference', 'project', 'routine', 'general'].includes(String(category)) || typeof content !== 'string') {
+            return this.jsonResponse(res, 400, { error: 'category and content are required' });
+          }
+          try {
+            const candidate = manager.propose(auth.device.id, category as MemoryCategory, content, {
+              kind: 'feedback',
+              ...(typeof ref === 'string' && ref ? { ref } : {}),
+            });
+            this.jarvis.audit.record('MEMORY_CANDIDATE_PROPOSED', { candidateId: candidate.id, category: candidate.category, source: 'feedback' }, auth.device.id);
+            return this.jsonResponse(res, 201, { candidate });
+          } catch (error) {
+            return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Feedback could not be recorded' });
+          }
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/candidates/decide') {
+          const { id, decision, ttlDays } = body as { id?: unknown; decision?: unknown; ttlDays?: unknown };
+          if (typeof id !== 'string' || !['approve', 'reject'].includes(String(decision))) {
+            return this.jsonResponse(res, 400, { error: 'id and decision (approve|reject) are required' });
+          }
+          try {
+            if (decision === 'approve') {
+              const { candidate, memory } = manager.approve(id, typeof ttlDays === 'number' ? ttlDays : undefined);
+              this.jarvis.audit.record('MEMORY_CANDIDATE_APPROVED', { candidateId: id, memoryId: memory.id, category: memory.category }, auth.device.id);
+              return this.jsonResponse(res, 200, { candidate, memoryId: memory.id });
+            }
+            const candidate = manager.reject(id);
+            this.jarvis.audit.record('MEMORY_CANDIDATE_REJECTED', { candidateId: id }, auth.device.id);
+            return this.jsonResponse(res, 200, { candidate });
+          } catch (error) {
+            return this.jsonResponse(res, 409, { error: error instanceof Error ? error.message : 'Candidate could not be decided' });
+          }
+        }
         // Owner data portability: a plaintext JSON copy for the authenticated owner device.
         // The audit records only that an export happened and how many records it held.
         if (req.method === 'GET' && url.pathname === '/api/memory/export') {
@@ -668,9 +714,21 @@ export class JarvisServer {
         // Action-like directives continue through the existing planner and PolicyGateway.
         // Supply only request-relevant memories to the conversational prompt.
         // The memory store is encrypted and the model treats these records as untrusted data.
-        const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
-          ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
-          : [];
+        // Two-tier retrieval: this conversation's working memory plus relevant long-term
+        // memory (long-term only for device-management devices), bounded in size.
+        const canReadLongTerm = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        const conversationMemory = this.jarvis.memoryManager
+          ? this.jarvis.memoryManager.retrieveContext({
+            deviceId: auth.device.id,
+            query: text.trim(),
+            ...(conversationId ? { scope: { kind: 'conversation' as const, id: conversationId } } : {}),
+            includeLongTerm: canReadLongTerm,
+            maxItems: 6,
+            maxChars: 3000,
+          }).map((item) => ({ content: item.content, category: item.tier === 'working' ? 'working_' + item.label : item.label }))
+          : canReadLongTerm && this.personalMemory
+            ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
+            : [];
 
         // Do not allocate conversation state for commands routed to the execution planner.
         if (isActionRequest(text.trim())) {
@@ -682,6 +740,8 @@ export class JarvisServer {
         return await this.conversationSessions.runExclusive(lockId, async () => {
           const conversation = this.conversationSessions.getOrCreate(authDevice.id, conversationId);
           if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
+          // Working memory: short-lived, RAM-only context for this conversation.
+          this.jarvis.memoryManager?.working.put(authDevice.id, 'conversation', conversation.id, 'user_turn', text.trim());
 
           // Advisory agents share the same device-bound conversation thread and lock.
           // Only a small recent slice is supplied as untrusted context; it never grants tool authority.

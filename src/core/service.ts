@@ -26,6 +26,8 @@ import { DeviceSecurityService } from './deviceSecurity.js';
 import { NotificationCenter } from './notifications.js';
 import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
 import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { MemoryManager } from '../memory/memoryManager.js';
+import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 
@@ -110,6 +112,8 @@ export class JarvisCoreService {
   public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
   public readonly personalMemory?: PersonalMemoryStore;
+  /** Two-tier memory (working + long-term) and consent-based learning (US-057/058). */
+  public readonly memoryManager?: MemoryManager;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
   private readonly taskJournal?: TaskJournal;
@@ -145,6 +149,12 @@ export class JarvisCoreService {
     if (ownerControlToken) {
       this.personalMemory = new PersonalMemoryStore(
         statePath ? statePath + '.memory' : './data/personal-memory.enc',
+        ownerControlToken,
+      );
+      this.memoryManager = new MemoryManager(
+        this.personalMemory,
+        new WorkingMemory(),
+        statePath ? statePath + '.memory-candidates' : './data/memory-candidates.enc',
         ownerControlToken,
       );
       this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken);
@@ -549,6 +559,8 @@ export class JarvisCoreService {
           // Secondary copies: task history (and its encrypted journal) holds the text of the
           // memory:save/update requests and memory:list results. Deletion must cover them too.
           const scrub = deleted && existing ? this.#scrubDeletedMemoryFromTasks(id, existing.content) : { scrubbedTasks: 0, persisted: true };
+          // Derived copies held by the Memory Manager (working memory, learning candidates).
+          if (deleted && existing) this.memoryManager?.scrubDeleted(id, existing.content);
           this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted }, taskRecord.deviceId, taskId);
           if (deleted && (!diskVerified || !scrub.persisted)) {
             return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: diskVerified ? 'The memory was deleted, but task-history copies could not be durably scrubbed.' : 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
@@ -1130,6 +1142,8 @@ export class JarvisCoreService {
   public onDeviceRevoked(deviceId: DeviceId): void {
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
     const schedules = this.scheduler.cancelForDevice(deviceId);
+    // A revoked device's short-lived working context is discarded immediately.
+    this.memoryManager?.working.clearDevice(deviceId);
     for (const task of this.tasks.values()) {
       if (task.deviceId !== deviceId) continue;
       if (task.state === TaskState.EXECUTING) this.interruptTask(task.id);
