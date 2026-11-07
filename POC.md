@@ -98,6 +98,27 @@ Testing was resumed by the owner on 2026-11-07. Local results on branch `new` (W
 
 CI/Jenkins exact-head runs and device acceptance remain required before any story is marked VERIFIED. Nexus publishing and production deployment remain disabled.
 
+### Device acceptance on the target laptop — 2026-11-07 (no microphone)
+
+Real signed HTTP API → planner → policy/approval → Windows launcher on the Windows 11 laptop (i5-1235U), isolated temporary state:
+
+| Spoken-style request | Result |
+|---|---|
+| “Hey Jarvis, open Notepad.” | Approval → **VERIFIED_SUCCESS**; existing Notepad window focused, no duplicate process, unsaved document untouched |
+| “OK Jarvis open calculator” | Approval → **VERIFIED_SUCCESS** (cold launch and existing-window reuse) |
+| “Jarvis, open Paint please” | Approval → **VERIFIED_SUCCESS** (cold launch and reuse) |
+| Repeat “open notepad” | Remembered approval applied → **VERIFIED_SUCCESS** |
+
+Defects found and fixed: existing-window focus failed when another app held the foreground (Windows foreground-lock) and for Store apps hosted by ApplicationFrameHost (Calculator). With the desktop **locked**, JARVIS correctly refuses all desktop actions; the two real-Notepad automated tests therefore need an unlocked session. Still outstanding: microphone wake-word and speech-to-text on this laptop (requires the owner speaking), Piper audio output.
+
+### Personal AI gateway for websites (JARVIS-E09) — 2026-11-07
+
+New OpenAI-compatible site gateway (`docs/SITE_AI_GATEWAY.md`). Live chain verified locally: portfolio `/api/chat` → JARVIS gateway → Ollama `llama3.2` (CPU) returned profile-grounded answers in 14–24 s. Generation measured at ~2 tokens/s while OneDrive sync kept the CPU at 1.3 GHz/77% load; streaming now uses keep-alives and idle-based timeouts so slow answers complete. Public tunnel exposure and production use are not yet set up.
+
+### Memory deletion — 2026-11-07
+
+Deleting a memory now also scrubs its text from task history and the encrypted task journal (verified by re-decrypting from disk). See `docs/MEMORY_PRIVACY.md`.
+
 ## Branch and safety rules
 
 - `main` is production-protected and is never updated automatically.
