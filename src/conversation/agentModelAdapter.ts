@@ -2,6 +2,7 @@
  * OpenAI-compatible adapter for advisory JARVIS agents.
  * Local endpoint is the default. Remote providers require explicit opt-in.
  */
+import { providerRouter, type ProviderId } from '../ai/providerRouter.js';
 import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.js';
 
 const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
@@ -53,10 +54,19 @@ function readConfiguration() {
  * Validated model endpoint for in-process callers (for example the site AI gateway).
  * Applies the same local-first / explicit-remote-opt-in rules as the agents.
  */
-export function getModelEndpoint(): { baseUrl: string; model: string; apiKey?: string } | null {
-  const config = readConfiguration();
-  if (config.status.status !== 'ready' || !('baseUrl' in config) || !config.baseUrl || !config.model) return null;
-  return { baseUrl: config.baseUrl, model: config.model, ...(config.apiKey ? { apiKey: config.apiKey } : {}) };
+export function getModelEndpoint(): { id: ProviderId; baseUrl: string; model: string; apiKey?: string } | null {
+  // Site gateway traffic (US-059): local unless the owner allows cloud for site requests,
+  // either with JARVIS_SITE_GATEWAY_ALLOW_CLOUD=true or 'site' in JARVIS_CLOUD_ALLOWED_TASKS.
+  // Streaming needs an OpenAI-compatible provider.
+  const decision = providerRouter.route({
+    taskType: 'site',
+    containsPrivateData: false,
+    cloudAuthorized: process.env.JARVIS_SITE_GATEWAY_ALLOW_CLOUD === 'true',
+    formats: ['openai'],
+  });
+  const provider = decision.provider;
+  if (!provider) return null;
+  return { id: provider.id, baseUrl: provider.baseUrl, model: provider.model, ...(provider.apiKey ? { apiKey: provider.apiKey } : {}) };
 }
 
 /** Exposes only safe startup diagnostics; never returns endpoint or credential values. */
@@ -123,13 +133,18 @@ async function readBoundedResponse(response: Response): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
+// Agent prompts carry conversation history and owner memory, so they are routed as
+// private (local-only). Agents need OpenAI-compatible JSON mode.
+const AGENT_ROUTE = { taskType: 'agent', containsPrivateData: true, formats: ['openai'] } as const;
+
 export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
-  const config = readConfiguration();
-  if (config.status.status !== 'ready' || !('baseUrl' in config)) return null;
-  const { baseUrl, model, apiKey } = config;
+  if (!providerRouter.route({ ...AGENT_ROUTE, formats: [...AGENT_ROUTE.formats] }).provider) return null;
 
   return {
     async generate(prompt, signal): Promise<unknown> {
+      const provider = providerRouter.route({ ...AGENT_ROUTE, formats: [...AGENT_ROUTE.formats] }).provider;
+      if (!provider) throw new AgentModelProviderError('network');
+      const { baseUrl, model, apiKey } = provider;
       let response: Response | undefined;
       for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
         try {
@@ -150,6 +165,7 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
         } catch {
           if (signal.aborted) throw new Error('agent_model_aborted');
           // Network failure is ambiguous; never retry a possibly accepted request.
+          providerRouter.reportFailure(provider.id);
           throw new AgentModelProviderError('network');
         }
 
@@ -160,7 +176,11 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
         await waitForRetry(retryDelay, signal);
       }
       if (!response) throw new AgentModelProviderError('network');
-      if (!response.ok) throw new AgentModelProviderError('http', response.status);
+      if (!response.ok) {
+        if (response.status >= 500) providerRouter.reportFailure(provider.id);
+        throw new AgentModelProviderError('http', response.status);
+      }
+      providerRouter.reportSuccess(provider.id);
 
       let payload: {
         choices?: Array<{ message?: { content?: unknown; refusal?: unknown } }>;

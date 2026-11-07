@@ -600,3 +600,9 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   color: #ffd27a;
   font-weight: 600;
 }
+
+/* Resource profile and AI provider panel */
+.hud-resources { font-size: 11px; line-height: 1.5; margin-bottom: 10px; }
+.hud-resources-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.hud-resources-controls select { background: transparent; color: inherit; border: 1px solid var(--text-dim); padding: 2px 4px; }
+.hud-heavy-work { list-style: none; margin: 6px 0 0; padding: 0; color: var(--text-dim); }

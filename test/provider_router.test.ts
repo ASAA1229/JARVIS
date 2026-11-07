@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { ProviderRouter, loadProviders } from '../src/ai/providerRouter.js';
+
+const cloudEnv = {
+  JARVIS_CLOUD_OPENAI_API_KEY: 'sk-test-not-real',
+  JARVIS_CLOUD_OPENAI_MODEL: 'gpt-4.1-mini',
+  JARVIS_CLOUD_ANTHROPIC_API_KEY: 'anthropic-test-not-real',
+  JARVIS_CLOUD_ANTHROPIC_MODEL: 'claude-test',
+};
+
+test('local is the default provider and cloud adapters exist only when configured', () => {
+  assert.deepEqual(loadProviders({}).map((p) => p.id), ['local']);
+  assert.deepEqual(loadProviders(cloudEnv).map((p) => p.id), ['local', 'openai', 'anthropic']);
+  const router = new ProviderRouter(() => cloudEnv);
+  const decision = router.route({ taskType: 'conversation', containsPrivateData: false, cloudAuthorized: true });
+  assert.equal(decision.provider?.id, 'local');
+});
+
+test('cloud is never used without owner authorization, and never for private data', () => {
+  let now = 0;
+  const router = new ProviderRouter(() => cloudEnv, () => now);
+  router.reportFailure('local');
+  assert.equal(router.route({ taskType: 'conversation', containsPrivateData: false }).provider, null);
+  const privateDecision = router.route({ taskType: 'conversation', containsPrivateData: true, cloudAuthorized: true });
+  assert.equal(privateDecision.provider, null);
+  assert.ok(privateDecision.skipped.some((item) => /private data/.test(item.reason)));
+  const authorized = router.route({ taskType: 'conversation', containsPrivateData: false, cloudAuthorized: true });
+  assert.equal(authorized.provider?.id, 'openai');
+  assert.match(authorized.reason, /authorized/);
+  now = 61_000; // local cooldown expires
+  assert.equal(router.route({ taskType: 'conversation', containsPrivateData: false, cloudAuthorized: true }).provider?.id, 'local');
+});
+
+test('owner allowlist authorizes cloud per task type and format filters apply', () => {
+  const router = new ProviderRouter(() => ({ ...cloudEnv, JARVIS_CLOUD_ALLOWED_TASKS: 'developer' }));
+  router.reportFailure('local');
+  assert.equal(router.route({ taskType: 'developer', containsPrivateData: false }).provider?.id, 'openai');
+  assert.equal(router.route({ taskType: 'site', containsPrivateData: false }).provider, null);
+  router.reportFailure('openai');
+  assert.equal(router.route({ taskType: 'developer', containsPrivateData: false, formats: ['openai'] }).provider, null);
+  assert.equal(router.route({ taskType: 'developer', containsPrivateData: false }).provider?.id, 'anthropic');
+});
+
+test('status never exposes credentials or URLs', () => {
+  const status = JSON.stringify(new ProviderRouter(() => cloudEnv).status());
+  assert.equal(status.includes('sk-test-not-real'), false);
+  assert.equal(status.includes('anthropic-test-not-real'), false);
+  assert.equal(status.includes('https://'), false);
+});
+
+test('insecure remote endpoints are refused', () => {
+  assert.deepEqual(loadProviders({ JARVIS_AI_BASE_URL: 'http://example.com/v1', JARVIS_AI_ALLOW_REMOTE: 'true' }).map((p) => p.id), []);
+  assert.deepEqual(loadProviders({ ...cloudEnv, JARVIS_CLOUD_OPENAI_BASE_URL: 'http://api.example.com/v1' }).map((p) => p.id), ['local', 'anthropic']);
+});

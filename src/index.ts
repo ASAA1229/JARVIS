@@ -22,6 +22,12 @@ async function main() {
   await server.start();
   console.log(`✅ JARVIS Core service is listening on http://127.0.0.1:${config.port}`);
 
+  // Adaptive resource profiles (US-061): sample CPU/RAM/battery and let the
+  // profile defer recurring background jobs when the laptop is constrained.
+  const { resourceManager } = await import('./resources/resourceManager.js');
+  resourceManager.start();
+  server.getService().scheduler.setBackgroundGate(() => !resourceManager.limits().recurringJobsAllowed);
+
   // Optional personal AI gateway for websites (OpenAI-compatible /v1 on its own port).
   const gatewayPort = process.env.JARVIS_SITE_GATEWAY_PORT;
   if (gatewayPort) {
@@ -34,10 +40,22 @@ async function main() {
       import('./gateway/siteClientStore.js'),
       import('./conversation/agentModelAdapter.js'),
     ]);
+    const { providerRouter } = await import('./ai/providerRouter.js');
     const gateway = new SiteAiGateway({
       store: new SiteClientStore(process.env.JARVIS_SITE_CLIENTS_PATH || './data/site-clients.json'),
       audit: server.getService().audit,
       modelEndpoint: getModelEndpoint,
+      concurrency: () => {
+        const limits = resourceManager.limits();
+        return { perClient: limits.gatewayMaxConcurrentPerClient, total: limits.gatewayMaxConcurrentTotal };
+      },
+      registerHeavyWork: (label, cancel) => resourceManager.registerHeavyWork('model_inference', label, cancel),
+      reportOutcome: (endpoint, ok) => {
+        const id = endpoint.id;
+        if (id !== 'local' && id !== 'openai' && id !== 'anthropic') return;
+        if (ok) providerRouter.reportSuccess(id);
+        else providerRouter.reportFailure(id);
+      },
     });
     await gateway.start(port);
     console.log(`✅ JARVIS site AI gateway is listening on http://127.0.0.1:${port}/v1 (site keys: npm run site-key -- list)`);

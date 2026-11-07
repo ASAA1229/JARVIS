@@ -186,6 +186,24 @@
             <div class="no-tasks-hint" id="hud-no-approvals-hint">No actions awaiting human consent.</div>
           </div>
 
+          <div class="tasks-timeline-header">
+            <span>RESOURCES &amp; AI</span>
+            <button id="btn-refresh-resources" class="hud-btn-mini" type="button">REFRESH</button>
+          </div>
+          <div id="hud-resources" class="hud-resources" role="region" aria-label="Resource profile and AI provider status" aria-live="polite">
+            <p id="hud-resources-summary" class="task-history-empty">Resource status appears after the secure session is restored.</p>
+            <div class="hud-resources-controls">
+              <label for="hud-resource-mode">PROFILE</label>
+              <select id="hud-resource-mode" aria-label="Resource profile mode">
+                <option value="auto">AUTO</option>
+                <option value="idle">IDLE</option>
+                <option value="normal">NORMAL</option>
+                <option value="intensive">INTENSIVE</option>
+              </select>
+              <button id="btn-stop-heavy-work" class="hud-btn-mini" type="button">STOP HEAVY WORK</button>
+            </div>
+            <ul id="hud-heavy-work" class="hud-heavy-work"></ul>
+          </div>
           <div class="tasks-timeline-header task-history-heading">
             <span>RECENT TASKS</span>
             <button id="btn-refresh-tasks" class="hud-btn-mini" type="button">REFRESH</button>

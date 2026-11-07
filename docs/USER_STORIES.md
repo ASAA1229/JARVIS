@@ -840,6 +840,8 @@ The stories below capture approved requirements from the 50-question exercise. T
 
 ### JARVIS-US-059 — Adaptive local and cloud provider routing
 
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING (2026-11-08)** — `src/ai/providerRouter.ts` + `providerClient.ts`: local Ollama default; OpenAI-compatible and Anthropic adapters only when configured via env; private data (memory/history) routes local-only; cloud requires per-task authorization or `JARVIS_CLOUD_ALLOWED_TASKS`; failures put a provider on a 60 s cooldown with reasons recorded; conversation, agents and site gateway use the router; owner status at `GET /api/ai/providers` (no URLs/keys). To test: run `test/provider_router.test.ts`; live local answer; stop Ollama and confirm honest fallback; configure a cloud key and confirm it is used only when authorized and never with memory.
+
 **Priority:** P1
 
 **As the owner,** I want JARVIS to select among configured local and cloud AI providers according to task, privacy, cost and availability, so that each request uses an appropriate provider.
@@ -865,6 +867,8 @@ The stories below capture approved requirements from the 50-question exercise. T
 - Revoked devices and stale queued state-changing requests cannot regain authority on reconnect.
 
 ### JARVIS-US-061 — Adaptive resource and workload management
+
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING (2026-11-08)** — `src/resources/resourceManager.ts`: CPU/RAM/battery sampling (PowerShell CIM, 4 s timeout, 60 s cache), auto idle/normal/intensive selection or owner pin; profile drives site-gateway concurrency, advisory-agent budget and deferral of recurring scheduled jobs; heavy-work registry with stop; signed owner routes `GET /api/resources`, `POST /api/resources/profile`, `POST /api/resources/stop`; HUD “Resources & AI” panel. To test: run `test/resource_manager.test.ts`; on battery <30% confirm IDLE and deferred recurring jobs; pin INTENSIVE and confirm higher gateway concurrency; stop a running site request from the HUD.
 
 **Priority:** P1
 

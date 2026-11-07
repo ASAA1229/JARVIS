@@ -20,6 +20,8 @@ import type { AuditLogger } from '../audit/audit.js';
 import type { PublicSiteClient, SiteClientStore } from './siteClientStore.js';
 
 export interface ModelEndpoint {
+  /** Provider id from the router (for availability reporting); never a secret. */
+  id?: string;
   baseUrl: string;
   model: string;
   apiKey?: string;
@@ -42,6 +44,12 @@ export interface SiteAiGatewayOptions {
   keepAliveMs?: number;
   maxConcurrentPerClient?: number;
   maxConcurrentTotal?: number;
+  /** Resource-profile concurrency (US-061); read per request, overrides the static limits. */
+  concurrency?: () => { perClient: number; total: number };
+  /** Register a running model call so the owner can see/stop expensive work (US-061). */
+  registerHeavyWork?: (label: string, cancel: () => void) => { done: () => void };
+  /** Report provider success/failure to the router for honest fallback (US-059). */
+  reportOutcome?: (endpoint: ModelEndpoint, ok: boolean) => void;
 }
 
 type ChatRole = 'system' | 'user' | 'assistant';
@@ -250,7 +258,11 @@ export class SiteAiGateway {
     if (!endpoint) throw new HttpError(503, 'JARVIS has no AI model configured.', 'server_error');
 
     const perClient = this.inFlight.get(client.id) ?? 0;
-    if (perClient >= (this.options.maxConcurrentPerClient ?? 2) || this.inFlightTotal >= (this.options.maxConcurrentTotal ?? 4)) {
+    const limits = this.options.concurrency?.() ?? {
+      perClient: this.options.maxConcurrentPerClient ?? 2,
+      total: this.options.maxConcurrentTotal ?? 4,
+    };
+    if (perClient >= limits.perClient || this.inFlightTotal >= limits.total) {
       throw new HttpError(429, 'JARVIS is busy with other requests; retry shortly.', 'rate_limit_error', { 'Retry-After': '2' });
     }
     this.inFlight.set(client.id, perClient + 1);
@@ -267,6 +279,7 @@ export class SiteAiGateway {
     res.on('close', onClose);
     // Hard ceiling for the whole request; first-token and idle limits are enforced separately.
     const maxTimer = setTimeout(() => controller.abort(), this.options.maxDurationMs ?? 300_000);
+    const heavy = this.options.registerHeavyWork?.(`site AI request (${client.name})`, () => controller.abort());
     let status = 200;
     let outputChars = 0;
     const id = 'chatcmpl-' + randomUUID();
@@ -289,6 +302,7 @@ export class SiteAiGateway {
       if (!clientGone) throw error;
     } finally {
       clearTimeout(maxTimer);
+      heavy?.done();
       res.off('close', onClose);
       this.inFlight.set(client.id, Math.max(0, (this.inFlight.get(client.id) ?? 1) - 1));
       this.inFlightTotal = Math.max(0, this.inFlightTotal - 1);
@@ -323,12 +337,14 @@ export class SiteAiGateway {
         signal: controller.signal,
       });
     } catch {
+      this.options.reportOutcome?.(endpoint, false);
       throw controller.signal.aborted
         ? new HttpError(504, 'The JARVIS model did not respond in time.', 'server_error')
         : new HttpError(503, 'The JARVIS model is not reachable. Is the local model running?', 'server_error');
     } finally {
       clearTimeout(timer);
     }
+    this.options.reportOutcome?.(endpoint, upstream.ok || upstream.status < 500);
     if (!upstream.ok || !upstream.body) {
       await upstream.body?.cancel().catch(() => undefined);
       throw upstream.status === 404

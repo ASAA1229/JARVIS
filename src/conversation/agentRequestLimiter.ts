@@ -17,7 +17,8 @@ export class AgentRequestLimiter {
   private readonly windows = new Map<string, DeviceWindow>();
 
   constructor(
-    private readonly limit = 20,
+    /** A number, or a function read per call so resource profiles (US-061) can adjust it. */
+    private readonly limit: number | (() => number) = 20,
     private readonly windowMs = 5 * 60 * 1000,
     private readonly maxTrackedDevices = 500,
   ) {}
@@ -45,7 +46,8 @@ export class AgentRequestLimiter {
       this.windows.set(deviceId, window);
     }
 
-    if (window.timestamps.length >= this.limit) {
+    const limit = typeof this.limit === 'function' ? this.limit() : this.limit;
+    if (window.timestamps.length >= limit) {
       const retryAfterSeconds = Math.max(
         1,
         Math.ceil((window.timestamps[0] + this.windowMs - now) / 1000),
@@ -56,7 +58,7 @@ export class AgentRequestLimiter {
     window.timestamps.push(now);
     return {
       allowed: true,
-      remaining: Math.max(0, this.limit - window.timestamps.length),
+      remaining: Math.max(0, limit - window.timestamps.length),
       retryAfterSeconds: 0,
     };
   }

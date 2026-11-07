@@ -66,6 +66,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   pollStatus();
   refreshTaskHistory();
   setInterval(refreshTaskHistory, 15000);
+  refreshResources();
+  setInterval(refreshResources, 20000);
   setInterval(pollStatus, 3000);
   setInterval(pollAudit, 4000);
 });
@@ -74,6 +76,9 @@ function setupEventListeners() {
   const btnPtt = document.getElementById('btn-ptt');
   const btnSend = document.getElementById('btn-hud-send');
   document.getElementById('btn-refresh-tasks')?.addEventListener('click', () => refreshTaskHistory());
+  document.getElementById('btn-refresh-resources')?.addEventListener('click', () => refreshResources());
+  document.getElementById('hud-resource-mode')?.addEventListener('change', (event) => setResourceMode(event.target.value));
+  document.getElementById('btn-stop-heavy-work')?.addEventListener('click', () => stopHeavyWork());
   const textInput = document.getElementById('hud-text-input');
   const btnMute = document.getElementById('btn-toggle-mic-mute');
   const btnHandsFreeToggle = document.getElementById('btn-hands-free-toggle');
@@ -2055,3 +2060,73 @@ function initWaveformCanvas() {
   }
   animationFrameId = requestAnimationFrame(draw);
 }
+
+// ---- Resource profile and AI provider panel (US-059 / US-061) ----
+// Owner-only signed endpoints; built with DOM APIs (no innerHTML).
+async function refreshResources() {
+  const summary = document.getElementById('hud-resources-summary');
+  if (!summary || !currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources', { method: 'GET' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      summary.textContent = res.status === 403
+        ? 'Resource controls need a device-management device.'
+        : (data.error || 'Resource status unavailable.');
+      return;
+    }
+    renderResources(data);
+  } catch {
+    summary.textContent = 'Resource status unavailable.';
+  }
+}
+
+function renderResources(data) {
+  const summary = document.getElementById('hud-resources-summary');
+  const readings = data.readings || {};
+  const battery = readings.battery
+    ? `battery ${readings.battery.percent}%${readings.battery.charging ? ' (AC)' : ' (on battery)'}`
+    : 'no battery reading';
+  const local = (data.ai?.providers || []).find((provider) => provider.id === 'local');
+  const cloud = (data.ai?.providers || []).filter((provider) => provider.id !== 'local' && provider.configured);
+  summary.textContent = `PROFILE ${String(data.profile || '').toUpperCase()} (${data.mode === 'auto' ? 'auto: ' + data.reason : 'pinned'}) · ` +
+    `CPU ${readings.cpuPercent ?? '?'}% · free RAM ${readings.freeMemPercent ?? '?'}% · ${battery} · ` +
+    `AI: local ${local?.available ? 'ready' : 'unavailable'}${cloud.length ? ', cloud configured: ' + cloud.map((p) => p.id).join(', ') : ', no cloud providers'}`;
+  const select = document.getElementById('hud-resource-mode');
+  if (select && data.mode) select.value = data.mode;
+  const list = document.getElementById('hud-heavy-work');
+  if (!list) return;
+  list.replaceChildren();
+  for (const item of data.heavyWork || []) {
+    const entry = document.createElement('li');
+    entry.textContent = `${item.label} · ${Math.round((Date.now() - item.startedAt) / 1000)} s`;
+    list.appendChild(entry);
+  }
+}
+
+async function setResourceMode(mode) {
+  if (!currentSession) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources/profile', { method: 'POST', body: { mode } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Profile change failed');
+    addFeedItem('success', `Resource profile set to ${String(mode).toUpperCase()}.`);
+    refreshResources();
+  } catch (error) {
+    addFeedItem('failed', error instanceof Error ? error.message : 'Profile change failed');
+  }
+}
+
+async function stopHeavyWork() {
+  if (!currentSession) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources/stop', { method: 'POST', body: {} });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Stop failed');
+    addFeedItem('success', `Stopped ${data.stopped} running heavy task(s).`);
+    refreshResources();
+  } catch (error) {
+    addFeedItem('failed', error instanceof Error ? error.message : 'Stop failed');
+  }
+}
+

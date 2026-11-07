@@ -18,6 +18,8 @@ import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '..
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
+import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
+import { providerRouter } from '../ai/providerRouter.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -31,7 +33,8 @@ export class JarvisServer {
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
   private readonly conversationSessions = new ConversationSessionStore();
-  private readonly agentRequestLimiter = new AgentRequestLimiter();
+  // Advisory-agent budget follows the active resource profile (US-061).
+  private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
   constructor(
     port: number = 3000,
@@ -476,6 +479,45 @@ export class JarvisServer {
         } catch (error) {
           return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Store search rejected' });
         }
+      }
+
+      // Resource profiles (US-061) and AI provider routing status (US-059). Owner device only.
+      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = req.method === 'GET' ? undefined : await this.readJsonBody(req);
+        if (req.method !== 'GET' && !this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Resource and provider controls require device-management permission' });
+        }
+        if (req.method === 'GET' && url.pathname === '/api/resources') {
+          await resourceManager.sample();
+          return this.jsonResponse(res, 200, { ...resourceManager.snapshot(), ai: providerRouter.status() });
+        }
+        if (req.method === 'GET' && url.pathname === '/api/ai/providers') {
+          return this.jsonResponse(res, 200, providerRouter.status());
+        }
+        if (req.method === 'POST' && url.pathname === '/api/resources/profile') {
+          const mode = (body as { mode?: unknown }).mode;
+          if (!['auto', 'idle', 'normal', 'intensive'].includes(String(mode))) {
+            return this.jsonResponse(res, 400, { error: 'mode must be auto, idle, normal or intensive' });
+          }
+          resourceManager.setMode(mode as ProfileMode);
+          this.jarvis.audit.record('RESOURCE_PROFILE_SET', { mode }, auth.device.id);
+          return this.jsonResponse(res, 200, resourceManager.snapshot());
+        }
+        if (req.method === 'POST' && url.pathname === '/api/resources/stop') {
+          const id = (body as { id?: unknown }).id;
+          if (id !== undefined && (typeof id !== 'string' || !/^hw-[a-z0-9]{1,12}$/.test(id))) {
+            return this.jsonResponse(res, 400, { error: 'id must be a heavy-work id, or omitted to stop all' });
+          }
+          const stopped = resourceManager.stopHeavyWork(id as string | undefined);
+          this.jarvis.audit.record('RESOURCE_HEAVY_WORK_STOPPED', { stopped, all: id === undefined }, auth.device.id);
+          return this.jsonResponse(res, 200, { stopped, heavyWork: resourceManager.listHeavyWork() });
+        }
+        return this.jsonResponse(res, 405, { error: 'Unsupported resource method or route' });
       }
 
       // Personal memory is encrypted at rest and restricted to authenticated management devices.

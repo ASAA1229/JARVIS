@@ -137,6 +137,17 @@ export class Scheduler {
     return cancelled;
   }
 
+  /**
+   * Resource-profile gate (US-061): while it returns true, due *recurring* jobs are
+   * deferred to a later tick. One-shot owner-scheduled jobs still run so they never
+   * fall outside their missed-run grace window because of resource saving.
+   */
+  private deferRecurring: () => boolean = () => false;
+
+  public setBackgroundGate(deferRecurring: () => boolean): void {
+    this.deferRecurring = deferRecurring;
+  }
+
   public start(intervalMs = 15_000): void {
     if (this.timer) return;
     this.timer = setInterval(() => { void this.tick(); }, intervalMs);
@@ -155,6 +166,7 @@ export class Scheduler {
     if (!this.persistHealthy) return;
     for (const job of Array.from(this.jobs.values())) {
       if (!job.active || job.runAt > now || this.inFlight.has(job.id)) continue;
+      if (job.everyMinutes && this.deferRecurring()) continue;
       this.inFlight.add(job.id);
       try {
         if (!job.everyMinutes && now - job.runAt > MISSED_GRACE_MS) {

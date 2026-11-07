@@ -3,6 +3,8 @@
  * Uses versioned role-separated prompts and a locally validated JSON response contract.
  * It never executes tools; action-like requests are delegated to the policy-controlled planner.
  */
+import { providerRouter } from '../ai/providerRouter.js';
+import { chatCompletion, ProviderCallError } from '../ai/providerClient.js';
 import {
   buildConversationPrompt,
   parseConversationModelResponse,
@@ -61,58 +63,43 @@ function identityAnswer(text: string, memory: ConversationMemory[]): string | nu
 
 
 async function generateWithConfiguredModel(text: string, memory: ConversationMemory[], history: PromptConversationMessage[]): Promise<string | null> {
-  const baseUrl = (process.env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, '');
-  const model = process.env.JARVIS_AI_MODEL || 'llama3.2';
-  const apiKey = process.env.JARVIS_AI_API_KEY;
-  const isLocalEndpoint = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(baseUrl + '/');
-  if (!isLocalEndpoint && process.env.JARVIS_AI_ALLOW_REMOTE !== 'true') return null;
-
-  // Personal context is local-only. Remote calls receive the user request but no memories.
-  const messages = buildConversationPrompt({
-    request: text,
-    memories: isLocalEndpoint ? memory.slice(0, 5) : [],
-    history,
-  });
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-  try {
-    const response = await fetch(baseUrl + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.35,
-        response_format: { type: 'json_object' },
-        messages,
-      }),
-      signal: controller.signal,
+  // Adaptive routing (US-059): local first; personal memory or history => local only;
+  // a cloud provider is used only when the owner authorized it for this task type.
+  const containsPrivateData = memory.length > 0 || history.length > 0;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const decision = providerRouter.route({ taskType: 'conversation', containsPrivateData });
+    const provider = decision.provider;
+    if (!provider) return null;
+    const messages = buildConversationPrompt({
+      request: text,
+      // Personal context never leaves the device, even if routing is misconfigured.
+      memories: provider.local ? memory.slice(0, 5) : [],
+      history: provider.local ? history : [],
     });
-    if (!response.ok) return null;
-    const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: unknown; refusal?: unknown } }>;
-    };
-    const message = payload.choices?.[0]?.message;
-    if (typeof message?.refusal === 'string' && message.refusal.trim()) return message.refusal.trim().slice(0, 2000);
-    if (typeof message?.content !== 'string') return null;
-    let decoded: unknown;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
-      decoded = JSON.parse(message.content);
-    } catch {
-      return null;
+      const content = await chatCompletion(provider, messages, { temperature: 0.35, json: true }, controller.signal);
+      providerRouter.reportSuccess(provider.id);
+      let decoded: unknown;
+      try {
+        decoded = JSON.parse(content);
+      } catch {
+        return null;
+      }
+      const structured = parseConversationModelResponse(decoded);
+      if (!structured) return null;
+      return structured.followUpQuestion
+        ? structured.answer + '\n\n' + structured.followUpQuestion
+        : structured.answer;
+    } catch (error) {
+      if (error instanceof ProviderCallError && error.kind !== 'invalid_response') providerRouter.reportFailure(provider.id);
+      else return null;
+    } finally {
+      clearTimeout(timeout);
     }
-    const structured = parseConversationModelResponse(decoded);
-    if (!structured) return null;
-    return structured.followUpQuestion
-      ? structured.answer + '\n\n' + structured.followUpQuestion
-      : structured.answer;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
   }
+  return null;
 }
 
 /**
@@ -141,7 +128,7 @@ export async function answerConversationalMessageResult(
   if (generated) return { answer: generated, persistInHistory: true };
 
   return {
-    answer: 'I can help with that, sir, but the configured conversational model did not return a valid response. Check that the local OpenAI-compatible model endpoint is running and that JARVIS_AI_BASE_URL and JARVIS_AI_MODEL are configured. No cloud model is used unless JARVIS_AI_ALLOW_REMOTE is explicitly enabled.',
+    answer: 'I can help with that, sir, but no AI provider returned a valid response. Check that the local model (Ollama) is running and JARVIS_AI_BASE_URL / JARVIS_AI_MODEL are configured. Cloud providers are used only when configured and authorized by you, and never for requests that include personal memory.',
     persistInHistory: false,
   };
 }
