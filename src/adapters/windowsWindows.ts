@@ -42,6 +42,9 @@ export function classifyPowerShellError(error: unknown, signal?: AbortSignal): W
   if (haystack.includes('TARGET_MISMATCH')) {
     return new WindowsAgentError('target_mismatch', 'The foreground window is not the intended application; no action was taken.');
   }
+  if (haystack.includes('CLIPBOARD_EMPTY')) {
+    return new WindowsAgentError('unavailable', 'The clipboard has no text to paste; nothing was sent.');
+  }
   if (haystack.includes('NO_WINDOW') || haystack.includes('Cannot find a process')) {
     return new WindowsAgentError('unavailable', 'The target application or window is not available.');
   }
