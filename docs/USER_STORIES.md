@@ -9,6 +9,10 @@ Epic mapping: [EPICS.md](EPICS.md)
 Project overview and implemented baseline: [../POC.md](../POC.md)  
 Detailed remaining-work register: [../POC2.md](../POC2.md)
 
+## Owner pause and evidence boundary — 2026-11-07
+
+Development is stopped and testing is paused. This register classifies source implementation only; no test/build/lint/CI/device result is implied. Recent source increments include AI context-budget selection, Whisper process cancellation, transcription cancellation on disconnect, and immediate wake-triggered speech capture. The last item addresses the same-utterance capture-ordering race, but end-to-end voice recognition, policy dispatch, Windows app launch and verified outcome remain untested. All affected stories remain OPEN until evidence is recorded.
+
 ## Current story status — 2026-11-07
 
 **Important:** This is an implementation inventory, not an acceptance report. All stories remain open until their acceptance criteria are evidenced on the exact branch revision. No tests/build/lint/CI/device checks were run for this documentation update.
@@ -156,7 +160,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-010 — Voice action policy and result feedback
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Voice directives still pass through policy controls, but the reported 'Hey Jarvis, open Notepad' command does not reliably launch the app.
+**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Voice directives use the authenticated policy path; same-utterance capture ordering is improved in source, but end-to-end recognition, dispatch, app launch and outcome feedback have not been verified.
 
 **As the owner,** I want spoken commands to use the same authenticated policy and approval path as typed commands, so that voice cannot bypass security.
 
@@ -182,7 +186,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-012 — Safe allowlisted app launch
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Allowlisted application launch exists; reliable voice-to-intent dispatch and real app launch acceptance remain open.
+**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Allowlisted application launch and voice capture/dispatch foundations exist; end-to-end voice-to-intent launch and real MSI app acceptance remain unverified.
 
 **As the owner,** I want JARVIS to launch supported Windows apps, so that routine desktop tasks can be delegated safely.
 
