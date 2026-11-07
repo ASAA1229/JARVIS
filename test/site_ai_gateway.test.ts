@@ -38,7 +38,7 @@ describe('JARVIS site AI gateway', () => {
       upstreamCalls.push({ url: String(url), body });
       return upstream(body);
     }) as typeof fetch;
-    gateway = new SiteAiGateway({ store, audit, modelEndpoint: () => model, fetchImpl: fakeFetch });
+    gateway = new SiteAiGateway({ store, audit, modelEndpoint: () => model, fetchImpl: fakeFetch, keepAliveMs: 20, firstTokenTimeoutMs: 400, idleTimeoutMs: 150 });
     base = `http://127.0.0.1:${await gateway.start(0)}`;
   });
 
@@ -160,5 +160,50 @@ describe('JARVIS site AI gateway', () => {
     assert.equal(reloaded.authenticate(key)?.name, 'portfolio');
     assert.throws(() => reloaded.create('portfolio'), /already exists/);
     assert.throws(() => reloaded.create('Bad Name!'), /lowercase/);
+  });
+
+  test('streaming reports a model outage as an in-stream error event after early headers', async () => {
+    upstream = () => { throw new TypeError('fetch failed'); };
+    const response = await chat({ ...hello, stream: true });
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /"error":\{"message":"The JARVIS model is not reachable/);
+    assert.ok(text.trimEnd().endsWith('data: [DONE]'));
+    const record = audit.getRecords().filter((r) => r.eventType === 'SITE_AI_REQUEST').at(-1);
+    assert.equal(record?.details['status'], 503);
+    assert.equal(record?.details['turnCount'], 2);
+  });
+
+  test('streaming sends keep-alives while the model is slow, then relays the answer', async () => {
+    upstream = () => {
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({
+        async start(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"slow but ok"}}]}\n\n'));
+          controller.close();
+        },
+      }), { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const text = await (await chat({ ...hello, stream: true })).text();
+    assert.match(text, /: keep-alive/);
+    assert.match(text, /slow but ok/);
+  });
+
+  test('streaming ends with an error event when the model stalls mid-answer', async () => {
+    upstream = () => {
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+          // never closes: the idle timeout must end the response
+        },
+      }), { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const text = await (await chat({ ...hello, stream: true })).text();
+    assert.match(text, /partial/);
+    assert.match(text, /stopped responding mid-answer/);
+    const record = audit.getRecords().filter((r) => r.eventType === 'SITE_AI_REQUEST').at(-1);
+    assert.equal(record?.details['status'], 504);
   });
 });

@@ -32,7 +32,14 @@ export interface SiteAiGatewayOptions {
   modelEndpoint: () => ModelEndpoint | null;
   fetchImpl?: typeof fetch;
   host?: string;
-  upstreamTimeoutMs?: number;
+  /** Max wait for the model's first output (prompt processing on CPU can be slow). Default 120 s. */
+  firstTokenTimeoutMs?: number;
+  /** Max silence between streamed chunks once output has started. Default 45 s. */
+  idleTimeoutMs?: number;
+  /** Hard ceiling for one request. Default 300 s. */
+  maxDurationMs?: number;
+  /** Interval of SSE keep-alive comments while waiting for the first token. Default 15 s. */
+  keepAliveMs?: number;
   maxConcurrentPerClient?: number;
   maxConcurrentTotal?: number;
 }
@@ -183,7 +190,11 @@ export class SiteAiGateway {
   }
 
   stop(): Promise<void> {
-    return new Promise((resolve) => (this.server ? this.server.close(() => resolve()) : resolve()));
+    return new Promise((resolve) => {
+      if (!this.server) return resolve();
+      this.server.closeAllConnections?.();
+      this.server.close(() => resolve());
+    });
   }
 
   private audit(event: string, details: Record<string, unknown>): void {
@@ -223,6 +234,10 @@ export class SiteAiGateway {
     throw new HttpError(404, 'Not found.', 'not_found_error');
   }
 
+  private firstTokenTimeoutMs(): number {
+    return this.options.firstTokenTimeoutMs ?? 120_000;
+  }
+
   private async chat(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const client = this.authenticate(req);
     const retryAfter = this.limiter.consume(client.id, client.limits.requestsPerMinute);
@@ -242,122 +257,206 @@ export class SiteAiGateway {
     this.inFlightTotal += 1;
     const started = Date.now();
     const controller = new AbortController();
-    const onClose = () => { if (!res.writableEnded) controller.abort(); };
+    let clientGone = false;
+    const onClose = () => {
+      if (!res.writableEnded) {
+        clientGone = true;
+        controller.abort();
+      }
+    };
     res.on('close', onClose);
-    const timeout = setTimeout(() => controller.abort(), this.options.upstreamTimeoutMs ?? 60_000);
+    // Hard ceiling for the whole request; first-token and idle limits are enforced separately.
+    const maxTimer = setTimeout(() => controller.abort(), this.options.maxDurationMs ?? 300_000);
     let status = 200;
     let outputChars = 0;
+    const id = 'chatcmpl-' + randomUUID();
+    const created = Math.floor(Date.now() / 1000);
     try {
-      let upstream: Response;
-      try {
-        upstream = await this.fetchImpl(endpoint.baseUrl + '/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(endpoint.apiKey ? { Authorization: 'Bearer ' + endpoint.apiKey } : {}) },
-          body: JSON.stringify({
-            model: endpoint.model,
-            messages: request.messages,
-            stream: request.stream,
-            max_tokens: request.maxTokens,
-            ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-          }),
-          signal: controller.signal,
-        });
-      } catch {
-        throw controller.signal.aborted && !res.destroyed
-          ? new HttpError(504, 'The JARVIS model did not respond in time.', 'server_error')
-          : new HttpError(503, 'The JARVIS model is not reachable. Is the local model running?', 'server_error');
-      }
-      if (!upstream.ok || !upstream.body) {
-        await upstream.body?.cancel().catch(() => undefined);
-        throw upstream.status === 404
-          ? new HttpError(503, 'The configured JARVIS model is not installed.', 'server_error')
-          : new HttpError(502, 'The JARVIS model could not complete the request.', 'server_error');
-      }
-      const id = 'chatcmpl-' + randomUUID();
-      const created = Math.floor(Date.now() / 1000);
       if (request.stream) {
-        outputChars = await this.relayStream(upstream, res, id, created);
+        const result = await this.streamCompletion(endpoint, request, res, controller, id, created);
+        status = result.status;
+        outputChars = result.outputChars;
       } else {
-        const payload = await upstream.json().catch(() => null) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>; usage?: unknown } | null;
-        const content = payload?.choices?.[0]?.message?.content;
-        if (typeof content !== 'string') throw new HttpError(502, 'The JARVIS model returned an invalid response.', 'server_error');
-        const text = content.slice(0, MAX_OUTPUT_CHARS);
-        outputChars = text.length;
-        const finish = payload?.choices?.[0]?.finish_reason;
+        const text = await this.completeOnce(endpoint, request, controller);
+        outputChars = text.content.length;
         sendJson(res, 200, {
           id, object: 'chat.completion', created, model: PUBLIC_MODEL_ID,
-          choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: typeof finish === 'string' ? finish : 'stop' }],
+          choices: [{ index: 0, message: { role: 'assistant', content: text.content }, finish_reason: text.finishReason }],
         });
       }
     } catch (error) {
       status = error instanceof HttpError ? error.status : 500;
-      throw error;
+      if (!clientGone) throw error;
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(maxTimer);
       res.off('close', onClose);
       this.inFlight.set(client.id, Math.max(0, (this.inFlight.get(client.id) ?? 1) - 1));
       this.inFlightTotal = Math.max(0, this.inFlightTotal - 1);
       // Metadata only: message content and generated text are never written to the audit log.
+      // 499 marks a site that disconnected before the answer finished.
       try {
         this.options.audit.record('SITE_AI_REQUEST', {
-          clientId: client.id, site: client.name, status, stream: request.stream,
-          messageCount: request.messages.length,
+          clientId: client.id, site: client.name, status: clientGone ? 499 : status, stream: request.stream,
+          turnCount: request.messages.length,
           inputChars: request.messages.reduce((sum, message) => sum + message.content.length, 0),
-          outputChars, durationMs: Date.now() - started, clientDisconnected: controller.signal.aborted && res.destroyed,
+          outputChars, durationMs: Date.now() - started, clientDisconnected: clientGone,
         });
       } catch { /* the request already completed; the next request will fail closed */ }
     }
   }
 
-  /** Re-emit only assistant text deltas in OpenAI chunk format; provider metadata is dropped. */
-  private async relayStream(upstream: Response, res: ServerResponse, id: string, created: number): Promise<number> {
+  /** Call the model; transport and HTTP failures are mapped to honest gateway errors. */
+  private async callUpstream(endpoint: ModelEndpoint, request: ChatRequest, controller: AbortController): Promise<Response> {
+    const timer = setTimeout(() => controller.abort(), this.firstTokenTimeoutMs());
+    let upstream: Response;
+    try {
+      upstream = await this.fetchImpl(endpoint.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(endpoint.apiKey ? { Authorization: 'Bearer ' + endpoint.apiKey } : {}) },
+        body: JSON.stringify({
+          model: endpoint.model,
+          messages: request.messages,
+          stream: request.stream,
+          max_tokens: request.maxTokens,
+          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+        }),
+        signal: controller.signal,
+      });
+    } catch {
+      throw controller.signal.aborted
+        ? new HttpError(504, 'The JARVIS model did not respond in time.', 'server_error')
+        : new HttpError(503, 'The JARVIS model is not reachable. Is the local model running?', 'server_error');
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!upstream.ok || !upstream.body) {
+      await upstream.body?.cancel().catch(() => undefined);
+      throw upstream.status === 404
+        ? new HttpError(503, 'The configured JARVIS model is not installed.', 'server_error')
+        : new HttpError(502, 'The JARVIS model could not complete the request.', 'server_error');
+    }
+    return upstream;
+  }
+
+  private async completeOnce(endpoint: ModelEndpoint, request: ChatRequest, controller: AbortController): Promise<{ content: string; finishReason: string }> {
+    const upstream = await this.callUpstream(endpoint, request, controller);
+    const timer = setTimeout(() => controller.abort(), this.firstTokenTimeoutMs());
+    try {
+      const payload = await upstream.json().catch(() => null) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }> } | null;
+      const content = payload?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') {
+        throw controller.signal.aborted
+          ? new HttpError(504, 'The JARVIS model did not respond in time.', 'server_error')
+          : new HttpError(502, 'The JARVIS model returned an invalid response.', 'server_error');
+      }
+      const finish = payload?.choices?.[0]?.finish_reason;
+      return { content: content.slice(0, MAX_OUTPUT_CHARS), finishReason: typeof finish === 'string' ? finish : 'stop' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Stream in OpenAI chunk format. Headers and the assistant role chunk are sent
+   * immediately and keep-alive comments follow while the model reads the prompt,
+   * so slow local hardware does not trip proxy/tunnel first-byte timeouts.
+   * Only assistant text deltas are relayed; provider metadata is dropped. Errors
+   * after headers are sent are reported as an OpenAI-style `error` event.
+   */
+  private async streamCompletion(
+    endpoint: ModelEndpoint, request: ChatRequest, res: ServerResponse, controller: AbortController, id: string, created: number,
+  ): Promise<{ status: number; outputChars: number }> {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Content-Type-Options': 'nosniff',
+      'X-Accel-Buffering': 'no',
       Connection: 'keep-alive',
     });
     const chunk = (delta: Record<string, string>, finish: string | null) =>
       `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: PUBLIC_MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-    res.write(chunk({ role: 'assistant' }, null));
-    const decoder = new TextDecoder();
-    let buffer = '';
     let output = 0;
-    let finishReason = 'stop';
-    const handleLine = (line: string) => {
-      if (!line.startsWith('data:')) return;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') return;
-      try {
-        const event = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }> };
-        const choice = event.choices?.[0];
-        const text = choice?.delta?.content;
-        if (typeof text === 'string' && text && output < MAX_OUTPUT_CHARS) {
-          const bounded = text.slice(0, MAX_OUTPUT_CHARS - output);
-          output += bounded.length;
-          res.write(chunk({ content: bounded }, null));
-        }
-        if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
-      } catch { /* ignore malformed provider events */ }
+    const finishWithError = (error: HttpError) => {
+      if (!res.destroyed) {
+        res.end(`data: ${JSON.stringify({ error: { message: error.message, type: error.type, code: error.status } })}\n\ndata: [DONE]\n\n`);
+      }
+      return { status: res.destroyed ? 499 : error.status, outputChars: output };
     };
-    const reader = upstream.body!.getReader();
+    res.write(chunk({ role: 'assistant' }, null));
+    const keepAlive = setInterval(() => {
+      if (!res.destroyed) res.write(': keep-alive\n\n');
+    }, this.options.keepAliveMs ?? 15_000);
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const armIdle = (ms: number) => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        controller.abort();
+        // Do not rely on the provider honouring the abort signal: cancel the read.
+        void reader?.cancel().catch(() => undefined);
+      }, ms);
+    };
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        lines.forEach(handleLine);
+      let upstream: Response;
+      try {
+        upstream = await this.callUpstream(endpoint, request, controller);
+      } catch (error) {
+        return finishWithError(error instanceof HttpError ? error : new HttpError(502, 'The JARVIS model could not complete the request.', 'server_error'));
+      }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finishReason = 'stop';
+      let sawText = false;
+      const handleLine = (line: string) => {
+        if (!line.startsWith('data:')) return;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') return;
+        try {
+          const event = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }> };
+          const choice = event.choices?.[0];
+          const text = choice?.delta?.content;
+          if (typeof text === 'string' && text && output < MAX_OUTPUT_CHARS) {
+            const bounded = text.slice(0, MAX_OUTPUT_CHARS - output);
+            output += bounded.length;
+            if (!sawText) {
+              sawText = true;
+              clearInterval(keepAlive);
+            }
+            res.write(chunk({ content: bounded }, null));
+          }
+          if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+        } catch { /* ignore malformed provider events */ }
+      };
+      reader = upstream.body!.getReader();
+      armIdle(this.firstTokenTimeoutMs());
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            // A cancelled read also reports done; treat a timeout abort as a failure.
+            if (controller.signal.aborted) throw new Error('aborted');
+            break;
+          }
+          armIdle(sawText ? this.options.idleTimeoutMs ?? 45_000 : this.firstTokenTimeoutMs());
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          lines.forEach(handleLine);
+        }
+      } catch {
+        return finishWithError(new HttpError(504, sawText
+          ? 'The JARVIS model stopped responding mid-answer.'
+          : 'The JARVIS model did not respond in time.', 'server_error'));
       }
       buffer += decoder.decode();
       if (buffer.trim()) handleLine(buffer);
+      if (res.destroyed) return { status: 499, outputChars: output };
       res.write(chunk({}, finishReason));
       res.end('data: [DONE]\n\n');
-    } catch {
-      // Headers are already sent; end the stream so the site does not hang.
-      if (!res.destroyed) res.end();
+      return { status: 200, outputChars: output };
+    } finally {
+      clearInterval(keepAlive);
+      if (idleTimer) clearTimeout(idleTimer);
     }
-    return output;
   }
 }
