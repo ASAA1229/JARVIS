@@ -695,7 +695,10 @@ A story is done only when:
 
 ## JARVIS-E08 — Shared DevOps Pipeline, Provenance & Artifact Integrity
 
-### JARVIS-US-041 — Generate traceable build provenance
+### JARVIS-E08-US-049 — Generate traceable build provenance
+
+**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Build provenance manifest and deterministic release identity are present; exact-head workflow/artifact evidence is pending.
+
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 role-separated prompt contracts and versioning are implemented; current-head AI behavior is untested.
 
@@ -708,7 +711,10 @@ A story is done only when:
 - A deterministic release identity binds the manifest to its project/source/build identity.
 - Missing or inconsistent required provenance fails closed.
 
-### JARVIS-US-042 — Verify artifact contents and checksums
+### JARVIS-E08-US-050 — Verify artifact contents and checksums
+
+**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Manifest inventory, SHA-256 and archive-member verification are implemented in source; execution and package acceptance are pending.
+
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 structured response/schema validation is implemented; current-head validation is pending.
 
@@ -721,7 +727,10 @@ A story is done only when:
 - Malformed inventory metadata is rejected before checksum verification.
 - Archive-member comparison verifies packaged files against the declared inventory; until implemented and evidenced, archive-content verification remains open.
 
-### JARVIS-US-043 — Verify customer-delivered packages against a release
+### JARVIS-E08-US-051 — Verify customer-delivered packages against a release
+
+**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Customer package verification order and structured failure reports are implemented; exact-head operator/CI acceptance is pending.
+
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 advisory-agent routing is implemented; end-to-end routing behavior is untested.
 
@@ -734,7 +743,10 @@ A story is done only when:
 - Failure output identifies the failed stage and reason without leaking secrets or private key material.
 - Legacy compatibility is explicit and does not weaken strict-provenance mode.
 
-### JARVIS-US-044 — Produce signed, SBOM-backed build artifacts through controlled CI
+### JARVIS-E08-US-052 — Produce signed, SBOM-backed build artifacts through controlled CI
+
+**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — SBOM and signing pipeline foundations exist; exact-head signatures, SBOM and artifact inspection have not been accepted.
+
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 local-first model adapter and remote-provider gating are implemented; provider acceptance remains pending.
 
@@ -748,7 +760,10 @@ A story is done only when:
 - Exact-head workflow execution and artifact inspection are recorded before acceptance.
 - Nexus publishing remains disabled until separately approved.
 
-### JARVIS-US-045 — Control release promotion and recovery
+### JARVIS-E08-US-053 — Control release promotion and recovery
+
+**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Release quarantine/recovery evidence controls exist; operational exercise and owner-approved release handling remain pending.
+
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 bounded device-isolated conversation history is implemented; current-head persistence/authorization checks are pending.
 
