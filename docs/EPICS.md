@@ -19,16 +19,20 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 
 ## Epic summary
 
+_Status baseline 2026-11-07 — see POC.md section 2 for done / needs testing / pending detail._
+
 | ID | Epic | Priority | Current disposition | Primary outcome |
 |---|---|---:|---|---|
-| JARVIS-E01 | Security, Identity & Approval Foundation | P0 | In progress — acceptance open | Every action is authenticated, authorized, auditable and safely revocable |
-| JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | In progress — lifecycle hardening implemented; tests/device validation open | Reliable local wake, consented capture, clear HUD and verified speech output |
-| JARVIS-E03 | Windows Desktop Control | P1 | In progress — real-app acceptance open | Safe, bounded control of supported Windows applications |
-| JARVIS-E04 | Multi-Step Execution & Recovery | P1 | In progress — lifecycle/fault acceptance open | Durable workflows that stop safely and recover through human review |
-| JARVIS-E05 | Android Companion & Cross-Device Control | P1 | In progress — both-phone acceptance open | Two independently secured phones can approve/control permitted laptop tasks |
-| JARVIS-E06 | Memory, Privacy & Personalization | P1 | In progress — lifecycle acceptance open | Private, useful, permission-aware memory with retention and deletion |
-| JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | In progress — prompt contracts, advisory agents and conversation continuity implemented; validation and provider/context gaps open | Useful local/cloud AI and existing integrations without policy bypass |
-| JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Open | Exact-head software, security, device and resource evidence |
+| JARVIS-E01 | Security, Identity & Approval Foundation | P0 | Core controls VERIFIED LOCALLY; owner recovery (US-005) pending | Every action is authenticated, authorized, auditable and safely revocable |
+| JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | HUD + wake runtime VERIFIED LOCALLY; live microphone test by owner pending; Piper pending | Reliable local wake, consented capture, clear HUD and verified speech output |
+| JARVIS-E03 | Windows Desktop Control | P1 | App launch/focus VERIFIED ON TARGET LAPTOP; UI Automation real-app tests pending | Safe, bounded control of supported Windows applications |
+| JARVIS-E04 | Multi-Step Execution & Recovery | P1 | VERIFIED LOCALLY; crash/restart drill pending | Durable workflows that stop safely and recover through human review |
+| JARVIS-E05 | Android Companion & Cross-Device Control | P1 | Server side VERIFIED LOCALLY; APK build + two-phone acceptance pending | Two independently secured phones can approve/control permitted laptop tasks |
+| JARVIS-E06 | Memory, Privacy & Personalization | P1 | Deletion scrub + export VERIFIED LOCALLY; cross-device sync not started | Private, useful, permission-aware memory with retention and deletion |
+| JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | Agents/contracts VERIFIED LOCALLY; integrations partial | Useful local/cloud AI and existing integrations without policy bypass |
+| JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Resources measured (idle 0 % CPU, 66 MB); exact-head CI run pending | Exact-head software, security, device and resource evidence |
+| JARVIS-E08 | Shared DevOps Pipeline, Provenance & Artifact Integrity | P1 | Integrity tooling VERIFIED LOCALLY; first CI/Jenkins run pending; Nexus disabled | Traceable, verifiable release artifacts |
+| JARVIS-E09 | Personal AI Gateway for Websites | P1 | Gateway VERIFIED ON TARGET LAPTOP (portfolio → llama3.2); public tunnel pending | Owner's sites use JARVIS via API key instead of a paid AI API |
 
 ---
 

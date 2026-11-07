@@ -11,23 +11,24 @@ Detailed remaining-work register: [../POC2.md](../POC2.md)
 
 ## Evidence boundary — testing resumed 2026-11-07
 
-Testing resumed on 2026-11-07: tsc, 233+3 Node tests, build, browser smoke, npm audit and 30 Python tests pass locally (see POC “Verification status”). Device acceptance and exact-head CI are still outstanding, so no story is marked VERIFIED. Recent source increments include AI context-budget selection, Whisper process cancellation, transcription cancellation on disconnect, and immediate wake-triggered speech capture. The last item addresses the same-utterance capture-ordering race, but end-to-end voice recognition, policy dispatch, Windows app launch and verified outcome remain untested. All affected stories remain OPEN until evidence is recorded.
+Testing resumed on 2026-11-07: tsc, 249+3 Node tests (2 need an unlocked desktop), build, browser smoke, npm audit and 30 Python tests pass locally (see POC section 2). Device acceptance and exact-head CI are still outstanding, so no story is marked VERIFIED. Recent source increments include AI context-budget selection, Whisper process cancellation, transcription cancellation on disconnect, and immediate wake-triggered speech capture. The last item addresses the same-utterance capture-ordering race, but end-to-end voice recognition, policy dispatch, Windows app launch and verified outcome remain untested. All affected stories remain OPEN until evidence is recorded.
 
 ## Current story status — 2026-11-07
 
-**Important:** This is an implementation inventory, not an acceptance report. All stories remain open until their acceptance criteria are evidenced on the exact branch revision. No tests/build/lint/CI/device checks were run for this documentation update.
+**Important:** “Verified” means the check was actually executed on 2026-11-07 (locally or on the target laptop); CI/Jenkins evidence is still pending because commits are not pushed. All stories remain open until their acceptance criteria are evidenced on the exact branch revision. No tests/build/lint/CI/device checks were run for this documentation update.
 
-| Epic / story range | Current implementation summary |
+| Epic / story range | Status summary (2026-11-07) |
 |---|---|
-| E01 / US-001–005 | Identity, policy, approvals and audit foundations are implemented; recovery/device lifecycle has partial gaps. All require current-head verification. |
-| E02 / US-006–011 | Wake phrase, consent, transcript review and speech adapters exist; local runtime/device acceptance is pending and voice-to-app dispatch remains incomplete. |
-| E03 / US-012–016 | App launch and guarded Windows UI Automation helpers exist; launch reliability and independent application outcome proof remain incomplete. |
-| E04 / US-017–020, US-034–040 | Journal, reconciliation, scheduling, stop/cancel, task history and transition safeguards are implemented in part/source; crash/restart and real workflow acceptance remain open. |
-| E05 / US-021–024 | Android app/API/queue foundations exist; both physical phones are not yet independently enrolled and accepted. |
-| E06 / US-025–027 | Encrypted local memory and basic owner controls exist; cross-device consistency is not implemented and verified deletion/retention remains open. |
-| E07 / US-028–031, US-041–048 | Conversational AI, prompt contracts, structured agent responses, routing, capability validation and bounded history are implemented in source; end-to-end AI and integration acceptance remains open. |
-| Release / US-032–033 | Exact-head release evidence and resource/compatibility acceptance are not complete. |
-| E08 / US-049–053 | Provenance, SHA-256/archive/customer verification, SBOM/signing and release disposition foundations are in source; exact-head CI/Jenkins and artifact acceptance are pending. |
+| E01 / US-001–005 | Core security DONE — VERIFIED LOCALLY; owner recovery (US-005) PARTIAL. |
+| E02 / US-006–011 | HUD fixed and VERIFIED LOCALLY; wake runtime installed; live microphone test NEEDS TESTING; Piper PARTIAL. |
+| E03 / US-012–016 | Launch/focus DONE — VERIFIED ON TARGET LAPTOP; UI Automation NEEDS TESTING; outcome proof PARTIAL. |
+| E04 / US-017–020, US-034–040 | DONE — VERIFIED LOCALLY; crash/restart and scheduling drills NEED TESTING. |
+| E05 / US-021–024 | Server side verified locally; phones NEED TESTING; offline queue PARTIAL. |
+| E06 / US-025–027 | Memory privacy, deletion scrub and export DONE — VERIFIED LOCALLY; cross-device sync NOT STARTED. |
+| E07 / US-028–031, US-041–048 | Local AI DONE — VERIFIED ON TARGET LAPTOP; agents verified locally; integrations PARTIAL. |
+| Release / US-032–033 | Local checks pass; resources measured; CI run NEEDS TESTING. |
+| E08 / US-049–053 | Integrity tooling VERIFIED LOCALLY; pipeline run NEEDS TESTING; Nexus disabled. |
+| E09 / US-054–055 | Gateway DONE — VERIFIED ON TARGET LAPTOP; public tunnel NEEDS TESTING. |
 
 ### Story identifier clarification
 
@@ -35,18 +36,18 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### Status definitions
 
-- **IMPLEMENTED — NOT VERIFIED:** source exists; acceptance evidence is missing.
-- **PARTIALLY IMPLEMENTED — NOT VERIFIED:** some required behavior exists, but the story still has material implementation gaps.
-- **NOT IMPLEMENTED / NOT COMPLETE:** required capability is absent or materially incomplete.
-- **NOT VERIFIED:** implementation may exist, but there is no current evidence to claim acceptance.
-- No story is marked **VERIFIED** in this refresh.
+- **DONE — VERIFIED ON TARGET LAPTOP:** executed on the owner's Windows 11 laptop with real apps/models.
+- **DONE — VERIFIED LOCALLY (automated):** automated tests pass on the current head locally.
+- **IMPLEMENTED — NEEDS TESTING:** code exists; the named manual/device test has not been run.
+- **PARTIAL — NEEDS DEVELOPMENT:** material behaviour is still missing.
+- **NOT STARTED:** no implementation yet.
 
 
 ## JARVIS-E01 — Security, Identity & Approval Foundation
 
 ### JARVIS-US-001 — Trusted device identity
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Device identity and signed-session foundations are present; exact-head security and device acceptance remain pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Ed25519 device identity, signed requests, replay/expiry rejection covered by the passing suite. Needs: exact-head CI run.
 
 **As the owner,** I want every connected device to have its own cryptographic identity, so that one device cannot impersonate another.
 
@@ -59,7 +60,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-002 — Policy-gated execution
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Default-deny policy and guarded execution boundaries are present; complete path coverage is not currently accepted.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Default-deny policy paths covered by tests. Needs: exact-head CI run.
 
 **As the owner,** I want every state-changing action to pass one default-deny policy gateway, so that no adapter or endpoint can bypass authorization.
 
@@ -71,7 +72,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-003 — Scoped single-use approval
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Scoped approval and single-use handling are present; current-head security validation is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Single-use, task-bound approvals; expired approvals now return 409 (fixed 2026-11-07).
 
 **As the owner,** I want approvals bound to the exact task and action, so that approval cannot be reused for a different operation.
 
@@ -83,7 +84,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-004 — Tamper-evident audit and fail-closed persistence
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Audit integrity, redaction and fail-closed persistence foundations are present; current-head verification is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Hash-chained audit, redaction and fail-closed persistence tested; audit chain stayed valid in device runs.
 
 **As the owner,** I want security-relevant actions recorded in a tamper-evident audit trail, so that failures and misuse can be investigated.
 
@@ -95,7 +96,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-005 — Owner recovery and device revocation
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Revocation/recovery foundations exist; complete owner recovery and device lifecycle acceptance remains open.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Revocation implemented and tested; owner recovery after authenticator/device-management loss is not complete.
 
 **As the owner,** I want to recover account control and revoke a lost device, so that device loss does not compromise JARVIS.
 
@@ -109,7 +110,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-006 — Local wake phrase
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Local wake-word integration/setup exists; runtime assets and actual MSI wake detection have not been accepted.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Wake-word runtime and “Hey Jarvis” model installed and loading in Edge in 1.6 s. Test: owner speaks into the laptop microphone; measure false triggers and resource use.
 
 **As the owner,** I want to say “Hey Jarvis” and wake JARVIS locally, so that routine wake detection does not require continuous cloud audio upload.
 
@@ -122,7 +123,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-007 — Clear wake acknowledgement
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — The requested acknowledgement is wired into supported wake paths; audible timing and device behavior remain unverified.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Acknowledgement wired after captured wake command. Test: audible playback on the laptop.
 
 **As the owner,** I want JARVIS to respond with “Hi sir, I am ready to work.” after a valid wake, so that I know it is ready.
 
@@ -134,7 +135,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-008 — Consent-controlled speech capture
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Explicit speech consent and cancellation/revocation safeguards are present; browser/device acceptance is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Session consent, revocation and late-callback discard covered by browser smoke.
 
 **As the owner,** I want separate, explicit consent for any browser/vendor speech recognition, so that I understand when audio may leave the device.
 
@@ -147,7 +148,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-009 — Review-before-execute push-to-talk
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Push-to-talk transcript review and explicit execute flow exist; physical microphone/browser acceptance is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Review-before-execute push-to-talk covered by browser smoke with a mock recognizer. Test: real microphone.
 
 **As the owner,** I want to review and edit a recognized transcript before submission, so that speech errors do not trigger unintended actions.
 
@@ -159,7 +160,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-010 — Voice action policy and result feedback
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT DEVICE-VERIFIED** — The HUD script failed to parse (duplicate declaration), blocking all voice dispatch; fixed and covered by tests. Planner maps “Hey/OK Jarvis, open Notepad” variants to app:launch; browser smoke passes. MSI microphone-to-launch acceptance remains.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — HUD SyntaxError that blocked all voice dispatch fixed; voice-style phrases (“Hey/OK Jarvis, open Notepad”) verified through the signed API on the laptop. Test: end to end from the real microphone.
 
 **As the owner,** I want spoken commands to use the same authenticated policy and approval path as typed commands, so that voice cannot bypass security.
 
@@ -171,7 +172,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-011 — Local speech output and HUD usability
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Piper TTS and local STT adapters exist; local binaries/models, audible output and MSI end-to-end behavior remain unverified.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Barge-in and output lifecycle tested; Piper binary/model not installed and audible output unverified.
 
 **As the owner,** I want local speech output and an accessible HUD, so that I can use JARVIS comfortably without mandatory cloud services.
 
@@ -185,7 +186,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-012 — Safe allowlisted app launch
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT DEVICE-VERIFIED** — Allowlisted launch planning and policy/approval path pass automated tests; real MSI launch of Notepad/Calculator/Paint remains.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Notepad, Calculator and Paint launched and verified via signed API + approval on the target laptop (2026-11-07).
 
 **As the owner,** I want JARVIS to launch supported Windows apps, so that routine desktop tasks can be delegated safely.
 
@@ -197,7 +198,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-013 — Correct foreground-window targeting
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Foreground/process targeting safeguards exist; wrong-window and focus-change acceptance on Windows remains pending.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Foreground targeting fixed for focus-lock and Store apps; verified on the laptop; desktop lock correctly blocks actions.
 
 **As the owner,** I want JARVIS to verify the active window before interaction, so that text is never entered into the wrong application.
 
@@ -209,7 +210,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-014 — Safe UI Automation controls
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — UI Automation discovery and guarded actions exist; custom/inaccessible controls and application coverage remain limited.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — UI Automation read/click/set implemented with unit tests. Test: real apps on the laptop.
 
 **As the owner,** I want JARVIS to inspect and operate supported UI controls, so that I can automate common desktop interactions.
 
@@ -221,7 +222,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-015 — Clipboard, keyboard and zoom helpers
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Clipboard, keyboard and zoom helper paths exist; full real-app verification remains pending.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Clipboard/hotkey/zoom paths require a named target app (tests updated). Test: real apps on the laptop.
 
 **As the owner,** I want bounded clipboard, hotkey and zoom actions, so that JARVIS can assist with common desktop workflows.
 
@@ -233,7 +234,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-016 — Independent outcome verification
 
-**Current implementation status:** **NOT COMPLETE** — Control readback and verification foundations exist, but independent application-specific proof of saved/completed outcomes is not generally available.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Readback verification exists; app-specific proof of saved/submitted outcomes is not general.
 
 **As the owner,** I want JARVIS to verify whether an application accepted or saved a change, so that it does not claim success based on an input event alone.
 
@@ -247,7 +248,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-017 — Durable task lifecycle
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Encrypted task journal/checkpointing is integrated for key transitions; full lifecycle and crash/restart acceptance remain open.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Encrypted checkpoints, fail-closed persistence covered by tests.
 
 **As the owner,** I want workflow state persisted before dependent side effects, so that crashes do not silently lose task progress.
 
@@ -259,7 +260,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-018 — Safe restart recovery
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Interrupted tasks are moved to recovery-required states and automatic replay is disabled; full restart scenarios remain unverified.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Recovery-state restore tested in-process. Test: real crash/restart drill.
 
 **As the owner,** I want interrupted tasks to be restored for review, so that JARVIS never blindly repeats an action after restart.
 
@@ -271,7 +272,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-019 — Human-reviewed reconciliation
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Human-reviewed reconciliation endpoint and companion/HUD workflow exist; operational behavior is untested.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Reconciliation API and HUD review covered by tests and browser smoke.
 
 **As the owner,** I want to review uncertain task outcomes and record what happened, so that recovery is explicit and auditable.
 
@@ -285,7 +286,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-020 — Safe scheduling and cancellation
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Scheduling, listing and cancellation foundations exist; complete delivery/recovery behavior is not accepted.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Scheduling/cancel tested in-process. Test: restart and timezone behaviour on the laptop.
 
 **As the owner,** I want scheduled tasks to persist and cancel safely, so that recurring work behaves predictably.
 
@@ -300,7 +301,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-021 — Independent Android enrollment
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Native Android app and identity/enrollment foundations exist; independent installation/enrollment on both phones is outstanding.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Server-side enrollment verified locally; APK not built here (no Android SDK). Test: install and enrol both phones.
 
 **As the owner,** I want to enroll each of my two Android phones separately, so that each phone has its own trusted identity.
 
@@ -312,7 +313,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-022 — Secure phone-to-laptop command channel
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Companion API/command-queue foundations exist; secure end-to-end phone-to-laptop transport is not accepted.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Signed, replay-protected API verified locally. Test: phone-to-laptop over the network.
 
 **As the owner,** I want my phones to send authenticated requests to the laptop, so that companion actions remain secure across the network.
 
@@ -324,7 +325,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-023 — Phone approvals and revocation
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Approval/revocation concepts and APIs exist; physical-device approval and revocation acceptance is outstanding.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Approval/revocation API verified locally. Test: approve and revoke from each phone.
 
 **As the owner,** I want to approve eligible tasks from either phone and revoke a lost phone, so that I retain control while away from the laptop.
 
@@ -336,7 +337,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-024 — Offline queue and recovery
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — A bounded inventory queue exists; durable offline delivery and physical two-phone recovery are not complete.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Bounded volatile inventory queue only; durable offline delivery not implemented.
 
 **As the owner,** I want safe handling when the laptop or phone is offline, so that queued work cannot execute unexpectedly later.
 
@@ -350,7 +351,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-025 — Private local memory
 
-**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED** — Encryption at rest, TTL expiry, category and secret/instruction rejection, and permission-gated access are covered by automated tests; storage locations and protections are documented in `docs/MEMORY_PRIVACY.md`.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Encryption, TTL, category and secret/instruction rejection tested; documented in docs/MEMORY_PRIVACY.md.
 
 **As the owner,** I want JARVIS to remember useful preferences and context locally, so that it can assist without sending all personal data to a cloud service.
 
@@ -362,7 +363,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-026 — Owner-controlled memory lifecycle
 
-**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Deletion now also scrubs task history and the encrypted task journal (previously the deleted text survived in memory:save requests and memory:list results); verified by re-decrypting the journal from disk. Retention/backup behaviour is documented in `docs/MEMORY_PRIVACY.md`. Owner export is available (`GET /api/memory/export`, companion “Export memories”), signed and DEVICE_MANAGE-only, with count-only auditing.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Deletion scrubs task history and journal (re-decrypted from disk); owner export endpoint + companion button; retention/backup documented. Test: owner uses export/delete in the companion.
 
 **As the owner,** I want to review, correct, export and delete memories, so that I control what JARVIS retains.
 
@@ -374,7 +375,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-027 — Cross-device memory consistency
 
-**Current implementation status:** **NOT IMPLEMENTED** — Reliable cross-device memory synchronization and conflict resolution are still outstanding.
+**Current implementation status:** **NOT STARTED** — Cross-device memory sync and conflict handling not implemented.
 
 **As the owner,** I want memory to remain consistent across my laptop and phones, so that companion devices share only authorized context.
 
@@ -388,7 +389,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-028 — Local-first conversational AI
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Authenticated conversational AI and local-first/advisory agent foundations exist; exact-head provider/workflow validation is pending.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Local llama3.2 installed via Ollama and answering on the laptop; honest fallback tested.
 
 **As the owner,** I want JARVIS to answer ordinary questions using a local model by default, so that routine assistance works without paid cloud usage.
 
@@ -400,7 +401,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-029 — Explicit cloud AI opt-in
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Remote/cloud provider use is configuration/opt-in gated; end-to-end privacy and provider behavior remain unverified.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Remote AI blocked unless JARVIS_AI_ALLOW_REMOTE is set; tested.
 
 **As the owner,** I want cloud AI to be used only when I authorize a task, so that cost and data exposure remain under my control.
 
@@ -412,7 +413,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-030 — Existing productivity workflows
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Selected companion, memory, schedule and desktop workflows exist; broad productivity workflow coverage remains incomplete.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Schedule/notification/memory workflows exist; broader productivity integrations not built.
 
 **As the owner,** I want existing schedule, notification and companion workflows to work end to end, so that JARVIS can assist with routine organization.
 
@@ -424,7 +425,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-031 — Explicit integration boundaries
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Capability boundaries and guarded integration foundations exist; the planned integration set is not fully delivered.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Unsupported channels labelled unsupported; no new third-party integrations.
 
 **As the owner,** I want each third-party integration to disclose its permissions and limits, so that JARVIS does not silently access accounts or send communications.
 
@@ -438,7 +439,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-032 — Evidence-based release readiness
 
-**Current implementation status:** **NOT COMPLETE** — Release readiness requires exact-head CI and target-device evidence, which have not been produced for the current revision.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — All local checks pass on the current head. Test: CI/Jenkins run on the pushed commit and device evidence report.
 
 **As the owner,** I want one exact-head verification report, so that I know which capabilities are genuinely ready.
 
@@ -451,7 +452,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-033 — Balanced resource and compatibility behavior
 
-**Current implementation status:** **NOT VERIFIED** — Balanced resource and compatibility targets are defined; measurements and target-device acceptance have not been performed.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Idle footprint measured on the laptop: 0 % CPU, 66 MB working set, 34 MB private, 12 threads, ~10 ms per status request; model adds ≈2.3 GB RAM. Test: battery, sleep/resume and active-load measurements.
 
 **As the owner,** I want JARVIS to run smoothly on my existing laptop and phones, so that I do not need new hardware for the planned baseline.
 
@@ -463,7 +464,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-034 — Bounded transcription and recovery
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Bounded local transcription and cancellation lifecycle are implemented, including the latest Whisper subprocess and disconnect cancellation changes.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Bounded transcription and Whisper cancellation covered by tests.
 
 **As the owner,** I want stalled speech transcription to time out safely, so that voice input cannot remain locked indefinitely and partial text is never executed without review.
 
@@ -477,7 +478,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-035 — Reuse and verify an already-open application
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Existing application-window reuse and target checks are present; real Windows behavior remains untested.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Existing-window reuse verified on the laptop for Notepad, Paint and Store-app Calculator.
 
 **As the owner,** I want “open [application]” to bring an already-running application to the foreground when its window is uniquely identifiable, so that JARVIS does not create duplicate processes or report a launch that was not visibly completed.
 
@@ -494,7 +495,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-036 — Prevent duplicate approval resolution and report uncertain outcomes
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Duplicate approval resolution and uncertain-outcome safeguards are present; exact-head security validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Duplicate approval resolution and uncertain-outcome UI covered by browser smoke.
 
 **As the owner,** I want approval controls to prevent overlapping submissions and clearly distinguish approval processing from verified task completion, so that a double-click or network interruption does not mislead me about whether an action ran.
 
@@ -511,7 +512,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-037 — Review task history and reconcile interrupted work from the HUD
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Task history and manual recovery review are surfaced in the HUD/companion; user/device acceptance remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Task history and recovery review covered by tests and browser smoke.
 
 **As the owner,** I want to review recent task states and record a manual recovery decision from the companion HUD, so that interrupted or uncertain work can be reconciled without accidentally replaying an action.
 
@@ -529,7 +530,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-038 — Inspect task details and understand recovery transitions
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Task details and explicit recovery transition explanations are implemented; runtime validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Task detail and recovery transition messaging covered by tests.
 
 **As the owner,** I want a dedicated expandable task-detail view and precise recovery feedback, so that I can understand a task's lifecycle and the meaning of a manual reconciliation decision without confusing observation with verified completion.
 
@@ -545,7 +546,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-039 — Stop a workflow and prevent dependent steps from running
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Stop/cancel controls and dependent-step interruption boundaries are implemented; runtime validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Stop/cancel and dependent-step boundary covered by tests.
 
 **As the owner,** I want to stop a running workflow or cancel a pending task from the companion HUD, so that no later dependent action starts after I request cancellation.
 
@@ -561,7 +562,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-040 — Enforce lifecycle checkpoints across asynchronous workflow boundaries
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Asynchronous cancellation/expiry/checkpoint transition guards are implemented; no current-head validation has been run.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Asynchronous transition guards covered by tests.
 
 **As the owner,** I want task state to be rechecked and durably checkpointed whenever planning or approval resumes, so that cancellation, expiry, revocation, or persistence failure cannot be bypassed by a delayed callback.
 
@@ -578,7 +579,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-041 — Use versioned role-separated prompts
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 role-separated prompt contracts and versioning are implemented; current-head AI behavior is untested.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Versioned role-separated prompts tested (type error fixed 2026-11-07).
 
 **As the owner,** I want JARVIS to construct prompts using explicit system, developer and user roles with versioned templates, so that agent behavior is consistent, reviewable and safely maintainable.
 
@@ -591,7 +592,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-042 — Validate structured agent responses
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 structured response/schema validation is implemented; current-head validation is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Structured response validation tested.
 
 **As the owner,** I want each agent profile to return a strict, machine-readable response contract, so that malformed or unexpected model output cannot flow into JARVIS workflows.
 
@@ -604,7 +605,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-043 — Route requests to the appropriate advisory agent
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 advisory-agent routing is implemented; end-to-end routing behavior is untested.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Routing tested with fake models. Test: advisory agents against the live local model.
 
 **As the owner,** I want JARVIS to route planning, tool-selection, summarization and developer-assistance requests to the appropriate agent profile, so that each task receives focused behavior.
 
@@ -617,7 +618,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-044 — Prefer local AI inference and gate remote providers
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 local-first model adapter and remote-provider gating are implemented; provider acceptance remains pending.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Local model is the default and answered live on the laptop; remote gating tested.
 
 **As the owner,** I want local inference to be the default and remote AI to require explicit configuration, so that routine assistance does not incur mandatory cloud cost or disclose personal context unexpectedly.
 
@@ -630,7 +631,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-045 — Maintain bounded device-isolated conversation history
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 bounded device-isolated conversation history is implemented; current-head persistence/authorization checks are pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Device-isolated bounded history tested.
 
 **As the owner,** I want JARVIS to preserve recent conversation turns for continuity while isolating sessions by authenticated device, so that follow-up requests have relevant context without unbounded retention.
 
@@ -644,7 +645,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-046 — Preserve conversation ordering and truthful persistence
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 per-conversation ordering and truthful persistence handling are implemented; runtime validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Per-conversation ordering and truthful persistence tested.
 
 **As the owner,** I want concurrent messages to be processed in order and fallback responses handled honestly, so that conversation context is not corrupted or misleading.
 
@@ -657,7 +658,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-047 — Validate tool-selection candidates against trusted capabilities
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 tool candidates are checked against the trusted capability catalogue; current-head validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Capability catalogue validation tested.
 
 **As the owner,** I want tool-selection agents to choose only capabilities that JARVIS actually supports, so that invented or restricted tool names cannot enter an execution plan.
 
@@ -670,7 +671,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-048 — Validate task-plan dependency graphs
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 task-plan dependency graph validation is implemented; current-head validation remains pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Plan dependency graph validation tested.
 
 **As the owner,** I want generated task plans to have valid dependency graphs, so that workflows cannot contain missing references, cycles or ambiguous ordering.
 
@@ -687,7 +688,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E08-US-049 — Generate traceable build provenance
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Build provenance manifest and deterministic release identity are present; exact-head workflow/artifact evidence is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Provenance manifest code and tests pass locally. Test: first CI run after push.
 
 **As a release maintainer,** I want each build artifact to carry a machine-readable provenance manifest, so that its project, source revision and CI origin can be traced.
 
@@ -700,7 +701,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E08-US-050 — Verify artifact contents and checksums
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Manifest inventory, SHA-256 and archive-member verification are implemented in source; execution and package acceptance are pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Manifest/SHA-256/archive verification tested (Python + Node).
 
 **As a release maintainer,** I want manifest inventory and SHA-256 metadata validated before accepting an artifact, so that malformed or modified packages are rejected.
 
@@ -713,7 +714,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E08-US-051 — Verify customer-delivered packages against a release
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Customer package verification order and structured failure reports are implemented; exact-head operator/CI acceptance is pending.
+**Current implementation status:** **DONE — VERIFIED LOCALLY (automated)** — Customer package verification tested (30 Python tests).
 
 **As a customer-support or release operator,** I want a deterministic verification sequence and actionable report, so that delivery failures can be diagnosed without accepting an untrusted artifact.
 
@@ -726,7 +727,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E08-US-052 — Produce signed, SBOM-backed build artifacts through controlled CI
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — SBOM and signing pipeline foundations exist; exact-head signatures, SBOM and artifact inspection have not been accepted.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — SBOM/signing steps defined in CI/Jenkins. Test: run the pipeline and inspect artifacts.
 
 **As a release maintainer,** I want GitHub Actions and Jenkins to produce consistent integrity metadata, signatures and dependency SBOMs, so that artifacts are traceable across supported CI providers.
 
@@ -740,7 +741,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E08-US-053 — Control release promotion and recovery
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Release quarantine/recovery evidence controls exist; operational exercise and owner-approved release handling remain pending.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Quarantine/recovery records exist; promotion control is owner-manual; Nexus publishing disabled.
 
 **As the owner,** I want artifact promotion and rollback to require explicit authorization and recorded evidence, so that unverified builds cannot reach production.
 
@@ -756,7 +757,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E09-US-054 — Serve my websites from my own AI
 
-**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Separate `/v1` gateway listener, per-site hashed keys, CLI, rate/concurrency limits and metadata-only audit are implemented with 9 automated tests; the portfolio prefers JARVIS as its chat provider. Live local-model check and public tunnel/production acceptance remain.
+**Current implementation status:** **DONE — VERIFIED ON TARGET LAPTOP** — Gateway with per-site keys, limits and metadata-only audit (12 tests); live portfolio → gateway → llama3.2 answered in 14–24 s on the laptop.
 
 **As the owner,** I want my websites to use JARVIS as their AI provider through an API key, so that the portfolio and future sites run on my personal AI instead of a paid third-party API.
 
@@ -771,7 +772,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-E09-US-055 — Reach the gateway safely from deployed sites
 
-**Current implementation status:** **DOCUMENTED — NOT VERIFIED** — Tunnel setup is documented in `docs/SITE_AI_GATEWAY.md`; no tunnel has been created.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Documented in docs/SITE_AI_GATEWAY.md. Test: Cloudflare Tunnel to the gateway port and a chat from the deployed portfolio.
 
 **As the owner,** I want deployed sites to reach JARVIS over HTTPS without exposing the rest of JARVIS, so that the gateway is usable from the internet but the device API stays private.
 
