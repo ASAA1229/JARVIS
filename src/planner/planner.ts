@@ -36,7 +36,7 @@ function normalizeVoiceDirective(value: string): string {
     .trim()
     .replace(/[，。！？]/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/^(?:(?:hey|hello|hi)\s+jarvis[, ]*)+/i, '')
+    .replace(/^(?:(?:(?:hey|hello|hi|ok|okay)\s+)?jarvis\b[,.!:]?\s*)+/i, '')
     .trim();
 
   // Convert conversational launch requests into one explicit launch intent.
@@ -475,7 +475,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     // 2. Application launch requests.
     // Require an explicit launch verb: merely asking about an application must
     // never cause a state-changing app:launch operation.
-    const launchIntent = /^\s*(?:(?:hey|hello|hi)\s+jarvis[, ]+)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
+    const launchIntent = /^\s*(?:(?:(?:hey|hello|hi|ok|okay)\s+)?jarvis\b[,.!:]?\s*)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
     const launchTarget = launchIntent?.[1]?.trim()
       .replace(/[.!?,;:]+$/g, '')
       .replace(/\s+(?:please|for me)$/i, '')
