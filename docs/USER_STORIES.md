@@ -793,3 +793,111 @@ A story is done only when:
 5. Security/privacy restrictions remain satisfied.
 6. POC.md, POC2.md and the relevant epic/story status are updated.
 7. No claim exceeds the evidence.
+
+
+## Owner-approved expanded product backlog — 2026-11-08
+
+The stories below capture approved requirements from the 50-question exercise. They are **new backlog requirements**, not claims of implementation. Existing story IDs and acceptance criteria remain unchanged. These stories should be decomposed into implementation tasks under the existing epic structure before development begins.
+
+### JARVIS-US-056 — Unified personal AI application
+
+**Priority:** P0 — foundational product direction
+
+**As the owner,** I want JARVIS to provide personal AI, chat, agents, memory and automation through one coherent application, so that it acts as the central interface for my personal AI ecosystem.
+
+**Acceptance criteria**
+- The owner can access chat, agent orchestration, memory, automation and connected capabilities from one application.
+- Internal modules have explicit contracts and do not bypass shared identity, policy, audit or resource controls.
+- The personal AI/chat experience is the first capability priority; developer/coding assistance is the next major capability priority.
+- Long-running work exposes state, progress, checkpoints, cancellation and recovery.
+
+### JARVIS-US-057 — Two-tier memory system
+
+**Priority:** P0 — foundational dependency
+
+**As the owner,** I want separate RAM-like Working Memory and durable Long-Term Memory, so that JARVIS can reason over current tasks while retaining useful approved knowledge over time.
+
+**Acceptance criteria**
+- Working Memory contains bounded, short-lived conversation, task and agent context with clear expiry and isolation.
+- Long-Term Memory stores encrypted, categorized, searchable approved facts, preferences and project knowledge.
+- A Memory Manager controls promotion, retrieval, summarization, correction, retention, deletion, export and backup.
+- Memory access is permission-aware and context supplied to models is bounded and relevant.
+- Deletion covers primary records and derived indexes/caches according to a documented retention boundary.
+- Cross-device synchronization supports conflict detection and owner-reviewable resolution.
+
+### JARVIS-US-058 — Consent-based adaptive learning
+
+**Priority:** P1
+
+**As the owner,** I want JARVIS to adapt using approved user feedback, preferences, chats and task outcomes, so that its assistance becomes more relevant over time without compromising privacy.
+
+**Acceptance criteria**
+- Learning inputs and resulting memory/behavior changes are inspectable and attributable to a source.
+- The owner can correct, reject, disable or delete learned preferences and records.
+- Private conversations are not silently used to train or fine-tune models.
+- No private data is sent to a cloud provider without task-specific authorization.
+- Any future model-training feature requires separate opt-in, data export/deletion rules and a clear cost/resource estimate.
+
+### JARVIS-US-059 — Adaptive local and cloud provider routing
+
+**Priority:** P1
+
+**As the owner,** I want JARVIS to select among configured local and cloud AI providers according to task, privacy, cost and availability, so that each request uses an appropriate provider.
+
+**Acceptance criteria**
+- Local inference is the default for private/offline/routine work.
+- Cloud providers are disabled until explicitly configured and authorized by the owner.
+- Routing decisions respect a zero-ongoing-cost baseline and never silently incur charges.
+- Provider credentials are loaded from owner-managed secret configuration and never committed or logged.
+- Provider failure, timeout, unavailable models and fallback choices are reported honestly.
+
+### JARVIS-US-060 — Unified device connectivity and offline synchronization
+
+**Priority:** P1
+
+**As the owner,** I want the laptop to act as the primary hub while devices can optionally communicate peer-to-peer and synchronize offline changes, so that JARVIS remains useful across my laptop and Android phones.
+
+**Acceptance criteria**
+- Laptop-hub, peer-to-peer and offline-sync modes are supported through explicit device capabilities.
+- Each device has an independent identity and scoped permissions.
+- Offline changes are queued with bounded TTL and validated before application.
+- Conflicts are detected and resolved deterministically or presented for owner review.
+- Revoked devices and stale queued state-changing requests cannot regain authority on reconnect.
+
+### JARVIS-US-061 — Adaptive resource and workload management
+
+**Priority:** P1
+
+**As the owner,** I want JARVIS to adapt workload intensity to available CPU, RAM, battery and foreground activity, so that the application remains practical on my existing laptop.
+
+**Acceptance criteria**
+- Idle, normal and intensive workload profiles are available and can be selected automatically or manually.
+- Heavy inference, indexing and background jobs are scheduled or reduced when resources are constrained.
+- The owner can see active workload/resource impact and stop expensive work.
+- No new hardware or paid infrastructure is assumed as a requirement.
+
+### JARVIS-US-062 — Permissioned plugin and workflow ecosystem
+
+**Priority:** P2
+
+**As the owner,** I want versioned plugins and reusable visual/AI-generated workflows, so that JARVIS can grow without weakening its security model.
+
+**Acceptance criteria**
+- Each plugin declares identity, version, capabilities, requested permissions and compatibility.
+- Installation and permission grants require owner approval; permissions can be revoked.
+- Workflows support templates, schedules, dependencies, checkpoints, cancellation and recovery.
+- AI-generated plans remain advisory until validated by the planner and policy gateway.
+- Unknown or over-scoped plugin capabilities fail closed.
+
+### JARVIS-US-063 — Developer and coding assistant
+
+**Priority:** P1, after personal AI/chat foundation
+
+**As the owner,** I want JARVIS to assist with repository understanding, code explanation/generation, debugging, documentation, project planning and authorized Git/CI workflows, so that it can act as my developer assistant.
+
+**Acceptance criteria**
+- Repository and tool access is explicitly connected and scoped.
+- Code suggestions and edits are distinguishable from committed changes.
+- Branch, commit, PR, merge, push, CI and deployment actions require the appropriate explicit authorization.
+- Existing branch policy and production protections remain enforced.
+- Secrets are never included in prompts, generated artifacts or logs.
