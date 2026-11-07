@@ -396,18 +396,11 @@ async function handleLocalWakeDetected(probability) {
     return;
   }
 
-  // Acknowledge the wake phrase first, then listen for the next utterance.
-  // Interaction: "Hey Jarvis" -> greeting -> spoken command.
-  // The command remains consent-gated and is submitted only through the signed policy path.
+  // Start command capture immediately after local wake detection so words
+  // spoken in the same utterance (for example, "Hey Jarvis, open Notepad")
+  // are not lost while the acknowledgement is playing. The acknowledgement
+  // is spoken after the final transcript is captured and before dispatch.
   wakeCaptureAwaitingReview = true;
-  await speakResponse('Hi sir, I am ready to work.');
-  await waitForSpeechOutput(8000);
-  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') ||
-      document.visibilityState === 'hidden') {
-    wakeCaptureAwaitingReview = false;
-    if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
-    return;
-  }
   startVoiceCapture('wake');
 }
 
@@ -769,14 +762,7 @@ async function beginPostWakeCommandCapture() {
     return;
   }
   wakeCaptureAwaitingReview = true;
-  setAssistantState('WAKE PHRASE DETECTED', 'Wake phrase detected. I will listen for your command after the greeting.');
-  await speakResponse('Hi sir, I am ready to work.');
-  await waitForSpeechOutput(8000);
-  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') || document.visibilityState === 'hidden') {
-    wakeCaptureAwaitingReview = false;
-    if (handsFreeEnabled && !isMicMuted) scheduleHandsFreeRestart();
-    return;
-  }
+  setAssistantState('WAKE PHRASE DETECTED', 'Listening for the command now. The acknowledgement will play after capture so it cannot cover your words.');
   startVoiceCapture('wake');
 }
 
@@ -828,6 +814,14 @@ async function completeWakeCapture(command) {
       return;
     }
     setAssistantState('COMMAND RECEIVED', normalizedCommand);
+    await speakResponse('Hi sir, I am ready to work.');
+    await waitForSpeechOutput(8000);
+    if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') ||
+        document.visibilityState === 'hidden') {
+      setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Voice consent or listening state changed before dispatch. No command was sent.');
+      scheduleHandsFreeRestart();
+      return;
+    }
     await submitDirective(normalizedCommand);
     return;
   }
