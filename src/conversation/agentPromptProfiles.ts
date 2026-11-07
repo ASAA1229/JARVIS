@@ -81,9 +81,10 @@ function selectContext(
     if (selected.length >= MAX_CONTEXT_ITEMS || remaining <= 0) break;
     const label = item.label.slice(0, 60);
     const content = item.content.slice(0, Math.min(MAX_CONTEXT_ITEM_LENGTH, remaining));
-    const cost = label.length + content.length + 32;
+    const selectedItem = { label, content, trust: 'untrusted_reference_data' as const };
+    const cost = JSON.stringify(selectedItem).length + (selected.length > 0 ? 1 : 0);
     if (!content || cost > remaining) continue;
-    selected.push({ label, content, trust: 'untrusted_reference_data' });
+    selected.push(selectedItem);
     remaining -= cost;
   }
   return selected;
