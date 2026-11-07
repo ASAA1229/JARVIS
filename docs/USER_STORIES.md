@@ -751,6 +751,35 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 - No production merge, deployment or Nexus publication occurs without explicit owner approval.
 - Validation and operational evidence remain pending while testing is paused.
 
+
+## JARVIS-E09 — Personal AI Gateway for Websites
+
+### JARVIS-E09-US-054 — Serve my websites from my own AI
+
+**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Separate `/v1` gateway listener, per-site hashed keys, CLI, rate/concurrency limits and metadata-only audit are implemented with 9 automated tests; the portfolio prefers JARVIS as its chat provider. Live local-model check and public tunnel/production acceptance remain.
+
+**As the owner,** I want my websites to use JARVIS as their AI provider through an API key, so that the portfolio and future sites run on my personal AI instead of a paid third-party API.
+
+**Acceptance criteria**
+- An OpenAI-compatible `POST /v1/chat/completions` (stream and non-stream), `GET /v1/models` and `GET /v1/health` are served on a listener separate from the device/owner API.
+- Each site has its own key, created only from the local CLI, stored only as a hash, shown once, and revocable without restart.
+- Site keys grant text generation only: no planner, policy, memory, device or tool access; tool/function parameters are refused.
+- Per-site rate limits, output-token caps and global concurrency limits protect the local model.
+- Every request is audited with metadata only — never prompts or generated text.
+- Model unavailability, timeouts and invalid keys return honest, non-leaking errors; sites fall back gracefully.
+- The portfolio prefers JARVIS when configured, keeps keys server-side, and falls back to OpenAI or offline answers.
+
+### JARVIS-E09-US-055 — Reach the gateway safely from deployed sites
+
+**Current implementation status:** **DOCUMENTED — NOT VERIFIED** — Tunnel setup is documented in `docs/SITE_AI_GATEWAY.md`; no tunnel has been created.
+
+**As the owner,** I want deployed sites to reach JARVIS over HTTPS without exposing the rest of JARVIS, so that the gateway is usable from the internet but the device API stays private.
+
+**Acceptance criteria**
+- Only the gateway port is published through an HTTPS tunnel; the main JARVIS port is never tunnelled.
+- A deployed site completes a chat request through the tunnel with its own key.
+- Laptop sleep/offline produces a fast failure and the site's offline fallback.
+
 ---
 
 ## Definition of Done for every story

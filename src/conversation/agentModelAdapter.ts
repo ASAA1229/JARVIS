@@ -49,6 +49,16 @@ function readConfiguration() {
   };
 }
 
+/**
+ * Validated model endpoint for in-process callers (for example the site AI gateway).
+ * Applies the same local-first / explicit-remote-opt-in rules as the agents.
+ */
+export function getModelEndpoint(): { baseUrl: string; model: string; apiKey?: string } | null {
+  const config = readConfiguration();
+  if (config.status.status !== 'ready' || !('baseUrl' in config) || !config.baseUrl || !config.model) return null;
+  return { baseUrl: config.baseUrl, model: config.model, ...(config.apiKey ? { apiKey: config.apiKey } : {}) };
+}
+
 /** Exposes only safe startup diagnostics; never returns endpoint or credential values. */
 export function getAgentModelConfigStatus(): AgentModelConfigStatus {
   return readConfiguration().status;
