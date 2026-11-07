@@ -79,7 +79,7 @@ export interface AgentOrchestrationInput {
 }
 
 const MAX_REQUEST_LENGTH = 12000;
-const MAX_CONTEXT_ITEMS = 8;
+const MAX_CONTEXT_CANDIDATES = 32;
 const DEFAULT_TIMEOUT_MS = 25000;
 const MAX_TIMEOUT_MS = 60000;
 
@@ -160,7 +160,7 @@ export async function runAgent(
   const prompt = buildAgentPrompt({
     profile: route.profile,
     request: input.request,
-    context: (input.context ?? []).slice(0, MAX_CONTEXT_ITEMS),
+    context: (input.context ?? []).slice(-32),
   });
   if (!prompt) {
     return { status: 'invalid_response', profile: route.profile, reason: 'The agent prompt could not be assembled from the registered profile.', failureCode: 'prompt_unavailable' };
