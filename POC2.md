@@ -770,3 +770,37 @@ The earlier run also contained these failures; their fixes are in the branch his
 
 ### Acceptance gate
 The DevOps POC is not complete until manifest schema and archive inventory are verified, customer-package validation produces reliable reports, exact-head pipeline execution succeeds, and the owner approves the recorded evidence. Source implementation alone is not acceptance.
+
+
+## Owner-approved development direction and reprioritization — 2026-11-08
+
+The owner has completed the 50-question development requirements exercise. This is the current product-direction authority where older gap-register wording implies a narrower scope or an outdated priority. Existing implementation evidence and open gaps above remain valid unless explicitly superseded here.
+
+### Confirmed product direction
+
+JARVIS is to become one unified personal AI application and the central AI platform for the owner's ecosystem. Personal AI/chat is the first capability priority, followed by developer/coding assistance. The longer-term scope includes specialized agents, voice, desktop and browser automation, memory/knowledge, productivity, DevOps, Android companion workflows and extensible integrations.
+
+### Architecture and operating constraints
+
+- Present one coherent all-in-one application; retain internal modular boundaries and background workers rather than splitting prematurely into independently deployed microservices.
+- Support local AI plus multiple configured cloud providers with adaptive selection based on privacy, cost, availability, task and explicit owner authorization. Zero ongoing cost remains the default; no paid provider is silently activated.
+- Split memory into RAM-like Working Memory and durable Long-Term Memory. Add a Memory Manager for retrieval, promotion, summarization, correction, expiry, deletion, export and sync.
+- “Learning” means consented memory and preference adaptation initially. Do not silently train models on private chats or transmit private data to cloud providers.
+- Device communication combines laptop-primary hub, optional peer-to-peer and offline synchronization/conflict resolution.
+- Adapt CPU/RAM/battery use to idle, normal and intensive workloads on the existing laptop and two phones.
+- Preserve default-deny authorization, encrypted data, signed approvals, auditability, owner recovery, no admin elevation, no unrestricted shell, no financial/payment automation and no automatic replay of uncertain side effects.
+
+### Reprioritized development sequence
+
+1. Finish existing implemented features and close the highest-value current gaps without regressing existing behavior.
+2. Resolve dependencies and build foundational capabilities before dependent features.
+3. Prioritize shared services/contracts that enable JARVIS–Portfolio integration.
+4. Deliver essential personal AI/chat and memory capabilities before optional advanced features.
+5. Continue with developer assistance, agents, voice/automation, Android synchronization, plugin ecosystem and future extensibility in dependency order.
+
+### Gap-register interpretation
+
+- Existing P0/P1 security, voice, desktop, workflow, Android, memory, AI and gateway gaps remain in scope.
+- The new requirements expand the target product; they do not imply that any unimplemented feature is complete.
+- Keep implementation status separate from acceptance evidence. Do not run validation or release actions unless separately authorized.
+- Do not create a new unrelated feature stream before reconciling dependencies with the existing epics.
