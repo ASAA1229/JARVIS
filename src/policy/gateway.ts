@@ -150,6 +150,35 @@ export class PolicyGateway {
       requiresApproval,
       allowedParameters,
     }] as [string, PolicyRule]),
+    // Developer assistant (JARVIS-US-063). Owner-only. Read-only intelligence and draft
+    // suggestions run on repositories the owner explicitly connected with that scope;
+    // connecting, applying, branching, committing and pushing need fresh approval.
+    ...([
+      ['dev:repo_connect', RiskTier.HIGH, true, ['name', 'path', 'scopes']],
+      ['dev:repo_disconnect', RiskTier.MEDIUM, true, ['name']],
+      ['dev:repo_list', RiskTier.LOW, false, []],
+      ['dev:tree', RiskTier.LOW, false, ['repo', 'path']],
+      ['dev:read', RiskTier.LOW, false, ['repo', 'path']],
+      ['dev:grep', RiskTier.LOW, false, ['repo', 'query']],
+      ['dev:git_status', RiskTier.LOW, false, ['repo']],
+      ['dev:git_log', RiskTier.LOW, false, ['repo', 'count']],
+      ['dev:git_diff', RiskTier.LOW, false, ['repo', 'staged']],
+      ['dev:explain', RiskTier.LOW, false, ['repo', 'path', 'request']],
+      ['dev:suggest_change', RiskTier.MEDIUM, false, ['repo', 'path', 'request']],
+      ['dev:suggestion_list', RiskTier.LOW, false, ['repo']],
+      ['dev:apply_suggestion', RiskTier.HIGH, true, ['repo', 'suggestionId']],
+      ['dev:branch_create', RiskTier.HIGH, true, ['repo', 'branch']],
+      ['dev:commit', RiskTier.HIGH, true, ['repo', 'message', 'suggestionId']],
+      ['dev:push', RiskTier.HIGH, true, ['repo']],
+      ['dev:pr_draft', RiskTier.LOW, false, ['repo', 'title']],
+      ['dev:ci_status', RiskTier.LOW, false, ['repo']],
+    ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
+      operation,
+      requiredPermission: Permission.DEVICE_MANAGE,
+      riskTier,
+      requiresApproval,
+      allowedParameters,
+    }] as [string, PolicyRule]),
     ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
       operation,
       requiredPermission: Permission.DEVICE_MANAGE,

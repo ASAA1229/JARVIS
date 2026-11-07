@@ -897,6 +897,8 @@ The stories below capture approved requirements from the 50-question exercise. T
 
 **Priority:** P1, after personal AI/chat foundation
 
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — `src/developer/*` adds explicit repo connections with scopes (read / suggest / git-write / ci), secret-redacted repo intelligence (tree, bounded read, search, git status/log/diff, CI status via `gh`), model-generated explanations and draft unified-diff suggestions kept separate from commits, and approval-gated apply / branch / commit / push / PR-draft operations that refuse main, master and dev and never force-push. Wired through planner, policy gateway (DEVICE_MANAGE; writes need approval), capability catalogue and service. To test: run `test/developer_assistant.test.ts`; then on a scratch clone connect a repo, read/search, request an explanation and a suggestion with the local model, apply it on a feature branch, commit, attempt commit/push on dev (must be refused), push a feature branch and draft a PR. See `docs/DEVELOPER_ASSISTANT.md`.
+
 **As the owner,** I want JARVIS to assist with repository understanding, code explanation/generation, debugging, documentation, project planning and authorized Git/CI workflows, so that it can act as my developer assistant.
 
 **Acceptance criteria**

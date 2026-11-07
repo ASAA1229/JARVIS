@@ -1,3 +1,6 @@
+import { DEVELOPER_OPERATIONS } from '../developer/operations.js';
+import { planDeveloperRequest } from '../developer/developerPlanner.js';
+
 export interface ProposedOperation {
   operation: string;
   parameters: Record<string, unknown>;
@@ -95,6 +98,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'app:inventory',
     'comms:handoff_email',
     'comms:unsupported',
+    ...DEVELOPER_OPERATIONS,
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -138,6 +142,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public async generatePlan(rawRequestText: string, context: MinimizedContext): Promise<PlanProposal> {
     const requestText = normalizeVoiceDirective(rawRequestText);
     const text = requestText.toLowerCase().trim();
+
+    // Developer assistant (JARVIS-US-063): explicit, repo-scoped phrases only.
+    const developerPlan = planDeveloperRequest(requestText);
+    if (developerPlan) return developerPlan;
 
     const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
     if (rememberName && rememberName[1].trim()) {

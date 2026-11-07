@@ -19,6 +19,8 @@ import { WindowsDesktopAgent, DesktopAction } from '../adapters/windowsDesktopAg
 import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
 import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
+import { DeveloperAssistant } from '../developer/developerAssistant.js';
+import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
@@ -94,6 +96,16 @@ const RETRYABLE_READ_ONLY = new Set([
   'file:search',
   'file:read',
   'app:inventory',
+  'dev:repo_list',
+  'dev:tree',
+  'dev:read',
+  'dev:grep',
+  'dev:git_status',
+  'dev:git_log',
+  'dev:git_diff',
+  'dev:suggestion_list',
+  'dev:pr_draft',
+  'dev:ci_status',
 ]);
 
 export class JarvisCoreService {
@@ -108,6 +120,8 @@ export class JarvisCoreService {
   public readonly terminal: TerminalRunner;
   public readonly communications: CommunicationsAdapter;
   public readonly verifier: OutcomeVerifier;
+  /** Developer and coding assistant (JARVIS-US-063). */
+  public readonly developer: DeveloperAssistant;
   public readonly notifications: NotificationCenter;
   public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
@@ -138,6 +152,7 @@ export class JarvisCoreService {
     this.terminal = new TerminalRunner(this.fileAdapter);
     this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
+    this.developer = new DeveloperAssistant(statePath ? statePath + '.developer' : './data/developer', createConfiguredAgentModelAdapter);
     this.notifications = new NotificationCenter();
     this.scheduler = new Scheduler(
       this.audit,
@@ -668,6 +683,13 @@ export class JarvisCoreService {
           const cancelled = this.scheduler.cancel(String(parameters.id), taskRecord.deviceId);
           return { success: cancelled, outcome: cancelled ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: cancelled ? undefined : 'No active schedule with that id belongs to this device.', evidence: { scheduler: true } };
         }
+        // Developer assistant (JARVIS-US-063): scoped repo tools, draft suggestions,
+        // and approval-gated git operations. Branch protections live in the adapter.
+        case 'dev:repo_connect': case 'dev:repo_disconnect': case 'dev:repo_list': case 'dev:tree':
+        case 'dev:read': case 'dev:grep': case 'dev:git_status': case 'dev:git_log': case 'dev:git_diff':
+        case 'dev:explain': case 'dev:suggest_change': case 'dev:suggestion_list': case 'dev:apply_suggestion':
+        case 'dev:branch_create': case 'dev:commit': case 'dev:push': case 'dev:pr_draft': case 'dev:ci_status':
+          return this.developer.execute(opRequest.operation, parameters, signal);
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
