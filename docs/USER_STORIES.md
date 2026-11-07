@@ -43,7 +43,6 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 
 ## JARVIS-E01 — Security, Identity & Approval Foundation
-## JARVIS-E01 — Security, Identity & Approval Foundation
 
 ### JARVIS-US-001 — Trusted device identity
 
@@ -462,19 +461,6 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 - HUD is keyboard-accessible and responsive.
 - No admin privileges or always-on cloud dependency is introduced to meet resource goals.
 
----
-
-## Definition of Done for every story
-
-A story is done only when:
-1. Implementation is present on the authorized working branch.
-2. Applicable tests are authored and actually executed; results are recorded separately.
-3. Exact-head CI passes where the workflow applies.
-4. Required physical-device or external integration evidence is recorded.
-5. Security/privacy restrictions remain satisfied.
-6. POC.md, POC2.md and the relevant epic/story status are updated.
-7. No claim exceeds the evidence.
-
 ### JARVIS-US-034 — Bounded transcription and recovery
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Bounded local transcription and cancellation lifecycle are implemented, including the latest Whisper subprocess and disconnect cancellation changes.
@@ -703,9 +689,6 @@ A story is done only when:
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Build provenance manifest and deterministic release identity are present; exact-head workflow/artifact evidence is pending.
 
-
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 role-separated prompt contracts and versioning are implemented; current-head AI behavior is untested.
-
 **As a release maintainer,** I want each build artifact to carry a machine-readable provenance manifest, so that its project, source revision and CI origin can be traced.
 
 **Acceptance criteria**
@@ -718,9 +701,6 @@ A story is done only when:
 ### JARVIS-E08-US-050 — Verify artifact contents and checksums
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Manifest inventory, SHA-256 and archive-member verification are implemented in source; execution and package acceptance are pending.
-
-
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 structured response/schema validation is implemented; current-head validation is pending.
 
 **As a release maintainer,** I want manifest inventory and SHA-256 metadata validated before accepting an artifact, so that malformed or modified packages are rejected.
 
@@ -735,9 +715,6 @@ A story is done only when:
 
 **Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Customer package verification order and structured failure reports are implemented; exact-head operator/CI acceptance is pending.
 
-
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 advisory-agent routing is implemented; end-to-end routing behavior is untested.
-
 **As a customer-support or release operator,** I want a deterministic verification sequence and actionable report, so that delivery failures can be diagnosed without accepting an untrusted artifact.
 
 **Acceptance criteria**
@@ -750,9 +727,6 @@ A story is done only when:
 ### JARVIS-E08-US-052 — Produce signed, SBOM-backed build artifacts through controlled CI
 
 **Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — SBOM and signing pipeline foundations exist; exact-head signatures, SBOM and artifact inspection have not been accepted.
-
-
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 local-first model adapter and remote-provider gating are implemented; provider acceptance remains pending.
 
 **As a release maintainer,** I want GitHub Actions and Jenkins to produce consistent integrity metadata, signatures and dependency SBOMs, so that artifacts are traceable across supported CI providers.
 
@@ -768,9 +742,6 @@ A story is done only when:
 
 **Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Release quarantine/recovery evidence controls exist; operational exercise and owner-approved release handling remain pending.
 
-
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — E07 bounded device-isolated conversation history is implemented; current-head persistence/authorization checks are pending.
-
 **As the owner,** I want artifact promotion and rollback to require explicit authorization and recorded evidence, so that unverified builds cannot reach production.
 
 **Acceptance criteria**
@@ -779,3 +750,16 @@ A story is done only when:
 - Recovery guidance identifies the failed stage and safe re-run boundary.
 - No production merge, deployment or Nexus publication occurs without explicit owner approval.
 - Validation and operational evidence remain pending while testing is paused.
+
+---
+
+## Definition of Done for every story
+
+A story is done only when:
+1. Implementation is present on the authorized working branch.
+2. Applicable tests are authored and actually executed; results are recorded separately.
+3. Exact-head CI passes where the workflow applies.
+4. Required physical-device or external integration evidence is recorded.
+5. Security/privacy restrictions remain satisfied.
+6. POC.md, POC2.md and the relevant epic/story status are updated.
+7. No claim exceeds the evidence.
