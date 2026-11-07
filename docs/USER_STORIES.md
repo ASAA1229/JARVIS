@@ -362,7 +362,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-026 — Owner-controlled memory lifecycle
 
-**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Deletion now also scrubs task history and the encrypted task journal (previously the deleted text survived in memory:save requests and memory:list results); verified by re-decrypting the journal from disk. Retention/backup behaviour is documented in `docs/MEMORY_PRIVACY.md`. Export is not yet implemented.
+**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Deletion now also scrubs task history and the encrypted task journal (previously the deleted text survived in memory:save requests and memory:list results); verified by re-decrypting the journal from disk. Retention/backup behaviour is documented in `docs/MEMORY_PRIVACY.md`. Owner export is available (`GET /api/memory/export`, companion “Export memories”), signed and DEVICE_MANAGE-only, with count-only auditing.
 
 **As the owner,** I want to review, correct, export and delete memories, so that I control what JARVIS retains.
 

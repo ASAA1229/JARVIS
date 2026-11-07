@@ -436,6 +436,26 @@ export class JarvisServer {
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
         }
+        // Owner data portability: a plaintext JSON copy for the authenticated owner device.
+        // The audit records only that an export happened and how many records it held.
+        if (req.method === 'GET' && url.pathname === '/api/memory/export') {
+          const records = this.personalMemory.list();
+          this.jarvis.audit.record('PERSONAL_MEMORY_EXPORTED', { recordCount: records.length }, auth.device.id);
+          const exportedAt = new Date().toISOString();
+          res.setHeader('Content-Disposition', `attachment; filename="jarvis-memory-${exportedAt.slice(0, 10)}.json"`);
+          return this.jsonResponse(res, 200, {
+            format: 'jarvis-personal-memory-export',
+            version: 1,
+            exportedAt,
+            notice: 'Plaintext copy of your JARVIS memories. Deleting a memory in JARVIS does not affect this file.',
+            records: records.map(({ id, category, content, createdAt, updatedAt, expiresAt }) => ({
+              id, category, content,
+              createdAt: new Date(createdAt).toISOString(),
+              updatedAt: new Date(updatedAt).toISOString(),
+              ...(expiresAt !== undefined ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
+            })),
+          });
+        }
         return this.jsonResponse(res, 405, { error: 'Unsupported memory method or route' });
       }
 

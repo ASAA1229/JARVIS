@@ -28,6 +28,7 @@ function setupEventListeners() {
   document.getElementById('btn-refresh-schedules').addEventListener('click', requestScheduleList);
   document.getElementById('schedule-form').addEventListener('submit', handleCreateSchedule);
   document.getElementById('btn-refresh-memories').addEventListener('click', requestMemoryList);
+  document.getElementById('btn-export-memories')?.addEventListener('click', exportMemories);
   document.getElementById('memory-form').addEventListener('submit', handleSaveMemory);
   document.getElementById('btn-totp-setup').addEventListener('click', handleTotpSetup);
   document.getElementById('btn-totp-verify').addEventListener('click', handleTotpVerify);
@@ -990,5 +991,28 @@ async function fetchAuditLogs() {
     });
   } catch {
     // Ignore log fetch errors
+  }
+}
+
+// Download a portable JSON copy of personal memories (signed, device-management only).
+async function exportMemories() {
+  const status = document.getElementById('memories-status');
+  if (!currentSession) {
+    if (status) status.textContent = 'Authenticate this device before exporting memories.';
+    return;
+  }
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/memory/export', { method: 'GET' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || 'Export failed with HTTP ' + res.status);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'jarvis-memory-' + new Date().toISOString().slice(0, 10) + '.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    if (status) status.textContent = 'Exported ' + payload.records.length + ' memories. The file is plaintext; store it securely.';
+  } catch (error) {
+    if (status) status.textContent = error instanceof Error ? error.message : 'Export failed.';
   }
 }
