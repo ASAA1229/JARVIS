@@ -3,8 +3,17 @@
 **Repository:** `ASAA1229/JARVIS`  
 **Active documentation/development branch:** `new`  
 **Status snapshot:** 2026-11-07  
-**Latest changes recorded in this refresh:** Whisper cancellation/process cleanup `524e9a788c8eb5c9cd3aabb472cae8fc65702e5b`; transcription API disconnect cancellation `afd088ae959e21aabdc955161419c5f3efcd006b`.  
+**Latest implementation checkpoint:** `b74f6e9ee30f09e8073cbc4f95837fdc88049ca4` (voice wake/capture ordering); earlier same-day AI context and Whisper cancellation increments are included on this branch.  
 **Overall status:** IN PROGRESS — substantial source implementation exists; testing, target-device acceptance and release acceptance are incomplete.
+
+## Documentation status checkpoint — 2026-11-07 (authoritative)
+
+- **Development:** STOPPED by owner instruction. This documentation refresh is not permission to continue feature work.
+- **Testing/validation:** PAUSED. No test, build, lint, audit, CI, browser, Windows-device or Android-device checks were run for this refresh.
+- **Implemented in source, not verified:** security/policy/approval foundations; conversation and role-separated AI orchestration/context budgeting; local Whisper/Piper cancellation safeguards; wake-triggered capture-ordering improvement; bounded Windows launch/UI automation; workflow journal/scheduler/recovery foundations; Android companion foundations; memory foundations; and DevOps provenance/integrity utilities.
+- **Partially implemented:** voice and HUD end-to-end behavior, Windows desktop coverage, workflow recovery, Android cross-device operation, memory lifecycle, AI provider/integration coverage, and artifact pipeline operations.
+- **Not complete:** physical-device acceptance, reliable end-to-end voice-to-app proof, full two-phone enrollment/control, broad productivity integrations, complete memory retention/deletion/sync, operational release pipeline acceptance, and production release.
+- A source commit or authored test is not a passing test. No capability is marked accepted solely because its code or test file exists.
 
 ## Read this first — what JARVIS is
 
@@ -30,7 +39,7 @@ A test file being present is not a passing test. A successful API response is no
 | Area | What exists in source | Current status / what remains |
 |---|---|---|
 | Backend, device identity and security | TypeScript/Node modular monolith, signed device sessions, identity primitives, default-deny policy, scoped approvals, audit integrity and persistence safeguards | Implemented foundations; exact-head automated and security acceptance not run |
-| Voice and HUD | HUD/companion, push-to-talk/transcript review, consent controls, local wake-word integration/setup, Piper TTS and local Whisper STT adapters, cancellation and lifecycle safeguards | Partially implemented; local runtime assets/models and MSI microphone/speaker end-to-end acceptance remain; known voice-to-app launch issue remains |
+| Voice and HUD | HUD/companion, push-to-talk/transcript review, consent controls, local wake-word integration/setup, Piper TTS and local Whisper STT adapters, cancellation and lifecycle safeguards | Partially implemented; local runtime assets/models and MSI microphone/speaker end-to-end acceptance remain; wake-to-command capture ordering has been improved, but end-to-end voice-to-app launch is not yet verified |
 | Windows desktop automation | Allowlisted app launch, foreground targeting, UI Automation control discovery/actions, clipboard/keyboard/zoom helpers and verification foundations | Partially implemented; target-window correctness, supported-app coverage and independent application outcome verification need device acceptance |
 | Multi-step workflows | Planner, scheduler, encrypted task journal/checkpoints, stop/cancel, task history/details and human-reviewed reconciliation | Foundations implemented; crash/restart, partial side effects and full recovery lifecycle remain unverified/incomplete |
 | Android companion | Native Android project, signed identity/API foundations, command queue and approval/revocation concepts | Partially implemented; install/enrollment/transport/revocation on both physical phones is not verified |
@@ -55,7 +64,7 @@ Other implemented-but-unverified work includes signed authorization and policy c
 
 ## Not yet developed or not complete
 
-- Reliable end-to-end “Hey Jarvis, open Notepad” voice-to-intent-to-app execution. The wake phrase can respond, but the reported voice command does not reliably launch the requested app yet.
+- End-to-end “Hey Jarvis, open Notepad” acceptance on the MSI. The same-utterance capture race has been addressed in source by starting capture immediately after local wake detection; actual recognition, policy routing, launch and independent outcome verification remain untested.
 - Full MSI acceptance of wake detection, microphone capture, local STT, Piper speech output, foreground-window targeting and verified application outcomes.
 - Independent installation, enrollment, secure communication and revocation acceptance for both Android phones.
 - Complete workflow crash/restart recovery and safe reconciliation for every partial/uncertain external side effect.
