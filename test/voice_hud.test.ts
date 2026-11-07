@@ -124,6 +124,12 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const unapprovedWakeAsset = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/private.env`);
     assert.strictEqual(unapprovedWakeAsset.status, 404);
     assert.match(await unapprovedWakeAsset.text(), /asset not found/i);
+    // The HUD checks installation through this endpoint instead of probing files (no console 404s).
+    const wakeStatus = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/status`);
+    assert.strictEqual(wakeStatus.status, 200);
+    const wakeStatusBody = await wakeStatus.json() as { installed: unknown; setup?: string };
+    assert.strictEqual(typeof wakeStatusBody.installed, 'boolean');
+    if (!wakeStatusBody.installed) assert.match(String(wakeStatusBody.setup), /setup-local-wake-word\.ps1/);
 
     // 2. Fetch HUD CSS
     const cssRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/hud.css`);

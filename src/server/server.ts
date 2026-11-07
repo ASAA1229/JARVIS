@@ -151,6 +151,15 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/hud/gesture-intent.js') {
         return this.serveStatic('gesture-intent.js', 'application/javascript', res);
       }
+      // Lets the HUD check for the optional assets without provoking 404s in the browser console.
+      if (req.method === 'GET' && url.pathname === '/hud/local-wakeword/status') {
+        const required = ['ort.min.js', 'jszip.min.js', 'wakeword.js', 'melspectrogram.onnx', 'multi_jarvis_v9.3.zip'];
+        const installed = required.every((name) => existsSync(join(process.cwd(), 'src', 'companion', 'local-wakeword', name)));
+        return this.jsonResponse(res, 200, {
+          installed,
+          ...(installed ? {} : { setup: 'Run powershell -ExecutionPolicy Bypass -File scripts/setup-local-wake-word.ps1 once, then reload the HUD.' }),
+        });
+      }
       // Optional, one-time-installed local wake-word assets. Only explicit filenames are served.
       if (req.method === 'GET' && url.pathname.startsWith('/hud/local-wakeword/')) {
         const filename = url.pathname.slice('/hud/local-wakeword/'.length);

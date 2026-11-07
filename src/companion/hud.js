@@ -278,11 +278,13 @@ async function loadLocalWakeWordAssets() {
       script.addEventListener('error', onError, { once: true });
       if (!existing) { script.src = src; script.async = false; document.head.appendChild(script); }
     });
-    // Preflight script files with fetch so missing optional assets fail closed
-    // without injecting broken script tags or generating browser console errors.
-    for (const src of ['/hud/local-wakeword/ort.min.js', '/hud/local-wakeword/jszip.min.js', '/hud/local-wakeword/wakeword.js']) {
-      const response = await fetch(src, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Local wake-word runtime assets are missing. Run scripts/setup-local-wake-word.ps1.');
+    // Ask the server whether the optional assets are installed, so missing assets fail
+    // closed with setup guidance instead of 404 errors in the browser console.
+    const status = await fetch('/hud/local-wakeword/status', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null);
+    if (!status || status.installed !== true) {
+      throw new Error('Local wake-word runtime assets are not installed. Run scripts/setup-local-wake-word.ps1 once, then reload the HUD.');
     }
     await loadScript('/hud/local-wakeword/ort.min.js');
     await loadScript('/hud/local-wakeword/jszip.min.js');
