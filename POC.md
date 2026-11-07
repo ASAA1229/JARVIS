@@ -360,3 +360,50 @@ The `new` branch now contains a shared artifact-integrity foundation aligned wit
 **Not yet accepted:** manifest file-inventory schema hardening is the next source increment; exact-head CI/Jenkins execution and end-to-end artifact verification remain pending. Nexus publishing is explicitly paused and must remain disabled unless separately authorized. No tests, builds, pipeline runs, customer-package validation, or Nexus publishing were performed for this snapshot.
 
 The DevOps delivery backlog is tracked in [docs/EPICS.md](docs/EPICS.md), [docs/USER_STORIES.md](docs/USER_STORIES.md), and the remaining-work register in [POC2.md](POC2.md).
+
+
+## Owner-approved product requirements baseline — 2026-11-08
+
+This section records the owner's consolidated answers to the 50-question development requirements exercise. It supplements the implementation/status snapshot above; it does not claim that proposed capabilities are implemented.
+
+### Product direction
+
+JARVIS is the owner's unified personal AI application and the central AI platform for the wider personal ecosystem. It brings personal AI/chat, specialized agents, developer and coding assistance, voice, desktop automation, productivity, memory, integrations and cross-device capabilities into one coherent application. The first product priority is the personal AI/chat agent; developer and coding assistance follows. The long-term direction is an extensible personal AI operating system.
+
+### Interaction, agents and execution
+
+- Support all approved interaction surfaces: local wake phrase, push-to-talk, text chat, HUD controls, Android companion controls, actionable notifications and remote-device workflows.
+- Support specialized personal, coding, research, document, browser, DevOps, project-management, system, memory/knowledge and custom agents.
+- Use adaptive planning for multi-step work, dependencies, subagents, checkpoints, progress, cancellation, recovery and approval gates.
+- Keep JARVIS as one all-in-one application from the owner's perspective; implement internally modular capabilities and background workers where resource isolation is useful.
+- The HUD remains the primary cinematic interface, with the complete set of requested dashboards and operational views.
+
+### AI, learning and memory
+
+- Support local models and multiple explicitly configured cloud/provider adapters. Provider selection is adaptive to privacy, cost, availability, task type and owner authorization; local processing remains the default.
+- Preserve the zero-ongoing-cost baseline. Paid/cloud inference is never silently enabled; owner-supplied credentials stay outside source control and cloud use is task-scoped and explicitly authorized.
+- Implement two distinct memory tiers: **Working Memory** (RAM-like, short-lived conversation/task/agent context) and **Long-Term Memory** (durable, encrypted, searchable user/project knowledge and approved interaction history).
+- A Memory Manager governs promotion, retrieval, summarization, expiry, correction, deletion, export, backup and synchronization between devices.
+- “Learning” initially means approved memory formation, retrieval, preference adaptation and improvement from user feedback. It does not mean silently retraining models or uploading private chats. Any future model-training capability requires separate explicit consent, provenance and deletion controls.
+
+### Device, security and resource architecture
+
+- Combine all three device-communication modes: laptop as the primary hub, optional peer-to-peer communication, and device-independent offline synchronization with conflict resolution.
+- Support secure enrollment for all devices, device keys, QR enrollment, revocation, role/permission expansion later, encryption, signed approvals, audit, recovery and a kill switch.
+- Keep the current owner-only authorization model initially; future roles are an extension, not a prerequisite for the current personal product.
+- Use adaptive resource profiles and workload scheduling for idle, normal and intensive operation on the existing Windows laptop and two Android companion devices. No new laptop is assumed.
+- Existing hard restrictions remain: no administrator elevation, no unrestricted shell, no payment/financial automation, no secret exposure, and no automatic replay of uncertain state-changing actions.
+
+### Integration and automation
+
+- Plan for all requested integrations (development tools, GitHub/Bitbucket, Jenkins, Nexus, terminal, browser, productivity services, Android and authorized APIs) behind capability-specific permissions.
+- Support predefined and user-created workflows, AI-generated workflows, visual workflow composition, schedules, reusable templates, versioning and safe recovery.
+- Plugins require manifests, capability declarations, permission scopes, version controls and explicit installation/authorization.
+
+### Delivery priority
+
+The owner's confirmed Q50 ranking is: **1) finish existing features; 2) dependency-based development; 3) shared integration first; 4) essential features before optional enhancements.** Sequence work from existing gaps and foundations through core AI/memory, shared JARVIS–Portfolio integration, device/integration capabilities and later extensibility. Testing/validation remains a separate release gate and is not a requirements-question stream in this planning exercise.
+
+### Relationship to Portfolio
+
+JARVIS is the authoritative AI/agent service. Portfolio is a separate application that supplies selected profile-specific, approved knowledge and visitor-facing experiences through a secured JARVIS integration. It must not require a third-party paid AI API as its primary intelligence source.
