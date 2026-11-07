@@ -291,6 +291,51 @@ export class JarvisCoreService {
     return this.#evaluateAndProceed(taskId, opRequest, device.id);
   }
 
+  /**
+   * Remove a deleted personal memory's text from task history (in memory and in the
+   * encrypted task journal): memory:save/update request text and parameters, and
+   * memory:list result payloads. Task metadata and audit records are kept.
+   */
+  #scrubDeletedMemoryFromTasks(memoryId: string, content: string): { scrubbedTasks: number; persisted: boolean } {
+    const REDACTED = '[deleted personal memory]';
+    const normalized = content.trim().toLowerCase();
+    const mentions = (value: unknown) => typeof value === 'string' && normalized.length > 0 && value.toLowerCase().includes(normalized);
+    let scrubbedTasks = 0;
+    let persisted = true;
+    for (const task of this.tasks.values()) {
+      let changed = false;
+      const operations = [
+        ...(task.operation ? [{ operation: task.operation, parameters: task.parameters }] : []),
+        ...(task.operations ?? []),
+      ];
+      for (const op of operations) {
+        if (!op.parameters || !['memory:save', 'memory:update'].includes(op.operation)) continue;
+        const linked = op.parameters.id === memoryId || mentions(op.parameters.content) ||
+          (task.result?.evidence as { memoryId?: unknown } | undefined)?.memoryId === memoryId;
+        if (linked && op.parameters.content !== REDACTED) {
+          op.parameters.content = REDACTED;
+          changed = true;
+        }
+      }
+      if (changed || mentions(task.requestText)) {
+        if (task.requestText !== REDACTED) {
+          task.requestText = REDACTED;
+          changed = true;
+        }
+      }
+      const data = task.result?.data;
+      if (Array.isArray(data) && data.some((entry) => (entry as { id?: unknown })?.id === memoryId)) {
+        task.result = { ...task.result!, data: data.filter((entry) => (entry as { id?: unknown })?.id !== memoryId) };
+        changed = true;
+      }
+      if (changed) {
+        scrubbedTasks += 1;
+        if (!this.#persistTask(task)) persisted = false;
+      }
+    }
+    return { scrubbedTasks, persisted };
+  }
+
   #recordStep(task: TaskLifecycleRecord, status: WorkflowStepStatus, outcome?: VerificationOutcome, message?: string): boolean {
     if (!task.steps) task.steps = [];
     task.steps.push({
@@ -497,12 +542,18 @@ export class JarvisCoreService {
         case 'memory:delete': {
           if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
           const id = parameters.id as string;
+          const existing = this.personalMemory.list().find((record) => record.id === id);
           const deleted = this.personalMemory.delete(id);
           // Prove deletion by re-reading and decrypting the stored file, not by trusting memory.
           const diskVerified = deleted ? this.personalMemory.verifyAbsentOnDisk(id) : false;
-          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified }, taskRecord.deviceId, taskId);
-          if (deleted && !diskVerified) return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified } };
-          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified } };
+          // Secondary copies: task history (and its encrypted journal) holds the text of the
+          // memory:save/update requests and memory:list results. Deletion must cover them too.
+          const scrub = deleted && existing ? this.#scrubDeletedMemoryFromTasks(id, existing.content) : { scrubbedTasks: 0, persisted: true };
+          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted }, taskRecord.deviceId, taskId);
+          if (deleted && (!diskVerified || !scrub.persisted)) {
+            return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: diskVerified ? 'The memory was deleted, but task-history copies could not be durably scrubbed.' : 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
+          }
+          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
         }
         case 'system:get_os_info':
           return this.systemAdapter.getOsInfo();

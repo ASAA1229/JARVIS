@@ -350,7 +350,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-025 — Private local memory
 
-**Current implementation status:** **IMPLEMENTED — NOT VERIFIED** — Encrypted local personal-memory storage and authenticated access foundations exist; privacy lifecycle acceptance remains pending.
+**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED** — Encryption at rest, TTL expiry, category and secret/instruction rejection, and permission-gated access are covered by automated tests; storage locations and protections are documented in `docs/MEMORY_PRIVACY.md`.
 
 **As the owner,** I want JARVIS to remember useful preferences and context locally, so that it can assist without sending all personal data to a cloud service.
 
@@ -362,7 +362,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-026 — Owner-controlled memory lifecycle
 
-**Current implementation status:** **PARTIALLY IMPLEMENTED — NOT VERIFIED** — Memory review/save/correction/deletion controls exist; verified retention and deletion behavior is not accepted.
+**Current implementation status:** **IMPLEMENTED — LOCALLY VERIFIED (2026-11-07)** — Deletion now also scrubs task history and the encrypted task journal (previously the deleted text survived in memory:save requests and memory:list results); verified by re-decrypting the journal from disk. Retention/backup behaviour is documented in `docs/MEMORY_PRIVACY.md`. Export is not yet implemented.
 
 **As the owner,** I want to review, correct, export and delete memories, so that I control what JARVIS retains.
 
