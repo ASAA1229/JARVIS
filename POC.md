@@ -73,9 +73,30 @@ Other implemented-but-unverified work includes signed authorization and policy c
 - Exact-head automated test/build/lint/CI evidence and release acceptance. These activities are paused by owner instruction.
 - Production promotion, deployment and Nexus publishing. These remain disabled and require separate explicit approval.
 
-## Verification policy and current pause
+## Verification status — testing resumed 2026-11-07
 
-**Development is currently stopped at the owner's request while the POC and user-story documentation is refreshed. Testing remains paused.** Do not run tests, builds, lint, audits, CI workflows, device checks or Nexus operations until explicitly resumed. Do not describe unexecuted checks as passed.
+Testing was resumed by the owner on 2026-11-07. Local results on branch `new` (Windows 11, Node 24.16, Python 3.14, Edge headless):
+
+| Check | Result |
+|---|---|
+| `npm run lint` (tsc --noEmit) | PASS — 0 errors (was 10) |
+| `npm test` | PASS — 233 unit/integration + 3 change-detection (was 5 failing) |
+| `npm run build` | PASS |
+| `npm run test:browser` (HUD/companion smoke, Edge) | PASS (was failing) |
+| `npm audit --audit-level=moderate` | PASS — 0 vulnerabilities |
+| Python release tooling (`python -m unittest discover -s tests -t .`) | PASS — 30 tests |
+| Android `assembleDebug` | NOT RUN — no Gradle/Android SDK on this machine (CI job defines it) |
+| MSI microphone/speaker/app-launch acceptance, two-phone acceptance | NOT RUN — requires physical devices |
+
+**Defects found and fixed in this pass**
+- `src/companion/hud.js` redeclared `const wakeSpeechConsent`; the SyntaxError stopped the entire HUD script (voice, approvals, task history) from loading. This is the most likely cause of the reported “Hey Jarvis, open Notepad” failure. A test now syntax-checks every served companion script.
+- Voice capture results were dropped while `isSpeaking` was true, and a speech engine that never fired `end` left voice input dead; starting a capture now interrupts JARVIS speech (barge-in).
+- “paste it/this/that in X” pasted the literal pronoun; copy-then-paste requests now plan copy → focus → paste with a named source.
+- Expired approvals returned HTTP 200; they now return 409 with the EXPIRED task result, and the HUD/companion retire the card.
+- “Jarvis, …” / “OK Jarvis, …” wake prefixes now normalise like “Hey Jarvis, …”.
+- CI and Jenkins had all test/lint steps paused since 2026-11-05; they are re-enabled and Python tests are added.
+
+CI/Jenkins exact-head runs and device acceptance remain required before any story is marked VERIFIED. Nexus publishing and production deployment remain disabled.
 
 ## Branch and safety rules
 
