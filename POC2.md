@@ -1,9 +1,15 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
-**Status snapshot:** 2026-11-05  
+**Status snapshot:** 2026-11-07  
 **Branch reviewed:** `new`  
-**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac`  
+**Latest reviewed branch head before this documentation refresh:** `c6a745a1e57981b54d9a1bcf08ebe271bf3d5181`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
+
+## Owner pause and status boundary — 2026-11-07
+
+**Development is stopped. Testing and validation are paused.** This document is now a gap/acceptance register, not an instruction to begin implementation. Only POC and user-story documentation is being reconciled. Do not run tests, builds, lint, audits, CI, browser checks, device checks or release operations until the owner explicitly resumes them.
+
+Since the earlier 2026-11-05 snapshot, source changes on `new` include bounded AI context selection/budget accounting, local Whisper cancellation and subprocess cleanup, transcription cancellation on client disconnect, and immediate voice capture after local wake detection to avoid losing command words spoken in the same utterance. These changes are **implemented in source, not verified**. The MSI voice-to-app path, actual app launch and independent result verification remain unaccepted.
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
 
@@ -50,7 +56,7 @@
 - [ ] Verify audit-chain tampering, audit-write failure and recovery behavior.
 - [ ] Preserve hard restrictions: financial/payment apps, credential entry, unrestricted shell, admin elevation, security bypass and voice-only high-risk authorization.
 
-### P1 — Voice Interaction & Cinematic HUD (active development priority)
+### P1 — Voice Interaction & Cinematic HUD (implementation present; acceptance pending; development paused)
 
 **Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. The active HUD also cancels capture/discards the transcript on consent revocation and rechecks consent before a post-wake command can be dispatched. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks, invalid duration and HUD consent guards. Tests are authored only; execution is pending.
 
