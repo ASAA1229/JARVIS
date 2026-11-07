@@ -302,7 +302,15 @@ export class WindowsAppLauncherAdapter {
       }
       if (existingSelection.window) {
         const existing = existingSelection.window;
-        const focused = await this.windows.focusWindow({ pid: existing.pid }, signal);
+        let focused = await this.windows.focusWindow({ pid: existing.pid }, signal);
+        if (!focused.success && !signal?.aborted && existing.processName !== 'ApplicationFrameHost' && existing.title) {
+          // Store (UWP) apps such as Calculator render inside an ApplicationFrameHost
+          // frame; the app's own CoreWindow cannot take foreground directly. Focus the
+          // frame with the same title — focusWindow still requires exactly one match
+          // and verifies the foreground window afterwards.
+          const framed = await this.windows.focusWindow({ processName: 'ApplicationFrameHost', titleContains: existing.title }, signal);
+          if (framed.success) focused = framed;
+        }
         if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
           return {
             ...focused,

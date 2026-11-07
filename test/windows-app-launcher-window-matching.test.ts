@@ -157,3 +157,37 @@ test('discovered Start-menu launch verifies only a window matching the trusted i
   assert.equal(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
   assert.equal(result.evidence?.targetWindowVerified, true);
 });
+
+test('a Store app falls back to its uniquely titled ApplicationFrameHost frame for focus', async () => {
+  const calculator: WindowInfo = { pid: 27208, processName: 'CalculatorApp', title: 'Calculator' };
+  const targets: Array<{ pid?: number; processName?: string; titleContains?: string }> = [];
+  const windows = {
+    snapshot: async () => [calculator],
+    focusWindow: async (target: { pid?: number; processName?: string; titleContains?: string }) => {
+      targets.push(target);
+      // The inner CoreWindow cannot take foreground; only the hosting frame can.
+      return target.processName === 'ApplicationFrameHost'
+        ? { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, evidence: { foregroundWindowVerified: true } }
+        : { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Foreground focus was denied.' };
+    },
+  } as unknown as import('../src/adapters/windowsWindows.js').WindowsWindowManager;
+
+  const result = await new WindowsAppLauncherAdapter(windows).launchApp('calc');
+
+  assert.deepEqual(targets, [{ pid: 27208 }, { processName: 'ApplicationFrameHost', titleContains: 'Calculator' }]);
+  assert.equal(result.success, true);
+  assert.equal(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+});
+
+test('the Store-app frame fallback still fails closed when the frame cannot be focused', async () => {
+  const calculator: WindowInfo = { pid: 27208, processName: 'CalculatorApp', title: 'Calculator' };
+  const windows = {
+    snapshot: async () => [calculator],
+    focusWindow: async () => ({ success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: '2 windows matched' }),
+  } as unknown as import('../src/adapters/windowsWindows.js').WindowsWindowManager;
+
+  const result = await new WindowsAppLauncherAdapter(windows).launchApp('calc');
+
+  assert.equal(result.success, false);
+  assert.match(String(result.error), /could not verify that its existing window was brought forward/);
+});
