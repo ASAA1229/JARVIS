@@ -11,6 +11,8 @@ export interface PersonalMemory {
   createdAt: number;
   updatedAt: number;
   expiresAt?: number;
+  /** Where an approved learned memory came from (JARVIS-US-058 attribution). */
+  source?: { kind: string; ref?: string; approvedAt: number };
 }
 
 interface MemoryPayload { version: 1; records: PersonalMemory[]; }
@@ -105,8 +107,8 @@ export class PersonalMemoryStore {
     return [...this.records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map((r) => ({ ...r }));
   }
 
-  public save(category: MemoryCategory, content: string, ttlDays?: number): PersonalMemory {
-    if (!this.healthy) throw new Error('Memory store is unhealthy.');
+  /** Validate category and content without storing anything (used for learning candidates). */
+  public assertStorable(category: MemoryCategory, content: string): void {
     if (!['preference', 'project', 'routine', 'general'].includes(category) || DENIED_CATEGORIES.has(category)) {
       throw new Error('This memory category is not permitted.');
     }
@@ -115,6 +117,11 @@ export class PersonalMemoryStore {
     }
     if (DENIED_CONTENT.test(content)) throw new Error('This content appears to contain credentials or sensitive financial data and cannot be stored.');
     if (INSTRUCTION_LIKE.test(content)) throw new Error('This content reads like an instruction to the assistant, so it cannot be stored as trusted memory.');
+  }
+
+  public save(category: MemoryCategory, content: string, ttlDays?: number, source?: PersonalMemory['source']): PersonalMemory {
+    if (!this.healthy) throw new Error('Memory store is unhealthy.');
+    this.assertStorable(category, content);
     if (ttlDays !== undefined && (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > 3650)) {
       throw new Error('Memory TTL must be an integer from 1 to 3650 days.');
     }
@@ -123,6 +130,7 @@ export class PersonalMemoryStore {
       id: randomBytes(16).toString('hex'), category, content: content.trim(),
       createdAt: now, updatedAt: now,
       expiresAt: ttlDays === undefined ? undefined : now + ttlDays * 24 * 60 * 60 * 1000,
+      ...(source ? { source } : {}),
     };
     this.records.set(record.id, record);
     try { this.persist(); } catch (error) { this.records.delete(record.id); throw error; }
