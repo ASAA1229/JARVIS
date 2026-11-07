@@ -596,7 +596,7 @@ export class JarvisServer {
                 context: [
                   ...conversationMemory.map((item) => ({ label: item.category, content: item.content })),
                   ...recentHistory,
-                ].slice(0, 8),
+                ],
               }, adapter);
               if (agentResult.status === 'completed') {
                 const response = agentResult.response;
