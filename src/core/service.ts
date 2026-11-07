@@ -602,10 +602,18 @@ export class JarvisCoreService {
             operation: 'desktop:type_text',
             parameters: { text: parameters.text as string, expectProcess: launched.windowProcess },
           } as unknown as DesktopAction, signal);
+          // The launch is a verified side effect, so a typing failure is never a clean
+          // failure of the whole request. Typing is VERIFIED only when the adapter's UI
+          // Automation readback matched; acknowledgement-only stays PARTIAL.
+          const typingFailedCleanly = !typing.success && typing.outcome === VerificationOutcome.VERIFIED_FAILURE;
           return {
             ...typing,
+            ...(typingFailedCleanly ? {
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application opened, but the text was not entered: ' + (typing.error || 'typing failed.'),
+            } : {}),
             data: { launch: launch.data, typing: typing.data },
-            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence },
+            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence, independentlyVerified: typing.outcome === VerificationOutcome.VERIFIED_SUCCESS },
           };
         }
         case 'desktop:type_text':
