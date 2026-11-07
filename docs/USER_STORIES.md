@@ -96,7 +96,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-005 — Owner recovery and device revocation
 
-**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Revocation implemented and tested; owner recovery after authenticator/device-management loss is not complete.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Owner-token recovery on the JARVIS host (`npm run owner-recovery -- reset-authenticator | revoke-device <id> | revoke-all`, `POST /api/owner/recovery`): loopback-only, rate-limited, explicit confirmation, audited without secrets; revoke-all reopens bootstrap enrollment and old keys cannot re-enroll. Tests authored in `test/owner_recovery.test.ts`, not yet run (testing paused).
 
 **As the owner,** I want to recover account control and revoke a lost device, so that device loss does not compromise JARVIS.
 
@@ -337,7 +337,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-024 — Offline queue and recovery
 
-**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Bounded volatile inventory queue only; durable offline delivery not implemented.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Queue is read-only (state-changing phone actions are never queued), bounded and TTL ≤ 60 s; queued commands are revalidated (requester/target active and permitted) at claim and completion; duplicate results are acknowledged without overwrite; requester cancel is idempotent; revocation cancels. Tests authored, not yet run; physical two-phone check pending.
 
 **As the owner,** I want safe handling when the laptop or phone is offline, so that queued work cannot execute unexpectedly later.
 

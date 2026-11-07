@@ -28,6 +28,8 @@ export class JarvisServer {
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
+  /** Failed owner-recovery attempts (timestamps) for rate limiting. */
+  private recoveryFailures: number[] = [];
   private readonly conversationSessions = new ConversationSessionStore();
   private readonly agentRequestLimiter = new AgentRequestLimiter();
 
@@ -214,6 +216,66 @@ export class JarvisServer {
           platform: process.platform,
           uptimeSeconds: Math.round(process.uptime()),
           checks: { auditIntegrity: integrityHealthy, identityState: stateHealthy },
+        });
+      }
+
+      // Owner recovery (JARVIS-US-005): authenticator loss or loss of every
+      // device-management device. Authorized only by the owner control token from
+      // this machine, never by a device session; rate limited; audited without secrets.
+      if (req.method === 'POST' && url.pathname === '/api/owner/recovery') {
+        if (!this.ownerControlToken || !this.jarvis.deviceSecurity) {
+          return this.jsonResponse(res, 503, { error: 'Owner recovery requires a configured owner control token', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
+        }
+        const remote = req.socket.remoteAddress || '';
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) {
+          this.jarvis.audit.record('OWNER_RECOVERY_REJECTED', { reason: 'non_loopback' });
+          return this.jsonResponse(res, 403, { error: 'Owner recovery is only available on the JARVIS host' });
+        }
+        const now = Date.now();
+        this.recoveryFailures = this.recoveryFailures.filter((at) => now - at < 15 * 60_000);
+        if (this.recoveryFailures.length >= 5) {
+          return this.jsonResponse(res, 429, { error: 'Too many failed recovery attempts; wait 15 minutes' });
+        }
+        if (!this.isOwnerControlAuthorized(req)) {
+          this.recoveryFailures.push(now);
+          this.jarvis.audit.record('OWNER_RECOVERY_REJECTED', { reason: 'invalid_owner_token' });
+          return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
+        }
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || body.confirm !== 'RECOVER' ||
+            !['reset_authenticator', 'revoke_device', 'revoke_all_devices'].includes(String(body.action))) {
+          return this.jsonResponse(res, 400, { error: 'Body must be { action: reset_authenticator | revoke_device | revoke_all_devices, confirm: "RECOVER" }' });
+        }
+        const revoke = (deviceId: string): boolean => {
+          if (!this.jarvis.identity.revokeDevice(deviceId, 'Owner recovery')) return false;
+          // Same effects as a normal revocation: approvals, schedules, tasks, phone commands.
+          this.jarvis.onDeviceRevoked(deviceId);
+          this.androidCommands.cancelForDevice(deviceId);
+          return true;
+        };
+        if (body.action === 'reset_authenticator') {
+          const result = this.jarvis.deviceSecurity.ownerResetAuthenticator();
+          return this.jsonResponse(res, 200, { success: true, ...result, next: 'Set up a new authenticator from a device-management device.' });
+        }
+        if (body.action === 'revoke_device') {
+          if (typeof body.deviceId !== 'string' || !body.deviceId) return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+          const target = this.jarvis.identity.getDevice(body.deviceId);
+          if (!target || target.status !== 'ACTIVE') return this.jsonResponse(res, 404, { error: 'Active device not found' });
+          if (!revoke(target.id)) return this.jsonResponse(res, 409, { success: false, error: 'Revocation could not be persisted' });
+          this.jarvis.audit.record('OWNER_RECOVERY_DEVICE_REVOKED', { revokedDeviceId: target.id });
+          return this.jsonResponse(res, 200, { success: true, revokedDeviceIds: [target.id] });
+        }
+        // revoke_all_devices: every active device is revoked and the authenticator reset,
+        // which reopens owner-token bootstrap enrollment. Old keys cannot be re-enrolled.
+        const active = this.jarvis.identity.listDevices().filter((device) => device.status === 'ACTIVE');
+        const revokedDeviceIds = active.filter((device) => revoke(device.id)).map((device) => device.id);
+        const failed = active.length - revokedDeviceIds.length;
+        const authenticator = this.jarvis.deviceSecurity.ownerResetAuthenticator();
+        this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: failed });
+        if (failed > 0) return this.jsonResponse(res, 409, { success: false, revokedDeviceIds, error: `${failed} device(s) could not be revoked durably` });
+        return this.jsonResponse(res, 200, {
+          success: true, revokedDeviceIds, ...authenticator,
+          next: 'Enroll a new device with a NEW key via owner-token bootstrap enrollment (POST /api/enrollment/challenge).',
         });
       }
 
@@ -815,7 +877,9 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (auth.device.platform !== 'Android' || !auth.device.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Android read-only agent permission is required' });
-        const command = this.androidCommands.claimNext(auth.device.id);
+        // Revalidate queued work at claim time: a phone reconnecting later never
+        // receives commands whose requester was revoked or lost permission.
+        const command = this.androidCommands.claimNext(auth.device.id, (queued) => this.isAndroidCommandStillAuthorized(queued));
         return this.jsonResponse(res, 200, { command });
       }
 
@@ -834,10 +898,35 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (auth.device.platform !== 'Android') return this.jsonResponse(res, 403, { error: 'Only an Android device can return app inventory' });
-        const completed = this.androidCommands.complete(auth.device.id, body.commandId, body.apps as Array<{label:string; packageName:string}>);
-        if (!completed) return this.jsonResponse(res, 409, { error: 'Command is expired, unknown, already completed, or belongs to another device' });
+        const outcome = this.androidCommands.completeDetailed(
+          auth.device.id, body.commandId, body.apps as Array<{label:string; packageName:string}>,
+          (queued) => this.isAndroidCommandStillAuthorized(queued),
+        );
+        // A retried upload of an already-accepted result is acknowledged without
+        // overwriting it, so network retries are idempotent.
+        if (outcome === 'duplicate') return this.jsonResponse(res, 200, { success: true, duplicate: true });
+        if (outcome !== 'completed') {
+          this.jarvis.audit.record('ANDROID_COMMAND_RESULT_REJECTED', { commandId: body.commandId, outcome }, auth.device.id);
+          return this.jsonResponse(res, 409, { error: 'Command result was not accepted', outcome });
+        }
         this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
         return this.jsonResponse(res, 200, { success: true });
+      }
+
+      // Requester cancellation of queued phone work; repeating a cancel is a no-op success.
+      if (req.method === 'POST' && url.pathname === '/api/android/commands/cancel') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.commandId !== 'string') return this.jsonResponse(res, 400, { error: 'commandId is required' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Device-management permission is required' });
+        const outcome = this.androidCommands.cancel(auth.device.id, body.commandId);
+        if (outcome === 'not_found') return this.jsonResponse(res, 404, { error: 'Command not found' });
+        if (outcome === 'not_cancellable') return this.jsonResponse(res, 409, { error: 'Command already finished', outcome });
+        if (outcome === 'cancelled') this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+        return this.jsonResponse(res, 200, { success: true, outcome });
       }
 
       if (req.method === 'GET' && url.pathname === '/api/android/commands/results') {
@@ -1056,6 +1145,16 @@ export class JarvisServer {
     const decision = this.jarvis.policy.evaluate({ operation, parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
     if (!decision.allowed) return { status: 403, error: 'Device is not authorized for this security operation' };
     return { status: 200, device: auth.device };
+  }
+
+  /** Both ends of a queued phone command must still be active and permitted. */
+  private isAndroidCommandStillAuthorized(command: Readonly<{ requesterDeviceId: string; targetDeviceId: string }>): boolean {
+    const requester = this.jarvis.identity.getDevice(command.requesterDeviceId);
+    const target = this.jarvis.identity.getDevice(command.targetDeviceId);
+    return Boolean(
+      requester && requester.status === 'ACTIVE' && requester.permissions.includes(Permission.DEVICE_MANAGE) &&
+      target && target.status === 'ACTIVE' && target.platform === 'Android' && target.permissions.includes(Permission.SYSTEM_INFO_READ),
+    );
   }
 
   private isOwnerControlAuthorized(req: IncomingMessage): boolean {

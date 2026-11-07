@@ -92,6 +92,39 @@ export class DeviceSecurityService {
     return true;
   }
 
+  /**
+   * Owner recovery after authenticator loss. Callers must already have proven the
+   * owner control token (never a device session). Clears the TOTP secret, replay and
+   * lockout state, and cancels open enrollment requests that were authorized with
+   * the lost authenticator. Persisted before reporting success; audited without secrets.
+   */
+  ownerResetAuthenticator(): { totpWasEnabled: boolean; cancelledEnrollments: number } {
+    const previous = { secret: this.enabledSecret, pending: this.pendingTotp, step: this.lastAcceptedStep, failures: [...this.failures] };
+    const totpWasEnabled = Boolean(this.enabledSecret);
+    this.enabledSecret = undefined;
+    this.pendingTotp = undefined;
+    this.lastAcceptedStep = -1;
+    this.failures.length = 0;
+    try {
+      this.persist();
+    } catch (error) {
+      this.enabledSecret = previous.secret;
+      this.pendingTotp = previous.pending;
+      this.lastAcceptedStep = previous.step;
+      this.failures.push(...previous.failures);
+      throw error;
+    }
+    let cancelledEnrollments = 0;
+    for (const tx of this.transactions.values()) {
+      if (tx.state === 'WAITING_FOR_SCAN' || tx.state === 'AWAITING_OWNER_AUTHORIZATION') {
+        tx.state = 'CANCELLED';
+        cancelledEnrollments++;
+      }
+    }
+    this.audit.record('OWNER_RECOVERY_AUTHENTICATOR_RESET', { totpWasEnabled, cancelledEnrollments });
+    return { totpWasEnabled, cancelledEnrollments };
+  }
+
   verifyStepUp(device: DeviceRecord, code: string): boolean {
     this.requireManage(device);
     if (!this.enabledSecret) return false;

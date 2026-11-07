@@ -10,6 +10,7 @@
     "test": "node --test --import tsx test/**/*.test.ts && node --test scripts/on-site-change-detection.test.mjs",
     "test:browser": "node test/browser-smoke.mjs",
     "site-key": "tsx src/gateway/siteKeysCli.ts",
+    "owner-recovery": "node scripts/owner-recovery.mjs",
     "lint": "tsc --noEmit"
   },
   "keywords": [
