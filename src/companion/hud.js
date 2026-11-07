@@ -185,21 +185,6 @@ function setupEventListeners() {
     });
   });
 
-  // Revoking browser speech consent is immediate: discard the in-flight transcript and stop capture.
-  const browserSpeechConsent = document.getElementById('allow-browser-speech');
-  if (browserSpeechConsent) browserSpeechConsent.addEventListener('change', () => {
-    if (!browserSpeechConsent.checked && isListening && !wakeCaptureAwaitingReview) {
-      cancelVoiceCapture();
-      setAssistantState('VOICE CONSENT REVOKED', 'Microphone capture stopped and the pending transcript was discarded. Re-enable consent only when you want to use browser speech.');
-    }
-  });
-  const wakeSpeechConsent = document.getElementById('allow-wake-browser-speech');
-  if (wakeSpeechConsent) wakeSpeechConsent.addEventListener('change', () => {
-    if (!wakeSpeechConsent.checked && isListening && wakeCaptureAwaitingReview) {
-      cancelVoiceCapture();
-      setAssistantState('VOICE CONSENT REVOKED', 'Post-wake browser speech stopped and the pending transcript was discarded. Local wake detection can remain active.');
-    }
-  });
 
   // Never keep an active mic session alive after the HUD is backgrounded or hidden.
   document.addEventListener('visibilitychange', () => {
@@ -986,6 +971,11 @@ function startVoiceCapture(mode = 'push-to-talk') {
     return;
   }
   if (localWakeEngine) stopHandsFreeStandby();
+  // Barge-in: an explicit capture interrupts JARVIS's own speech output. Otherwise
+  // recognition results are ignored while isSpeaking is true (to avoid transcribing
+  // JARVIS itself), and a speech engine that never fires 'end' would leave voice
+  // input silently dead.
+  if (isSpeaking) cancelSpeechOutput();
   wakeCaptureAwaitingReview = mode === 'wake';
   if (!speechRecognitionConstructor) {
     setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
@@ -1429,7 +1419,11 @@ async function resolveHudApproval(approvalId, approved) {
       body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
+    // A conflict that carries a task state (for example EXPIRED) is a terminal
+    // outcome the card can reflect; any other failure remains an error.
+    if (!res.ok && !(res.status === 409 && typeof result.state === 'string')) {
+      throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
+    }
 
     if (!approved) {
       if (result.success !== true) throw new Error(result.message || result.error || 'Server did not confirm the rejection');

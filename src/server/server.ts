@@ -535,11 +535,12 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         const deviceId = auth.device.id;
+        const clearConversationId: string = body.conversationId;
         // Serialize clearing with message handling to prevent an in-flight response
         // from persisting history after the clear operation completes.
         const cleared = await this.conversationSessions.runExclusive(
-          body.conversationId,
-          () => Promise.resolve(this.conversationSessions.clear(body.conversationId, deviceId)),
+          clearConversationId,
+          () => Promise.resolve(this.conversationSessions.clear(clearConversationId, deviceId)),
         );
         return this.jsonResponse(res, cleared ? 200 : 404, { success: cleared });
       }
@@ -578,9 +579,10 @@ export class JarvisServer {
           const result = await this.jarvis.submitRequest(sessionId, text.trim());
           return this.jsonResponse(res, 200, result);
         }
-        const lockId = conversationId || 'unthreaded:' + auth.device.id + ':' + text.trim();
+        const authDevice = auth.device;
+        const lockId = conversationId || 'unthreaded:' + authDevice.id + ':' + text.trim();
         return await this.conversationSessions.runExclusive(lockId, async () => {
-          const conversation = this.conversationSessions.getOrCreate(auth.device.id, conversationId);
+          const conversation = this.conversationSessions.getOrCreate(authDevice.id, conversationId);
           if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
 
           // Advisory agents share the same device-bound conversation thread and lock.
@@ -589,12 +591,12 @@ export class JarvisServer {
           if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
             const adapter = createConfiguredAgentModelAdapter();
             if (adapter) {
-              const limit = this.agentRequestLimiter.consume(auth.device.id);
+              const limit = this.agentRequestLimiter.consume(authDevice.id);
               if (!limit.allowed) {
                 this.jarvis.audit.record('ADVISORY_AGENT_RATE_LIMITED', {
                   profile: agentRoute.profile,
                   retryAfterSeconds: limit.retryAfterSeconds,
-                }, auth.device.id);
+                }, authDevice.id);
                 res.setHeader('Retry-After', String(limit.retryAfterSeconds));
                 return this.jsonResponse(res, 429, {
                   error: 'The advisory AI request limit has been reached for this device.',
@@ -656,8 +658,8 @@ export class JarvisServer {
                         return capability.name + ' (' + capability.status + ', ' + capability.risk + ' risk, ' + approval + ', platforms: ' + capability.platforms.join(', ') + '): ' + candidate.rationale;
                       }).join('\\n') || 'No supported tool was identified.'
                       : 'The agent completed the request.';
-                this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), message);
-                this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, auth.device.id);
+                this.conversationSessions.appendTurn(conversation.id, authDevice.id, text.trim(), message);
+                this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, authDevice.id);
                 return this.jsonResponse(res, 200, {
                   state: 'ANSWERED',
                   message,
@@ -678,20 +680,20 @@ export class JarvisServer {
                   : 'unexpected_agent_route',
                 requestLength: text.trim().length,
                 contextItemCount: Math.min(8, conversationMemory.length + recentHistory.length),
-              }, auth.device.id);
+              }, authDevice.id);
             }
           }
 
           const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
           if (conversationalResult) {
             if (conversationalResult.persistInHistory) {
-              this.conversationSessions.appendTurn(conversation.id, auth.device.id, text.trim(), conversationalResult.answer);
+              this.conversationSessions.appendTurn(conversation.id, authDevice.id, text.trim(), conversationalResult.answer);
             }
             this.jarvis.audit.record('CONVERSATIONAL_ANSWER', {
               requestLength: text.trim().length,
               responseLength: conversationalResult.answer.length,
               persisted: conversationalResult.persistInHistory,
-            }, auth.device.id);
+            }, authDevice.id);
             return this.jsonResponse(res, 200, {
               state: 'ANSWERED',
               message: conversationalResult.answer,
@@ -721,6 +723,11 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         const result = await this.jarvis.approveTask(approvalId, sessionId);
+        // An expired approval is a conflict, not a successful approval. The full
+        // task result (state EXPIRED) is included so clients can retire the card.
+        if (result.state === TaskState.EXPIRED) {
+          return this.jsonResponse(res, 409, { ...result, error: result.message });
+        }
         return this.jsonResponse(res, 200, result);
       }
 

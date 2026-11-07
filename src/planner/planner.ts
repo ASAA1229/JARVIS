@@ -433,7 +433,26 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!explicitText || explicitText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(explicitText)) return { intent: 'Text entry needs clearer input', operations: [], confidence: 0.96, explanation: 'The text must contain 1–500 printable characters. No text was entered.', uncertainty: 'Text is empty, too long, or contains unsupported control characters.' };
       return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess: target.expectProcess }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named application, after approval.' };
     }
-    const pasteClipboard = requestText.match(/\bpaste\s+(?:the\s+)?clipboard\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    // "copy this [in Chrome] and paste it in Notepad": a bounded three-step workflow.
+    // The copy source must be named, matching the single-step copy rule below.
+    const copyThenPaste = requestText.match(/\bcopy\s+(?:this|that|it|the\s+selection|(?:the\s+)?selected\s+text)(?:\s+(?:in|from)\s+([A-Za-z0-9._-]{1,64}))?\s*(?:,\s*)?(?:and|then)\s+(?:then\s+)?paste\s+(?:it|this|that)\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (copyThenPaste) {
+      const source = copyThenPaste[1]?.replace(/\.exe$/i, '');
+      const destination = copyThenPaste[2].replace(/\.exe$/i, '');
+      if (!source) return { intent: 'Copy source application required', operations: [], confidence: 0.98, explanation: `Name the application containing the selection, for example “copy selected text in Chrome and paste it in ${destination}”. JARVIS will not copy from an unknown foreground window.`, uncertainty: 'No explicit source process was supplied for clipboard copy.' };
+      return {
+        intent: 'Copy the selection from one application and paste it into another',
+        operations: [
+          { operation: 'desktop:copy_selection', parameters: { expectProcess: source }, justification: 'User explicitly named the source application for copying its current selection' },
+          { operation: 'app:launch', parameters: { appId: destination.toLowerCase() }, justification: 'Bring the named paste destination to the foreground' },
+          { operation: 'desktop:paste_clipboard', parameters: { expectProcess: destination }, justification: 'User explicitly named the clipboard paste destination' },
+        ],
+        confidence: 0.88,
+        explanation: 'Will copy only from the named source, open or focus the destination, and paste only if its process matches — each step after approval.',
+      };
+    }
+    // Pronouns refer to the clipboard, never to literal text to paste.
+    const pasteClipboard = requestText.match(/\bpaste\s+(?:the\s+)?(?:clipboard|it|this|that|copied\s+text|the\s+copied\s+text|the\s+selection)\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
     if (pasteClipboard) {
       return { intent: 'Paste clipboard into the named application', operations: [{ operation: 'desktop:paste_clipboard', parameters: { expectProcess: pasteClipboard[1].replace(/\.exe$/i, '') }, justification: 'User explicitly named the clipboard paste destination' }], confidence: 0.9, explanation: 'Will paste only if the foreground process matches the named destination application.' };
     }

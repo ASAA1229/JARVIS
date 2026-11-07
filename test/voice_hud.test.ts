@@ -140,14 +140,17 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(jsText, /MICROPHONE UNAVAILABLE/);
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
-    assert.match(jsText, /if \(result\.isFinal\) finalTranscript \+=/);
+    // Finalized segments are appended and bounded before review/dispatch.
+    assert.match(jsText, /if \(result\.isFinal\) \{/);
+    assert.match(jsText, /finalTranscript = `\$\{finalTranscript\} \$\{segment\}`\.trim\(\)\.slice\(0, MAX_VOICE_TRANSCRIPT_LENGTH\)/);
     assert.match(jsText, /filter\(\(result\) => !result\.isFinal\)/);
     assert.match(jsText, /Review or edit the recognized command, then select EXECUTE DIRECTIVE/);
     assert.match(jsText, /VOICE CONSENT REQUIRED/);
     assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);
     assert.match(jsText, /VoicuteWakeWord\.create/);
     assert.match(jsText, /multi_jarvis_v9\.3\.zip/);
-    assert.match(jsText, /All voice modes are review-first/);
+    // Push-to-talk is review-first; consented post-wake capture dispatches through the policy gateway.
+    assert.match(jsText, /Push-to-talk remains review-first/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
     assert.match(jsText, /SESSION UNAVAILABLE — DIRECTIVE NOT SENT/);
     assert.match(jsText, /A retried response must not create duplicate controls/);
@@ -164,7 +167,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     assert.match(serverSource, /task\.state === TaskState\.AWAITING_APPROVAL && task\.approvalId/);
     assert.match(serverSource, /requestText: task\.requestText/);
     assert.match(jsText, /No authenticated device session; the request never reached the policy gateway/);
-    assert.match(jsText, /speakResponse\\(message\\)/);
+    assert.match(jsText, /speakResponse\(message\)/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);
     assert.match(jsText, /function hasSpeechConsent\(mode\)/);

@@ -728,7 +728,7 @@ async function resolveApproval(approvalId, approved) {
       body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    if (!res.ok && !(res.status === 409 && typeof result.state === 'string')) {
       throw new Error(result.error || result.message || 'Approval request failed with HTTP ' + res.status);
     }
     if (!approved && result.success !== true) {

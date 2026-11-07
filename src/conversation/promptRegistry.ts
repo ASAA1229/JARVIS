@@ -153,8 +153,9 @@ export function resolvePrompt(input: PromptRenderInput): ResolvedPrompt | null {
     const spec = definition.variables[name];
     const value = supplied[name];
     if (typeof value !== 'string' || value.length > spec.maxLength) return null;
-    // Untrusted request/context data is only allowed in user-role messages.
-    if (definition.role !== 'user' && spec.source === 'user_data') return null;
+    // Registry prompts are system/developer roles only; untrusted request/context data
+    // belongs in separate user-role messages and is never interpolated here.
+    if (spec.source === 'user_data') return null;
     content = content.replaceAll('{{' + name + '}}', value);
   }
 

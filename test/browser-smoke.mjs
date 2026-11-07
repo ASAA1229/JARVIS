@@ -142,14 +142,15 @@ try {
     return /Memory list verified|Showing \d+ saved memory/.test(status);
   }, undefined, { timeout: 10000 });
 
-  // Verify untrusted markup stays text-only inside a real approval card.
-  await page.locator('#input-request').fill('Please launch Notepad <img src=x onerror=window.__xss=1>');
+  // Verify untrusted markup stays text-only inside a real approval card. App names are
+  // restricted to a safe character set, so the markup is carried in the text to type.
+  await page.locator('#input-request').fill('open Notepad and write <img src=x onerror=window.__xss=1>');
   await page.locator('#btn-send-request').click();
   const approval = page.locator('#approvals-container .approval-card').first();
   try {
     await approval.waitFor({ state: 'visible', timeout: 10000 });
   } catch {
-    throw new Error(`Expected approval card after an allowlisted launch request. Companion feed: ${await page.locator('#tasks-feed').innerText()}`);
+    throw new Error(`Expected approval card after an allowlisted launch-and-type request. Companion feed: ${await page.locator('#tasks-feed').innerText()}`);
   }
   const injectedImages = await page.locator('#approvals-container img').count();
   const xssExecuted = await page.evaluate(() => window.__xss === 1);
@@ -249,7 +250,7 @@ try {
       message: 'Execution evidence is unavailable',
     }),
   }));
-  await hudApproval.getByRole('button', { name: 'CONFIRM & EXECUTE' }).click();
+  await hudApproval.getByRole('button', { name: 'Confirm and execute this exact directive' }).click();
   await hud.getByText('APPROVAL PROCESSED — NOT COMPLETE').waitFor({ state: 'visible' });
   if (await hud.locator('#hud-tasks-feed .success').count() !== 1) {
     throw new Error('An uncertain approval result was presented as verified success');
