@@ -498,13 +498,29 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         const provider = await this.voiceProviders.pickLocalStt();
         if (!provider) return this.jsonResponse(res, 503, { error: 'No local speech recognition engine is installed', code: 'LOCAL_STT_NOT_CONFIGURED' });
+        const transcriptionAbort = new AbortController();
+        const abortTranscription = (): void => {
+          if (!res.writableEnded && !transcriptionAbort.signal.aborted) transcriptionAbort.abort();
+        };
+        const onResponseClose = (): void => {
+          if (!res.writableEnded) abortTranscription();
+        };
+        req.once('aborted', abortTranscription);
+        res.once('close', onResponseClose);
         try {
-          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'));
+          if (req.aborted || res.destroyed) abortTranscription();
+          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'), transcriptionAbort.signal);
+          if (transcriptionAbort.signal.aborted || res.destroyed || res.writableEnded) return;
           this.jarvis.audit.record('VOICE_TRANSCRIBED_LOCALLY', { provider: result.provider, textLength: result.text.length }, auth.device.id);
           return this.jsonResponse(res, 200, { text: result.text, provider: result.provider, local: result.local });
         } catch {
+          // A disconnected client has no response channel; stop work without writing to it.
+          if (transcriptionAbort.signal.aborted || res.destroyed || res.writableEnded) return;
           // Keep provider diagnostics (including temporary/model paths) out of API responses.
           return this.jsonResponse(res, 422, { error: 'Local speech recognition failed' });
+        } finally {
+          req.off('aborted', abortTranscription);
+          res.off('close', onResponseClose);
         }
       }
 
