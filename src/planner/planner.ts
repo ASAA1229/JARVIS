@@ -1,5 +1,7 @@
 import { DEVELOPER_OPERATIONS } from '../developer/operations.js';
 import { planDeveloperRequest } from '../developer/developerPlanner.js';
+import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
+import { planWorkflowRequest } from '../workflows/workflowPlanner.js';
 
 export interface ProposedOperation {
   operation: string;
@@ -99,6 +101,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'comms:handoff_email',
     'comms:unsupported',
     ...DEVELOPER_OPERATIONS,
+    ...WORKFLOW_OPERATIONS,
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -146,6 +149,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     // Developer assistant (JARVIS-US-063): explicit, repo-scoped phrases only.
     const developerPlan = planDeveloperRequest(requestText);
     if (developerPlan) return developerPlan;
+
+    // Plugins and workflows (JARVIS-US-062): explicit phrases only.
+    const workflowPlan = planWorkflowRequest(requestText);
+    if (workflowPlan) return workflowPlan;
 
     const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
     if (rememberName && rememberName[1].trim()) {

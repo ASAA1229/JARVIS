@@ -884,6 +884,8 @@ The stories below capture approved requirements from the 50-question exercise. T
 
 **Priority:** P2
 
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Data-only plugin manifests (validate/install/grant/enable/disable/revoke/uninstall, over-scoped permissions refused), versioned append-only workflow templates (built-in, owner-created, AI-drafted drafts requiring approval, plugin-contributed), dependency validation, scheduling via the existing scheduler, and run-time expansion into the normal task lifecycle (per-step policy/approval, checkpoints, cancellation, recovery). Visual workflow composition is not built (planner phrases only). To test: manifest validation and fail-closed cases; grant/revoke effects on plugin workflows; `run workflow morning-brief` expansion and per-step approvals; cancel mid-workflow; AI draft cannot run before `approve workflow draft`; restart persistence of plugins/workflows. See `docs/PLUGINS_AND_WORKFLOWS.md`.
+
 **As the owner,** I want versioned plugins and reusable visual/AI-generated workflows, so that JARVIS can grow without weakening its security model.
 
 **Acceptance criteria**

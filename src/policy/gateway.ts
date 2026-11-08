@@ -150,6 +150,33 @@ export class PolicyGateway {
       requiresApproval,
       allowedParameters,
     }] as [string, PolicyRule]),
+    // Plugins and workflows (JARVIS-US-062). Owner-only. Installing, granting, enabling,
+    // creating and approving need fresh approval; reducing access (disable/revoke) and
+    // read-only listing do not. Running a workflow only expands its steps: every
+    // expanded step is evaluated by this gateway and approved separately when required.
+    ...([
+      ['plugin:install', RiskTier.HIGH, true, ['path']],
+      ['plugin:list', RiskTier.LOW, false, []],
+      ['plugin:grant', RiskTier.HIGH, true, ['id', 'permissions']],
+      ['plugin:revoke', RiskTier.LOW, false, ['id', 'permissions']],
+      ['plugin:enable', RiskTier.MEDIUM, true, ['id']],
+      ['plugin:disable', RiskTier.LOW, false, ['id']],
+      ['plugin:uninstall', RiskTier.MEDIUM, true, ['id']],
+      ['workflow:list', RiskTier.LOW, false, []],
+      ['workflow:show', RiskTier.LOW, false, ['name']],
+      ['workflow:history', RiskTier.LOW, false, ['name']],
+      ['workflow:run', RiskTier.MEDIUM, false, ['name']],
+      ['workflow:create', RiskTier.HIGH, true, ['name', 'description', 'steps']],
+      ['workflow:draft_ai', RiskTier.LOW, false, ['name', 'goal']],
+      ['workflow:approve_draft', RiskTier.HIGH, true, ['name']],
+      ['workflow:archive', RiskTier.MEDIUM, true, ['name']],
+    ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
+      operation,
+      requiredPermission: Permission.DEVICE_MANAGE,
+      riskTier,
+      requiresApproval,
+      allowedParameters,
+    }] as [string, PolicyRule]),
     // Developer assistant (JARVIS-US-063). Owner-only. Read-only intelligence and draft
     // suggestions run on repositories the owner explicitly connected with that scope;
     // connecting, applying, branching, committing and pushing need fresh approval.
@@ -600,5 +627,18 @@ export class PolicyGateway {
 
   public getApproval(approvalId: string): ApprovalRecord | undefined {
     return this.pendingApprovals.get(approvalId);
+  }
+
+  /**
+   * Read-only view of an allowlisted rule (used to validate plugin manifests and
+   * workflow templates). Returns undefined for unknown operations or when any
+   * parameter key falls outside the rule's allowlist.
+   */
+  public describeOperation(operation: string, parameterKeys: string[] = []): { riskTier: RiskTier; requiresApproval: boolean; allowedParameters: string[] } | undefined {
+    const rule = this.rules.get(operation);
+    if (!rule) return undefined;
+    const allowed = rule.allowedParameters ?? [];
+    if (parameterKeys.some((key) => !allowed.includes(key))) return undefined;
+    return { riskTier: rule.riskTier, requiresApproval: rule.requiresApproval, allowedParameters: [...allowed] };
   }
 }

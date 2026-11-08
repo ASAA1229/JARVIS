@@ -20,6 +20,8 @@ import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
 import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { DeveloperAssistant } from '../developer/developerAssistant.js';
+import { WorkflowEngine } from '../workflows/workflowEngine.js';
+import { getCapability } from '../capabilities/registry.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
@@ -106,6 +108,10 @@ const RETRYABLE_READ_ONLY = new Set([
   'dev:suggestion_list',
   'dev:pr_draft',
   'dev:ci_status',
+  'plugin:list',
+  'workflow:list',
+  'workflow:show',
+  'workflow:history',
 ]);
 
 export class JarvisCoreService {
@@ -122,6 +128,8 @@ export class JarvisCoreService {
   public readonly verifier: OutcomeVerifier;
   /** Developer and coding assistant (JARVIS-US-063). */
   public readonly developer: DeveloperAssistant;
+  /** Permissioned plugins and versioned workflows (JARVIS-US-062). */
+  public readonly workflows: WorkflowEngine;
   public readonly notifications: NotificationCenter;
   public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
@@ -153,6 +161,23 @@ export class JarvisCoreService {
     this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
     this.developer = new DeveloperAssistant(statePath ? statePath + '.developer' : './data/developer', createConfiguredAgentModelAdapter);
+    this.workflows = new WorkflowEngine({
+      pluginStatePath: statePath ? statePath + '.plugins.json' : './data/plugins.json',
+      workflowStatePath: statePath ? statePath + '.workflows.json' : './data/workflows.json',
+      // A step is usable only if both the planner and the policy gateway allowlist it.
+      isOperationAllowed: (operation, keys) =>
+        this.planner.validatePlanSchema?.({ intent: 'check', operations: [{ operation, parameters: {}, justification: 'check' }], confidence: 1, explanation: 'check' }).valid !== false &&
+        this.policy.describeOperation(operation, keys) !== undefined,
+      isKnownCapability: (id) => {
+        const capability = getCapability(id);
+        return Boolean(capability && capability.status !== 'restricted' && capability.risk !== 'blocked');
+      },
+      planStep: async (text) => {
+        const plan = await this.planner.generatePlan(text, { requesterName: 'workflow-builder', timestamp: Date.now() });
+        return (plan.operations ?? []).map((operation) => ({ operation: operation.operation, parameters: operation.parameters }));
+      },
+      agentAdapter: createConfiguredAgentModelAdapter,
+    });
     this.notifications = new NotificationCenter();
     this.scheduler = new Scheduler(
       this.audit,
@@ -690,6 +715,13 @@ export class JarvisCoreService {
         case 'dev:explain': case 'dev:suggest_change': case 'dev:suggestion_list': case 'dev:apply_suggestion':
         case 'dev:branch_create': case 'dev:commit': case 'dev:push': case 'dev:pr_draft': case 'dev:ci_status':
           return this.developer.execute(opRequest.operation, parameters, signal);
+        // Plugins and workflows (JARVIS-US-062). Only plugin/template state changes here;
+        // workflow:run returns steps that are spliced into this task below.
+        case 'plugin:install': case 'plugin:list': case 'plugin:enable': case 'plugin:disable':
+        case 'plugin:uninstall': case 'plugin:grant': case 'plugin:revoke':
+        case 'workflow:list': case 'workflow:show': case 'workflow:history': case 'workflow:run':
+        case 'workflow:create': case 'workflow:draft_ai': case 'workflow:approve_draft': case 'workflow:archive':
+          return this.workflows.execute(opRequest.operation, parameters);
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
@@ -791,6 +823,20 @@ export class JarvisCoreService {
       return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.UNCERTAIN, verified: false };
     }
 
+    // A verified workflow:run expands into its template steps right after the current
+    // step. They then run through the normal lifecycle: policy evaluation, per-step
+    // approval, checkpoints, cancellation and recovery. Nested workflows are rejected
+    // by template validation, so expansion cannot recurse.
+    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS && taskRecord.operation === 'workflow:run' &&
+        taskRecord.operations && taskRecord.operationIndex !== undefined) {
+      const expanded = (rawResult.data as { steps?: unknown } | undefined)?.steps;
+      if (Array.isArray(expanded) && expanded.length > 0 && expanded.length <= 20 &&
+          expanded.every((step) => step && typeof (step as OperationRequest).operation === 'string' && !(step as OperationRequest).operation.startsWith('workflow:') && !(step as OperationRequest).operation.startsWith('plugin:'))) {
+        taskRecord.operations.splice(taskRecord.operationIndex + 1, 0, ...(expanded as OperationRequest[]).map((step) => ({ operation: step.operation, parameters: step.parameters ?? {} })));
+        this.audit.record('WORKFLOW_EXPANDED', { stepCount: expanded.length, operations: (expanded as OperationRequest[]).map((step) => step.operation) }, taskRecord.deviceId, taskId);
+      }
+    }
+
     const hasNextStep = taskRecord.operations !== undefined && taskRecord.operationIndex !== undefined &&
       taskRecord.operationIndex + 1 < taskRecord.operations.length;
 
@@ -852,7 +898,8 @@ export class JarvisCoreService {
     approvalId: string,
   ): void {
     const isMemory = approval.operation.startsWith('memory:');
-    const needsManage = isMemory || approval.operation.startsWith('schedule:');
+    const needsManage = isMemory || approval.operation.startsWith('schedule:') ||
+      approval.operation.startsWith('plugin:') || approval.operation.startsWith('workflow:') || approval.operation.startsWith('dev:');
     const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
       approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
       approval.operation.startsWith('comms:');
