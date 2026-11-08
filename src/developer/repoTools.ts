@@ -6,8 +6,9 @@
  * are bounded and secret-redacted before they leave this module.
  */
 import { execFile, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { isDeniedRepoPath, resolveInsideRepo, type RepoConnection } from './repoRegistry.js';
 import { redactSecrets } from './secrets.js';
 
@@ -245,6 +246,96 @@ export async function ciStatus(repo: RepoConnection): Promise<{ available: boole
     execFile('gh', ['run', 'list', '--branch', branch, '--limit', '5'], { cwd: repo.path, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) resolvePromise({ available: false, runs: redactSecrets(String(stderr || 'GitHub CLI (gh) is unavailable or not authenticated.').trim().slice(0, 400)) });
       else resolvePromise({ available: true, runs: redactSecrets(String(stdout).trim().slice(0, 8000)) });
+    });
+  });
+}
+
+// ---------------- approval-gated remote PR and project script runs ----------------
+
+/**
+ * Open a pull request on GitHub with the GitHub CLI. Always base `dev`; the head
+ * must be a pushed feature branch (never main/master/dev). Fixed argument array,
+ * no shell. The result is confirmed with `gh pr view` rather than trusted.
+ */
+export async function createPullRequest(repo: RepoConnection, title?: string): Promise<{ url: string; base: 'dev'; head: string; title: string }> {
+  const draft = await draftPullRequest(repo, title);
+  const head = draft.head;
+  assertWritableBranch(head);
+  const upstream = await runGit(repo, ['rev-parse', '--verify', `origin/${head}`]);
+  if (upstream.code !== 0) throw new Error(`Push the branch "${head}" before opening a pull request.`);
+  const gh = (args: string[]) => new Promise<{ code: number; stdout: string; stderr: string }>((resolvePromise) => {
+    execFile('gh', args, { cwd: repo.path, timeout: 60_000, windowsHide: true, encoding: 'utf8', env: { ...process.env, GH_PROMPT_DISABLED: '1' } },
+      (error, stdout, stderr) => resolvePromise({ code: error ? Number((error as { code?: number }).code ?? 1) || 1 : 0, stdout: String(stdout), stderr: String(stderr) }));
+  });
+  const created = await gh(['pr', 'create', '--base', 'dev', '--head', head, '--title', draft.title, '--body', draft.body]);
+  if (created.code !== 0) {
+    throw new Error(`gh pr create failed: ${redactSecrets(created.stderr.trim()).slice(0, 400) || 'GitHub CLI unavailable or not authenticated.'}`);
+  }
+  const view = await gh(['pr', 'view', head, '--json', 'url,baseRefName,headRefName']);
+  let url = '';
+  try {
+    const parsed = JSON.parse(view.stdout) as { url?: string; baseRefName?: string; headRefName?: string };
+    if (parsed.baseRefName !== 'dev' || parsed.headRefName !== head) throw new Error('mismatch');
+    url = String(parsed.url ?? '');
+  } catch {
+    throw new Error('The pull request command finished, but JARVIS could not confirm a PR from this branch into dev.');
+  }
+  return { url, base: 'dev', head, title: draft.title };
+}
+
+/** Project scripts the assistant may run (by name, from the repo's own package.json). */
+export const RUNNABLE_SCRIPTS = new Set(['build', 'lint', 'test', 'typecheck']);
+const SCRIPT_TIMEOUT_MS = 5 * 60_000;
+const SCRIPT_OUTPUT_TAIL = 12_000;
+
+function npmCliPath(): string | null {
+  const fromEnv = process.env.npm_execpath;
+  if (fromEnv && /\.c?js$/i.test(fromEnv)) return fromEnv;
+  const bundled = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  return existsSync(bundled) ? bundled : null;
+}
+
+/**
+ * Run one of the repository's own npm scripts (build/lint/test/typecheck) for build
+ * and diagnostic assistance. Owner text never reaches a command line: only a name
+ * from the allowlist that also exists in package.json. Time-limited; output is
+ * secret-redacted and truncated to its tail.
+ */
+export async function runProjectScript(repo: RepoConnection, script: string, signal?: AbortSignal): Promise<{ script: string; exitCode: number | null; timedOut: boolean; durationMs: number; output: string; truncated: boolean }> {
+  const name = String(script ?? '').trim().toLowerCase();
+  if (!RUNNABLE_SCRIPTS.has(name)) throw new Error(`Only these project scripts can be run: ${[...RUNNABLE_SCRIPTS].join(', ')}.`);
+  let pkg: { scripts?: Record<string, unknown> };
+  try {
+    pkg = JSON.parse(await readFile(join(repo.path, 'package.json'), 'utf8')) as { scripts?: Record<string, unknown> };
+  } catch {
+    throw new Error('This repository has no readable package.json.');
+  }
+  if (typeof pkg.scripts?.[name] !== 'string') throw new Error(`package.json has no "${name}" script.`);
+  const cli = npmCliPath();
+  if (!cli) throw new Error('npm could not be located next to the running Node.js.');
+  const started = Date.now();
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [cli, 'run', name], {
+      cwd: repo.path,
+      windowsHide: true,
+      env: { ...process.env, CI: '1', FORCE_COLOR: '0', npm_config_yes: 'false' },
+      ...(signal ? { signal } : {}),
+    });
+    let output = '';
+    let truncated = false;
+    let timedOut = false;
+    const append = (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+      if (output.length > SCRIPT_OUTPUT_TAIL * 2) { output = output.slice(-SCRIPT_OUTPUT_TAIL); truncated = true; }
+    };
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, SCRIPT_TIMEOUT_MS);
+    child.on('error', (error) => { clearTimeout(timer); reject(new Error(`The script could not be started: ${error.message}`)); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (output.length > SCRIPT_OUTPUT_TAIL) { output = output.slice(-SCRIPT_OUTPUT_TAIL); truncated = true; }
+      resolvePromise({ script: name, exitCode: code, timedOut, durationMs: Date.now() - started, output: redactSecrets(output), truncated });
     });
   });
 }

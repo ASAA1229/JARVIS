@@ -1,6 +1,7 @@
 import { DEVELOPER_OPERATIONS } from '../developer/operations.js';
 import { planDeveloperRequest } from '../developer/developerPlanner.js';
 import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
+import { GATEWAY_SITE_OPERATIONS } from '../gateway/siteAdminOperations.js';
 import { planWorkflowRequest } from '../workflows/workflowPlanner.js';
 
 export interface ProposedOperation {
@@ -102,6 +103,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'comms:unsupported',
     ...DEVELOPER_OPERATIONS,
     ...WORKFLOW_OPERATIONS,
+    ...GATEWAY_SITE_OPERATIONS,
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {

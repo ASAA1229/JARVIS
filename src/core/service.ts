@@ -21,6 +21,7 @@ import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { DeveloperAssistant } from '../developer/developerAssistant.js';
 import { WorkflowEngine } from '../workflows/workflowEngine.js';
+import { GatewaySiteAdmin, isGatewaySiteOperation } from '../gateway/siteAdminOperations.js';
 import { getCapability } from '../capabilities/registry.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { AuditLogger } from '../audit/audit.js';
@@ -108,6 +109,7 @@ const RETRYABLE_READ_ONLY = new Set([
   'dev:suggestion_list',
   'dev:pr_draft',
   'dev:ci_status',
+  'dev:history',
   'plugin:list',
   'workflow:list',
   'workflow:show',
@@ -130,6 +132,8 @@ export class JarvisCoreService {
   public readonly developer: DeveloperAssistant;
   /** Permissioned plugins and versioned workflows (JARVIS-US-062). */
   public readonly workflows: WorkflowEngine;
+  /** Owner management of personal-AI-gateway site keys (J-E09); the JSON store is shared with the gateway. */
+  public readonly gatewaySites = new GatewaySiteAdmin(process.env.JARVIS_SITE_CLIENTS_PATH || './data/site-clients.json');
   public readonly notifications: NotificationCenter;
   public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
@@ -229,11 +233,39 @@ export class JarvisCoreService {
   }
 
   /**
+   * Run an owner-composed list of explicit operations (HUD panels, workflow composer)
+   * through the same pipeline as text requests: plan schema validation, PolicyGateway,
+   * approvals, task journal and audit. Only the planner step is skipped.
+   */
+  public async submitOperations(
+    sessionId: string,
+    label: string,
+    operations: Array<{ operation: string; parameters: Record<string, unknown>; justification?: string }>,
+  ): Promise<TaskResult> {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    if (!auth.valid || !auth.device) {
+      this.audit.record('REQUEST_AUTH_FAILED', { reason: auth.error });
+      throw new Error(`Authentication failed: ${auth.error}`);
+    }
+    const plan: PlanProposal = {
+      intent: String(label).slice(0, 120) || 'Owner-composed operation',
+      operations: operations.map((op) => ({
+        operation: op.operation,
+        parameters: op.parameters,
+        justification: (op.justification || 'Requested explicitly from the owner HUD').slice(0, 200),
+      })) as PlanProposal['operations'],
+      confidence: 1,
+      explanation: 'Explicit owner request from a HUD control; every step is still checked by the policy gateway.',
+    };
+    return this.#processRequest(auth.device, String(label).slice(0, 4000), 'interactive', plan);
+  }
+
+  /**
    * Shared pipeline for interactive and scheduled requests. A scheduled request
    * gets no special authority: it is planned and policy-evaluated exactly like a
    * live one, using the owner device's permissions at the moment it runs.
    */
-  async #processRequest(device: DeviceRecord, requestText: string, origin: 'interactive' | 'schedule'): Promise<TaskResult> {
+  async #processRequest(device: DeviceRecord, requestText: string, origin: 'interactive' | 'schedule', presetPlan?: PlanProposal): Promise<TaskResult> {
     const taskId = `task-${CryptoUtil.randomToken(12)}`;
     const auditIntegrity = this.audit.verifyIntegrity();
     if (!auditIntegrity.valid) {
@@ -277,7 +309,7 @@ export class JarvisCoreService {
     };
     let plan: PlanProposal;
     try {
-      plan = await this.planner.generatePlan(requestText, context);
+      plan = presetPlan ?? await this.planner.generatePlan(requestText, context);
     } catch (error: unknown) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'The planner failed before an operation could be evaluated; no host operation was executed';
@@ -599,9 +631,14 @@ export class JarvisCoreService {
           // Secondary copies: task history (and its encrypted journal) holds the text of the
           // memory:save/update requests and memory:list results. Deletion must cover them too.
           const scrub = deleted && existing ? this.#scrubDeletedMemoryFromTasks(id, existing.content) : { scrubbedTasks: 0, persisted: true };
-          // Derived copies held by the Memory Manager (working memory, learning candidates).
-          if (deleted && existing) this.memoryManager?.scrubDeleted(id, existing.content);
-          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted }, taskRecord.deviceId, taskId);
+          // Derived copies held by the Memory Manager: working memory, learning candidates,
+          // the local embedding index and correction history (J-E06 deletion boundary).
+          const derived = deleted && existing ? this.memoryManager?.scrubDeleted(id, existing.content) : undefined;
+          const derivedVerified = derived ? derived.derivedVerified : true;
+          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted, derivedVerified }, taskRecord.deviceId, taskId);
+          if (deleted && !derivedVerified) {
+            return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was deleted, but its search index or version history could not be verified as purged.', evidence: { memoryId: id, deleted, diskVerified, derivedVerified } };
+          }
           if (deleted && (!diskVerified || !scrub.persisted)) {
             return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: diskVerified ? 'The memory was deleted, but task-history copies could not be durably scrubbed.' : 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
           }
@@ -721,7 +758,11 @@ export class JarvisCoreService {
         case 'plugin:uninstall': case 'plugin:grant': case 'plugin:revoke':
         case 'workflow:list': case 'workflow:show': case 'workflow:history': case 'workflow:run':
         case 'workflow:create': case 'workflow:draft_ai': case 'workflow:approve_draft': case 'workflow:archive':
+        case 'workflow:compose':
           return this.workflows.execute(opRequest.operation, parameters);
+        case 'gateway:site_list': case 'gateway:site_create': case 'gateway:site_update': case 'gateway:site_revoke':
+          if (!isGatewaySiteOperation(opRequest.operation)) throw new Error('Unknown gateway operation');
+          return this.gatewaySites.execute(opRequest.operation, parameters, taskRecord.deviceId);
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
@@ -899,7 +940,8 @@ export class JarvisCoreService {
   ): void {
     const isMemory = approval.operation.startsWith('memory:');
     const needsManage = isMemory || approval.operation.startsWith('schedule:') ||
-      approval.operation.startsWith('plugin:') || approval.operation.startsWith('workflow:') || approval.operation.startsWith('dev:');
+      approval.operation.startsWith('plugin:') || approval.operation.startsWith('workflow:') || approval.operation.startsWith('dev:') ||
+      approval.operation.startsWith('gateway:');
     const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
       approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
       approval.operation.startsWith('comms:');

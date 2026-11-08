@@ -170,6 +170,14 @@ export class PolicyGateway {
       ['workflow:draft_ai', RiskTier.LOW, false, ['name', 'goal']],
       ['workflow:approve_draft', RiskTier.HIGH, true, ['name']],
       ['workflow:archive', RiskTier.MEDIUM, true, ['name']],
+      // Visual composer: explicit steps with dependencies, saved as a new active version.
+      ['workflow:compose', RiskTier.HIGH, true, ['name', 'description', 'steps']],
+      // Personal AI gateway site clients (J-E09). Issuing a key or widening a site's
+      // limits/profile scope needs approval; listing and revoking (reducing access) do not.
+      ['gateway:site_list', RiskTier.LOW, false, []],
+      ['gateway:site_create', RiskTier.HIGH, true, ['name', 'limits', 'allowedProfiles']],
+      ['gateway:site_update', RiskTier.MEDIUM, true, ['id', 'limits', 'allowedProfiles']],
+      ['gateway:site_revoke', RiskTier.LOW, false, ['id']],
     ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
       operation,
       requiredPermission: Permission.DEVICE_MANAGE,
@@ -199,6 +207,13 @@ export class PolicyGateway {
       ['dev:push', RiskTier.HIGH, true, ['repo']],
       ['dev:pr_draft', RiskTier.LOW, false, ['repo', 'title']],
       ['dev:ci_status', RiskTier.LOW, false, ['repo']],
+      // Opens a PR on GitHub (remote side effect): base dev only, fresh approval.
+      ['dev:pr_create', RiskTier.HIGH, true, ['repo', 'title']],
+      // Executes the repository's own build/lint/test/typecheck script: approval each time.
+      ['dev:run_script', RiskTier.HIGH, true, ['repo', 'script']],
+      ['dev:history', RiskTier.LOW, false, ['repo', 'count']],
+      // Documentation drafts are stored as suggestions only, never written to files.
+      ['dev:doc_suggest', RiskTier.LOW, false, ['repo', 'path', 'request']],
     ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
       operation,
       requiredPermission: Permission.DEVICE_MANAGE,
@@ -634,6 +649,16 @@ export class PolicyGateway {
    * workflow templates). Returns undefined for unknown operations or when any
    * parameter key falls outside the rule's allowlist.
    */
+  /** Read-only list of allowlisted operations for owner UIs (workflow composer). */
+  public listRules(): Array<{ operation: string; riskTier: RiskTier; requiresApproval: boolean; allowedParameters: string[] }> {
+    return [...this.rules.values()].map((rule) => ({
+      operation: rule.operation,
+      riskTier: rule.riskTier,
+      requiresApproval: rule.requiresApproval,
+      allowedParameters: [...(rule.allowedParameters ?? [])],
+    }));
+  }
+
   public describeOperation(operation: string, parameterKeys: string[] = []): { riskTier: RiskTier; requiresApproval: boolean; allowedParameters: string[] } | undefined {
     const rule = this.rules.get(operation);
     if (!rule) return undefined;

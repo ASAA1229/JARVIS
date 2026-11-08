@@ -13,8 +13,23 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { MemoryCategory, PersonalMemory, PersonalMemoryStore } from './personalMemoryStore.js';
+import { PersonalMemoryStore, normalizeMemoryText, type MemoryCategory, type PersonalMemory } from './personalMemoryStore.js';
 import type { WorkingMemory, WorkingScopeKind } from './workingMemory.js';
+import { MemoryVersionHistory, type MemoryVersion } from './memoryVersions.js';
+import { OllamaEmbedder, SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, type RetrievalMethod } from './semanticIndex.js';
+
+/** Raised when proposed content duplicates an existing long-term memory. */
+export class DuplicateMemoryError extends Error {
+  constructor(readonly existingId: string, readonly match: 'exact' | 'near', readonly similarity?: number) {
+    super(match === 'exact' ? 'This is already stored in long-term memory.' : 'A very similar memory is already stored.');
+  }
+}
+
+/** Cosine similarity at or above this counts as a near-duplicate. */
+export const NEAR_DUPLICATE_THRESHOLD = 0.95;
+/** Ranking weights: semantic similarity, lexical overlap, recency. */
+const RANK_WEIGHTS = { semantic: 0.6, lexical: 0.3, recency: 0.1 };
+const RECENCY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type CandidateSourceKind = 'feedback' | 'conversation' | 'task' | 'working_memory';
 
@@ -35,6 +50,15 @@ export interface ContextItem {
   tier: 'working' | 'long_term';
   label: string;
   content: string;
+  /** Ranking score for long-term items (0..1). */
+  score?: number;
+}
+
+export interface MemoryManagerOptions {
+  /** Encrypted embedding index (derived data). Defaults next to the candidates file. */
+  index?: SemanticMemoryIndex;
+  /** Encrypted correction history. Defaults next to the candidates file. */
+  versions?: MemoryVersionHistory;
 }
 
 interface CandidateFile {
@@ -53,16 +77,26 @@ function words(text: string): Set<string> {
 export class MemoryManager {
   private readonly key: Buffer;
   private data: CandidateFile = { version: 1, learningEnabled: true, candidates: [] };
+  readonly index: SemanticMemoryIndex;
+  readonly versions: MemoryVersionHistory;
+  private lastRetrieval: { method: RetrievalMethod; at: number } | null = null;
 
   constructor(
     readonly longTerm: PersonalMemoryStore,
     readonly working: WorkingMemory,
     private readonly candidatesPath: string,
     ownerControlToken: string,
+    options: MemoryManagerOptions = {},
   ) {
     if (ownerControlToken.length < 32) throw new Error('Memory manager requires a configured owner control token.');
     this.key = scryptSync(ownerControlToken, 'JARVIS-MEMORY-CANDIDATES-V1', 32);
     this.load();
+    const endpoint = resolveLocalEmbeddingEndpoint();
+    this.index = options.index ?? new SemanticMemoryIndex(`${candidatesPath}.embeddings`, ownerControlToken, endpoint ? new OllamaEmbedder(endpoint) : null);
+    this.versions = options.versions ?? new MemoryVersionHistory(`${candidatesPath}.versions`, ownerControlToken);
+    longTerm.attachVersionHistory(this.versions);
+    // Drop history for memories that expired or were removed while JARVIS was offline.
+    this.versions.reconcile(new Set(longTerm.active().map((record) => record.id)));
   }
 
   // ---- persistence (AES-256-GCM, same scheme as long-term memory) ----
@@ -132,6 +166,106 @@ export class MemoryManager {
     return bounded;
   }
 
+  /**
+   * Ranked two-tier context (J-E06): working memory for the current scope, then
+   * long-term memories ranked by local semantic similarity + lexical overlap +
+   * recency. Without a local embedding model it falls back to lexical + recency
+   * and reports the method honestly via status().retrieval.
+   */
+  async retrieveContextRanked(options: {
+    deviceId: string;
+    query: string;
+    scope?: { kind: WorkingScopeKind; id: string };
+    includeLongTerm: boolean;
+    maxItems?: number;
+    maxChars?: number;
+    signal?: AbortSignal;
+  }): Promise<ContextItem[]> {
+    const maxItems = Math.max(1, Math.min(options.maxItems ?? 8, 20));
+    const maxChars = Math.max(200, Math.min(options.maxChars ?? 4000, 16_000));
+    const items: ContextItem[] = [];
+    if (options.scope) {
+      const recent = this.working.list(options.deviceId, options.scope.kind, options.scope.id).slice(-Math.ceil(maxItems / 2));
+      for (const entry of recent) items.push({ tier: 'working', label: entry.label, content: entry.content });
+    }
+    if (options.includeLongTerm) {
+      for (const ranked of await this.rankLongTerm(options.query, maxItems, options.signal)) {
+        items.push({ tier: 'long_term', label: ranked.memory.category, content: ranked.memory.content, score: Number(ranked.score.toFixed(3)) });
+      }
+    }
+    const bounded: ContextItem[] = [];
+    let used = 0;
+    for (const item of items.slice(0, maxItems)) {
+      const room = maxChars - used;
+      if (room <= 0) break;
+      const content = item.content.slice(0, room);
+      used += content.length;
+      bounded.push({ ...item, content });
+    }
+    return bounded;
+  }
+
+  /** Rank active long-term memories for a query; only clearly relevant ones are returned. */
+  async rankLongTerm(query: string, limit = 5, signal?: AbortSignal): Promise<Array<{ memory: PersonalMemory; score: number }>> {
+    const records = this.longTerm.active();
+    if (!records.length || !query.trim()) return [];
+    const semantic = await this.index.scores(query, records, signal);
+    this.lastRetrieval = { method: semantic ? 'semantic' : 'lexical', at: Date.now() };
+    const lexical = records.map((record) => PersonalMemoryStore.lexicalScore(query, record.content));
+    const maxLexical = Math.max(1, ...lexical);
+    const now = Date.now();
+    return records
+      .map((memory, i) => {
+        const lex = lexical[i]! / maxLexical;
+        const sem = semantic ? Math.max(0, semantic.get(memory.id) ?? 0) : 0;
+        const recency = Math.pow(0.5, Math.max(0, now - memory.updatedAt) / RECENCY_HALF_LIFE_MS);
+        const score = semantic
+          ? RANK_WEIGHTS.semantic * sem + RANK_WEIGHTS.lexical * lex + RANK_WEIGHTS.recency * recency
+          : 0.75 * lex + 0.25 * recency;
+        // Without lexical overlap, require strong semantic similarity to avoid noise.
+        const relevant = lexical[i]! > 0 || (semantic !== null && sem >= 0.55);
+        return { memory, score, relevant };
+      })
+      .filter((entry) => entry.relevant)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ memory, score }) => ({ memory, score }));
+  }
+
+  /** Exact or near-duplicate of existing long-term memory, if any. */
+  async findDuplicate(category: MemoryCategory, content: string): Promise<{ id: string; match: 'exact' | 'near'; similarity?: number } | null> {
+    const exact = this.longTerm.findExactDuplicate(category, content);
+    if (exact) return { id: exact.id, match: 'exact' };
+    const sameCategory = this.longTerm.active().filter((record) => record.category === category);
+    if (!sameCategory.length) return null;
+    const nearest = await this.index.nearest(content, sameCategory);
+    if (nearest && nearest.similarity >= NEAR_DUPLICATE_THRESHOLD) {
+      return { id: nearest.id, match: 'near', similarity: Number(nearest.similarity.toFixed(3)) };
+    }
+    return null;
+  }
+
+  /**
+   * Propose with duplicate detection against long-term memory (exact + local semantic).
+   * Duplicates raise DuplicateMemoryError carrying the existing memory id.
+   */
+  async proposeChecked(deviceId: string, category: MemoryCategory, content: string, source: LearningCandidate['source']): Promise<LearningCandidate> {
+    if (!this.data.learningEnabled) throw new Error('Learning is disabled by the owner.');
+    this.longTerm.assertStorable(category, content);
+    const duplicate = await this.findDuplicate(category, content);
+    if (duplicate) throw new DuplicateMemoryError(duplicate.id, duplicate.match, duplicate.similarity);
+    return this.propose(deviceId, category, content, source);
+  }
+
+  /** Correct a long-term memory with conflict detection; previous text goes to version history. */
+  correct(memoryId: string, content: string, expectedUpdatedAt?: number): PersonalMemory | undefined {
+    return this.longTerm.update(memoryId, content, expectedUpdatedAt);
+  }
+
+  versionsOf(memoryId: string): MemoryVersion[] {
+    return this.versions.list(memoryId);
+  }
+
   /** Deterministic, local summary of a working scope (no model call). */
   summarizeScope(deviceId: string, kind: WorkingScopeKind, scopeId: string, maxChars = 1200): string {
     const entries = this.working.list(deviceId, kind, scopeId);
@@ -162,7 +296,8 @@ export class MemoryManager {
     if (!this.data.learningEnabled) throw new Error('Learning is disabled by the owner.');
     // Same content rules as long-term memory: no secrets, no instruction-like text.
     this.longTerm.assertStorable(category, content);
-    const duplicate = this.data.candidates.find((candidate) => candidate.status === 'pending' && candidate.content === content.trim());
+    const normalized = normalizeMemoryText(content);
+    const duplicate = this.data.candidates.find((candidate) => candidate.status === 'pending' && normalizeMemoryText(candidate.content) === normalized);
     if (duplicate) return { ...duplicate };
     if (this.data.candidates.length >= MAX_CANDIDATES) {
       // Drop the oldest decided candidates first; never silently drop pending ones.
@@ -221,9 +356,17 @@ export class MemoryManager {
     return { ...candidate };
   }
 
-  /** Called after a long-term memory is deleted: remove derived copies in this manager's stores. */
-  scrubDeleted(memoryId: string, content: string): { workingRemoved: number; candidatesScrubbed: number } {
+  /**
+   * Called after a long-term memory is deleted: remove derived copies in this manager's
+   * stores - working memory, learning candidates, the embedding index and version history.
+   */
+  scrubDeleted(memoryId: string, content: string): {
+    workingRemoved: number; candidatesScrubbed: number; indexRemoved: boolean; versionsPurged: boolean; derivedVerified: boolean;
+  } {
     const workingRemoved = this.working.scrubContent(content);
+    const indexRemoved = this.index.remove(memoryId);
+    const versionsPurged = this.versions.purge(memoryId);
+    const derivedVerified = this.index.verifyRemoved(memoryId) && this.versions.verifyPurged(memoryId);
     let candidatesScrubbed = 0;
     for (const candidate of this.data.candidates) {
       if (candidate.memoryId === memoryId || candidate.content === content.trim()) {
@@ -232,15 +375,22 @@ export class MemoryManager {
       }
     }
     if (candidatesScrubbed) this.persist();
-    return { workingRemoved, candidatesScrubbed };
+    return { workingRemoved, candidatesScrubbed, indexRemoved, versionsPurged, derivedVerified };
   }
 
-  status(): { longTerm: ReturnType<PersonalMemoryStore['status']>; working: ReturnType<WorkingMemory['stats']>; learningEnabled: boolean; pendingCandidates: number } {
+  status(): {
+    longTerm: ReturnType<PersonalMemoryStore['status']>;
+    working: ReturnType<WorkingMemory['stats']>;
+    learningEnabled: boolean;
+    pendingCandidates: number;
+    retrieval: ReturnType<SemanticMemoryIndex['status']> & { lastUsedAt: number | null };
+  } {
     return {
       longTerm: this.longTerm.status(),
       working: this.working.stats(),
       learningEnabled: this.data.learningEnabled,
       pendingCandidates: this.data.candidates.filter((candidate) => candidate.status === 'pending').length,
+      retrieval: { ...this.index.status(), lastUsedAt: this.lastRetrieval?.at ?? null },
     };
   }
 

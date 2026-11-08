@@ -2,7 +2,7 @@
  * Owner CLI for JARVIS site API keys (local machine only; there is no HTTP route
  * that creates or lists keys).
  *
- *   npm run site-key -- create <site-name> [--rpm 20] [--max-tokens 800]
+ *   npm run site-key -- create <site-name> [--rpm 20] [--max-tokens 800] [--profiles a,b]
  *   npm run site-key -- list
  *   npm run site-key -- revoke <site-name|id>
  */
@@ -25,10 +25,13 @@ try {
   if (command === 'create' && target) {
     const rpm = option('--rpm');
     const maxTokens = option('--max-tokens');
+    const profilesIndex = rest.indexOf('--profiles');
+    const profiles = profilesIndex >= 0 ? String(rest[profilesIndex + 1] ?? '').split(',').map((item) => item.trim()).filter(Boolean) : undefined;
     const { client, apiKey } = store.create(target, {
       ...(rpm !== undefined ? { requestsPerMinute: rpm } : {}),
       ...(maxTokens !== undefined ? { maxOutputTokens: maxTokens } : {}),
-    });
+    }, profiles);
+    if (client.allowedProfiles?.length) console.log(`Profile scope: ${client.allowedProfiles.join(', ')} (requests must send X-Jarvis-Profile).`);
     console.log(`Created site client "${client.name}" (id ${client.id}).`);
     console.log(`Limits: ${client.limits.requestsPerMinute} requests/min, ${client.limits.maxOutputTokens} max output tokens.`);
     console.log('\nAPI key (shown once — store it only in that site\'s server-side secrets):\n');
@@ -38,7 +41,8 @@ try {
     if (!clients.length) console.log('No site clients yet. Create one with: npm run site-key -- create <site-name>');
     for (const client of clients) {
       console.log(`${client.id}  ${client.name.padEnd(24)} ${client.revokedAt ? 'REVOKED ' + client.revokedAt : 'active'}  ` +
-        `${client.limits.requestsPerMinute}/min  max ${client.limits.maxOutputTokens} tokens  created ${client.createdAt}`);
+        `${client.limits.requestsPerMinute}/min  max ${client.limits.maxOutputTokens} tokens  created ${client.createdAt}` +
+        `  profiles ${client.allowedProfiles?.length ? client.allowedProfiles.join(',') : 'any'}  requests ${client.usage?.requests ?? 0}`);
     }
   } else if (command === 'revoke' && target) {
     const client = store.revoke(target);

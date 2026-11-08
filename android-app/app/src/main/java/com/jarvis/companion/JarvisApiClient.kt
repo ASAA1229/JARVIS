@@ -9,8 +9,23 @@ import java.security.SecureRandom
 
 data class JarvisReply(val state: String, val message: String)
 
+/**
+ * The laptop rejected this phone's session or identity (HTTP 401, or the device was
+ * revoked). Callers must wipe the local session and require fresh enrollment.
+ */
+class SessionRevokedException(message: String) : IllegalStateException(message)
+
+data class PendingApproval(val taskId: String, val approvalId: String, val operation: String, val requestText: String)
+data class TaskSummary(val id: String, val state: String, val operation: String, val updatedAt: Long)
+data class DeviceSummary(val id: String, val name: String, val platform: String, val status: String, val sessionActive: Boolean)
+data class MemorySummary(val id: String, val category: String, val content: String, val updatedAt: Long)
+data class LearningCandidate(val id: String, val category: String, val content: String, val source: String)
+
 class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeyStore) {
     private var sessionId: String? = null
+
+    fun hasSession(): Boolean = sessionId != null
+    fun clearSession() { sessionId = null }
 
     init {
         val url = URL(baseUrl.trim().trimEnd('/'))
@@ -126,6 +141,110 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         return output.toString().trim()
     }
 
+    // ---- Owner views: devices, tasks, approvals, notifications, memory ----
+
+    /** Requires a device-management phone; the laptop policy decides. */
+    fun listDevices(): List<DeviceSummary> {
+        val items = signedGet("/api/devices").optJSONArray("devices") ?: JSONArray()
+        return (0 until items.length()).map { i ->
+            val d = items.getJSONObject(i)
+            DeviceSummary(d.optString("id"), d.optString("name"), d.optString("platform"),
+                d.optString("status"), d.optBoolean("sessionActive"))
+        }
+    }
+
+    /** Recent tasks visible to this phone (its own, or all for a device-management phone). */
+    fun listTasks(): List<TaskSummary> {
+        val items = signedGet("/api/tasks").optJSONArray("tasks") ?: JSONArray()
+        return (0 until items.length()).map { i ->
+            val task = items.getJSONObject(i)
+            TaskSummary(task.optString("id"), task.optString("state"), task.optString("operation"), task.optLong("updatedAt"))
+        }.reversed()
+    }
+
+    /** Tasks waiting for a single-use approval. The laptop exposes the exact directive only while pending. */
+    fun pendingApprovals(): List<PendingApproval> {
+        val items = signedGet("/api/tasks").optJSONArray("tasks") ?: JSONArray()
+        val pending = mutableListOf<PendingApproval>()
+        for (i in 0 until items.length()) {
+            val task = items.getJSONObject(i)
+            val approvalId = task.optString("approvalId")
+            if (task.optString("state") == "AWAITING_APPROVAL" && approvalId.isNotBlank()) {
+                pending.add(PendingApproval(task.optString("id"), approvalId, task.optString("operation"), task.optString("requestText")))
+            }
+        }
+        return pending
+    }
+
+    /** Approval goes through the laptop policy gateway exactly like the HUD; the phone grants nothing itself. */
+    fun resolveApproval(approvalId: String, approve: Boolean): String {
+        require(approvalId.matches(Regex("appr-[A-Za-z0-9_-]{8,64}"))) { "Approval id is invalid." }
+        val path = if (approve) "/api/approval/approve" else "/api/approval/reject"
+        val result = signedPost(path, JSONObject().put("approvalId", approvalId))
+        return if (approve) "Task state: " + result.optString("state", "UNKNOWN") + " - " + result.optString("message", "")
+        else result.optString("message", "Rejected.")
+    }
+
+    fun cancelTask(taskId: String): String {
+        require(taskId.isNotBlank() && taskId.length <= 100) { "Task id is invalid." }
+        return signedPost("/api/task/cancel", JSONObject().put("taskId", taskId)).optString("message", "Cancellation requested.")
+    }
+
+    fun notificationCount(): Int = signedGet("/api/notifications").optJSONArray("notifications")?.length() ?: 0
+
+    /** Long-term memories (device-management phones only). */
+    fun listMemories(): List<MemorySummary> {
+        val items = signedGet("/api/memory").optJSONArray("records") ?: JSONArray()
+        return (0 until items.length()).map { i ->
+            val m = items.getJSONObject(i)
+            MemorySummary(m.optString("id"), m.optString("category"), m.optString("content"), m.optLong("updatedAt"))
+        }
+    }
+
+    /** Deletion is a normal approval-gated request; the laptop scrubs derived copies after approval. */
+    fun requestMemoryDelete(memoryId: String): JarvisReply {
+        require(memoryId.matches(Regex("[a-f0-9]{32}"))) { "Invalid memory id." }
+        return sendRequest("forget memory " + memoryId)
+    }
+
+    fun learningCandidates(): List<LearningCandidate> {
+        val items = signedGet("/api/memory/manager").optJSONArray("candidates") ?: JSONArray()
+        return (0 until items.length()).map { i ->
+            val c = items.getJSONObject(i)
+            LearningCandidate(c.optString("id"), c.optString("category"), c.optString("content"),
+                c.optJSONObject("source")?.optString("kind") ?: "unknown")
+        }
+    }
+
+    fun decideCandidate(candidateId: String, approve: Boolean): String {
+        require(candidateId.matches(Regex("[a-f0-9]{24}"))) { "Candidate id is invalid." }
+        signedPost("/api/memory/candidates/decide",
+            JSONObject().put("id", candidateId).put("decision", if (approve) "approve" else "reject"))
+        return if (approve) "Saved to long-term memory." else "Candidate rejected; its text was discarded."
+    }
+
+    /** Owner view of devices, open conflicts and held offline commands (device-management phones). */
+    fun syncOverview(): JSONObject = signedGet("/api/sync/overview")
+
+    fun resolveConflict(conflictId: String, resolution: String, mergedContent: String? = null): String {
+        require(resolution in setOf("keep_hub", "keep_device", "merge")) { "Unknown conflict resolution." }
+        val body = JSONObject().put("id", conflictId).put("resolution", resolution)
+        if (resolution == "merge") {
+            require(!mergedContent.isNullOrBlank() && mergedContent.length <= 4000) { "Merged text must be 1-4000 characters." }
+            body.put("mergedContent", mergedContent.trim())
+        }
+        val result = signedPost("/api/sync/conflicts/resolve", body)
+        val taskId = result.optString("taskId")
+        return if (taskId.isNotBlank()) "Resolution submitted as task $taskId; approve it to apply." else "Conflict resolved."
+    }
+
+    /** Held offline commands run only when the owner explicitly says so. */
+    fun decideHeldCommand(commandId: String, run: Boolean): String {
+        val result = signedPost("/api/sync/commands/decide",
+            JSONObject().put("id", commandId).put("decision", if (run) "run" else "discard"))
+        return result.optString("message", if (run) "Command submitted for normal policy checks." else "Command discarded.")
+    }
+
     // ---- Device sync (US-060 / US-027); see docs/DEVICE_SYNC.md ----
 
     /** Declare supported sync capabilities; the hub answers with the negotiated set. */
@@ -175,7 +294,7 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
             val result = try { JSONObject(text) } catch (_: Exception) {
                 JSONObject().put("error", "Invalid server response (HTTP " + status + ").")
             }
-            if (status !in 200..299) throw IllegalStateException(result.optString("error", "HTTP " + status))
+            failOnError(status, result, session)
             return result
         } finally { connection.disconnect() }
     }
@@ -204,9 +323,20 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
             val result = try { JSONObject(text) } catch (_: Exception) {
                 JSONObject().put("error", "Invalid server response (HTTP " + status + ").")
             }
-            if (status !in 200..299) throw IllegalStateException(result.optString("error", "HTTP " + status))
+            failOnError(status, result, session)
             return result
         } finally { connection.disconnect() }
+    }
+
+    /** Authenticated calls that fail with 401 or a revocation message wipe the in-memory session. */
+    private fun failOnError(status: Int, result: JSONObject, session: String?) {
+        if (status in 200..299) return
+        val message = result.optString("error", "HTTP " + status)
+        if (session != null && (status == 401 || message.contains("revoked", ignoreCase = true))) {
+            sessionId = null
+            throw SessionRevokedException(message)
+        }
+        throw IllegalStateException(message)
     }
 
     private fun nonce(): String {

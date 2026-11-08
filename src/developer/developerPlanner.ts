@@ -92,6 +92,23 @@ export function planDeveloperRequest(requestText: string): PlanProposal | null {
     return plan('Draft a pull request to dev', 'dev:pr_draft', { repo: m[1]!.toLowerCase(), ...(m[2] ? { title: m[2].trim() } : {}) },
       'Prepares PR title and description targeting dev. Nothing is opened remotely.');
   }
+  if ((m = text.match(rx(`^(?:open|create|submit)\\s+(?:a\\s+)?(?:pr|pull\\s+request)\\s+(?:for|in|from)\\s+${REPO}(?:\\s*[:,-]\\s*(.+))?$`)))) {
+    return plan('Open a pull request into dev', 'dev:pr_create', { repo: m[1]!.toLowerCase(), ...(m[2] ? { title: m[2].trim() } : {}) },
+      'After approval, opens a GitHub pull request from the current pushed feature branch into dev (never main) and confirms it with gh.');
+  }
+  if ((m = text.match(rx(`^(?:run|execute)\\s+(?:the\\s+)?(build|lint|test|tests|typecheck)\\s+(?:script\\s+)?(?:for|in|of)\\s+${REPO}$`)))) {
+    const script = m[1]!.toLowerCase() === 'tests' ? 'test' : m[1]!.toLowerCase();
+    return plan(`Run the ${script} script`, 'dev:run_script', { repo: m[2]!.toLowerCase(), script },
+      `After approval, runs "npm run ${script}" in the repository (ci scope, 5-minute limit) and returns the redacted output.`);
+  }
+  if ((m = text.match(rx(`^(?:show\\s+)?(?:dev\\s+|task\\s+|assistant\\s+)?history\\s+(?:of|for|in)\\s+${REPO}$`)))) {
+    return plan('Show repository task history', 'dev:history', { repo: m[1]!.toLowerCase() },
+      'Lists recent developer-assistant operations and outcomes for this repository.');
+  }
+  if ((m = text.match(rx(`^(?:document|write\\s+docs?\\s+for|draft\\s+docs?\\s+for)\\s+(?:the\\s+)?(?:file\\s+)?(.+?)\\s+in\\s+${REPO}(?:\\s*[:,-]\\s*(.+))?$`)))) {
+    return plan('Draft documentation', 'dev:doc_suggest', { repo: m[2]!.toLowerCase(), path: m[1]!.trim(), request: m[3]?.trim() ?? '' },
+      'Drafts documentation text with the local model and stores it as a suggestion; nothing is written to any file.');
+  }
   if ((m = text.match(rx(`^(?:show\\s+)?ci\\s+(?:status\\s+)?(?:of|for|in)\\s+${REPO}$`)))) {
     return plan('Show CI status', 'dev:ci_status', { repo: m[1]!.toLowerCase() },
       'Read-only recent CI runs for the current branch (requires the ci scope and GitHub CLI).');

@@ -22,6 +22,8 @@ import type { PublicSiteClient, SiteClientStore } from './siteClientStore.js';
 export interface ModelEndpoint {
   /** Provider id from the router (for availability reporting); never a secret. */
   id?: string;
+  /** Wire format of the provider; Anthropic Messages streams are converted to OpenAI chunks. */
+  format?: 'openai' | 'anthropic';
   baseUrl: string;
   model: string;
   apiKey?: string;
@@ -54,7 +56,31 @@ export interface SiteAiGatewayOptions {
 
 type ChatRole = 'system' | 'user' | 'assistant';
 interface ChatMessage { role: ChatRole; content: string }
-interface ChatRequest { messages: ChatMessage[]; stream: boolean; maxTokens: number; temperature?: number }
+interface ChatRequest { messages: ChatMessage[]; stream: boolean; maxTokens: number; temperature?: number; profile?: string }
+
+/** Profile ids a site may scope a request to (e.g. portfolio profiles). */
+export const PROFILE_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
+/** Header a site may use instead of the `jarvis_profile` body field. */
+export const PROFILE_HEADER = 'x-jarvis-profile';
+
+/** Anthropic needs system text separately and strictly alternating user/assistant turns. */
+export function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }> } {
+  const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
+  const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (const message of messages) {
+    if (message.role === 'system') continue;
+    const last = turns[turns.length - 1];
+    if (last && last.role === message.role) last.content += '\n\n' + message.content;
+    else turns.push({ role: message.role, content: message.content });
+  }
+  if (turns[0]?.role === 'assistant') turns.unshift({ role: 'user', content: '(conversation continues)' });
+  return { system, messages: turns };
+}
+
+function anthropicFinish(reason: unknown): string | undefined {
+  if (typeof reason !== 'string') return undefined;
+  return reason === 'max_tokens' ? 'length' : 'stop';
+}
 
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_MESSAGES = 40;
@@ -87,7 +113,7 @@ class MinuteLimiter {
 export function parseChatRequest(body: unknown, client: Pick<PublicSiteClient, 'limits'>): ChatRequest {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Request body must be a JSON object.');
   const input = body as Record<string, unknown>;
-  const allowed = new Set(['model', 'messages', 'stream', 'max_tokens', 'max_completion_tokens', 'temperature', 'user']);
+  const allowed = new Set(['model', 'messages', 'stream', 'max_tokens', 'max_completion_tokens', 'temperature', 'user', 'jarvis_profile']);
   const unsupported = Object.keys(input).filter((key) => !allowed.has(key));
   if (unsupported.length) {
     // Tools, functions and response formats are deliberately unavailable to sites.
@@ -122,7 +148,12 @@ export function parseChatRequest(body: unknown, client: Pick<PublicSiteClient, '
   if (temperature !== undefined && (typeof temperature !== 'number' || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) {
     throw new HttpError(400, 'temperature must be a number between 0 and 2.');
   }
+  const profile = input['jarvis_profile'];
+  if (profile !== undefined && (typeof profile !== 'string' || !PROFILE_PATTERN.test(profile))) {
+    throw new HttpError(400, 'jarvis_profile must be a lowercase profile id.');
+  }
   return {
+    ...(typeof profile === 'string' ? { profile } : {}),
     messages,
     stream: input['stream'] === true,
     maxTokens: Math.min((requestedTokens as number | undefined) ?? client.limits.maxOutputTokens, client.limits.maxOutputTokens),
@@ -254,6 +285,19 @@ export class SiteAiGateway {
       throw new HttpError(429, 'Rate limit reached for this site key.', 'rate_limit_error', { 'Retry-After': String(retryAfter) });
     }
     const request = parseChatRequest(await readJson(req), client);
+    // Site identity and profile scope (J-E09): a header may carry the profile instead of the body.
+    const headerProfile = req.headers[PROFILE_HEADER];
+    if (typeof headerProfile === 'string' && headerProfile) {
+      if (!PROFILE_PATTERN.test(headerProfile)) throw new HttpError(400, 'X-Jarvis-Profile must be a lowercase profile id.');
+      if (request.profile && request.profile !== headerProfile) throw new HttpError(400, 'X-Jarvis-Profile and jarvis_profile disagree.');
+      request.profile = headerProfile;
+    }
+    const allowedProfiles = client.allowedProfiles ?? [];
+    if (allowedProfiles.length && (!request.profile || !allowedProfiles.includes(request.profile))) {
+      this.audit('SITE_AI_PROFILE_REJECTED', { clientId: client.id, site: client.name, profile: request.profile ?? null });
+      try { this.options.store.recordUsage(client.id, { inputChars: 0, outputChars: 0, error: true }); } catch { /* best-effort */ }
+      throw new HttpError(403, 'This site key is not allowed to use that profile.', 'permission_error');
+    }
     const endpoint = this.options.modelEndpoint();
     if (!endpoint) throw new HttpError(503, 'JARVIS has no AI model configured.', 'server_error');
 
@@ -310,12 +354,19 @@ export class SiteAiGateway {
       // 499 marks a site that disconnected before the answer finished.
       try {
         this.options.audit.record('SITE_AI_REQUEST', {
-          clientId: client.id, site: client.name, status: clientGone ? 499 : status, stream: request.stream,
+          clientId: client.id, site: client.name, profile: request.profile ?? null, status: clientGone ? 499 : status, stream: request.stream,
           turnCount: request.messages.length,
           inputChars: request.messages.reduce((sum, message) => sum + message.content.length, 0),
           outputChars, durationMs: Date.now() - started, clientDisconnected: clientGone,
         });
       } catch { /* the request already completed; the next request will fail closed */ }
+      try {
+        this.options.store.recordUsage(client.id, {
+          inputChars: request.messages.reduce((sum, message) => sum + message.content.length, 0),
+          outputChars,
+          error: status >= 400 && !clientGone,
+        });
+      } catch { /* usage accounting is best-effort; it never blocks an answer */ }
     }
   }
 
@@ -324,18 +375,39 @@ export class SiteAiGateway {
     const timer = setTimeout(() => controller.abort(), this.firstTokenTimeoutMs());
     let upstream: Response;
     try {
-      upstream = await this.fetchImpl(endpoint.baseUrl + '/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(endpoint.apiKey ? { Authorization: 'Bearer ' + endpoint.apiKey } : {}) },
-        body: JSON.stringify({
-          model: endpoint.model,
-          messages: request.messages,
-          stream: request.stream,
-          max_tokens: request.maxTokens,
-          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-        }),
-        signal: controller.signal,
-      });
+      if (endpoint.format === 'anthropic') {
+        const converted = toAnthropicMessages(request.messages);
+        upstream = await this.fetchImpl(endpoint.baseUrl + '/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'anthropic-version': '2023-06-01',
+            ...(endpoint.apiKey ? { 'x-api-key': endpoint.apiKey } : {}),
+          },
+          body: JSON.stringify({
+            model: endpoint.model,
+            ...(converted.system ? { system: converted.system } : {}),
+            messages: converted.messages,
+            stream: request.stream,
+            max_tokens: request.maxTokens,
+            ...(request.temperature !== undefined ? { temperature: Math.min(request.temperature, 1) } : {}),
+          }),
+          signal: controller.signal,
+        });
+      } else {
+        upstream = await this.fetchImpl(endpoint.baseUrl + '/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(endpoint.apiKey ? { Authorization: 'Bearer ' + endpoint.apiKey } : {}) },
+          body: JSON.stringify({
+            model: endpoint.model,
+            messages: request.messages,
+            stream: request.stream,
+            max_tokens: request.maxTokens,
+            ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          }),
+          signal: controller.signal,
+        });
+      }
     } catch {
       this.options.reportOutcome?.(endpoint, false);
       throw controller.signal.aborted
@@ -358,7 +430,21 @@ export class SiteAiGateway {
     const upstream = await this.callUpstream(endpoint, request, controller);
     const timer = setTimeout(() => controller.abort(), this.firstTokenTimeoutMs());
     try {
-      const payload = await upstream.json().catch(() => null) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }> } | null;
+      const payload = await upstream.json().catch(() => null) as {
+        choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
+        content?: Array<{ type?: unknown; text?: unknown }>;
+        stop_reason?: unknown;
+      } | null;
+      if (endpoint.format === 'anthropic') {
+        const blocks = Array.isArray(payload?.content) ? payload!.content : null;
+        const text = blocks?.filter((block) => block.type === 'text' && typeof block.text === 'string').map((block) => block.text as string).join('');
+        if (typeof text !== 'string') {
+          throw controller.signal.aborted
+            ? new HttpError(504, 'The JARVIS model did not respond in time.', 'server_error')
+            : new HttpError(502, 'The JARVIS model returned an invalid response.', 'server_error');
+        }
+        return { content: text.slice(0, MAX_OUTPUT_CHARS), finishReason: anthropicFinish(payload?.stop_reason) ?? 'stop' };
+      }
       const content = payload?.choices?.[0]?.message?.content;
       if (typeof content !== 'string') {
         throw controller.signal.aborted
@@ -428,7 +514,18 @@ export class SiteAiGateway {
         const data = line.slice(5).trim();
         if (!data || data === '[DONE]') return;
         try {
-          const event = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }> };
+          const event = JSON.parse(data) as {
+            type?: unknown;
+            choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
+            delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
+          };
+          if (endpoint.format === 'anthropic') {
+            // Anthropic Messages SSE: text arrives in content_block_delta events.
+            const finish = event.type === 'message_delta' ? anthropicFinish(event.delta?.stop_reason) : undefined;
+            if (finish) finishReason = finish;
+            if (event.type !== 'content_block_delta' || event.delta?.type !== 'text_delta') return;
+            event.choices = [{ delta: { content: event.delta.text } }];
+          }
           const choice = event.choices?.[0];
           const text = choice?.delta?.content;
           if (typeof text === 'string' && text && output < MAX_OUTPUT_CHARS) {

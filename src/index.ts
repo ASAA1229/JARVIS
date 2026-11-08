@@ -41,7 +41,15 @@ async function main() {
       import('./conversation/agentModelAdapter.js'),
     ]);
     const { providerRouter } = await import('./ai/providerRouter.js');
+    // Bind to loopback by default: a Cloudflare Tunnel connects locally, so the gateway
+    // never needs to listen on the LAN. A non-loopback host requires an explicit opt-in.
+    const requestedHost = process.env.JARVIS_SITE_GATEWAY_HOST || '127.0.0.1';
+    const loopback = ['127.0.0.1', '::1', 'localhost'].includes(requestedHost);
+    if (!loopback && process.env.JARVIS_SITE_GATEWAY_ALLOW_NON_LOOPBACK !== 'true') {
+      throw new Error('JARVIS_SITE_GATEWAY_HOST must be a loopback address unless JARVIS_SITE_GATEWAY_ALLOW_NON_LOOPBACK=true');
+    }
     const gateway = new SiteAiGateway({
+      host: requestedHost,
       store: new SiteClientStore(process.env.JARVIS_SITE_CLIENTS_PATH || './data/site-clients.json'),
       audit: server.getService().audit,
       modelEndpoint: getModelEndpoint,
@@ -58,7 +66,7 @@ async function main() {
       },
     });
     await gateway.start(port);
-    console.log(`✅ JARVIS site AI gateway is listening on http://127.0.0.1:${port}/v1 (site keys: npm run site-key -- list)`);
+    console.log(`✅ JARVIS site AI gateway is listening on http://${requestedHost}:${port}/v1 (site keys: npm run site-key -- list)`);
   }
 }
 

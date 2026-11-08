@@ -11,6 +11,7 @@ pipeline {
     ARTIFACT_FILE = 'jarvis-build.tar.gz'
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
+    CUSTOMER_RELEASE_REPORT_PATH = 'customer-release-report.json'
   }
   parameters {
     booleanParam(name: 'ENABLE_NEXUS_PUBLISH', defaultValue: false, description: 'Nexus publishing is paused; enable only after explicit approval and configuration.')
@@ -80,7 +81,7 @@ pipeline {
           Invoke-Node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
           if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy hashing failed." }
           $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
-          Invoke-Node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" $trustedPolicyHash
+          Invoke-Node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
 '''
       }
@@ -110,7 +111,7 @@ pipeline {
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signing failed." }
               node scripts/policy-signature.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore signature verification failed." }
-              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "dist" "-" "jarvis-manifest-ignore.sig" $publicPath
+              node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "-" "jarvis-manifest-ignore.sig" $publicPath
               if ($LASTEXITCODE -ne 0) { throw "Signed customer release verification failed." }
             } finally {
               if ($privatePath) {
@@ -215,9 +216,9 @@ pipeline {
               if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
                 node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
                 if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $artifactDir '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
               } else {
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $artifactDir $trustedPolicyHash
+                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $trustedPolicyHash
               }
               if ($LASTEXITCODE -ne 0) { throw "Nexus read-back customer release verification failed." }
             } finally {
@@ -238,6 +239,8 @@ pipeline {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
     }
     always {
+      // Keep the structured customer-verification failure report when one was written.
+      archiveArtifacts artifacts: 'customer-release-report.json', allowEmptyArchive: true
       powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
     }
   }

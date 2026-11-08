@@ -112,6 +112,14 @@ export class WorkflowEngine {
           const version = this.workflows.approveDraft(String(parameters.name));
           return ok({ name: parameters.name, version: version.version, status: version.status });
         }
+        case 'workflow:compose': {
+          const name = String(parameters.name ?? '');
+          if (!WORKFLOW_NAME.test(name)) return fail('Workflow names must be 2-41 lowercase letters, digits or hyphens.');
+          const { order, problems } = this.validateSteps(parameters.steps);
+          if (!order) return fail('Workflow is invalid: ' + problems.join(' '));
+          const version = this.workflows.saveActive(name, String(parameters.description ?? '') || `Composed workflow ${name}`, order, 'user', { note: 'composed in HUD' });
+          return ok({ name, version: version.version, steps: version.steps.map((step) => ({ id: step.id, operation: step.operation, dependsOn: step.dependsOn })) });
+        }
         case 'workflow:archive': {
           const version = this.workflows.archive(String(parameters.name));
           return ok({ name: parameters.name, version: version.version, status: version.status });
@@ -122,6 +130,11 @@ export class WorkflowEngine {
     } catch (error) {
       return fail(error instanceof Error ? error.message : 'Workflow operation failed.');
     }
+  }
+
+  /** Read-only validation used by the visual composer before saving (no side effects). */
+  validateSteps(steps: unknown): { order?: WorkflowStep[]; problems: string[] } {
+    return validateWorkflowSteps(steps, (operation, keys) => this.check(operation, keys));
   }
 
   /**

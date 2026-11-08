@@ -28,6 +28,7 @@ jobs:
       BUILD_RUN_ID: ${{ github.run_id }}
       BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       REQUIRE_BUILD_PROVENANCE: 'true'
+      CUSTOMER_RELEASE_REPORT_PATH: customer-release-report.json
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -80,7 +81,7 @@ jobs:
           Invoke-Node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy hashing failed.' }
           $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
-          Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw 'Customer release verification failed.' }
           if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
             $keyId = [Guid]::NewGuid().ToString('N')
@@ -93,7 +94,7 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
               Invoke-Node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
-              Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz - jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
             } finally {
               Remove-Item -Force -LiteralPath $privatePath, $publicPath -ErrorAction SilentlyContinue
@@ -103,6 +104,14 @@ jobs:
           } else {
             Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
           }
+      - name: Retain customer release failure report
+        if: always() && hashFiles('customer-release-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-release-failure-${{ github.run_number }}
+          path: customer-release-report.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:

@@ -20,6 +20,11 @@ import { ConversationSessionStore } from '../conversation/conversationSessionSto
 import { SyncStateStore } from '../sync/syncStateStore.js';
 import { SyncService } from '../sync/syncService.js';
 import { handleSyncRoute } from '../sync/syncRoutes.js';
+import { PeerRegistry } from '../peers/peerRegistry.js';
+import { PeerDiscoveryService } from '../peers/peerDiscovery.js';
+import { handlePeerRoute } from '../peers/peerRoutes.js';
+import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js';
+import { DuplicateMemoryError } from '../memory/memoryManager.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
@@ -32,6 +37,9 @@ export class JarvisServer {
   private readonly ownerControlToken: string | undefined;
   private readonly syncStore: SyncStateStore | undefined;
   private readonly syncService: SyncService | undefined;
+  /** LAN peers (J-E11): explicit pairing allowlist + optional LAN-only discovery. */
+  private readonly peerRegistry: PeerRegistry | undefined;
+  private readonly peerDiscovery: PeerDiscoveryService | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
@@ -66,6 +74,13 @@ export class JarvisServer {
         },
       });
     }
+    if (this.ownerControlToken) {
+      this.peerRegistry = new PeerRegistry(statePath ? statePath + '.peers' : './data/lan-peers.enc', this.ownerControlToken, (id) => this.jarvis.identity.getDevice(id));
+      this.peerDiscovery = new PeerDiscoveryService(this.peerRegistry, (event) => {
+        // Rejections are frequent on a busy LAN; only accepted peer messages are audited.
+        if (event.type === 'accepted') this.jarvis.audit.record('LAN_PEER_MESSAGE', { peerDeviceId: event.deviceId, type: event.message });
+      });
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -74,6 +89,8 @@ export class JarvisServer {
       const onListening = () => {
         this.server.off('error', onError);
         this.jarvis.startBackgroundServices();
+        // LAN discovery stays off unless JARVIS_PEER_DISCOVERY=true.
+        this.peerDiscovery?.start();
         resolve(this.port);
       };
       const onError = (error: Error) => {
@@ -95,6 +112,7 @@ export class JarvisServer {
 
   public stop(): Promise<void> {
     this.jarvis.stopBackgroundServices();
+    this.peerDiscovery?.stop();
     if (!this.server.listening) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -500,6 +518,17 @@ export class JarvisServer {
         }
       }
 
+      // Owner HUD panels (J-E10) and gateway site management (J-E09). Mounted before the
+      // /api/memory block so /api/memory/import is handled here.
+      if (OWNER_PANEL_PATHS.includes(url.pathname)) {
+        return handleOwnerPanelRoute(req, res, url, {
+          jarvis: this.jarvis,
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
       // Resource profiles (US-061) and AI provider routing status (US-059). Owner device only.
       if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers') {
         const sessionId = req.headers['x-session-id'];
@@ -552,6 +581,18 @@ export class JarvisServer {
         });
       }
 
+      // LAN peers (J-E11): explicit pairing, allowlist, revocation; never command execution.
+      if (url.pathname === '/api/peers' || url.pathname.startsWith('/api/peers/')) {
+        return handlePeerRoute(req, res, url, {
+          registry: this.peerRegistry,
+          discovery: this.peerDiscovery,
+          audit: this.jarvis.audit,
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
       if (url.pathname.startsWith('/api/memory')) {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
@@ -589,15 +630,28 @@ export class JarvisServer {
             return this.jsonResponse(res, 400, { error: 'category and content are required' });
           }
           try {
-            const candidate = manager.propose(auth.device.id, category as MemoryCategory, content, {
+            // Exact and local-semantic duplicate detection against long-term memory.
+            const candidate = await manager.proposeChecked(auth.device.id, category as MemoryCategory, content, {
               kind: 'feedback',
               ...(typeof ref === 'string' && ref ? { ref } : {}),
             });
             this.jarvis.audit.record('MEMORY_CANDIDATE_PROPOSED', { candidateId: candidate.id, category: candidate.category, source: 'feedback' }, auth.device.id);
             return this.jsonResponse(res, 201, { candidate });
           } catch (error) {
+            if (error instanceof DuplicateMemoryError) {
+              return this.jsonResponse(res, 409, { error: error.message, duplicateOf: error.existingId, match: error.match, ...(error.similarity !== undefined ? { similarity: error.similarity } : {}) });
+            }
             return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Feedback could not be recorded' });
           }
+        }
+        // Read-only correction history for one memory (J-E06). Corrections themselves go
+        // through the planner and approval path ("update memory <id> to ...").
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/versions') {
+          const id = url.searchParams.get('id');
+          if (!id || !/^[a-f0-9]{32}$/.test(id)) return this.jsonResponse(res, 400, { error: 'id query parameter is required' });
+          const current = manager.longTerm.get(id);
+          if (!current) return this.jsonResponse(res, 404, { error: 'Memory not found' });
+          return this.jsonResponse(res, 200, { current, versions: manager.versionsOf(id) });
         }
         if (manager && req.method === 'POST' && url.pathname === '/api/memory/candidates/decide') {
           const { id, decision, ttlDays } = body as { id?: unknown; decision?: unknown; ttlDays?: unknown };
@@ -646,7 +700,10 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/api/voice/status') {
         let localTts = false;
         try { localTts = Boolean(createConfiguredPiperProvider()); } catch { localTts = false; }
-        return this.jsonResponse(res, 200, { localTts });
+        // Local speech-to-text (whisper.cpp) availability: boolean only, never paths.
+        let localStt = false;
+        try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
+        return this.jsonResponse(res, 200, { localTts, localStt });
       }
       if (req.method === 'POST' && url.pathname === '/api/voice/synthesize') {
         const sessionId = req.headers['x-session-id'] as string;
@@ -790,15 +847,19 @@ export class JarvisServer {
         // Two-tier retrieval: this conversation's working memory plus relevant long-term
         // memory (long-term only for device-management devices), bounded in size.
         const canReadLongTerm = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
-        const conversationMemory = this.jarvis.memoryManager
-          ? this.jarvis.memoryManager.retrieveContext({
+        // Ranked (local semantic + lexical + recency) retrieval is skipped for action
+        // requests, which go to the planner and never use conversational memory context.
+        const conversationMemory = isActionRequest(text.trim())
+          ? []
+          : this.jarvis.memoryManager
+          ? (await this.jarvis.memoryManager.retrieveContextRanked({
             deviceId: auth.device.id,
             query: text.trim(),
             ...(conversationId ? { scope: { kind: 'conversation' as const, id: conversationId } } : {}),
             includeLongTerm: canReadLongTerm,
             maxItems: 6,
             maxChars: 3000,
-          }).map((item) => ({ content: item.content, category: item.tier === 'working' ? 'working_' + item.label : item.label }))
+          })).map((item) => ({ content: item.content, category: item.tier === 'working' ? 'working_' + item.label : item.label }))
           : canReadLongTerm && this.personalMemory
             ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
             : [];

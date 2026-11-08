@@ -54,19 +54,19 @@ function readConfiguration() {
  * Validated model endpoint for in-process callers (for example the site AI gateway).
  * Applies the same local-first / explicit-remote-opt-in rules as the agents.
  */
-export function getModelEndpoint(): { id: ProviderId; baseUrl: string; model: string; apiKey?: string } | null {
+export function getModelEndpoint(): { id: ProviderId; format: 'openai' | 'anthropic'; baseUrl: string; model: string; apiKey?: string } | null {
   // Site gateway traffic (US-059): local unless the owner allows cloud for site requests,
   // either with JARVIS_SITE_GATEWAY_ALLOW_CLOUD=true or 'site' in JARVIS_CLOUD_ALLOWED_TASKS.
-  // Streaming needs an OpenAI-compatible provider.
+  // The gateway converts Anthropic Messages streams to OpenAI chunks itself.
   const decision = providerRouter.route({
     taskType: 'site',
     containsPrivateData: false,
     cloudAuthorized: process.env.JARVIS_SITE_GATEWAY_ALLOW_CLOUD === 'true',
-    formats: ['openai'],
+    formats: ['openai', 'anthropic'],
   });
   const provider = decision.provider;
   if (!provider) return null;
-  return { id: provider.id, baseUrl: provider.baseUrl, model: provider.model, ...(provider.apiKey ? { apiKey: provider.apiKey } : {}) };
+  return { id: provider.id, format: provider.format, baseUrl: provider.baseUrl, model: provider.model, ...(provider.apiKey ? { apiKey: provider.apiKey } : {}) };
 }
 
 /** Exposes only safe startup diagnostics; never returns endpoint or credential values. */

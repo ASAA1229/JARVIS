@@ -613,3 +613,19 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .hud-sync-list li { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .hud-sync-list li p { margin: 0 0 4px; word-break: break-word; }
 .hud-sync-list .hud-btn-mini { margin-right: 6px; }
+
+/* Voice assistant state (J-E02): standby, listening, processing, speaking, approval, error. */
+.hud-voice-state {
+  margin: 6px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.hud-voice-state:focus-visible { outline: 2px solid #ffd27a; outline-offset: 2px; }
+.hud-voice-state[data-state="standby"] { color: #7fd1ff; }
+.hud-voice-state[data-state="listening"] { color: #6dffb0; }
+.hud-voice-state[data-state="processing"] { color: #ffd27a; }
+.hud-voice-state[data-state="speaking"] { color: #c7a6ff; }
+.hud-voice-state[data-state="approval"] { color: #ffb020; }
+.hud-voice-state[data-state="error"] { color: #ff7a7a; }
+.hud-privacy-notice select { max-width: 100%; margin-left: 4px; }

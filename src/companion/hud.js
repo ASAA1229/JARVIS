@@ -33,6 +33,25 @@ let handsFreeRestartTimer = null;
 let browserWakeRetryCount = 0;
 const MAX_BROWSER_WAKE_RETRIES = 5;
 let localTtsUnavailable = false;
+// Voice pipeline (J-E02). The STT provider is an explicit owner choice: 'browser'
+// (SpeechRecognition, may be cloud-processed, consent-gated) or 'local' (Whisper on
+// this laptop via /api/voice/transcribe; audio never leaves the machine).
+let sttProvider = 'browser';
+let localSttAvailable = false;
+// Two-phase wake flow: a short same-utterance window ("Hey Jarvis, open Notepad"),
+// then, if nothing was said, the acknowledgement and a command window.
+let wakePhase = null;
+let wakeSpeechHeard = false;
+let wakeWindowTimer = null;
+// Feedback-loop guard: ignore wake/recognition events while JARVIS speaks and briefly after.
+let speechGuardUntil = 0;
+let localSttCapture = null;
+let currentResourceProfile = null;
+let onBatteryPower = false;
+const SAME_UTTERANCE_WINDOW_MS = 2500;
+const COMMAND_WINDOW_MS = 8000;
+const SPEECH_GUARD_MS = 700;
+const WAKE_ACKNOWLEDGEMENT = 'Hi sir, I am ready to work.';
 let activeSpeechAudio = null;
 let activeSpeechAudioUrl = null;
 let activeSpeechCleanup = null;
@@ -56,8 +75,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Use browser speech synthesis directly when local Piper TTS is not configured.
   fetch('/api/voice/status', { cache: 'no-store' })
     .then((response) => (response.ok ? response.json() : null))
-    .then((status) => { if (status && status.localTts === false) localTtsUnavailable = true; })
-    .catch(() => { /* keep trying local TTS; it falls back on failure */ });
+    .then((status) => {
+      if (status && status.localTts === false) localTtsUnavailable = true;
+      localSttAvailable = status?.localStt === true;
+      updateSpeechEngineNotes();
+    })
+    .catch(() => { updateSpeechEngineNotes(); /* keep trying local TTS; it falls back on failure */ });
+  try {
+    const saved = localStorage.getItem('jarvis.stt-provider');
+    if (saved === 'local' || saved === 'browser') sttProvider = saved;
+  } catch { /* storage may be blocked; default to browser */ }
+  const sttSelect = document.getElementById('stt-provider');
+  if (sttSelect) sttSelect.value = sttProvider;
   setupEventListeners();
   updateHandsFreeButtons();
   updateMuteControl();
@@ -99,6 +128,13 @@ function setupEventListeners() {
   };
   pushToTalkConsent?.addEventListener('change', () => {
     if (!pushToTalkConsent.checked) revokeSpeechConsent('push-to-talk');
+  });
+  document.getElementById('stt-provider')?.addEventListener('change', (event) => {
+    const value = event.target.value === 'local' ? 'local' : 'browser';
+    if (isListening) cancelVoiceCapture();
+    sttProvider = value;
+    try { localStorage.setItem('jarvis.stt-provider', value); } catch { /* session-only choice */ }
+    updateSpeechEngineNotes();
   });
   wakeSpeechConsent?.addEventListener('change', () => {
     if (!wakeSpeechConsent.checked) revokeSpeechConsent('wake');
@@ -333,6 +369,8 @@ async function startLocalWakeEngine() {
       localWakeEngine = engine;
       await engine.start((word, probability) => {
         if (lifecycleGeneration !== localWakeLifecycleGeneration || localWakeEngine !== engine || !handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+        // Never let JARVIS's own voice (or its echo) trigger a new wake event.
+        if (isSpeaking || Date.now() < speechGuardUntil) return;
         if (String(word || '').toLowerCase().includes('jarvis')) {
           void handleLocalWakeDetected(Number(probability) || 0);
         }
@@ -344,7 +382,8 @@ async function startLocalWakeEngine() {
       }
       handsFreeStandby = true;
       updateHandsFreeButtons();
-      if (document.getElementById('allow-wake-browser-speech')?.checked) {
+      setVoiceState('standby', 'Say “Hey Jarvis”.');
+      if (hasSpeechConsent('wake')) {
         setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded. Say “Hey Jarvis, open Notepad”.');
       } else {
         highlightWakeConsent();
@@ -396,14 +435,15 @@ function highlightWakeConsent() {
 
 async function handleLocalWakeDetected(probability) {
   if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+  if (isSpeaking || Date.now() < speechGuardUntil) return;
   wakeCommandRetryCount = 0;
   handsFreeStandby = false;
   stopHandsFreeStandby();
   updateHandsFreeButtons();
   setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
-  const wakeConsent = document.getElementById('allow-wake-browser-speech');
-  wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
-  if (!wakeConsent?.checked) {
+  const wakeConsentGiven = hasSpeechConsent('wake');
+  wakeCaptureAwaitingReview = wakeConsentGiven;
+  if (!wakeConsentGiven) {
     // Do not claim readiness: without this consent no command can be captured, so
     // say exactly what is missing and point at the control that fixes it.
     highlightWakeConsent();
@@ -413,12 +453,43 @@ async function handleLocalWakeDetected(probability) {
     return;
   }
 
-  // Start command capture immediately after local wake detection so words
-  // spoken in the same utterance (for example, "Hey Jarvis, open Notepad")
-  // are not lost while the acknowledgement is playing. The acknowledgement
-  // is spoken after the final transcript is captured and before dispatch.
+  // Phase 1, same utterance: listen immediately so "Hey Jarvis, open Notepad"
+  // is captured without waiting for the acknowledgement. If nothing follows the
+  // wake phrase within a short window, phase 2 speaks the acknowledgement and
+  // opens the command window (see completeWakeCapture).
   wakeCaptureAwaitingReview = true;
-  startVoiceCapture('wake');
+  wakePhase = 'same-utterance';
+  wakeCommandRetryCount = 0;
+  startWakeCapture(SAME_UTTERANCE_WINDOW_MS);
+}
+
+/**
+ * Start a post-wake capture with the selected STT provider. If no speech is
+ * heard within windowMs the capture is closed and treated as "nothing said".
+ */
+function startWakeCapture(windowMs) {
+  clearWakeWindow();
+  wakeSpeechHeard = false;
+  if (sttProvider === 'local') {
+    void startLocalSttCapture('wake', windowMs);
+    return;
+  }
+  startBrowserVoiceCapture('wake');
+  if (!isListening) return;
+  const generation = voiceCaptureGeneration;
+  wakeWindowTimer = setTimeout(() => {
+    wakeWindowTimer = null;
+    if (generation !== voiceCaptureGeneration || !isListening || wakeSpeechHeard) return;
+    // Nothing was said: close quietly (no partial dispatch) and continue the flow.
+    cancelVoiceCapture();
+    wakeCaptureAwaitingReview = true;
+    void completeWakeCapture('');
+  }, windowMs);
+}
+
+function clearWakeWindow() {
+  if (wakeWindowTimer) clearTimeout(wakeWindowTimer);
+  wakeWindowTimer = null;
 }
 
 function enableWakeDetection() {
@@ -659,6 +730,7 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       .slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
     const transcript = `${finalTranscript} ${interimTranscript}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
     if (!transcript) return;
+    if (mode === 'wake' && normalizeRecognizedCommand(transcript)) wakeSpeechHeard = true;
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
   };
@@ -811,35 +883,62 @@ function normalizeRecognizedCommand(value) {
     .replace(/^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)/i, '')
     .replace(/^(?:please\s+)/i, '')
     .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
+    // Capture starts just after the wake word, so the first syllable can be clipped.
+    .replace(/^pen\s+/i, 'open ')
     .replace(/\s+(?:please|for me)[.!?]*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 async function completeWakeCapture(command) {
+  clearWakeWindow();
   if (command) {
     if (!hasSpeechConsent('wake')) {
       wakeCommandRetryCount = 0;
+      wakePhase = null;
       setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Post-wake browser speech consent was withdrawn before dispatch. No command was sent.');
       scheduleHandsFreeRestart();
       return;
     }
-    wakeCommandRetryCount = 0;
     const normalizedCommand = normalizeRecognizedCommand(command);
     if (!normalizedCommand) {
       await completeWakeCapture('');
       return;
     }
-    setAssistantState('COMMAND RECEIVED', normalizedCommand);
-    await speakResponse('Hi sir, I am ready to work.');
-    await waitForSpeechOutput(8000);
-    if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') ||
-        document.visibilityState === 'hidden') {
+    if (isStopPhrase(command) || isStopPhrase(normalizedCommand)) {
+      await handleVoiceStopPhrase(normalizedCommand || command);
+      return;
+    }
+    wakeCommandRetryCount = 0;
+    wakePhase = null;
+    if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') {
       setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Voice consent or listening state changed before dispatch. No command was sent.');
       scheduleHandsFreeRestart();
       return;
     }
+    setAssistantState('COMMAND RECEIVED', normalizedCommand);
+    setVoiceState('processing', normalizedCommand);
+    // submitDirective speaks the verified outcome (or the approval instruction);
+    // speech completion then returns the wake engine to standby.
     await submitDirective(normalizedCommand);
+    return;
+  }
+
+  if (wakePhase === 'same-utterance' && handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake')) {
+    // Phase 2: only the wake phrase was spoken. Acknowledge, then listen for the command.
+    wakePhase = 'command-window';
+    setAssistantState('READY FOR COMMAND', WAKE_ACKNOWLEDGEMENT + ' Say your command now.');
+    await speakResponse(WAKE_ACKNOWLEDGEMENT);
+    await waitForSpeechOutput(8000);
+    await waitForSpeechGuard();
+    if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') || document.visibilityState === 'hidden') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+      return;
+    }
+    wakeCaptureAwaitingReview = true;
+    startWakeCapture(COMMAND_WINDOW_MS);
     return;
   }
 
@@ -848,10 +947,14 @@ async function completeWakeCapture(command) {
     setAssistantState('READY FOR COMMAND', 'I did not catch that. Please say your command again.');
     await speakResponse('I did not catch that. Please say your command again.');
     await waitForSpeechOutput(6000);
+    await waitForSpeechGuard();
     if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && document.visibilityState !== 'hidden') {
-      startVoiceCapture('wake');
+      wakeCaptureAwaitingReview = true;
+      wakePhase = 'command-window';
+      startWakeCapture(COMMAND_WINDOW_MS);
     } else {
       wakeCommandRetryCount = 0;
+      wakePhase = null;
       wakeCaptureAwaitingReview = false;
       scheduleHandsFreeRestart();
     }
@@ -859,8 +962,32 @@ async function completeWakeCapture(command) {
   }
 
   wakeCommandRetryCount = 0;
-  setAssistantState('NO COMMAND RECOGNIZED', 'No command was captured. Wake detection is restarting; try again or use text input.');
+  wakePhase = null;
+  wakeCaptureAwaitingReview = false;
+  setAssistantState('NO COMMAND RECOGNIZED', 'No command was captured. Returning to standby; say “Hey Jarvis” again or use text input.');
+  setVoiceState('standby', 'No command heard.');
   scheduleHandsFreeRestart();
+}
+
+/** Stop phrases after a wake: "stop jarvis" returns to standby; "goodbye jarvis" ends hands-free. */
+async function handleVoiceStopPhrase(text) {
+  wakeCommandRetryCount = 0;
+  wakePhase = null;
+  wakeCaptureAwaitingReview = false;
+  const normalized = normalizeSpeechText(text);
+  if (/\b(leave|goodbye|sleep)\b/.test(normalized)) {
+    await speakResponse('Goodbye, sir. Hands-free listening is now off.');
+    disableWakeDetection();
+    return;
+  }
+  cancelSpeechOutput();
+  setAssistantState('STANDING BY', 'Stop phrase heard. Nothing was sent.');
+  scheduleHandsFreeRestart();
+}
+
+async function waitForSpeechGuard() {
+  const wait = speechGuardUntil - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(wait, SPEECH_GUARD_MS)));
 }
 
 /**
@@ -954,7 +1081,13 @@ function scheduleHandsFreeRestart() {
       setAssistantState('LOCAL WAKE WORD UNAVAILABLE', error instanceof Error ? error.message : 'Could not restart local wake detection.');
       disableWakeDetection();
     });
-  }, 700);
+  }, wakeRestartDelayMs());
+}
+
+/** Idle profile on battery: back off wake-engine restarts to save power (J-E12). */
+function wakeRestartDelayMs() {
+  const base = Math.max(700, speechGuardUntil - Date.now());
+  return currentResourceProfile === 'idle' && onBatteryPower ? Math.max(base, 4000) : base;
 }
 
 function enableHandsFree() {
@@ -978,6 +1111,8 @@ function disableHandsFree() {
 }
 
 function hasSpeechConsent(mode) {
+  // Local Whisper keeps audio on this laptop, so the browser/vendor consent does not apply.
+  if (sttProvider === 'local' && localSttAvailable) return true;
   const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
   return document.getElementById(consentId)?.checked === true;
 }
@@ -991,6 +1126,20 @@ function revokeSpeechConsent(mode) {
 }
 
 function startVoiceCapture(mode = 'push-to-talk') {
+  if (sttProvider === 'local') {
+    if (isMicMuted) {
+      setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute the microphone before starting voice capture.');
+      return;
+    }
+    if (isListening) return;
+    if (mode === 'wake') { startWakeCapture(COMMAND_WINDOW_MS); return; }
+    void startLocalSttCapture(mode, 12000);
+    return;
+  }
+  startBrowserVoiceCapture(mode);
+}
+
+function startBrowserVoiceCapture(mode = 'push-to-talk') {
   if (isMicMuted) {
     setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute the microphone before starting voice capture.');
     return;
@@ -1087,6 +1236,12 @@ function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit 
 }
 
 function cancelVoiceCapture() {
+  clearWakeWindow();
+  if (localSttCapture) {
+    const capture = localSttCapture;
+    localSttCapture = null;
+    capture.cancel();
+  }
   isListening = false;
   activeVoiceCaptureMode = null;
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
@@ -1134,6 +1289,7 @@ async function submitDirective(text) {
   }
   if (isSubmitting) return;
   isSubmitting = true;
+  setVoiceState('processing', String(text).slice(0, 80));
   if (wakeCaptureAwaitingReview) wakeCaptureAwaitingReview = false;
   const sendButton = document.getElementById('btn-hud-send');
   const transcriptSubmit = document.getElementById('btn-transcript-submit');
@@ -1170,6 +1326,7 @@ async function submitDirective(text) {
       speakResponse(data.message || 'I have a response for you.');
     } else if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
+      setVoiceState('approval', 'Press Confirm and Execute on screen.');
       // Approval is a deliberate on-screen click (never voice-only), so say where to click.
       speakResponse('Please confirm on screen: press Confirm and Execute to continue.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
@@ -1239,6 +1396,7 @@ function cancelSpeechOutput() {
     activeSpeechAudio = null;
   }
   if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  if (isSpeaking) speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
   isSpeaking = false;
 }
 
@@ -1277,6 +1435,8 @@ async function speakResponse(message) {
           }
           URL.revokeObjectURL(url);
           isSpeaking = false;
+          speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
+          onSpeechFinished();
           if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
         };
         activeSpeechAudio = audio;
@@ -1288,6 +1448,8 @@ async function speakResponse(message) {
         audio.addEventListener('error', finishPlayback, { once: true });
         try {
           isSpeaking = true;
+          setVoiceState('speaking', text.slice(0, 80));
+          setTtsEngineLabel('Speech output: local Piper voice (on this laptop)');
           await audio.play();
           return;
         } catch (playError) {
@@ -1307,12 +1469,16 @@ async function speakResponse(message) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     isSpeaking = true;
+    setVoiceState('speaking', text.slice(0, 80));
+    setTtsEngineLabel('Speech output: browser speech synthesis (system voice)');
     utterance.lang = 'en-GB';
     utterance.rate = 0.92;
     utterance.pitch = 0.9;
     const finishSpeech = () => {
       if (generation !== speechOutputGeneration) return;
       isSpeaking = false;
+      speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
+      onSpeechFinished();
       if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
     };
     utterance.onend = finishSpeech;
@@ -2086,6 +2252,8 @@ async function refreshResources() {
 function renderResources(data) {
   const summary = document.getElementById('hud-resources-summary');
   const readings = data.readings || {};
+  currentResourceProfile = typeof data.profile === 'string' ? data.profile : null;
+  onBatteryPower = Boolean(readings.battery && readings.battery.charging === false);
   const battery = readings.battery
     ? `battery ${readings.battery.percent}%${readings.battery.charging ? ' (AC)' : ' (on battery)'}`
     : 'no battery reading';
@@ -2232,4 +2400,256 @@ async function decideSyncCommand(id, decision) {
     res.ok ? (decision === 'run' ? 'Task state: ' + (data.state || 'submitted') + '. Approve it if a consent card appears.' : 'Nothing was run.') : (data.error || 'Request failed.'));
   refreshSync();
   refreshTaskHistory();
+}
+
+// ---- Voice state, engine labels and local Whisper capture (J-E02) ----
+
+const VOICE_STATE_LABELS = {
+  idle: 'VOICE: IDLE',
+  standby: 'VOICE: STANDBY — SAY “HEY JARVIS”',
+  listening: 'VOICE: LISTENING',
+  processing: 'VOICE: PROCESSING',
+  speaking: 'VOICE: SPEAKING',
+  approval: 'VOICE: AWAITING APPROVAL',
+  error: 'VOICE: ERROR',
+};
+
+function setVoiceState(state, detail = '') {
+  const node = document.getElementById('hud-voice-state');
+  if (!node) return;
+  const label = VOICE_STATE_LABELS[state] || VOICE_STATE_LABELS.idle;
+  node.dataset.state = state;
+  node.textContent = detail ? label + ' — ' + detail : label;
+}
+
+function onSpeechFinished() {
+  if (isListening || isSubmitting) return;
+  setVoiceState(handsFreeEnabled ? 'standby' : 'idle');
+}
+
+function setTtsEngineLabel(text) {
+  const node = document.getElementById('tts-engine-label');
+  if (node) node.textContent = text;
+}
+
+function updateSpeechEngineNotes() {
+  const note = document.getElementById('stt-provider-note');
+  if (note) {
+    if (sttProvider === 'local') {
+      note.textContent = localSttAvailable
+        ? 'Local Whisper is installed: speech is transcribed on this laptop and never uploaded. No browser-speech consent is needed.'
+        : 'Local Whisper is not installed (set JARVIS_WHISPER_CLI and JARVIS_WHISPER_MODEL, then restart JARVIS). Voice commands are unavailable with this setting; switch to browser recognition or type.';
+    } else {
+      note.textContent = 'Browser speech recognition may send your audio to the browser vendor (for example Microsoft or Google). It is not local or offline and needs the session consent boxes above.';
+    }
+  }
+  setTtsEngineLabel(localTtsUnavailable
+    ? 'Speech output: browser speech synthesis (system voice). Local Piper TTS is not configured.'
+    : 'Speech output: local Piper voice when available, otherwise the browser voice.');
+}
+
+/**
+ * Capture microphone audio locally, stop on trailing silence (simple energy VAD),
+ * encode 16 kHz mono 16-bit WAV and transcribe it with the local Whisper engine.
+ * The text follows the same rules as browser recognition: push-to-talk goes to the
+ * review box (nothing is sent); post-wake text continues the wake flow.
+ */
+async function startLocalSttCapture(mode, windowMs) {
+  if (isMicMuted || isListening) return;
+  if (!localSttAvailable) {
+    setVoiceState('error', 'Local speech recognition is not installed.');
+    setAssistantState('LOCAL SPEECH RECOGNITION UNAVAILABLE', 'Local Whisper is not installed on this laptop. Switch the speech-to-text engine to browser recognition, or type the command. No audio was captured.');
+    if (mode === 'wake') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+    }
+    return;
+  }
+  if (!window.JarvisDeviceCrypto?.signedFetch || !currentSession) {
+    setVoiceState('error', 'No authenticated session.');
+    setAssistantState('SESSION UNAVAILABLE — NOTHING CAPTURED', 'Local transcription needs this device to be enrolled and signed in.');
+    if (mode === 'wake') { wakePhase = null; wakeCaptureAwaitingReview = false; scheduleHandsFreeRestart(); }
+    return;
+  }
+  if (localWakeEngine) stopHandsFreeStandby();
+  if (isSpeaking) cancelSpeechOutput();
+  isListening = true;
+  activeVoiceCaptureMode = mode;
+  wakeCaptureAwaitingReview = mode === 'wake';
+  const generation = ++voiceCaptureGeneration;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
+  document.getElementById('reactor-container').classList.add('listening');
+  setVoiceState('listening', mode === 'wake' ? 'Speak your command.' : 'Speak, then pause to finish.');
+  setAssistantState('LISTENING...', 'Recording locally for on-device transcription.');
+
+  let stream = null;
+  let context = null;
+  let processor = null;
+  const chunks = [];
+  let speechStarted = false;
+  let lastVoiceAt = 0;
+  let finished = false;
+  const startedAt = Date.now();
+  const MAX_CAPTURE_MS = 12000;
+  const SILENCE_AFTER_SPEECH_MS = 900;
+  const SPEECH_RMS = 0.015;
+  let watchdog = null;
+
+  const release = () => {
+    try { processor?.disconnect(); } catch { /* already released */ }
+    try { stream?.getTracks().forEach((track) => track.stop()); } catch { /* already released */ }
+    try { void context?.close(); } catch { /* already released */ }
+  };
+  const controller = { cancel: () => { void finish(true); } };
+  const finish = async (cancelled) => {
+    if (finished) return;
+    finished = true;
+    if (watchdog) clearInterval(watchdog);
+    const sampleRate = context?.sampleRate || 48000;
+    release();
+    if (localSttCapture === controller) localSttCapture = null;
+    if (cancelled || generation !== voiceCaptureGeneration) return;
+    isListening = false;
+    activeVoiceCaptureMode = null;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    if (!speechStarted || chunks.length === 0) {
+      if (mode === 'wake') { void completeWakeCapture(''); return; }
+      setVoiceState('idle');
+      setAssistantState('NO SPEECH DETECTED', 'Nothing was heard. Try again or type the command.');
+      return;
+    }
+    setVoiceState('processing', 'Transcribing on this laptop…');
+    setAssistantState('TRANSCRIBING LOCALLY', 'Whisper is converting your speech to text on this laptop.');
+    let text = '';
+    try {
+      const wav = encodeWav16k(chunks, sampleRate);
+      const res = await window.JarvisDeviceCrypto.signedFetch('/api/voice/transcribe', {
+        method: 'POST',
+        body: { audioBase64: arrayBufferToBase64(wav) },
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || 'Local transcription failed with HTTP ' + res.status);
+      text = String(payload.text || '').replace(/\s+/g, ' ').trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+    } catch (error) {
+      setVoiceState('error', 'Local transcription failed.');
+      setAssistantState('LOCAL TRANSCRIPTION FAILED — NOTHING SENT', error instanceof Error ? error.message : 'Local transcription failed.');
+      if (mode === 'wake') {
+        wakePhase = null;
+        wakeCaptureAwaitingReview = false;
+        scheduleHandsFreeRestart();
+      }
+      return;
+    }
+    if (generation !== voiceCaptureGeneration) return;
+    if (mode === 'wake') {
+      if (text && normalizeRecognizedCommand(text)) wakeSpeechHeard = true;
+      void completeWakeCapture(text);
+      return;
+    }
+    // Push-to-talk stays review-first: show the transcript, send nothing yet.
+    setVoiceState('idle');
+    if (!text) {
+      setAssistantState('NO SPEECH RECOGNIZED', 'Whisper did not return any words. Try again or type the command.');
+      return;
+    }
+    document.getElementById('transcript-input').value = text;
+    document.getElementById('transcript-box').classList.remove('hidden');
+    setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
+  };
+  localSttCapture = controller;
+  watchdog = setInterval(() => {
+    const now = Date.now();
+    if (!speechStarted && now - startedAt > windowMs) void finish(false);
+    else if (speechStarted && now - lastVoiceAt > SILENCE_AFTER_SPEECH_MS) void finish(false);
+    else if (now - startedAt > MAX_CAPTURE_MS) void finish(false);
+  }, 150);
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    if (finished) { release(); return; }
+    context = new AudioContext();
+    const source = context.createMediaStreamSource(stream);
+    processor = context.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (event) => {
+      if (finished) return;
+      const input = event.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < input.length; i += 1) sum += input[i] * input[i];
+      const rms = Math.sqrt(sum / input.length);
+      if (rms > SPEECH_RMS && !(isSpeaking || Date.now() < speechGuardUntil)) {
+        speechStarted = true;
+        lastVoiceAt = Date.now();
+      }
+      if (speechStarted) chunks.push(new Float32Array(input));
+    };
+    source.connect(processor);
+    processor.connect(context.destination);
+  } catch (error) {
+    finished = true;
+    if (watchdog) clearInterval(watchdog);
+    release();
+    if (localSttCapture === controller) localSttCapture = null;
+    isListening = false;
+    activeVoiceCaptureMode = null;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    const denied = Boolean(error && (error.name === 'NotAllowedError' || error.name === 'SecurityError'));
+    setVoiceState('error', denied ? 'Microphone permission denied.' : 'Microphone unavailable.');
+    setAssistantState(denied ? 'MICROPHONE PERMISSION REQUIRED' : 'MICROPHONE UNAVAILABLE', denied
+      ? 'Allow microphone access for this site in browser settings, then retry voice input.'
+      : 'No usable microphone was found. Use text input instead.');
+    if (mode === 'wake') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      if (denied) disableWakeDetection(); else scheduleHandsFreeRestart();
+    }
+  }
+}
+
+/** Downsample Float32 chunks to 16 kHz mono PCM16 and wrap them in a RIFF/WAV container. */
+function encodeWav16k(chunks, inputRate) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const ratio = inputRate / 16000;
+  const outLength = Math.max(1, Math.floor(total / ratio));
+  const pcm = new Int16Array(outLength);
+  let chunkIndex = 0;
+  let consumed = 0;
+  for (let i = 0; i < outLength; i += 1) {
+    const target = Math.floor(i * ratio);
+    while (chunkIndex < chunks.length && consumed + chunks[chunkIndex].length <= target) {
+      consumed += chunks[chunkIndex].length;
+      chunkIndex += 1;
+    }
+    if (chunkIndex >= chunks.length) break;
+    const sample = Math.max(-1, Math.min(1, chunks[chunkIndex][target - consumed]));
+    pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset, text) => { for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 16000, true);
+  view.setUint32(28, 32000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buffer, 44).set(pcm);
+  return buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) binary += String.fromCharCode(...bytes.subarray(i, i + step));
+  return btoa(binary);
 }
