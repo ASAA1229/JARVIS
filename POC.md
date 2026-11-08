@@ -3,6 +3,26 @@
 **Repository:** `ASAA1229/JARVIS` · **Branch:** `new` · **Status baseline:** 2026-11-07
 **Status vocabulary:** DONE — VERIFIED ON TARGET LAPTOP · DONE — VERIFIED LOCALLY (automated) · IMPLEMENTED — NEEDS TESTING · PARTIAL — NEEDS DEVELOPMENT · NOT STARTED
 
+
+## Development completion snapshot — 2026-11-08
+
+All backlog stories in the owner-approved baseline now have an implementation on `new`. Testing was paused by the owner for this phase, so every item below is **IMPLEMENTED — NEEDS TESTING**; nothing new is claimed as verified. `npx tsc --noEmit` and `node --check` (companion scripts) pass.
+
+| Story | What was built | Commit(s) | Test still required |
+|---|---|---|---|
+| US-005 Owner recovery | `npm run owner-recovery` (reset authenticator, revoke device, revoke all) via host-only, owner-token API; rate-limited, audited | `bc3eef5` | Run `test/owner_recovery.test.ts`; recovery drill on the laptop |
+| US-016 Outcome verification | UI Automation text read-back after paste/type; launch-then-type failures reported as PARTIAL | `e28d860`, `73c748d` | Run `test/outcome_verification.test.ts`; real Notepad read-back with unlocked desktop |
+| US-024 Offline queue safety | Device/permission recheck on claim and result, idempotent results, repeatable cancel | `e28d860`, `bc3eef5` | Queue tests; two-phone drill |
+| US-027 / US-060 Device sync | Signed push/pull, TTL ≤ 7 days, conflict records for owner review, held offline commands, peer envelope signing, HUD "Sync & conflicts", Android `SyncClient` | `7176d7f` | Run `test/device_sync.test.ts`; Android build; two-phone sync + conflict drill |
+| US-057 Two-tier memory | Working Memory (RAM) + Long-Term Memory + Memory Manager; chat uses bounded two-tier context | `6afccf9`, `26656a0` | Memory manager tests; owner review of context quality |
+| US-058 Consent-based learning | Feedback/working items become owner-approved candidates (encrypted, attributed); learning toggle | `6afccf9`, `26656a0` | Candidate approve/reject flow via API |
+| US-059 Provider routing | Local default; OpenAI/Anthropic only when configured and authorized; never for memory/history requests | `56251f9` | Run `test/provider_router.test.ts`; live local + optional cloud check |
+| US-061 Resource profiles | Idle/normal/intensive from CPU/RAM/battery or manual; throttles gateway, agents, scheduler; HUD panel | `56251f9` | Run `test/resource_manager.test.ts`; observe on battery |
+| US-062 Plugins & workflows | Manifest-only plugins with approval; versioned workflow templates, AI drafts approval-gated, per-step policy | `4b4cdf8` | Plugin install/revoke and workflow run tests |
+| US-063 Developer assistant | Scoped repo connections, read-only repo tools, model suggestions as drafts, approval-gated git ops (no main/dev push) | `1002a01` | Run `test/developer_assistant.test.ts`; scratch-repo end-to-end |
+
+**Not built yet:** visual workflow composer, HUD panels for plugins/workflows and developer suggestions, LAN peer discovery, opening PRs remotely, Anthropic streaming through the site gateway. **Owner-dependent:** live microphone test, Android build and two-phone tests, public tunnel, first CI run, Piper voice.
+
 ## 1. What JARVIS is
 
 JARVIS is a local-first personal AI assistant for the owner's Windows 11 laptop (i5-1235U, 16 GB RAM, no discrete GPU). It combines a voice/text HUD, guarded Windows desktop control, approval-gated multi-step tasks, encrypted personal memory, an Android companion for approvals, and — new in E09 — a personal AI gateway that the owner's websites call with an API key instead of a paid cloud model. Every state-changing action passes a default-deny policy gateway, owner approval and a tamper-evident audit log; nothing uncertain is replayed automatically.
