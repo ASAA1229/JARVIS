@@ -126,6 +126,22 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         return output.toString().trim()
     }
 
+    // ---- Device sync (US-060 / US-027); see docs/DEVICE_SYNC.md ----
+
+    /** Declare supported sync capabilities; the hub answers with the negotiated set. */
+    fun syncNegotiate(capabilities: List<String>): JSONObject =
+        signedPost("/api/sync/capabilities", JSONObject().put("capabilities", JSONArray(capabilities)))
+
+    /** Push queued offline changes; each change receives an individual outcome. */
+    fun syncPush(changes: JSONArray): JSONObject =
+        signedPost("/api/sync/push", JSONObject().put("changes", changes))
+
+    /** Pull the permitted memory index plus records changed since [sinceMillis]. */
+    fun syncPull(sinceMillis: Long): JSONObject {
+        require(sinceMillis >= 0) { "since must not be negative." }
+        return signedGet("/api/sync/pull", "?since=" + sinceMillis)
+    }
+
     private fun signedPost(path: String, body: JSONObject): JSONObject {
         val session = sessionId ?: error("Reconnect the authenticated session first.")
         val timestamp = System.currentTimeMillis()
@@ -134,12 +150,13 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         return post(path, body, session, timestamp, requestNonce, signature)
     }
 
-    private fun signedGet(path: String): JSONObject {
+    /** The server signs and verifies the path only; the query string is not part of the signature. */
+    private fun signedGet(path: String, query: String = ""): JSONObject {
         val session = sessionId ?: error("Reconnect the authenticated session first.")
         val timestamp = System.currentTimeMillis()
         val requestNonce = nonce()
         val signature = keys.sign("GET:" + path + ":" + session + ":" + timestamp + ":" + requestNonce + ":" + sha256(""))
-        val url = URL(baseUrl.trim().trimEnd('/') + path)
+        val url = URL(baseUrl.trim().trimEnd('/') + path + query)
         require(url.protocol.equals("https", true)) { "HTTPS is required." }
         val connection = url.openConnection() as HttpURLConnection
         try {

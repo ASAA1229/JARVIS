@@ -17,6 +17,9 @@ import { answerConversationalMessageResult, isActionRequest } from '../conversat
 import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
+import { SyncStateStore } from '../sync/syncStateStore.js';
+import { SyncService } from '../sync/syncService.js';
+import { handleSyncRoute } from '../sync/syncRoutes.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
@@ -27,6 +30,8 @@ export class JarvisServer {
   private server: ReturnType<typeof createServer>;
   private port: number;
   private readonly ownerControlToken: string | undefined;
+  private readonly syncStore: SyncStateStore | undefined;
+  private readonly syncService: SyncService | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
@@ -47,6 +52,20 @@ export class JarvisServer {
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.personalMemory = this.jarvis.personalMemory;
+    // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
+    if (this.ownerControlToken && this.personalMemory) {
+      this.syncStore = new SyncStateStore(statePath ? statePath + '.sync' : './data/device-sync.enc', this.ownerControlToken);
+      this.syncService = new SyncService({
+        store: this.syncStore,
+        memory: this.personalMemory,
+        audit: this.jarvis.audit,
+        getDevice: (id) => this.jarvis.identity.getDevice(id),
+        submitRequest: async (sessionId, text) => {
+          const result = await this.jarvis.submitRequest(sessionId, text);
+          return { taskId: result.taskId, state: String(result.state), ...(result.approvalId ? { approvalId: result.approvalId } : {}), message: result.message };
+        },
+      });
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -521,6 +540,18 @@ export class JarvisServer {
       }
 
       // Personal memory is encrypted at rest and restricted to authenticated management devices.
+      // Device sync and offline queues (US-060/027); signed session required on every route.
+      if (url.pathname.startsWith('/api/sync/')) {
+        return handleSyncRoute(req, res, url, {
+          sync: this.syncService,
+          store: this.syncStore,
+          listDevices: () => this.jarvis.identity.listDevices(),
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
       if (url.pathname.startsWith('/api/memory')) {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });

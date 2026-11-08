@@ -204,6 +204,16 @@
             </div>
             <ul id="hud-heavy-work" class="hud-heavy-work"></ul>
           </div>
+          <div class="tasks-timeline-header">
+            <span>SYNC &amp; CONFLICTS</span>
+            <button id="btn-refresh-sync" class="hud-btn-mini" type="button">REFRESH</button>
+          </div>
+          <div id="hud-sync" class="hud-sync" role="region" aria-label="Device sync, conflicts and queued offline commands" aria-live="polite">
+            <p id="hud-sync-summary" class="task-history-empty">Sync status appears after the secure session is restored.</p>
+            <ul id="hud-sync-devices" class="hud-sync-list" aria-label="Synced devices"></ul>
+            <ul id="hud-sync-conflicts" class="hud-sync-list" aria-label="Open sync conflicts"></ul>
+            <ul id="hud-sync-commands" class="hud-sync-list" aria-label="Offline commands awaiting you"></ul>
+          </div>
           <div class="tasks-timeline-header task-history-heading">
             <span>RECENT TASKS</span>
             <button id="btn-refresh-tasks" class="hud-btn-mini" type="button">REFRESH</button>

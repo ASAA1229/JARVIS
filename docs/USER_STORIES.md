@@ -375,7 +375,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-027 — Cross-device memory consistency
 
-**Current implementation status:** **NOT STARTED** — Cross-device memory sync and conflict handling not implemented.
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Hub sync (`src/sync/*`, `/api/sync/*`): DEVICE_MANAGE-only memory categories, offline changes revalidated with TTL/sequence, memory changes submitted for owner approval, stale bases stored as encrypted owner-reviewable conflicts (no last-writer-wins), HUD "Sync & conflicts" resolve view, Android `SyncClient`. Test: run `test/device_sync.test.ts`, HTTP push/pull/resolve, and a two-phone concurrent-edit + revocation drill (docs/DEVICE_SYNC.md).
 
 **As the owner,** I want memory to remain consistent across my laptop and phones, so that companion devices share only authorized context.
 
@@ -856,6 +856,8 @@ The stories below capture approved requirements from the 50-question exercise. T
 ### JARVIS-US-060 — Unified device connectivity and offline synchronization
 
 **Priority:** P1
+
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Laptop-hub push/pull, offline queue (per-device sequence, ≤7-day TTL, revalidation, idempotent replays), offline commands held for explicit owner run, capability negotiation and signed peer-to-peer envelopes (LAN transport is future work), revoked-device discard. Test: unit tests, HTTP integration, Android build + two-phone offline/reconnect drill, P2P envelope exchange (docs/DEVICE_SYNC.md).
 
 **As the owner,** I want the laptop to act as the primary hub while devices can optionally communicate peer-to-peer and synchronize offline changes, so that JARVIS remains useful across my laptop and Android phones.
 

@@ -606,3 +606,10 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .hud-resources-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .hud-resources-controls select { background: transparent; color: inherit; border: 1px solid var(--text-dim); padding: 2px 4px; }
 .hud-heavy-work { list-style: none; margin: 6px 0 0; padding: 0; color: var(--text-dim); }
+
+/* Device sync & conflicts panel (US-060 / US-027). */
+.hud-sync { font-size: 11px; line-height: 1.5; color: var(--text-dim); }
+.hud-sync-list { list-style: none; margin: 4px 0; padding: 0; }
+.hud-sync-list li { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.hud-sync-list li p { margin: 0 0 4px; word-break: break-word; }
+.hud-sync-list .hud-btn-mini { margin-right: 6px; }

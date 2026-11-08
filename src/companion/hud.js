@@ -67,6 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   refreshTaskHistory();
   setInterval(refreshTaskHistory, 15000);
   refreshResources();
+  refreshSync();
   setInterval(refreshResources, 20000);
   setInterval(pollStatus, 3000);
   setInterval(pollAudit, 4000);
@@ -77,6 +78,7 @@ function setupEventListeners() {
   const btnSend = document.getElementById('btn-hud-send');
   document.getElementById('btn-refresh-tasks')?.addEventListener('click', () => refreshTaskHistory());
   document.getElementById('btn-refresh-resources')?.addEventListener('click', () => refreshResources());
+  document.getElementById('btn-refresh-sync')?.addEventListener('click', () => refreshSync());
   document.getElementById('hud-resource-mode')?.addEventListener('change', (event) => setResourceMode(event.target.value));
   document.getElementById('btn-stop-heavy-work')?.addEventListener('click', () => stopHeavyWork());
   const textInput = document.getElementById('hud-text-input');
@@ -2130,3 +2132,104 @@ async function stopHeavyWork() {
   }
 }
 
+// ---- Device sync & conflicts (US-060 / US-027) ----
+// Owner-only signed endpoints; DOM APIs only (no innerHTML). Resolving a conflict
+// or running a queued offline command never applies changes directly: it submits
+// through the policy gateway, so an approval card follows where required.
+async function refreshSync() {
+  const summary = document.getElementById('hud-sync-summary');
+  if (!summary || !currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/overview', { method: 'GET' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      summary.textContent = res.status === 403 ? 'Sync review needs a device-management device.' : (data.error || 'Sync status unavailable.');
+      return;
+    }
+    renderSync(data);
+  } catch {
+    summary.textContent = 'Sync status unavailable.';
+  }
+}
+
+function syncTime(value) {
+  return value ? new Date(value).toLocaleString() : 'never';
+}
+
+function syncButton(label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'hud-btn-mini';
+  button.textContent = label;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try { await onClick(); } finally { button.disabled = false; }
+  });
+  return button;
+}
+
+function renderSync(data) {
+  const devices = data.devices || [];
+  const conflicts = data.conflicts || [];
+  const commands = data.commands || [];
+  document.getElementById('hud-sync-summary').textContent =
+    devices.length + ' synced device(s) · ' + conflicts.length + ' open conflict(s) · ' + commands.length + ' offline command(s) waiting';
+
+  const deviceList = document.getElementById('hud-sync-devices');
+  deviceList.replaceChildren();
+  for (const device of devices) {
+    const item = document.createElement('li');
+    item.textContent = device.name + ' (' + (device.platform || 'device') + ', ' + device.status + ') · last push ' + syncTime(device.lastPushAt) +
+      ' · last pull ' + syncTime(device.lastPullAt) + ' · ' + device.capabilities.join(', ');
+    deviceList.appendChild(item);
+  }
+
+  const conflictList = document.getElementById('hud-sync-conflicts');
+  conflictList.replaceChildren();
+  for (const conflict of conflicts) {
+    const item = document.createElement('li');
+    const text = document.createElement('p');
+    text.textContent = 'CONFLICT (' + conflict.kind + ') · memory ' + conflict.memoryId.slice(0, 8) + '… · hub: "' + (conflict.hubContent || '(deleted)') +
+      '" · device: "' + (conflict.deviceContent || '(deleted)') + '"';
+    item.appendChild(text);
+    item.appendChild(syncButton('KEEP HUB', () => resolveSyncConflict(conflict.id, 'keep_hub')));
+    item.appendChild(syncButton('KEEP DEVICE', () => resolveSyncConflict(conflict.id, 'keep_device')));
+    item.appendChild(syncButton('MERGE…', () => {
+      const merged = window.prompt('Merged memory text (submitted for approval):', [conflict.hubContent, conflict.deviceContent].filter(Boolean).join(' / '));
+      return merged ? resolveSyncConflict(conflict.id, 'merge', merged) : undefined;
+    }));
+    conflictList.appendChild(item);
+  }
+
+  const commandList = document.getElementById('hud-sync-commands');
+  commandList.replaceChildren();
+  for (const command of commands) {
+    const item = document.createElement('li');
+    const text = document.createElement('p');
+    text.textContent = 'OFFLINE COMMAND from ' + command.deviceId.slice(0, 8) + '… (queued ' + syncTime(command.createdAt) + ', expires ' +
+      syncTime(command.expiresAt) + '): "' + command.text + '"';
+    item.appendChild(text);
+    item.appendChild(syncButton('RUN (WITH APPROVAL)', () => decideSyncCommand(command.id, 'run')));
+    item.appendChild(syncButton('DISCARD', () => decideSyncCommand(command.id, 'discard')));
+    commandList.appendChild(item);
+  }
+}
+
+async function resolveSyncConflict(id, resolution, mergedContent) {
+  const body = mergedContent ? { id, resolution, mergedContent } : { id, resolution };
+  const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/conflicts/resolve', { method: 'POST', body });
+  const data = await res.json().catch(() => ({}));
+  setAssistantState(res.ok ? 'SYNC CONFLICT RESOLVED' : 'SYNC CONFLICT NOT RESOLVED',
+    res.ok ? (data.taskId ? 'The chosen text was submitted; approve it in the consent panel to apply it.' : 'The hub copy was kept.') : (data.error || 'Request failed.'));
+  refreshSync();
+  refreshTaskHistory();
+}
+
+async function decideSyncCommand(id, decision) {
+  const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/commands/decide', { method: 'POST', body: { id, decision } });
+  const data = await res.json().catch(() => ({}));
+  setAssistantState(res.ok ? (decision === 'run' ? 'OFFLINE COMMAND SUBMITTED' : 'OFFLINE COMMAND DISCARDED') : 'OFFLINE COMMAND NOT PROCESSED',
+    res.ok ? (decision === 'run' ? 'Task state: ' + (data.state || 'submitted') + '. Approve it if a consent card appears.' : 'Nothing was run.') : (data.error || 'Request failed.'));
+  refreshSync();
+  refreshTaskHistory();
+}
