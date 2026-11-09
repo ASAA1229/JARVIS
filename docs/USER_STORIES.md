@@ -990,3 +990,8 @@ Default-deny policy; device/task/parameter-scoped approval; audit integrity; fai
 3. E06/E05 memory lifecycle, cross-device sync/conflict handling and Android software completion.
 4. E04 partial-side-effect recovery.
 5. E07 provider/integration completion within existing scope.
+
+
+## Voice story implementation note — 2026-11-09
+
+The voice-to-app development path received a narrow planner-side recovery for recognizer clipping: `pen <application>` is normalized to `open <application>` before heuristic planning. Regression cases were added for “pen Notepad” and “pen up Notepad”. **IMPLEMENTED — NEEDS TESTING**; tests were not executed because testing is paused. This does not close the voice story: target-MSI wake, capture, consent, policy, approval, app launch and independently verified outcome remain acceptance requirements.
