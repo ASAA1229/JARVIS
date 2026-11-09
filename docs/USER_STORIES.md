@@ -2,14 +2,18 @@
 
 **Repository:** `ASAA1229/JARVIS`  
 **Branch:** `new`  
-**Updated:** 2026-11-07  
+**Updated:** 2026-11-09  
 **Rule:** Every story remains OPEN until its acceptance criteria are evidenced on the exact branch revision.
 
 Epic mapping: [EPICS.md](EPICS.md)  
 Project overview and implemented baseline: [../POC.md](../POC.md)  
 Detailed remaining-work register: [../POC2.md](../POC2.md)
 
-## Evidence boundary — testing resumed 2026-11-07
+## Evidence boundary — 2026-11-09
+
+Development has resumed on `new`; **testing remains PAUSED**. The latest inspected commit is `03518b9227de13f5dbbd247e9c364b5768bb2a4a`. Owner panels and visual workflow composition are implemented in source, alongside the previously recorded LAN peer/owner-control work. No tests/build/lint/CI/browser/device checks were run for this refresh. Do not copy the historical 2026-11-07 test results forward as evidence for this newer commit. Every new/changed story remains IMPLEMENTED — NEEDS TESTING or PARTIAL until exact-head evidence is captured.
+
+## Historical evidence boundary — 2026-11-07
 
 Testing resumed on 2026-11-07: tsc, 249+3 Node tests (2 need an unlocked desktop), build, browser smoke, npm audit and 30 Python tests pass locally (see POC section 2). Device acceptance and exact-head CI are still outstanding, so no story is marked VERIFIED. Recent source increments include AI context-budget selection, Whisper process cancellation, transcription cancellation on disconnect, and immediate wake-triggered speech capture. The last item addresses the same-utterance capture-ordering race, but end-to-end voice recognition, policy dispatch, Windows app launch and verified outcome remain untested. All affected stories remain OPEN until evidence is recorded.
 
@@ -911,3 +915,57 @@ The stories below capture approved requirements from the 50-question exercise. T
 - Branch, commit, PR, merge, push, CI and deployment actions require the appropriate explicit authorization.
 - Existing branch policy and production protections remain enforced.
 - Secrets are never included in prompts, generated artifacts or logs.
+
+## JARVIS-E10 — Owner Control Panels & Visual Workflow Composition (added 2026-11-09)
+
+### JARVIS-US-064 — Unified owner control panels
+
+**Current implementation status:** IMPLEMENTED IN SOURCE — NEEDS TESTING. Panels are present for Plugins, Workflows, Composer, Developer, Memory and Gateway Sites. Signed requests and approval-aware task reporting are wired in the HUD panel client.
+
+**As the owner,** I want one authenticated HUD workspace for managing JARVIS capabilities, so that I can inspect and control them without bypassing the governance model.
+
+**Acceptance criteria**
+- Every panel requires an authenticated device session and fails closed when unavailable.
+- All mutations use signed requests and server-side authorization.
+- Approval-required operations display the normal approval flow and never claim execution before approval.
+- Untrusted values are rendered as text, bounded and validated server-side.
+- Empty, loading, offline, forbidden and error states are distinguishable and accessible.
+
+### JARVIS-US-065 — Visual workflow composition
+
+**Current implementation status:** IMPLEMENTED IN SOURCE — NEEDS TESTING. The composer uses the backend operation catalogue, exposes allowed parameters/dependencies, requests server validation and saves through the workflow composition route.
+
+**As the owner,** I want to compose multi-step workflows visually, so that I can review dependencies and risk before saving or running them.
+
+**Acceptance criteria**
+- Operation choices and allowed parameters come from the authoritative server catalogue.
+- Missing, duplicate, cyclic, self-referential and invalid dependencies are rejected by server validation.
+- Risk and approval requirements are derived server-side, not trusted from client badges.
+- Saving creates a versioned workflow and cannot execute it implicitly.
+- Runtime execution rechecks policy and obtains required approvals per step.
+
+### JARVIS-US-066 — Owner-managed developer suggestions
+
+**Current implementation status:** IMPLEMENTED IN SOURCE — NEEDS TESTING. HUD panel lists connected repositories and draft suggestions; applying a suggestion routes through approval-aware task handling.
+
+**As the owner,** I want to inspect proposed repository changes as drafts, so that no model-generated code is silently applied or committed.
+
+**Acceptance criteria**
+- Repository access is scope-limited and read-only by default.
+- Suggestions show target path, explanation and diff before application.
+- Applying a suggestion requires explicit approval and validates the target repository/branch.
+- No automatic commit, push, PR, merge or operation against `main`/`dev` occurs.
+
+### JARVIS-US-067 — Owner memory and gateway administration
+
+**Current implementation status:** IMPLEMENTED IN SOURCE — NEEDS TESTING. Memory panel exposes long-term memory management and learning candidates; gateway panel exposes site metadata, policy-scoped limits and one-time pending key reveals.
+
+**As the owner,** I want to manage memory and website gateway clients from the protected HUD, so that I retain control over personal data and connected sites.
+
+**Acceptance criteria**
+- Memory reads/updates/deletes/imports remain encrypted, authorized, audited and policy-gated.
+- Learning candidates require owner review before becoming long-term memory.
+- Gateway site keys are stored hashed, revealed only through a short-lived one-time flow and never logged.
+- Site rate/output limits and allowed profile scopes are enforced server-side.
+- Revocation takes effect for subsequent requests and is auditable.
+

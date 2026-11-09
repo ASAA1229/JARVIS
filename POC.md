@@ -1,8 +1,43 @@
 # JARVIS POC — Project Overview, Implementation Status and Remaining Work
 
-**Repository:** `ASAA1229/JARVIS` · **Branch:** `new` · **Status baseline:** 2026-11-07
+**Repository:** `ASAA1229/JARVIS` · **Branch:** `new` · **Status baseline:** 2026-11-09
 **Status vocabulary:** DONE — VERIFIED ON TARGET LAPTOP · DONE — VERIFIED LOCALLY (automated) · IMPLEMENTED — NEEDS TESTING · PARTIAL — NEEDS DEVELOPMENT · NOT STARTED
 
+
+## Current status refresh — 2026-11-09 (authoritative)
+
+**Latest inspected code commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a` — owner control panels and related functionality. This refresh supersedes older “not built yet” notes below where the same capability is now present in source.
+
+### Implemented in source — testing paused
+- Owner HUD panels for Plugins, Workflows, visual Workflow Composer, Developer Assistant, Memory Manager and Gateway Sites.
+- Composer reads the backend capability catalogue, captures step parameters/dependencies, validates through `/api/workflows/validate`, and saves through the approval-gated workflow route.
+- Plugin/workflow/developer/memory/gateway panel operations use authenticated signed requests; state-changing actions route through policy/task approval paths.
+- Gateway site administration now lists per-device pending one-time key reveals; key material remains one-time reveal data and stored site keys remain hashed.
+- LAN peer management/discovery/pairing/revocation and owner-control routes are present in the current source baseline reviewed for this report.
+
+### Implemented but not accepted
+- All above UI/backend integrations require exact-head automated checks and owner acceptance. No feature is marked verified by this refresh.
+- Voice wake → speech capture → intent dispatch → Windows app launch → independently verified outcome remains a critical target-MSI acceptance path.
+- Android APK build, independent enrollment of both phones, cross-device sync/conflict drills, Piper speech output, public gateway tunnel and exact-head CI remain pending.
+
+### Remaining development priorities
+1. Close voice-to-command dispatch and result reporting in the supported Windows desktop flow without bypassing the policy gateway.
+2. Finish owner-panel accessibility, empty/error/loading states, safe input validation and backend/UI contract alignment.
+3. Complete provider resilience and remaining existing integration gaps; preserve local-first defaults.
+4. Complete memory lifecycle/retrieval/sync and cross-device recovery gaps already listed in the E06/E07 stories.
+5. Finish Windows desktop outcome verification, multi-step partial-side-effect recovery, and Android companion software gaps.
+
+### Owner constraints and requirements
+- Testing is **PAUSED**: do not run tests, builds, lint, audits, browser checks, device checks, CI or Jenkins until explicitly resumed.
+- Development may continue on `new`; authored tests may be added but must not be executed.
+- Local-first, zero ongoing cost by default; cloud/provider calls require explicit opt-in and task-scoped context.
+- No admin elevation, unrestricted shell, payment/financial actions, credential entry, policy bypass, or automatic replay of uncertain actions.
+- No PR, merge, push to `dev`/`main`, deployment, public tunnel setup, secret changes or Nexus publication without explicit authorization. Keep Nexus disabled.
+- Windows 11 laptop is the primary execution target; two Android phones are separately enrolled companion/approval devices; iOS is future scope.
+
+**Evidence rule:** source presence means IMPLEMENTED, not verified. Every story remains OPEN until exact-head tests, CI where applicable, and real-device acceptance evidence are recorded after testing resumes.
+
+---
 
 ## Development completion snapshot — 2026-11-08
 
