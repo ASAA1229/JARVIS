@@ -511,3 +511,51 @@ A defensive normalization step was added to the local heuristic planner: when a 
 - The complete wake → speech capture → intent → policy/approval → Windows launch → independently verified outcome flow still requires testing on the target MSI laptop.
 - Android build/install, independent enrollment of both phones, live conflict-resolution and held-command drills remain pending.
 - No tests, builds, typecheck, lint, audits, browser/device checks, CI/Jenkins or release validation were run for this increment. All source changes remain **IMPLEMENTED — NEEDS TESTING**; no new verification is claimed.
+
+
+## Authoritative testing and status refresh — 2026-11-09 (test branch)
+
+**Branch:** `test`  
+**Exact branch head inspected:** `bbb1c1ffd1120087704daf7492d2e9f54ec3c2bb`  
+**Status:** implementation remains IN PROGRESS; local automated test report is green, but exact-head CI is RED and device acceptance is incomplete. This section supersedes older statements that testing is paused.
+
+### Antigravity local test report
+
+- **59 test suites listed** (the report summary incorrectly says 58; its detailed table contains 59).
+- **345 passed / 345 failed? No — 345 passed, 0 failed:** local report records 345/345 passing, a 100% pass rate.
+- TypeScript static analysis and build are reported clean.
+- Coverage includes TypeScript unit/integration suites, browser smoke E2E, change-detection checks and Python release tooling.
+- The report does not record the exact Git commit SHA used for the local run. Treat it as local evidence, not exact-head proof.
+
+### Exact-head GitHub Actions evidence
+
+Run: [JARVIS CI #42591404042](https://github.com/ASAA1229/JARVIS/actions/runs/42591404042)  
+Head: `bbb1c1ffd1120087704daf7492d2e9f54ec3c2bb`  
+**Overall: FAILED.**
+
+Passed: locked dependency install, CycloneDX SBOM, dependency audit, TypeScript check, TypeScript build, automated Node test suite, browser security smoke test and failure-report retention.
+
+Failed:
+1. Python release-tooling tests — one Windows runner path assertion fails because the temporary bundle path is normalized to the short 8.3 form (`RUNNER~1`) rather than the long form (`runneradmin`). Make the test compare normalized/canonical paths instead of requiring one Windows spelling.
+2. Android companion compile — Kotlin reports recursive type checking at `android-app/app/src/main/java/com/jarvis/companion/OwnerPanels.kt:112:34`. Add explicit types or extract the expression into typed intermediate declarations, then rebuild.
+
+Because either required CI job fails, the release manifest/package/provenance upload steps are skipped. Android APK artifact upload is also skipped.
+
+### Completion percentages
+
+- **Antigravity local test execution:** 345/345 cases passed = **100% local pass rate**.
+- **Exact-head CI acceptance:** **not complete** (the workflow is red).
+- **Physical-device acceptance:** not evidenced; Android build/install/enrollment and two-phone sync drills remain open.
+- **Overall product/development completion:** not assigned a fabricated percentage. Story and epic closure depends on implementation, exact-head CI, target-device checks and owner acceptance—not just local test count.
+
+### Remaining work — priority order
+
+1. Fix the Python Windows path comparison and Android Kotlin recursive type-checking failure; rerun the exact `test` head CI.
+2. Confirm CI produces the SHA-256 manifest, verified package and provenance artifacts after the Python gate passes.
+3. Build/install the Android companion on both owner phones; verify enrollment, approvals, revocation, offline queue and sync-conflict recovery.
+4. Complete target-MSI voice acceptance: wake word → speech capture/consent → intent/policy → approval → Windows app launch → independently verified outcome.
+5. Complete crash/restart and partial-side-effect recovery drills; validate memory deletion/export and cross-device synchronization.
+6. Finish owner-panel accessibility, error/empty/loading states and end-to-end backend/UI contract review.
+7. Complete security adversarial checks, performance/resource measurements and final release/rollback acceptance.
+
+**No release acceptance is granted.** Keep Nexus disabled; do not merge, deploy, publish, or change production configuration without explicit owner approval.
