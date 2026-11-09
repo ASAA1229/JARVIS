@@ -92,7 +92,7 @@ class OwnerPanels(
 
     // ---- approvals and tasks ----
 
-    private fun loadApprovals() = run("Loading approvals") {
+    private fun loadApprovals(): Unit = run("Loading approvals") {
         val pending = session.guard { client().pendingApprovals() }
         activity.runOnUiThread {
             approvalsList.removeAllViews()
@@ -107,7 +107,7 @@ class OwnerPanels(
         "${pending.size} approval(s) waiting."
     }
 
-    private fun decide(item: PendingApproval, approve: Boolean) = run(if (approve) "Approving" else "Rejecting") {
+    private fun decide(item: PendingApproval, approve: Boolean): Unit = run(if (approve) "Approving" else "Rejecting") {
         val message = session.guard { client().resolveApproval(item.approvalId, approve) }
         activity.runOnUiThread { loadApprovals() }
         message
