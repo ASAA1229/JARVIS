@@ -52,7 +52,11 @@ export function validatePiperWav(audio: Buffer): string | undefined {
   return undefined;
 }
 
-export class PiperTtsProvider {
+export interface TtsProvider {
+  synthesize(text: string, signal?: AbortSignal): Promise<Buffer>;
+}
+
+export class PiperTtsProvider implements TtsProvider {
   constructor(private readonly config: PiperConfig) {}
 
   async synthesize(text: string, signal?: AbortSignal): Promise<Buffer> {
@@ -141,7 +145,7 @@ export class PiperTtsProvider {
 }
 
 /** Build a provider only when local TTS is explicitly configured. */
-export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.env): PiperTtsProvider | null {
+export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.env): TtsProvider | null {
   const executable = env.JARVIS_PIPER_EXECUTABLE?.trim();
   const model = env.JARVIS_PIPER_MODEL?.trim();
   // If neither executable nor model is set, return a stub provider that yields a minimal silent WAV.
@@ -153,7 +157,7 @@ export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.e
 }
 
 /** Simple stub TTS provider that returns a minimal valid WAV file (44‑byte header, no audio). */
-class StubTtsProvider {
+class StubTtsProvider implements TtsProvider {
   async synthesize(_text: string, _signal?: AbortSignal): Promise<Buffer> {
     // Return an empty RIFF/WAVE buffer – 44‑byte header with zero data length.
     const header = Buffer.alloc(44);
