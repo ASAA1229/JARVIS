@@ -845,3 +845,8 @@ JARVIS is to become one unified personal AI application and the central AI platf
 
 ### Acceptance status
 All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a specific earlier exact-head evidence record says otherwise. No status may be upgraded while testing is paused. After the owner resumes testing, capture exact commit, command/run, device, expected/actual result and limitations.
+
+
+## Voice command development increment — 2026-11-09
+
+**Implemented, not tested:** `src/planner/planner.ts` now includes a narrow first-syllable recovery for the speech-recognition output `pen <application>`, converting it to the existing allowlisted launch grammar `open <application>`. Added authored cases for “pen Notepad” and “pen up Notepad” in `test/planner-launch-phrasing.test.ts`. No test/build/typecheck/CI/device check was run. This does not change the app allowlist or authorization model; app launches still pass through the existing planner, policy and approval flow. Target-MSI acceptance remains required.
