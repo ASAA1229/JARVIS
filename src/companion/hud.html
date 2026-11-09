@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JARVIS — Cinematic Autonomous HUD</title>
   <link rel="stylesheet" href="/hud/hud.css">
+  <link rel="stylesheet" href="/hud/hud-panels.css">
 </head>
 <body class="hud-body" data-state="idle" data-speaking="false">
   <!-- Ambient layers: static CSS only, no images and no per-frame work -->
@@ -233,6 +234,7 @@
           </div>
         </div>
       </aside>
+      <section id="hud-owner-panels" class="hud-owner-panels frame" aria-label="Owner control panels"></section>
     </main>
 
     <!-- Command deck: quick directives and text fallback -->
@@ -278,6 +280,7 @@
 
   <script src="/deviceCrypto.js"></script>
   <script src="/hud/hud.js"></script>
+  <script src="/hud/hud-panels.js"></script>
   <script type="module" src="/hud/gesture.js"></script>
 </body>
 </html>

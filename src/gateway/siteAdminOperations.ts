@@ -45,6 +45,14 @@ export class KeyRevealStore {
     return { apiKey: entry.apiKey, clientId: entry.clientId };
   }
 
+  /** Pending reveals for one device (tokens only; the keys stay inside this store). */
+  listFor(deviceId: string): Array<{ revealToken: string; clientId: string; expiresAt: string }> {
+    this.prune();
+    return [...this.pending.entries()]
+      .filter(([, entry]) => entry.deviceId === deviceId)
+      .map(([revealToken, entry]) => ({ revealToken, clientId: entry.clientId, expiresAt: new Date(entry.expiresAt).toISOString() }));
+  }
+
   private prune(): void {
     const now = Date.now();
     for (const [token, entry] of this.pending) if (entry.expiresAt <= now) this.pending.delete(token);

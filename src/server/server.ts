@@ -181,6 +181,12 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/hud/hud.css') {
         return this.serveStatic('hud.css', 'text/css', res);
       }
+      if (req.method === 'GET' && url.pathname === '/hud/hud-panels.js') {
+        return this.serveStatic('hud-panels.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/hud-panels.css') {
+        return this.serveStatic('hud-panels.css', 'text/css', res);
+      }
       if (req.method === 'GET' && url.pathname === '/hud/hud.js') {
         return this.serveStatic('hud.js', 'application/javascript', res);
       }

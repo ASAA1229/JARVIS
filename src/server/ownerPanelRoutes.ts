@@ -199,7 +199,7 @@ export async function handleOwnerPanelRoute(req: IncomingMessage, res: ServerRes
   if (req.method === 'GET' && url.pathname === '/api/gateway/sites') {
     const denied = policyAllows('gateway:site_list');
     if (denied) return ctx.json(res, 403, { error: denied });
-    return ctx.json(res, 200, { sites: jarvis.gatewaySites.store().list() });
+    return ctx.json(res, 200, { sites: jarvis.gatewaySites.store().list(), pendingReveals: jarvis.gatewaySites.reveals.listFor(device.id) });
   }
   if (req.method === 'POST' && url.pathname === '/api/gateway/sites/reveal') {
     const token = input['revealToken'];
