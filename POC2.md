@@ -27,13 +27,13 @@
 - Story states must be updated only from source inspection and executed evidence. Use **IMPLEMENTED — NEEDS TESTING**, **TEST FAILED**, **TEST PASSED (exact SHA)**, **OWNER ACCEPTANCE PENDING**, or **ACCEPTED** precisely; do not infer acceptance from file presence.
 
 **Status snapshot:** 2026-11-09  
-**Branch reviewed:** `test`  
+**Active branch:** `new`  
 **Latest inspected feature commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
 ## Owner execution boundary — 2026-11-09
 
-**Development is ACTIVE; testing and validation are PAUSED.** Continue source implementation on the existing `new` branch. Do not run tests, builds, lint, audits, CI, browser checks, device checks or release operations until the owner explicitly resumes them. Tests may be authored or updated but must not be executed. This document remains the actionable gap register.
+**Development, testing and validation are ACTIVE** on `new`, as explicitly authorized by the owner on 2026-11-09. Run automated checks and CI for candidate commits. Physical MSI/two-phone acceptance remains owner-dependent. This document remains the actionable gap register.
 
 Since the earlier 2026-11-05 snapshot, source changes on `new` include bounded AI context selection/budget accounting, local Whisper cancellation and subprocess cleanup, transcription cancellation on client disconnect, and immediate voice capture after local wake detection to avoid losing command words spoken in the same utterance. These changes are **implemented in source, not verified**. The MSI voice-to-app path, actual app launch and independent result verification remain unaccepted.
 
@@ -48,7 +48,7 @@ The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, 
 
 **Development still required:** close voice-to-command dispatch and verified Windows outcomes; review owner-panel input constraints, accessibility and failure handling; complete remaining memory lifecycle and device synchronization; finish partial-side-effect recovery and supported Windows app control; complete any remaining provider/integration gaps already in E07; reconcile the documentation with the exact source tree as implementation continues.
 
-**Testing paused:** all automated, manual, CI/Jenkins, browser and device checks are pending. Do not claim any newly added feature passes. Target MSI and both Android phones remain owner-acceptance dependencies.
+**Verification status:** automated CI is active; target-MSI and both Android-phone acceptance remain owner-dependent. Do not claim a feature passes unless its exact-head evidence is recorded.
 
 ## Current work-left summary
 
@@ -93,7 +93,7 @@ The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, 
 - [ ] Verify audit-chain tampering, audit-write failure and recovery behavior.
 - [ ] Preserve hard restrictions: financial/payment apps, credential entry, unrestricted shell, admin elevation, security bypass and voice-only high-risk authorization.
 
-### P1 — Voice Interaction & Cinematic HUD (implementation present; acceptance pending; development paused)
+### P1 — Voice Interaction & Cinematic HUD (implementation present; acceptance pending)
 
 **Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. The active HUD also cancels capture/discards the transcript on consent revocation and rechecks consent before a post-wake command can be dispatched. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks, invalid duration and HUD consent guards. Tests are authored only; execution is pending.
 
@@ -185,7 +185,7 @@ The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, 
 - [ ] Keep model responses advisory only; all state-changing operations must pass the policy gateway.
 - [ ] After testing is explicitly resumed, run schema, routing, prompt-injection, concurrency and provider-failure tests on the exact branch head.
 
-**Current status:** implementation expanded; tests/build/lint/CI and device validation were not run because testing is paused. No agent capability is marked accepted.
+**Current status:** implementation expanded; exact-head automated and device evidence must be captured. No agent capability is marked accepted.
 
 ### P2 — Release, compatibility and resource acceptance
 
@@ -870,7 +870,7 @@ JARVIS is to become one unified personal AI application and the central AI platf
 - Stay on `new`. No PR, merge, push to `dev`/`main`, deployment, tunnel, secret changes, Jenkins run or Nexus publication without explicit authorization. Nexus stays disabled.
 
 ### Acceptance status
-All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a specific earlier exact-head evidence record says otherwise. No status may be upgraded while testing is paused. After the owner resumes testing, capture exact commit, command/run, device, expected/actual result and limitations.
+All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a specific earlier exact-head evidence record says otherwise. No status may be upgraded without exact-head evidence. Capture commit, command/run, device, expected/actual result and limitations.
 
 
 ## Voice command development increment — 2026-11-09
