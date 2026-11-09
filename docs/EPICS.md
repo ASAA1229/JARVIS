@@ -300,3 +300,8 @@ The shared artifact-integrity implementation validates explicit project identity
 Inspected `new` head: `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. Development is ACTIVE; testing and validation are PAUSED. The owner panels, workflow composer and LAN peer administration listed in E10 are implemented in source; they are not acceptance-complete. E02/E03 remain the immediate development focus because voice-to-Windows-command execution and independent outcome proof are not yet accepted. E06/E05, E04 and E07 follow in that order.
 
 Do not run tests/build/lint/audits/CI/Jenkins/browser/device checks. Preserve default-deny authorization, scoped approvals, audit integrity, local-first/zero-cost defaults, explicit cloud consent, no admin elevation/arbitrary shell/payment or credential actions, and no automatic replay of uncertain effects. Work only on `new`; no PR/merge/push to `dev` or `main`, deployment, public tunnel, secret change or Nexus publication without explicit approval. Nexus remains disabled. Source implementation and authored tests do not close an epic; exact-head and owner-device evidence is required after testing resumes.
+
+
+## E02 development increment — 2026-11-09
+
+Added a narrow planner-side recovery for speech-recognition clipping of the first syllable in “open” (`pen <application>` → `open <application>`) and authored focused regression cases. The app allowlist and policy/approval path are unchanged. Testing remains paused; this is implementation-only evidence and does not close E02 or E03. Target-MSI end-to-end acceptance remains required.
