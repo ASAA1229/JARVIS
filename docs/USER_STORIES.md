@@ -1001,3 +1001,25 @@ The voice-to-app development path received a narrow planner-side recovery for re
 - **JARVIS-US-016:** Windows Start-menu discovery now has a conservative AppID/process identity path and unique-window matching. This improves launch evidence but does not establish universal application outcome verification or complete target-MSI voice acceptance; keep the story PARTIAL.
 - **JARVIS-US-027:** Android owner UI now includes sync conflict resolution and held-command review. The feature is implemented in source; Android build, install, two-phone conflict drills and exact-head checks remain pending.
 - `test/windows-appid-identity.test.ts` was added and remains unexecuted. Testing is paused; no verification status was promoted.
+
+
+## Test evidence and story-status reconciliation — 2026-11-09 (test branch)
+
+**Current branch head:** `bbb1c1ffd1120087704daf7492d2e9f54ec3c2bb`.
+
+Antigravity's Windows 11 report records **345/345 local test cases passed (100%)**. It lists 59 suites although its summary line says 58. The local report does not identify the tested commit SHA; therefore this is local execution evidence only and does not close stories by itself.
+
+The exact-head [JARVIS CI run #42591404042](https://github.com/ASAA1229/JARVIS/actions/runs/42591404042) passed the Node automated suite, browser smoke, TypeScript check/build, SBOM generation and dependency audit, but the overall workflow failed:
+- Python release tooling: one Windows temporary-path assertion fails on the runner's 8.3 path alias.
+- Android companion: Kotlin recursive type-checking error at `OwnerPanels.kt:112:34`.
+- Release package/provenance and APK artifact uploads were skipped.
+
+### Story status policy after this run
+
+- Automated stories covered by the local report may be labelled **LOCAL TEST REPORT PASS — EXACT SHA NOT RECORDED**; do not upgrade them to CI-VERIFIED or ACCEPTED.
+- Release/customer-bundle stories remain **IMPLEMENTED — NEEDS CI FIX** until the Windows Python test passes and the release manifest/package/provenance artifacts are produced.
+- Android companion and cross-device stories remain **IMPLEMENTED — NEEDS DEVICE TESTING** until Kotlin compilation succeeds and both physical phones pass enrollment, approval, revocation and sync/conflict drills.
+- Voice, Windows desktop-control and outcome-verification stories remain **OPEN / PARTIAL** until the target MSI completes the full wake-to-command-to-independent-result path.
+- Recovery, memory lifecycle and owner-panel stories remain OPEN until their corresponding exact-head and manual acceptance criteria are evidenced.
+
+**Percentages:** local test pass rate = **100% (345/345)**. Overall story/development completion is not reduced to a single percentage because unexecuted device, CI, security and owner-acceptance gates are not represented by the local test count. No story is closed solely from the Antigravity summary.
