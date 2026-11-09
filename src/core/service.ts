@@ -153,6 +153,7 @@ export class JarvisCoreService {
     statePath?: string,
     ownerControlToken?: string
   ) {
+    this.planner = planner;
     this.audit = new AuditLogger(logPath);
     this.identity = new DeviceIdentityManager(this.audit, statePath);
     this.policy = new PolicyGateway(this.audit, statePath ? `${statePath}.approvals` : './data/approval-grants.json', ownerControlToken);
@@ -189,7 +190,6 @@ export class JarvisCoreService {
       ownerControlToken ? (statePath ? `${statePath}.schedules` : './data/schedules.json') : undefined,
       ownerControlToken,
     );
-    this.planner = planner;
     if (ownerControlToken) {
       this.personalMemory = new PersonalMemoryStore(
         statePath ? statePath + '.memory' : './data/personal-memory.enc',

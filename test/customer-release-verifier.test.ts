@@ -18,6 +18,14 @@ const run = (script: string, args: string[], ok = true) => {
   return r;
 };
 
+const packDirectory = (source: string, archive: string) => {
+  const r = spawnSync('tar', ['-czf', path.basename(archive), '-C', path.relative(path.dirname(archive), source), '.'], {
+    cwd: path.dirname(archive),
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0);
+};
+
 describe('customer release verification order', () => {
   it('verifies trusted manifest-ignore, manifest, package, then inventory', () => {
     const temp = mkdtempSync(path.join(os.tmpdir(), 'customer-release-'));
@@ -25,7 +33,7 @@ describe('customer release verification order', () => {
       const dist = path.join(temp, 'dist'); mkdirSync(dist);
       writeFileSync(path.join(dist, 'app.js'), 'release-content');
       const artifact = path.join(temp, 'customer-package.tar.gz');
-      writeFileSync(artifact, 'archive-content');
+      packDirectory(dist, artifact);
       const manifest = path.join(temp, 'manifest.json');
       const policy = path.join(temp, 'manifest-ignore.json');
       const policySum = path.join(temp, 'manifest-ignore.json.sha256');
@@ -33,32 +41,33 @@ describe('customer release verification order', () => {
       run(verifier, ['create', manifest, artifact, policy]);
       run(integrity, ['hash', policy, policySum]);
       const trusted = createHash('sha256').update(readFileSync(policy)).digest('hex');
-      const good = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, trusted]);
+      const good = run(verifier, ['verify', policy, policySum, manifest, artifact, trusted]);
       assert.match(good.stdout, /Stage 1 PASSED:[\s\S]*Stage 2 PASSED:[\s\S]*Stage 3 PASSED/);
 
-      writeFileSync(path.join(dist, 'app.js'), 'tampered-content');
-      const badInventory = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, trusted], false);
-      assert.match(badInventory.stderr, /Package inventory failed/);
+      const originalArtifact = readFileSync(artifact);
+      writeFileSync(artifact, Buffer.concat([originalArtifact, Buffer.from('tampered')]));
+      const badPkg = run(verifier, ['verify', policy, policySum, manifest, artifact, trusted], false);
+      assert.match(badPkg.stderr, /Package SHA-256 does not match/);
+      writeFileSync(artifact, originalArtifact);
 
-      writeFileSync(path.join(dist, 'app.js'), 'release-content');
       const { privateKey, publicKey } = generateKeyPairSync('ed25519');
       const privatePath = path.join(temp, 'policy-private.pem'), publicPath = path.join(temp, 'policy-public.pem');
       const signaturePath = path.join(temp, 'manifest-ignore.sig');
       writeFileSync(privatePath, privateKey.export({ type: 'pkcs8', format: 'pem' }));
       writeFileSync(publicPath, publicKey.export({ type: 'spki', format: 'pem' }));
       run(signer, ['sign', policy, signaturePath, privatePath]);
-      const signedGood = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '-', signaturePath, publicPath]);
+      const signedGood = run(verifier, ['verify', policy, policySum, manifest, artifact, '-', signaturePath, publicPath]);
       assert.match(signedGood.stdout, /Stage 1 PASSED:[\s\S]*Stage 2 PASSED:[\s\S]*Stage 3 PASSED/);
       const originalPolicy = readFileSync(policy);
       writeFileSync(policy, Buffer.concat([originalPolicy, Buffer.from(' ')]));
       rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
-      const signedTamper = run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '-', signaturePath, publicPath], false);
+      const signedTamper = run(verifier, ['verify', policy, policySum, manifest, artifact, '-', signaturePath, publicPath], false);
       assert.match(signedTamper.stderr, /Ed25519 signature verification failed/);
       writeFileSync(policy, originalPolicy);
       rmSync(policySum, { force: true });
       run(integrity, ['hash', policy, policySum]);
-      run(verifier, ['verify', policy, policySum, manifest, artifact, dist, '0'.repeat(64)], false);
+      run(verifier, ['verify', policy, policySum, manifest, artifact, '0'.repeat(64)], false);
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }

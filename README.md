@@ -121,13 +121,10 @@ Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishe
 
 The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
 
-<<<<<<< HEAD
-
-
 ## Voice input hardening — 2026-10-31
 
-The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. New regression tests cover malformed/truncated WAV input and voice privacy boundaries. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted. HUD transcript wake/stop matching now requires whole normalized phrase boundaries; direct browser-level regression coverage remains outstanding.The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. The local Piper TTS path now limits captured output to 16 MiB, retains at most 8 KiB of process diagnostics, and validates the generated WAV structure before returning it. Regression coverage was added for malformed/truncated WAV data and size limits. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted.
-=======
+The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. New regression tests cover malformed/truncated WAV input and voice privacy boundaries. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted. HUD transcript wake/stop matching now requires whole normalized phrase boundaries; direct browser-level regression coverage remains outstanding. The local Piper TTS path now limits captured output to 16 MiB, retains at most 8 KiB of process diagnostics, and validates the generated WAV structure before returning it. Regression coverage was added for malformed/truncated WAV data and size limits. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted.
+
 ## CI/CD artifact integrity and Nexus publication
 
 The Jenkins pipeline builds the project, creates a packaged release artifact, generates a SHA-256 file inventory manifest, and verifies both the manifest and the package checksum before archiving the release outputs.
@@ -163,5 +160,3 @@ When `REQUIRE_BUILD_PROVENANCE=true`, set `GIT_COMMIT` (or `GIT_COMMIT_SHA`) and
 ### Operational status
 
 Changes to the pipeline and integrity scripts must be validated in Jenkins before being treated as release-ready. A successful local commit or PR update alone does not prove that the configured Jenkins agent, Nexus permissions, or repository behavior works end to end.
-
->>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
