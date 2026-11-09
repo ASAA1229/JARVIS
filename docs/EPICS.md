@@ -313,3 +313,18 @@ Added a narrow planner-side recovery for speech-recognition clipping of the firs
 - **E02/E03 — Voice and Windows execution:** dynamic Start-menu AppID identity now maps executable-path entries to conservative process names, rejects shell-host identities, and requires a unique process/window match before claiming verified success. Unknown or ambiguous targets remain partial. Target-MSI end-to-end voice acceptance is still open.
 - **E05/E06 — Android companion and memory sync:** Android owner UI now reviews open sync conflicts and held commands, supports keep-laptop/keep-phone/merge decisions, and requires an explicit run/discard decision for held commands. Any run still passes through laptop policy and approval.
 - A focused Windows AppID identity regression test was added but not executed. All increments remain **IMPLEMENTED — NEEDS TESTING**; no test/build/CI/device validation was run.
+
+
+## Test-branch evidence refresh — 2026-11-09
+
+At `test` head `bbb1c1ffd1120087704daf7492d2e9f54ec3c2bb`, Antigravity's local report records 345/345 passing cases across 59 listed suites (100% local pass rate; report heading has a suite-count typo). The report does not include a tested SHA.
+
+Exact-head [GitHub Actions run #42591404042](https://github.com/ASAA1229/JARVIS/actions/runs/42591404042) passed Node tests, browser smoke, TypeScript check/build, SBOM and dependency audit, but failed the Python release-tooling suite (Windows path alias assertion) and Android Kotlin compilation (`OwnerPanels.kt:112:34`). Release package/provenance and APK artifacts were consequently not uploaded.
+
+**Epic implications**
+- Security/core, voice/HUD, desktop control, workflow/recovery, memory, AI/gateway and DevOps epics have broad local automated coverage, but remain OPEN where target-device, exact-head CI, security or owner acceptance is outstanding.
+- Android/cross-device work is blocked on the Kotlin compile failure and physical-phone acceptance.
+- Release-integrity work is blocked on the Python Windows-path assertion and a successful exact-head artifact/provenance run.
+- Owner panels and workflow composer still require UI accessibility, error-state and end-to-end contract acceptance.
+
+Local test pass rate is **100%**; do not translate that into an overall product-completion percentage or mark an epic ACCEPTED while its exit criteria remain unmet.
