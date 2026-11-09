@@ -154,6 +154,7 @@ export class JarvisCoreService {
     statePath?: string,
     ownerControlToken?: string
   ) {
+    this.planner = planner;
     // Assigned first: the workflow store validates built-in steps against the planner.
     this.planner = planner;
     this.audit = new AuditLogger(logPath);

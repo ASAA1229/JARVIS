@@ -39,9 +39,22 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
   let companionDeviceId: string;
   let companionSessionId: string;
 
+  function cleanFiles() {
+    for (const f of [
+      TEST_AUDIT_LOG,
+      TEST_STATE_FILE,
+      `${TEST_STATE_FILE}.approvals`,
+      `${TEST_STATE_FILE}.security`,
+      `${TEST_STATE_FILE}.tasks`,
+      `${TEST_STATE_FILE}.plugins.json`,
+      `${TEST_STATE_FILE}.workflows.json`,
+    ]) {
+      if (existsSync(f)) rmSync(f, { force: true });
+    }
+  }
+
   beforeEach(async () => {
-    if (existsSync(TEST_AUDIT_LOG)) rmSync(TEST_AUDIT_LOG, { force: true });
-    if (existsSync(TEST_STATE_FILE)) rmSync(TEST_STATE_FILE, { force: true });
+    cleanFiles();
 
     server = new JarvisServer(TEST_PORT, TEST_AUDIT_LOG, TEST_STATE_FILE);
     await server.start();
@@ -51,8 +64,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
   afterEach(async () => {
     await server.stop();
-    if (existsSync(TEST_AUDIT_LOG)) rmSync(TEST_AUDIT_LOG, { force: true });
-    if (existsSync(TEST_STATE_FILE)) rmSync(TEST_STATE_FILE, { force: true });
+    cleanFiles();
   });
 
   test('E2E-LIVE-01: Full HTTP Lifecycle (Status -> Challenge -> Enroll -> Auth -> Request -> Approve -> Launch -> Revoke)', async () => {
@@ -141,8 +153,8 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
       body: JSON.stringify(approveBody),
     });
     const approveData = await approveRes.json();
-    assert.strictEqual(approveData.success, approveData.state === 'COMPLETED');
-    assert.ok(['COMPLETED', 'PARTIAL'].includes(approveData.state));
+    assert.strictEqual(approveData.success, approveData.state === 'COMPLETED', JSON.stringify(approveData));
+    assert.ok(['COMPLETED', 'PARTIAL'].includes(approveData.state), JSON.stringify(approveData));
     if (approveData.state === 'PARTIAL') {
       assert.strictEqual(approveData.outcome, 'PARTIAL_SUCCESS');
       assert.strictEqual(approveData.verified, false);
@@ -416,7 +428,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const nonce = CryptoUtil.randomToken(16);
     const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, companionKeypair.privateKey);
     const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
-    assert.strictEqual(session.success, true);
+    assert.strictEqual(session.success, true, JSON.stringify({ enroll, session }));
 
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/audit`, {
       headers: signedHeaders(session.sessionId!, companionKeypair.privateKey, 'GET', '/api/audit'),
@@ -436,7 +448,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const nonce = CryptoUtil.randomToken(16);
     const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
     const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
-    assert.strictEqual(session.success, true);
+    assert.strictEqual(session.success, true, JSON.stringify({ enroll, session }));
 
     server.getService().audit.record('API_REDACTION_TEST', {
       requestText: 'private request body',
@@ -462,7 +474,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const nonce = CryptoUtil.randomToken(16);
     const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
     const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
-    assert.strictEqual(session.success, true);
+    assert.strictEqual(session.success, true, JSON.stringify({ enroll, session }));
 
     const body = { approvalId: 'appr-does-not-exist' };
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/approval/reject`, {
@@ -481,7 +493,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     const nonce = CryptoUtil.randomToken(16);
     const signature = CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, kp.privateKey);
     const session = server.getService().identity.createSession(enroll.deviceId!, signature, timestamp, nonce);
-    assert.strictEqual(session.success, true);
+    assert.strictEqual(session.success, true, JSON.stringify({ enroll, session }));
 
     const body = { deviceId: 'dev-another-device', reason: 'unauthorized cross-device revoke attempt' };
     const response = await fetch(`http://127.0.0.1:${TEST_PORT}/api/device/revoke`, {

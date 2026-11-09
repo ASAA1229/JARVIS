@@ -31,3 +31,27 @@ test('derived identity verifies only a window owned by the expected process', ()
   const foreign = discoveredLaunchResult(selected, { pid: 11, processName: 'notepad', title: 'VLC media player' } as never, identity);
   assert.equal(foreign.outcome, VerificationOutcome.PARTIAL_SUCCESS);
 });
+
+
+test('AppID identity derivation rejects empty, non-executable and malformed path inputs', () => {
+  for (const value of ['', '   ', 'Notepad', 'Vendor.App!Main', 'C:\\Tools\\Editor.exe --unsafe', 'C:\\Tools\\$placeholder$.exe']) {
+    assert.equal(appIdProcessIdentity(value), undefined, value);
+  }
+});
+
+test('shell-host executable identity rejection is case-insensitive', () => {
+  for (const executable of ['EXPLORER.exe', 'ApplicationFrameHost.exe', 'POWERSHELL.exe', 'RUNDLL32.exe']) {
+    assert.equal(processIdentityFromExecutable(executable), undefined, executable);
+  }
+});
+
+test('AppID identity is derived from the final executable path segment only', () => {
+  assert.deepEqual(
+    appIdProcessIdentity('C:\\Program Files\\Vendor\\Editor\\editor.exe'),
+    { processNames: ['editor'] },
+  );
+  assert.deepEqual(
+    appIdProcessIdentity('{6D809377-6AF0-444B-8957-A3773F02200E}\\Vendor\\Editor.exe'),
+    { processNames: ['Editor'] },
+  );
+});
