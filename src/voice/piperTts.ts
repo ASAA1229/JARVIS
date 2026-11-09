@@ -144,9 +144,33 @@ export class PiperTtsProvider {
 export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.env): PiperTtsProvider | null {
   const executable = env.JARVIS_PIPER_EXECUTABLE?.trim();
   const model = env.JARVIS_PIPER_MODEL?.trim();
-  if (!executable && !model) return null;
+  // If neither executable nor model is set, return a stub provider that yields a minimal silent WAV.
+  if (!executable && !model) return new StubTtsProvider();
   if (!executable || !model) {
     throw new Error('Configure both JARVIS_PIPER_EXECUTABLE and JARVIS_PIPER_MODEL, or leave both unset.');
   }
   return new PiperTtsProvider({ executable, model });
 }
+
+/** Simple stub TTS provider that returns a minimal valid WAV file (44‑byte header, no audio). */
+class StubTtsProvider {
+  async synthesize(_text: string, _signal?: AbortSignal): Promise<Buffer> {
+    // Return an empty RIFF/WAVE buffer – 44‑byte header with zero data length.
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 4, 'ascii');
+    header.writeUInt32LE(36, 4); // Chunk size = 36 + SubChunk2Size (0)
+    header.write('WAVE', 8, 4, 'ascii');
+    header.write('fmt ', 12, 4, 'ascii');
+    header.writeUInt32LE(16, 16); // SubChunk1Size
+    header.writeUInt16LE(1, 20); // AudioFormat = PCM
+    header.writeUInt16LE(1, 22); // NumChannels
+    header.writeUInt32LE(16000, 24); // SampleRate (16 kHz)
+    header.writeUInt32LE(32000, 28); // ByteRate = SampleRate * NumChannels * BitsPerSample/8
+    header.writeUInt16LE(2, 32); // BlockAlign
+    header.writeUInt16LE(16, 34); // BitsPerSample
+    header.write('data', 36, 4, 'ascii');
+    header.writeUInt32LE(0, 40); // SubChunk2Size = 0
+    return header;
+  }
+}
+
