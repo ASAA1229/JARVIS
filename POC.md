@@ -26,7 +26,7 @@
 - Known development/verification priorities remain: voice-to-command dispatch and independently verified Windows outcomes; owner-panel accessibility and API/UI contract alignment; memory lifecycle and cross-device recovery; multi-step partial-side-effect recovery; Android build/device acceptance; provider resilience and exact-head CI.
 - Story states must be updated only from source inspection and executed evidence. Use **IMPLEMENTED — NEEDS TESTING**, **TEST FAILED**, **TEST PASSED (exact SHA)**, **OWNER ACCEPTANCE PENDING**, or **ACCEPTED** precisely; do not infer acceptance from file presence.
 
-**Repository:** `ASAA1229/JARVIS` · **Branch:** `test` · **Status baseline:** 2026-11-09
+**Repository:** `ASAA1229/JARVIS` · **Active branch:** `new` · **Status baseline:** 2026-11-09
 **Status vocabulary:** DONE — VERIFIED ON TARGET LAPTOP · DONE — VERIFIED LOCALLY (automated) · IMPLEMENTED — NEEDS TESTING · PARTIAL — NEEDS DEVELOPMENT · NOT STARTED
 
 
@@ -34,7 +34,7 @@
 
 **Latest inspected code commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a` — owner control panels and related functionality. This refresh supersedes older “not built yet” notes below where the same capability is now present in source.
 
-### Implemented in source — testing paused
+### Implemented in source — exact-head verification in progress
 - Owner HUD panels for Plugins, Workflows, visual Workflow Composer, Developer Assistant, Memory Manager and Gateway Sites.
 - Composer reads the backend capability catalogue, captures step parameters/dependencies, validates through `/api/workflows/validate`, and saves through the approval-gated workflow route.
 - Plugin/workflow/developer/memory/gateway panel operations use authenticated signed requests; state-changing actions route through policy/task approval paths.
@@ -269,7 +269,7 @@ The HUD now detaches the active browser recognizer before aborting a cancelled c
 
 ### Voice timeout safety update — 2026-11-01
 
-A post-wake browser-speech capture that reaches the 15-second limit is now cancelled and discarded instead of being stopped normally, preventing a possibly incomplete final transcript from being auto-dispatched. The cancellation invalidates late recognition callbacks and allows wake detection to recover when still enabled. Push-to-talk continues to expose its transcript for explicit review. This change has not been tested because testing is paused; Windows MSI acceptance and exact-head CI remain pending.
+A post-wake browser-speech capture that reaches the 15-second limit is now cancelled and discarded instead of being stopped normally, preventing a possibly incomplete final transcript from being auto-dispatched. The cancellation invalidates late recognition callbacks and allows wake detection to recover when still enabled. Push-to-talk continues to expose its transcript for explicit review. This change awaits exact-head CI evidence; Windows MSI acceptance remains owner-dependent.
 
 
 ### Voice interruption safety update — 2026-11-02
@@ -512,7 +512,7 @@ JARVIS is the authoritative AI/agent service. Portfolio is a separate applicatio
 - Windows 11 MSI laptop is primary; two Android phones must be independently enrolled; iOS is future scope.
 - Keep secrets outside Git and logs. Keep Nexus publication disabled.
 - Work only on `new`; no PR, merge, push to `dev`/`main`, deployment, public tunnel, secret changes or artifact publication without explicit authorization.
-- Tests may be authored/updated but must not be executed while testing is paused.
+- Testing is active on `new`; automated checks and CI may be executed. Physical-device acceptance remains a separate owner task.
 
 **Evidence rule:** source presence is implementation evidence only. All changed/new stories remain OPEN / NEEDS TESTING until exact-head checks and required owner-device acceptance are completed after testing resumes.
 
