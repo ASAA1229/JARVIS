@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TaskLifecycleRecord } from './service.js';
 import { TaskState } from './types.js';
+import { renameWithRetry } from './atomicRename.js';
 
 interface JournalPayload {
   version: 1;
@@ -164,7 +165,7 @@ export class TaskJournal {
     const temporary = this.filePath + '.tmp-' + randomBytes(6).toString('hex');
     try {
       writeFileSync(temporary, encoded, { mode: 0o600, flag: 'wx' });
-      renameSync(temporary, this.filePath);
+      renameWithRetry(temporary, this.filePath);
     } finally {
       try { unlinkSync(temporary); } catch { /* Atomic rename already consumed the temporary file. */ }
     }

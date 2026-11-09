@@ -216,6 +216,45 @@ export class WorkspaceFileAdapter {
     }
   }
 
+  /**
+   * Independent proof that an application saved a file: the file must exist in the
+   * workspace, have been modified at or after `since`, and (optionally) contain the
+   * expected text. Read-only; never reports success on missing evidence.
+   */
+  public async verifySaved(inputPath: unknown, since: unknown, contains: unknown): Promise<ExecutionResult> {
+    try {
+      if (since !== undefined && (typeof since !== 'number' || !Number.isFinite(since) || since < 0)) {
+        throw new FileGuardError('unsupported', 'since must be a millisecond timestamp.');
+      }
+      if (contains !== undefined && (typeof contains !== 'string' || !contains || contains.length > 500)) {
+        throw new FileGuardError('unsupported', 'contains must be 1–500 characters.');
+      }
+      const target = await this.resolveSafe(inputPath, { mustExist: true });
+      const stat = await fs.stat(target.absolute);
+      const modifiedAt = stat.mtimeMs;
+      const freshEnough = since === undefined || modifiedAt >= (since as number) - 2_000;
+      let containsExpected: boolean | undefined;
+      let digest: string | undefined;
+      if (contains !== undefined) {
+        const { text, buffer } = await this.readTextFile(target.absolute);
+        containsExpected = text.includes(contains as string);
+        digest = sha256(buffer);
+      }
+      const verified = freshEnough && containsExpected !== false;
+      const evidence = { adapter: 'workspace-files', operation: 'file:verify_saved', modifiedAt, since, freshEnough, containsChecked: contains !== undefined, containsExpected, sha256: digest, bytes: stat.size };
+      return verified
+        ? { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { path: target.relative, modifiedAt, bytes: stat.size }, evidence }
+        : {
+            success: false,
+            outcome: VerificationOutcome.VERIFIED_FAILURE,
+            error: !freshEnough ? 'The file was not modified after the expected save time.' : 'The saved file does not contain the expected text.',
+            evidence,
+          };
+    } catch (error) {
+      return this.toFailure(error, 'file:verify_saved');
+    }
+  }
+
   // ───── mutating operations (each verified by read-back) ─────
 
   public async write(inputPath: unknown, content: unknown): Promise<ExecutionResult> {

@@ -132,6 +132,7 @@ export class PolicyGateway {
       ['file:list', Permission.APP_LAUNCH, RiskTier.LOW, false, ['path']],
       ['file:search', Permission.APP_LAUNCH, RiskTier.LOW, false, ['query', 'path']],
       ['file:read', Permission.APP_LAUNCH, RiskTier.MEDIUM, true, ['path']],
+      ['file:verify_saved', Permission.APP_LAUNCH, RiskTier.LOW, false, ['path', 'since', 'contains']],
       ['file:write', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'content']],
       ['file:edit', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'find', 'replace']],
       ['file:delete', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path']],

@@ -4,8 +4,9 @@
  * atomic temp-file + rename writes, fail-closed reads.
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { renameWithRetry } from '../core/atomicRename.js';
 
 export class EncryptedJsonFile<T> {
   private readonly key: Buffer;
@@ -43,7 +44,7 @@ export class EncryptedJsonFile<T> {
       tag: cipher.getAuthTag().toString('base64'),
       ciphertext: ciphertext.toString('base64'),
     }), { mode: 0o600 });
-    renameSync(temporary, this.filePath);
+    renameWithRetry(temporary, this.filePath);
   }
 
   remove(): void {

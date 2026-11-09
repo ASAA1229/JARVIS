@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { TOTP, Secret } from 'otpauth';
 import QRCode from 'qrcode';
@@ -8,6 +8,7 @@ import { DeviceIdentityManager } from './identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
 import { DeviceRecord, Permission } from './types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
+import { renameWithRetry } from './atomicRename.js';
 
 export type EnrollmentState = 'WAITING_FOR_SCAN' | 'AWAITING_OWNER_AUTHORIZATION' | 'ENROLLED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
 interface EnrollmentTransaction {
@@ -53,7 +54,7 @@ export class DeviceSecurityService {
     mkdirSync(dirname(this.statePath), { recursive: true });
     const temporary = `${this.statePath}.tmp-${CryptoUtil.randomToken(6)}`;
     writeFileSync(temporary, JSON.stringify({ iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') }), { mode: 0o600 });
-    renameSync(temporary, this.statePath);
+    renameWithRetry(temporary, this.statePath);
   }
 
   getTotpStatus(): 'DISABLED' | 'PENDING' | 'ENABLED' { return this.enabledSecret ? 'ENABLED' : this.pendingTotp ? 'PENDING' : 'DISABLED'; }

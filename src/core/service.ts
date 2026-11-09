@@ -98,6 +98,7 @@ const RETRYABLE_READ_ONLY = new Set([
   'file:list',
   'file:search',
   'file:read',
+  'file:verify_saved',
   'app:inventory',
   'dev:repo_list',
   'dev:tree',
@@ -153,6 +154,8 @@ export class JarvisCoreService {
     statePath?: string,
     ownerControlToken?: string
   ) {
+    // Assigned first: the workflow store validates built-in steps against the planner.
+    this.planner = planner;
     this.audit = new AuditLogger(logPath);
     this.identity = new DeviceIdentityManager(this.audit, statePath);
     this.policy = new PolicyGateway(this.audit, statePath ? `${statePath}.approvals` : './data/approval-grants.json', ownerControlToken);
@@ -189,7 +192,6 @@ export class JarvisCoreService {
       ownerControlToken ? (statePath ? `${statePath}.schedules` : './data/schedules.json') : undefined,
       ownerControlToken,
     );
-    this.planner = planner;
     if (ownerControlToken) {
       this.personalMemory = new PersonalMemoryStore(
         statePath ? statePath + '.memory' : './data/personal-memory.enc',
@@ -734,6 +736,8 @@ export class JarvisCoreService {
           return this.fileAdapter.search(parameters.query, parameters.path);
         case 'file:read':
           return this.fileAdapter.read(parameters.path);
+        case 'file:verify_saved':
+          return this.fileAdapter.verifySaved(parameters.path, parameters.since, parameters.contains);
         case 'file:write':
           return this.fileAdapter.write(parameters.path, parameters.content);
         case 'file:edit':

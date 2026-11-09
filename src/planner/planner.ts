@@ -93,6 +93,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'file:list',
     'file:search',
     'file:read',
+    'file:verify_saved',
     'file:write',
     'file:edit',
     'file:delete',
@@ -261,6 +262,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const createFile = requestText.match(/\b(?:create|make|write|save)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named|called)\s+["“]?([^\s"”]+)["”]?\s+(?:with|containing)\s+(?:the\s+)?(?:text\s+|content\s+)?["“]?(.+?)["”]?\s*$/i);
     if (createFile) {
       return { intent: 'Create a new workspace file', operations: [{ operation: 'file:write', parameters: { path: createFile[1], content: createFile[2] }, justification: 'Owner supplied the file name and content' }], confidence: 0.85, explanation: 'Will create the file after approval. An existing file is never overwritten.' };
+    }
+    const verifySaved = requestText.match(/\b(?:verify|check|confirm)\s+(?:that\s+)?(?:the\s+)?file\s+["“]?([^\s"”]+)["”]?\s+(?:was|is|got)\s+saved(?:\s+with\s+["“](.+?)["”])?\s*$/i);
+    if (verifySaved) {
+      return { intent: 'Verify a saved workspace file', operations: [{ operation: 'file:verify_saved', parameters: { path: verifySaved[1], ...(verifySaved[2] ? { contains: verifySaved[2] } : {}) }, justification: 'Owner asked for independent proof that a file was saved' }], confidence: 0.85, explanation: 'Will check the file exists in the workspace and, if given, contains the expected text. Read-only.' };
     }
     const searchFiles = requestText.match(/\b(?:find|search\s+for)\s+(?:a\s+)?files?\s+(?:named|called|matching)\s+["“]?(.+?)["”]?\s*$/i);
     if (searchFiles) {
