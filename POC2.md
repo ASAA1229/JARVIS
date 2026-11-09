@@ -850,3 +850,11 @@ All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a sp
 ## Voice command development increment — 2026-11-09
 
 **Implemented, not tested:** `src/planner/planner.ts` now includes a narrow first-syllable recovery for the speech-recognition output `pen <application>`, converting it to the existing allowlisted launch grammar `open <application>`. Added authored cases for “pen Notepad” and “pen up Notepad” in `test/planner-launch-phrasing.test.ts`. No test/build/typecheck/CI/device check was run. This does not change the app allowlist or authorization model; app launches still pass through the existing planner, policy and approval flow. Target-MSI acceptance remains required.
+
+
+
+## Latest development increment review — 2026-11-09 13:30 IST
+
+On `new`, Windows Start-menu launch now uses conservative executable-AppID-to-process identity mapping, excludes shell-host identities, checks for a unique matching window, and reuses/focuses a uniquely identified existing window. Unknown or ambiguous identity continues to return a partial/uncertain result rather than false success. Android owner panels now support laptop/phone/merge resolution for sync conflicts and explicit run/discard decisions for held commands; the laptop still enforces policy and approval.
+
+A focused Windows AppID identity test file was added but not run. **Testing remains PAUSED.** Target-MSI voice-to-app acceptance, Android build/enrollment/two-device drills, and exact-head validation remain open. No test, build, typecheck, lint, audit, browser/device check, CI/Jenkins or release operation was performed.
