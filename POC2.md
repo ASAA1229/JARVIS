@@ -1,17 +1,28 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
-**Status snapshot:** 2026-11-07  
+**Status snapshot:** 2026-11-09  
 **Branch reviewed:** `new`  
-**Latest reviewed branch head before this documentation refresh:** `c6a745a1e57981b54d9a1bcf08ebe271bf3d5181`  
+**Latest inspected feature commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
-## Owner pause and status boundary — 2026-11-07
+## Owner execution boundary — 2026-11-09
 
-**Development is stopped. Testing and validation are paused.** This document is now a gap/acceptance register, not an instruction to begin implementation. Only POC and user-story documentation is being reconciled. Do not run tests, builds, lint, audits, CI, browser checks, device checks or release operations until the owner explicitly resumes them.
+**Development is ACTIVE; testing and validation are PAUSED.** Continue source implementation on the existing `new` branch. Do not run tests, builds, lint, audits, CI, browser checks, device checks or release operations until the owner explicitly resumes them. Tests may be authored or updated but must not be executed. This document remains the actionable gap register.
 
 Since the earlier 2026-11-05 snapshot, source changes on `new` include bounded AI context selection/budget accounting, local Whisper cancellation and subprocess cleanup, transcription cancellation on client disconnect, and immediate voice capture after local wake detection to avoid losing command words spoken in the same utterance. These changes are **implemented in source, not verified**. The MSI voice-to-app path, actual app launch and independent result verification remain unaccepted.
 
 > This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
+
+
+## 2026-11-09 implementation/status reconciliation
+
+The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, visual workflow composition, developer-assistant suggestions, memory management and gateway site administration. LAN peer management/discovery/pairing/revocation and owner control routes are also present in the current source baseline. Earlier statements that the visual composer, owner panels or LAN peer discovery were “not built” are superseded by this section.
+
+**Implemented in source, not tested/accepted:** owner-panel shell and tabs; signed API client; approval-aware task reporting; plugin and workflow lists/actions; AI workflow draft; visual composer with capability-catalogue inputs, dependencies and server validation; developer repository/suggestion panel; memory list/edit/delete/export/import and learning review; gateway site listing/configuration/revocation and one-time key reveal listing. Do not infer the backend routes or every user journey are fully accepted from the UI presence alone.
+
+**Development still required:** close voice-to-command dispatch and verified Windows outcomes; review owner-panel input constraints, accessibility and failure handling; complete remaining memory lifecycle and device synchronization; finish partial-side-effect recovery and supported Windows app control; complete any remaining provider/integration gaps already in E07; reconcile the documentation with the exact source tree as implementation continues.
+
+**Testing paused:** all automated, manual, CI/Jenkins, browser and device checks are pending. Do not claim any newly added feature passes. Target MSI and both Android phones remain owner-acceptance dependencies.
 
 ## Current work-left summary
 
