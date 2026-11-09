@@ -48,6 +48,9 @@ function normalizeVoiceDirective(value: string): string {
   // Convert conversational launch requests into one explicit launch intent.
   // This does not add any new executable operation or bypass policy checks.
   directive = directive
+    // Some speech recognizers clip the first syllable of "open" at capture start.
+    // Repair only the bounded "pen <target>" form; do not rewrite arbitrary words.
+    .replace(/^pen\s+/i, 'open ')
     .replace(/^(?:would you mind|can you|could you|would you|please)\s+(?:please\s+)?(?:get me|bring me|open|launch|start|run|fire up)\s+/i, 'open ')
     .replace(/^(?:get me|bring me|fire up)\s+/i, 'open ')
     .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
