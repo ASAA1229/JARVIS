@@ -1,7 +1,7 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
 **Status snapshot:** 2026-11-09  
-**Branch reviewed:** `new`  
+**Branch reviewed:** `test`  
 **Latest inspected feature commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
 **Overall status:** **IN PROGRESS — NOT RELEASE-READY**
 
