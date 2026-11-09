@@ -858,3 +858,29 @@ All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a sp
 On `new`, Windows Start-menu launch now uses conservative executable-AppID-to-process identity mapping, excludes shell-host identities, checks for a unique matching window, and reuses/focuses a uniquely identified existing window. Unknown or ambiguous identity continues to return a partial/uncertain result rather than false success. Android owner panels now support laptop/phone/merge resolution for sync conflicts and explicit run/discard decisions for held commands; the laptop still enforces policy and approval.
 
 A focused Windows AppID identity test file was added but not run. **Testing remains PAUSED.** Target-MSI voice-to-app acceptance, Android build/enrollment/two-device drills, and exact-head validation remain open. No test, build, typecheck, lint, audit, browser/device check, CI/Jenkins or release operation was performed.
+
+
+## Test-branch execution update — 2026-11-09
+
+**Current branch:** `test` · **Head:** `bbb1c1ffd1120087704daf7492d2e9f54ec3c2bb`
+
+Antigravity's local report records **345/345 passing test cases (100%)** across 59 listed suites. The report's header says 58 suites, which is a counting typo; the detailed table contains 59. Its local run does not record a commit SHA, so it is not exact-head evidence.
+
+The exact-head GitHub Actions run [#42591404042](https://github.com/ASAA1229/JARVIS/actions/runs/42591404042) is **FAILED**:
+- Node automated test suite, browser security smoke, TypeScript check/build, SBOM generation and dependency audit passed.
+- Python release-tooling tests failed one Windows path-canonicalization assertion (`runneradmin` versus `RUNNER~1`).
+- Android compilation failed with recursive Kotlin type checking at `OwnerPanels.kt:112:34`.
+- Release manifest/package/provenance steps were skipped after the Python gate failed; APK upload was skipped after Android compilation failed.
+
+### Revised remaining-work checklist
+
+- [ ] Make the Windows path assertion compare canonical/normalized paths and pass on the GitHub Windows runner.
+- [ ] Refactor/type the Kotlin expression at `OwnerPanels.kt:112:34`; compile and produce the APK.
+- [ ] Rerun full exact-head CI and verify manifest, package, provenance and APK artifacts.
+- [ ] Execute Android install/enrollment/approval/revocation/sync tests on both physical phones.
+- [ ] Complete target-MSI voice-to-command and independent outcome verification.
+- [ ] Complete partial-side-effect recovery, crash/restart, memory lifecycle and cross-device conflict drills.
+- [ ] Finish owner-panel accessibility and manual security review.
+- [ ] Record performance/resource measurements and owner release acceptance.
+
+**Progress reporting:** local test pass rate is 100%; overall product completion is not assigned a percentage because unresolved development, CI and device gates are not interchangeable with test-case counts. Stories remain OPEN until their individual acceptance criteria have exact-head evidence.
