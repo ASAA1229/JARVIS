@@ -462,3 +462,30 @@ The owner's confirmed Q50 ranking is: **1) finish existing features; 2) dependen
 ### Relationship to Portfolio
 
 JARVIS is the authoritative AI/agent service. Portfolio is a separate application that supplies selected profile-specific, approved knowledge and visitor-facing experiences through a secured JARVIS integration. It must not require a third-party paid AI API as its primary intelligence source.
+
+## Authoritative continuation update — 2026-11-09 12:22 IST
+
+**Inspected branch head:** `new` · `92d1057f33877a3fa4ebca65c7c6b894bd23480b` (merge commit). This is the current source/documentation inspection baseline; the earlier feature SHA above is a historical feature checkpoint, not the current branch head.
+
+### Current disposition
+- **Development: ACTIVE on `new`. Testing/validation: PAUSED by owner.** No tests, typecheck, lint, build, audits, browser/device checks, CI/Jenkins or release validation may be started until explicitly resumed.
+- Owner control panels, workflow composer, LAN peer discovery/pairing/revocation and related owner routes are present in source. They remain **IMPLEMENTED — NEEDS TESTING**, not accepted.
+- Voice wake/capture/command dispatch is present in source, including same-utterance command handling and cancellation/consent guards. The known target-MSI voice-to-app path and independently verified result remain **PARTIAL — NEEDS DEVELOPMENT / DEVICE ACCEPTANCE** until the full flow is confirmed.
+- Security/policy foundation, memory, Android companion, provider routing, gateway and DevOps integrity tooling remain implemented to varying degrees; no new exact-head verification is claimed.
+
+### Active development order
+1. Close the voice command lifecycle and safe Windows outcome reporting without bypassing the policy gateway.
+2. Finish owner-panel contract alignment, validation, accessibility and error/empty/loading states.
+3. Complete memory retrieval/lifecycle/deletion and device synchronization gaps.
+4. Close partial-side-effect recovery and supported Windows app target verification.
+5. Finish existing Android companion software and remaining E07 integration gaps.
+
+### Non-negotiable requirements and constraints
+- Local-first and zero ongoing cost by default; remote AI/speech only with explicit owner opt-in and bounded task context.
+- No admin elevation, unrestricted shell, payment/financial automation, credential entry, policy bypass or automatic replay of uncertain actions.
+- Windows 11 MSI laptop is primary; two Android phones must be independently enrolled; iOS is future scope.
+- Keep secrets outside Git and logs. Keep Nexus publication disabled.
+- Work only on `new`; no PR, merge, push to `dev`/`main`, deployment, public tunnel, secret changes or artifact publication without explicit authorization.
+- Tests may be authored/updated but must not be executed while testing is paused.
+
+**Evidence rule:** source presence is implementation evidence only. All changed/new stories remain OPEN / NEEDS TESTING until exact-head checks and required owner-device acceptance are completed after testing resumes.
