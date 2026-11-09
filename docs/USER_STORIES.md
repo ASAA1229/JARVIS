@@ -27,7 +27,7 @@
 - Story states must be updated only from source inspection and executed evidence. Use **IMPLEMENTED — NEEDS TESTING**, **TEST FAILED**, **TEST PASSED (exact SHA)**, **OWNER ACCEPTANCE PENDING**, or **ACCEPTED** precisely; do not infer acceptance from file presence.
 
 **Repository:** `ASAA1229/JARVIS`  
-**Branch:** `test`  
+**Active branch:** `new`  
 **Updated:** 2026-11-09  
 **Rule:** Every story remains OPEN until its acceptance criteria are evidenced on the exact branch revision.
 
@@ -37,7 +37,7 @@ Detailed remaining-work register: [../POC2.md](../POC2.md)
 
 ## Evidence boundary — 2026-11-09
 
-Development has resumed on `new`; **testing remains PAUSED**. The latest inspected commit is `03518b9227de13f5dbbd247e9c364b5768bb2a4a`. Owner panels and visual workflow composition are implemented in source, alongside the previously recorded LAN peer/owner-control work. No tests/build/lint/CI/browser/device checks were run for this refresh. Do not copy the historical 2026-11-07 test results forward as evidence for this newer commit. Every new/changed story remains IMPLEMENTED — NEEDS TESTING or PARTIAL until exact-head evidence is captured.
+Development and testing are ACTIVE on `new`. The current implementation increment is being validated by exact-head GitHub Actions; historical test results do not prove the current SHA. Owner panels, workflow composition and LAN peer management are present in source, but each story remains open until its own exact-head and owner-acceptance criteria are evidenced.
 
 ## Historical evidence boundary — 2026-11-07
 
@@ -126,7 +126,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-005 — Owner recovery and device revocation
 
-**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Owner-token recovery on the JARVIS host (`npm run owner-recovery -- reset-authenticator | revoke-device <id> | revoke-all`, `POST /api/owner/recovery`): loopback-only, rate-limited, explicit confirmation, audited without secrets; revoke-all reopens bootstrap enrollment and old keys cannot re-enroll. Tests authored in `test/owner_recovery.test.ts`, not yet run (testing paused).
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Owner-token recovery on the JARVIS host (`npm run owner-recovery -- reset-authenticator | revoke-device <id> | revoke-all`, `POST /api/owner/recovery`): loopback-only, rate-limited, explicit confirmation, audited without secrets; revoke-all reopens bootstrap enrollment and old keys cannot re-enroll. Tests are authored in `test/owner_recovery.test.ts`; exact-head execution evidence is tracked by CI.
 
 **As the owner,** I want to recover account control and revoke a lost device, so that device loss does not compromise JARVIS.
 
@@ -780,7 +780,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 - Invalid/incomplete packages can be rejected or quarantined with a recorded reason.
 - Recovery guidance identifies the failed stage and safe re-run boundary.
 - No production merge, deployment or Nexus publication occurs without explicit owner approval.
-- Validation and operational evidence remain pending while testing is paused.
+- Validation and operational evidence remain pending until the relevant exact-head and owner checks pass.
 
 
 ## JARVIS-E09 — Personal AI Gateway for Websites
@@ -999,11 +999,11 @@ The stories below capture approved requirements from the 50-question exercise. T
 
 ## Owner-directed status reconciliation — 2026-11-09 12:22 IST
 
-**Inspected `new` branch head:** `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. Development is ACTIVE; testing/validation is PAUSED. The latest source includes E10 owner panels/composer and LAN peer management/discovery/pairing/revocation. These related stories remain **IMPLEMENTED — NEEDS TESTING**. Voice lifecycle and dispatch paths are present, but the target-MSI voice → app launch → independently verified outcome remains a development/acceptance gap.
+**Inspected `new` branch head:** `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. Development and testing are ACTIVE. The latest source includes E10 owner panels/composer and LAN peer management/discovery/pairing/revocation. These related stories remain **IMPLEMENTED — NEEDS TESTING**. Voice lifecycle and dispatch paths are present, but the target-MSI voice → app launch → independently verified outcome remains a development/acceptance gap.
 
 ### Current status rules
 - Do not carry forward historical local test/build results as proof for this branch head.
-- No test, build, lint, audit, browser, Windows/Android device or CI/Jenkins execution is permitted while testing is paused.
+- Automated test/build/lint/audit/browser/CI execution is authorized on `new`; physical Windows/Android acceptance still requires owner-device evidence.
 - Continue implementation on `new`; authored regression tests are allowed but must remain unexecuted.
 - Preserve story acceptance criteria and keep stories OPEN until exact-head evidence exists.
 
@@ -1020,7 +1020,7 @@ Default-deny policy; device/task/parameter-scoped approval; audit integrity; fai
 
 ## Voice story implementation note — 2026-11-09
 
-The voice-to-app development path received a narrow planner-side recovery for recognizer clipping: `pen <application>` is normalized to `open <application>` before heuristic planning. Regression cases were added for “pen Notepad” and “pen up Notepad”. **IMPLEMENTED — NEEDS TESTING**; tests were not executed because testing is paused. This does not close the voice story: target-MSI wake, capture, consent, policy, approval, app launch and independently verified outcome remain acceptance requirements.
+The voice-to-app development path received a narrow planner-side recovery for recognizer clipping: `pen <application>` is normalized to `open <application>` before heuristic planning. Regression cases were added for “pen Notepad” and “pen up Notepad”. **IMPLEMENTED — NEEDS TESTING**; tests require exact-head CI execution and evidence. This does not close the voice story: target-MSI wake, capture, consent, policy, approval, app launch and independently verified outcome remain acceptance requirements.
 
 ## Post-Claude story reconciliation — 2026-11-09 13:30 IST
 
