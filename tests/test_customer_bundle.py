@@ -9,7 +9,7 @@ class CustomerBundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "bundle.zip"
             path, digest = build_bundle(output)
-            self.assertEqual(path, output)
+            self.assertEqual(path, output.resolve())
             self.assertEqual(len(digest), 64)
             with zipfile.ZipFile(path) as archive:
                 self.assertEqual(set(archive.namelist()), set(FILES) | {"README-CUSTOMER.md"})
