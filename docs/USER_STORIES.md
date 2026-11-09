@@ -238,7 +238,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-016 — Independent outcome verification
 
-**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT** — Readback verification exists; app-specific proof of saved/submitted outcomes is not general.
+**Current implementation status:** **PARTIAL — NEEDS DEVELOPMENT / TARGET-DEVICE ACCEPTANCE** — The Windows launcher now uses conservative Start-menu AppID-to-process identity mapping, excludes shell-host identities, and requires a unique matching window before reporting verified launch; ambiguous or unknown targets remain partial. General app-specific proof that an application saved/submitted a change is still not available, and the complete voice-to-app flow has not been accepted on the target MSI laptop.
 
 **As the owner,** I want JARVIS to verify whether an application accepted or saved a change, so that it does not claim success based on an input event alone.
 
@@ -379,7 +379,7 @@ Earlier versions reused `JARVIS-US-041` through `JARVIS-US-045` for both E07 AI-
 
 ### JARVIS-US-027 — Cross-device memory consistency
 
-**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Hub sync (`src/sync/*`, `/api/sync/*`): DEVICE_MANAGE-only memory categories, offline changes revalidated with TTL/sequence, memory changes submitted for owner approval, stale bases stored as encrypted owner-reviewable conflicts (no last-writer-wins), HUD "Sync & conflicts" resolve view, Android `SyncClient`. Test: run `test/device_sync.test.ts`, HTTP push/pull/resolve, and a two-phone concurrent-edit + revocation drill (docs/DEVICE_SYNC.md).
+**Current implementation status:** **IMPLEMENTED — NEEDS TESTING** — Hub sync (`src/sync/*`, `/api/sync/*`): DEVICE_MANAGE-only memory categories, offline changes revalidated with TTL/sequence, conflict records for owner review, held offline commands, peer envelope signing, HUD Sync & conflicts, Android SyncClient, and Android owner-panel review/resolution for conflicts (keep laptop, keep phone, or merge) plus explicit run/discard decisions for held commands. Held-command execution remains laptop policy/approval-gated. Test: run `test/device_sync.test.ts`, HTTP push/pull/resolve, and a two-phone concurrent-edit + revocation drill (docs/DEVICE_SYNC.md).
 
 **As the owner,** I want memory to remain consistent across my laptop and phones, so that companion devices share only authorized context.
 
@@ -995,3 +995,9 @@ Default-deny policy; device/task/parameter-scoped approval; audit integrity; fai
 ## Voice story implementation note — 2026-11-09
 
 The voice-to-app development path received a narrow planner-side recovery for recognizer clipping: `pen <application>` is normalized to `open <application>` before heuristic planning. Regression cases were added for “pen Notepad” and “pen up Notepad”. **IMPLEMENTED — NEEDS TESTING**; tests were not executed because testing is paused. This does not close the voice story: target-MSI wake, capture, consent, policy, approval, app launch and independently verified outcome remain acceptance requirements.
+
+## Post-Claude story reconciliation — 2026-11-09 13:30 IST
+
+- **JARVIS-US-016:** Windows Start-menu discovery now has a conservative AppID/process identity path and unique-window matching. This improves launch evidence but does not establish universal application outcome verification or complete target-MSI voice acceptance; keep the story PARTIAL.
+- **JARVIS-US-027:** Android owner UI now includes sync conflict resolution and held-command review. The feature is implemented in source; Android build, install, two-phone conflict drills and exact-head checks remain pending.
+- `test/windows-appid-identity.test.ts` was added and remains unexecuted. Testing is paused; no verification status was promoted.
