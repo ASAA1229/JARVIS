@@ -104,7 +104,13 @@
     let active = null;
     async function select(id) {
       active = id;
-      for (const tab of tabList.children) tab.setAttribute('aria-selected', String(tab.dataset.tab === id));
+      for (const tab of tabList.children) {
+        const selected = tab.dataset.tab === id;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.setAttribute('tabindex', selected ? '0' : '-1');
+      }
+      const activeTab = Array.from(tabList.children).find((tab) => tab.dataset.tab === id);
+      if (activeTab) body.setAttribute('aria-labelledby', activeTab.id);
       clear(body);
       body.appendChild(note('Loading…'));
       const panel = panels[id];
@@ -113,10 +119,28 @@
     }
     for (const tab of TABS) {
       tabList.appendChild(el('button', {
-        type: 'button', role: 'tab', class: 'op-tab', 'data-tab': tab.id, 'aria-selected': 'false', 'aria-controls': 'op-body', text: tab.label,
+        type: 'button', id: 'op-tab-' + tab.id, role: 'tab', class: 'op-tab',
+        'data-tab': tab.id, 'aria-selected': 'false', 'aria-controls': 'op-body',
+        tabindex: '-1', text: tab.label,
         onclick: () => select(tab.id),
       }));
     }
+    // Follow the ARIA tabs pattern: arrow keys move focus and selection; Home/End
+    // jump to the first/last panel. Tab leaves the tablist normally.
+    tabList.addEventListener('keydown', (event) => {
+      const tabs = Array.from(tabList.children);
+      const current = tabs.findIndex((tab) => tab.dataset.tab === active);
+      if (current < 0) return;
+      let next = current;
+      if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      tabs[next].focus();
+      select(tabs[next].dataset.tab);
+    });
     toggle.addEventListener('click', () => {
       const open = content.hidden;
       content.hidden = !open;
