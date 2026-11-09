@@ -815,3 +815,33 @@ JARVIS is to become one unified personal AI application and the central AI platf
 - The new requirements expand the target product; they do not imply that any unimplemented feature is complete.
 - Keep implementation status separate from acceptance evidence. Do not run validation or release actions unless separately authorized.
 - Do not create a new unrelated feature stream before reconciling dependencies with the existing epics.
+
+## Development continuation checkpoint — 2026-11-09 12:22 IST
+
+**Current inspected `new` branch head:** `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. The earlier feature SHA in this document is a feature checkpoint, not the current branch head.
+
+**Mode:** development ACTIVE; testing/validation PAUSED. Continue implementation only. Do not run tests, typecheck, lint, builds, audits, browser checks, Android/Windows device checks, CI/Jenkins or release steps. Authored tests may be changed but remain unexecuted.
+
+### Reconciled implemented baseline
+- Owner HUD panels for plugins, workflows, visual workflow composition, developer assistant, memory and gateway site administration are in source.
+- LAN peer management, discovery, pairing/revocation and owner-control routes are in source.
+- Voice manager lifecycle, local wake integration, bounded capture, consent checks, command normalization and policy-gated dispatch are in source.
+- Portfolio gateway integration and shared DevOps integrity/provenance foundations are already represented in the repository.
+- These are implementation states only; no latest-head test or device acceptance is implied.
+
+### Development queue — work in this order
+1. **E02/E03:** trace and complete wake → same-utterance or follow-up capture → transcript normalization → authenticated policy request → approval → Windows app launch → independent outcome reporting. Handle empty/partial transcripts, revoked consent, timeout, focus changes and uncertain results safely.
+2. **E10:** finish owner-panel API/UI contract alignment, parameter validation, loading/empty/error states, keyboard/screen-reader behavior and explicit confirmation for destructive operations.
+3. **E06/E05:** complete memory lifecycle/retrieval/deletion consistency and signed cross-device sync/conflict handling; finish Android software gaps without claiming physical-phone acceptance.
+4. **E04:** close partial-side-effect and crash/restart reconciliation gaps; uncertain work must stop for owner review.
+5. **E07:** close remaining provider/integration gaps within existing scope; preserve local-first defaults and explicit cloud opt-in.
+
+### Constraints carried into every story
+- Default-deny policy; least privilege; task/device/parameter-bound approvals; tamper-evident audit; fail closed on security persistence errors.
+- No administrator elevation, arbitrary shell, credential/payment entry, financial actions, silent installs, or automatic replay of uncertain state-changing actions.
+- No secrets in source, prompts, logs, docs or screenshots. Local-first/zero-cost baseline; cloud speech/model use requires explicit opt-in.
+- Windows 11 laptop primary; two Android companion phones independently trusted; iOS future scope.
+- Stay on `new`. No PR, merge, push to `dev`/`main`, deployment, tunnel, secret changes, Jenkins run or Nexus publication without explicit authorization. Nexus stays disabled.
+
+### Acceptance status
+All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a specific earlier exact-head evidence record says otherwise. No status may be upgraded while testing is paused. After the owner resumes testing, capture exact commit, command/run, device, expected/actual result and limitations.
