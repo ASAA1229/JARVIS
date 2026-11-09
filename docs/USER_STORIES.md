@@ -969,3 +969,24 @@ The stories below capture approved requirements from the 50-question exercise. T
 - Site rate/output limits and allowed profile scopes are enforced server-side.
 - Revocation takes effect for subsequent requests and is auditable.
 
+
+
+## Owner-directed status reconciliation — 2026-11-09 12:22 IST
+
+**Inspected `new` branch head:** `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. Development is ACTIVE; testing/validation is PAUSED. The latest source includes E10 owner panels/composer and LAN peer management/discovery/pairing/revocation. These related stories remain **IMPLEMENTED — NEEDS TESTING**. Voice lifecycle and dispatch paths are present, but the target-MSI voice → app launch → independently verified outcome remains a development/acceptance gap.
+
+### Current status rules
+- Do not carry forward historical local test/build results as proof for this branch head.
+- No test, build, lint, audit, browser, Windows/Android device or CI/Jenkins execution is permitted while testing is paused.
+- Continue implementation on `new`; authored regression tests are allowed but must remain unexecuted.
+- Preserve story acceptance criteria and keep stories OPEN until exact-head evidence exists.
+
+### Constraints applying to every story
+Default-deny policy; device/task/parameter-scoped approval; audit integrity; fail-closed persistence; local-first/zero ongoing cost; explicit cloud/speech opt-in; no admin elevation, arbitrary shell, credential/payment or financial automation; no automatic replay of uncertain actions; no secrets in Git/logs. Windows 11 laptop is primary; both Android phones require independent enrollment; iOS is future scope. No PR, merge, push to `dev`/`main`, deployment, public tunnel, secret changes or Nexus publication without explicit authorization. Nexus stays disabled.
+
+### Development sequence
+1. E02/E03 voice dispatch and verified Windows outcomes.
+2. E10 owner-panel validation, API/UI alignment and accessible failure states.
+3. E06/E05 memory lifecycle, cross-device sync/conflict handling and Android software completion.
+4. E04 partial-side-effect recovery.
+5. E07 provider/integration completion within existing scope.
