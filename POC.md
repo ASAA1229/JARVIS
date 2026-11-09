@@ -494,3 +494,20 @@ JARVIS is the authoritative AI/agent service. Portfolio is a separate applicatio
 ## Voice command normalization increment — 2026-11-09
 
 A defensive normalization step was added to the local heuristic planner: when a recognizer clips the initial syllable of “open”, the bounded input form `pen <application>` is normalized to `open <application>`. The repair is deliberately narrow and does not rewrite arbitrary words. Regression cases for `pen Notepad` and `pen up Notepad` were authored. **Testing remains paused; no tests were executed.** This is a source-level mitigation, not proof of the target-MSI voice flow; the complete wake/capture/policy/approval/launch/outcome path remains open.
+
+
+
+## Post-Claude source review — 2026-11-09 13:30 IST
+
+**Branch reviewed:** `new`. Compared with the previously recorded development baseline, the latest increment changes eight paths across Windows app launching, HUD/service policy wiring, Android companion sync review and a new identity regression-test file.
+
+### Newly implemented in source — not tested
+- Dynamic Windows Start-menu app discovery now derives a conservative process identity from executable-path AppIDs, rejects shell-host executables as app identities, checks for a unique matching window, reuses/focuses an existing uniquely identified window, and waits for a matching new window after launch.
+- If a discovered app has no trusted process identity, or a unique target window cannot be established, the result remains partial rather than claiming independently verified launch success.
+- Android owner panels now expose review of memory-sync conflicts and held offline commands. The owner can keep the laptop version, keep the phone version, submit a merge, or explicitly run/discard a held command; execution remains subject to the laptop's normal policy and approval flow.
+- Added `test/windows-appid-identity.test.ts` for executable-path identity, shell-host rejection and partial-result behavior. It was authored but **not executed**.
+
+### Remaining acceptance
+- The complete wake → speech capture → intent → policy/approval → Windows launch → independently verified outcome flow still requires testing on the target MSI laptop.
+- Android build/install, independent enrollment of both phones, live conflict-resolution and held-command drills remain pending.
+- No tests, builds, typecheck, lint, audits, browser/device checks, CI/Jenkins or release validation were run for this increment. All source changes remain **IMPLEMENTED — NEEDS TESTING**; no new verification is claimed.
