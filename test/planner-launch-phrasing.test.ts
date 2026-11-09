@@ -15,6 +15,9 @@ test('planner normalizes polite and punctuated common app launch requests', asyn
     ['OK Jarvis open calculator', 'calc'],
     ['okay jarvis: launch paint', 'mspaint'],
     ['Hey Jarvis could you please open Notepad?', 'notepad'],
+    // Defense in depth when the browser recognizer clips the first syllable.
+    ['pen Notepad', 'notepad'],
+    ['pen up Notepad', 'notepad'],
   ] as const;
 
   for (const [request, appId] of cases) {
