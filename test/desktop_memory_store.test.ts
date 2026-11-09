@@ -71,11 +71,14 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   assert.deepEqual(forgetMemory.operations[0]?.parameters, { id: '0123456789abcdef0123456789abcdef' });
   const openChrome = await planner.generatePlan('open Chrome', context);
   assert.equal(openChrome.operations[0]?.operation, 'app:launch');
-  assert.deepEqual(openChrome.operations[0]?.parameters, { appId: 'Chrome' });
+  assert.deepEqual(openChrome.operations[0]?.parameters, { appId: 'Google Chrome' });
   const blockedPaymentApp = await planner.generatePlan('open Paytm', context);
   assert.equal(blockedPaymentApp.operations.length, 0);
   assert.match(blockedPaymentApp.explanation, /payment and financial applications/);
-  const zoom = await planner.generatePlan('zoom in', context);
+  const unpinnedZoom = await planner.generatePlan('zoom in', context);
+  assert.equal(unpinnedZoom.operations.length, 0);
+  assert.match(unpinnedZoom.explanation, /Name the application to zoom/);
+  const zoom = await planner.generatePlan('zoom in on Chrome', context);
   const inspect = await planner.generatePlan('inspect the current window', context);
   assert.equal(inspect.operations[0]?.operation, 'desktop:inspect_window');
   const click = await planner.generatePlan('click button named Save', context);
@@ -85,10 +88,13 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   assert.equal(setField.operations[0]?.operation, 'desktop:set_value');
   assert.deepEqual(setField.operations[0]?.parameters, { name: 'Search', text: 'JARVIS' });
   assert.equal(zoom.operations[0]?.operation, 'desktop:zoom');
-  assert.deepEqual(zoom.operations[0]?.parameters, { direction: 'in' });
-  const type = await planner.generatePlan('type Hello JARVIS', context);
+  assert.deepEqual(zoom.operations[0]?.parameters, { direction: 'in', expectProcess: 'Chrome' });
+  const unpinnedType = await planner.generatePlan('type Hello JARVIS', context);
+  assert.equal(unpinnedType.operations.length, 0);
+  assert.match(unpinnedType.explanation, /will not type into whichever window/);
+  const type = await planner.generatePlan('type Hello JARVIS in notepad', context);
   assert.equal(type.operations[0]?.operation, 'desktop:type_text');
-  assert.deepEqual(type.operations[0]?.parameters, { text: 'Hello JARVIS' });
+  assert.deepEqual(type.operations[0]?.parameters, { text: 'Hello JARVIS', expectProcess: 'notepad' });
   const compound = await planner.generatePlan('open Notepad and write Hello JARVIS', context);
   assert.equal(compound.operations[0]?.operation, 'desktop:launch_and_type');
   assert.deepEqual(compound.operations[0]?.parameters, { appId: 'notepad', text: 'Hello JARVIS' });
@@ -100,10 +106,24 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   });
   assert.equal(savedName.operations[0]?.operation, 'desktop:launch_and_type');
   assert.deepEqual(savedName.operations[0]?.parameters, { appId: 'notepad', text: 'Abhishek Guda' });
-  const copyPaste = await planner.generatePlan('copy this and paste it in Notepad', context);
-  assert.deepEqual(copyPaste.operations.map((op) => op.operation), [
-    'desktop:copy_selection', 'app:launch', 'desktop:paste_clipboard',
+  const copyPaste = await planner.generatePlan('copy selected text in Chrome and paste it in Notepad', context);
+  assert.deepEqual(copyPaste.operations.map((op) => [op.operation, op.parameters]), [
+    ['desktop:copy_selection', { expectProcess: 'Chrome' }],
+    ['app:launch', { appId: 'notepad' }],
+    ['desktop:paste_clipboard', { expectProcess: 'Notepad' }],
   ]);
+  assert.equal(planner.validatePlanSchema(copyPaste).valid, true);
+  // Without a named source the planner must not copy from an unknown foreground window.
+  const unsourcedCopyPaste = await planner.generatePlan('copy this and paste it in Notepad', context);
+  assert.equal(unsourcedCopyPaste.operations.length, 0);
+  assert.match(unsourcedCopyPaste.explanation, /Name the application containing the selection/);
+  // Pronouns refer to the clipboard; they are never pasted as literal text.
+  for (const phrase of ['paste it in Notepad', 'paste this into Notepad', 'paste that in Notepad']) {
+    const pastePronoun = await planner.generatePlan(phrase, context);
+    assert.deepEqual(pastePronoun.operations.map((op) => [op.operation, op.parameters]), [
+      ['desktop:paste_clipboard', { expectProcess: 'Notepad' }],
+    ], phrase);
+  }
   const validation = planner.validatePlanSchema(type);
   assert.equal(validation.valid, true);
   assert.equal(planner.validatePlanSchema(compound).valid, true);

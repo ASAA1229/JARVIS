@@ -427,3 +427,205 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   .hud-btn-mini { flex: 1 1 calc(50% - 8px); min-height: 40px; }
   .hud-plate { padding-inline: 12px; }
 }
+
+
+/* Recent task history and manual recovery review */
+.task-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.hud-task-history {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 30rem;
+  overflow: auto;
+  padding: 0.2rem 0.1rem 0.5rem;
+}
+.task-history-empty {
+  color: var(--text-muted, #8fa9b8);
+  font-size: 0.78rem;
+  padding: 0.65rem;
+}
+.task-history-card {
+  min-width: 0;
+  border: 1px solid rgba(91, 203, 230, 0.2);
+  border-radius: 0.45rem;
+  background: rgba(5, 19, 30, 0.62);
+  padding: 0.65rem;
+}
+.task-history-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-primary, #d9f5ff);
+  font-size: 0.78rem;
+}
+.task-history-state {
+  flex: 0 0 auto;
+  border: 1px solid rgba(130, 170, 190, 0.35);
+  border-radius: 2rem;
+  padding: 0.12rem 0.4rem;
+  color: #a9c4d1;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+.task-history-state.state-completed { color: #8ce9bb; border-color: rgba(80, 220, 150, 0.4); }
+.task-history-state.state-failed,
+.task-history-state.state-expired,
+.task-history-state.state-rejected,
+.task-history-state.state-cancelled { color: #ff9e9e; border-color: rgba(255, 100, 100, 0.4); }
+.task-history-state.state-awaiting_recovery,
+.task-history-state.state-interrupted,
+.task-history-state.state-partial { color: #ffd38a; border-color: rgba(255, 190, 90, 0.45); }
+.task-history-meta {
+  margin-top: 0.3rem;
+  color: var(--text-muted, #8fa9b8);
+  font-size: 0.67rem;
+  overflow-wrap: anywhere;
+}
+.task-history-card details {
+  margin-top: 0.45rem;
+  color: #9fc4d4;
+  font-size: 0.7rem;
+}
+.task-history-card summary { cursor: pointer; }
+.task-history-steps { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+.task-history-steps li { margin: 0.2rem 0; overflow-wrap: anywhere; }
+.task-recovery-form {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 190, 90, 0.25);
+}
+.task-recovery-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: #ffd38a;
+  font-size: 0.68rem;
+}
+.task-recovery-form select,
+.task-recovery-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(91, 203, 230, 0.35);
+  border-radius: 0.25rem;
+  background: rgba(1, 12, 20, 0.9);
+  color: #d9f5ff;
+  padding: 0.45rem;
+  font: inherit;
+  font-size: 0.72rem;
+}
+.task-recovery-form textarea { resize: vertical; }
+.task-recovery-status {
+  margin: 0;
+  color: #a9c4d1;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+
+/* Expandable task detail view and recovery outcome feedback */
+.task-history-detail {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(91, 203, 230, 0.18);
+  color: #9fc4d4;
+  font-size: 0.68rem;
+}
+.task-history-detail > summary {
+  color: var(--cyan);
+  cursor: pointer;
+  font: 700 0.64rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.task-history-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(5rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 0.3rem 0.55rem;
+  margin: 0.55rem 0;
+}
+.task-history-detail-grid dt {
+  color: var(--text-muted, #8fa9b8);
+}
+.task-history-detail-grid dd {
+  margin: 0;
+  color: var(--text-primary, #d9f5ff);
+  overflow-wrap: anywhere;
+}
+.task-history-step-heading {
+  margin: 0.65rem 0 0.25rem;
+  color: var(--cyan);
+  font: 700 0.62rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.task-recovery-form button:disabled,
+.task-recovery-form select:disabled,
+.task-recovery-form textarea:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+
+/* Explicit task stop/cancel controls */
+.task-cancel-control {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 100, 100, 0.22);
+}
+.task-cancel-button {
+  justify-self: start;
+  border-color: rgba(255, 120, 120, 0.55);
+  color: #ffb0b0;
+}
+.task-cancel-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.task-cancel-control .task-recovery-status {
+  color: #ffc1a1;
+}
+
+/* Shown when a wake word was heard but post-wake speech consent is off. */
+.hud-privacy-notice label.consent-attention {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px solid #ffb020;
+  border-radius: 4px;
+  color: #ffd27a;
+  font-weight: 600;
+}
+
+/* Resource profile and AI provider panel */
+.hud-resources { font-size: 11px; line-height: 1.5; margin-bottom: 10px; }
+.hud-resources-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.hud-resources-controls select { background: transparent; color: inherit; border: 1px solid var(--text-dim); padding: 2px 4px; }
+.hud-heavy-work { list-style: none; margin: 6px 0 0; padding: 0; color: var(--text-dim); }
+
+/* Device sync & conflicts panel (US-060 / US-027). */
+.hud-sync { font-size: 11px; line-height: 1.5; color: var(--text-dim); }
+.hud-sync-list { list-style: none; margin: 4px 0; padding: 0; }
+.hud-sync-list li { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.hud-sync-list li p { margin: 0 0 4px; word-break: break-word; }
+.hud-sync-list .hud-btn-mini { margin-right: 6px; }
+
+/* Voice assistant state (J-E02): standby, listening, processing, speaking, approval, error. */
+.hud-voice-state {
+  margin: 6px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.hud-voice-state:focus-visible { outline: 2px solid #ffd27a; outline-offset: 2px; }
+.hud-voice-state[data-state="standby"] { color: #7fd1ff; }
+.hud-voice-state[data-state="listening"] { color: #6dffb0; }
+.hud-voice-state[data-state="processing"] { color: #ffd27a; }
+.hud-voice-state[data-state="speaking"] { color: #c7a6ff; }
+.hud-voice-state[data-state="approval"] { color: #ffb020; }
+.hud-voice-state[data-state="error"] { color: #ff7a7a; }
+.hud-privacy-notice select { max-width: 100%; margin-left: 4px; }

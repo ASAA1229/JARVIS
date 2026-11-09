@@ -5,15 +5,29 @@ import { join } from 'node:path';
 import QRCode from 'qrcode';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
-import { Permission } from '../core/types.js';
+import { Permission, TaskState } from '../core/types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
-import { JarvisPlatform, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
-import { PersonalMemoryStore } from '../memory/personalMemoryStore.js';
+import { JarvisPlatform, getCapability, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
+import { PersonalMemoryStore, type MemoryCategory } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
-import { answerConversationalMessage } from '../conversation/conversationalAssistant.js';
+import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
+import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
+import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
+import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
+import { SyncStateStore } from '../sync/syncStateStore.js';
+import { SyncService } from '../sync/syncService.js';
+import { handleSyncRoute } from '../sync/syncRoutes.js';
+import { PeerRegistry } from '../peers/peerRegistry.js';
+import { PeerDiscoveryService } from '../peers/peerDiscovery.js';
+import { handlePeerRoute } from '../peers/peerRoutes.js';
+import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js';
+import { DuplicateMemoryError } from '../memory/memoryManager.js';
+import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
+import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
+import { providerRouter } from '../ai/providerRouter.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -21,9 +35,19 @@ export class JarvisServer {
   private server: ReturnType<typeof createServer>;
   private port: number;
   private readonly ownerControlToken: string | undefined;
+  private readonly syncStore: SyncStateStore | undefined;
+  private readonly syncService: SyncService | undefined;
+  /** LAN peers (J-E11): explicit pairing allowlist + optional LAN-only discovery. */
+  private readonly peerRegistry: PeerRegistry | undefined;
+  private readonly peerDiscovery: PeerDiscoveryService | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly androidCommands = new AndroidCommandQueue();
+  /** Failed owner-recovery attempts (timestamps) for rate limiting. */
+  private recoveryFailures: number[] = [];
+  private readonly conversationSessions = new ConversationSessionStore();
+  // Advisory-agent budget follows the active resource profile (US-061).
+  private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
   constructor(
     port: number = 3000,
@@ -31,9 +55,32 @@ export class JarvisServer {
     statePath?: string
   ) {
     this.port = port;
+    const agentConfig = getAgentModelConfigStatus();
+    console.info('[JARVIS] Advisory AI configuration:', agentConfig);
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.personalMemory = this.jarvis.personalMemory;
+    // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
+    if (this.ownerControlToken && this.personalMemory) {
+      this.syncStore = new SyncStateStore(statePath ? statePath + '.sync' : './data/device-sync.enc', this.ownerControlToken);
+      this.syncService = new SyncService({
+        store: this.syncStore,
+        memory: this.personalMemory,
+        audit: this.jarvis.audit,
+        getDevice: (id) => this.jarvis.identity.getDevice(id),
+        submitRequest: async (sessionId, text) => {
+          const result = await this.jarvis.submitRequest(sessionId, text);
+          return { taskId: result.taskId, state: String(result.state), ...(result.approvalId ? { approvalId: result.approvalId } : {}), message: result.message };
+        },
+      });
+    }
+    if (this.ownerControlToken) {
+      this.peerRegistry = new PeerRegistry(statePath ? statePath + '.peers' : './data/lan-peers.enc', this.ownerControlToken, (id) => this.jarvis.identity.getDevice(id));
+      this.peerDiscovery = new PeerDiscoveryService(this.peerRegistry, (event) => {
+        // Rejections are frequent on a busy LAN; only accepted peer messages are audited.
+        if (event.type === 'accepted') this.jarvis.audit.record('LAN_PEER_MESSAGE', { peerDeviceId: event.deviceId, type: event.message });
+      });
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -42,6 +89,8 @@ export class JarvisServer {
       const onListening = () => {
         this.server.off('error', onError);
         this.jarvis.startBackgroundServices();
+        // LAN discovery stays off unless JARVIS_PEER_DISCOVERY=true.
+        this.peerDiscovery?.start();
         resolve(this.port);
       };
       const onError = (error: Error) => {
@@ -63,6 +112,7 @@ export class JarvisServer {
 
   public stop(): Promise<void> {
     this.jarvis.stopBackgroundServices();
+    this.peerDiscovery?.stop();
     if (!this.server.listening) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -131,6 +181,12 @@ export class JarvisServer {
       if (req.method === 'GET' && url.pathname === '/hud/hud.css') {
         return this.serveStatic('hud.css', 'text/css', res);
       }
+      if (req.method === 'GET' && url.pathname === '/hud/hud-panels.js') {
+        return this.serveStatic('hud-panels.js', 'application/javascript', res);
+      }
+      if (req.method === 'GET' && url.pathname === '/hud/hud-panels.css') {
+        return this.serveStatic('hud-panels.css', 'text/css', res);
+      }
       if (req.method === 'GET' && url.pathname === '/hud/hud.js') {
         return this.serveStatic('hud.js', 'application/javascript', res);
       }
@@ -142,6 +198,15 @@ export class JarvisServer {
       }
       if (req.method === 'GET' && url.pathname === '/hud/gesture-intent.js') {
         return this.serveStatic('gesture-intent.js', 'application/javascript', res);
+      }
+      // Lets the HUD check for the optional assets without provoking 404s in the browser console.
+      if (req.method === 'GET' && url.pathname === '/hud/local-wakeword/status') {
+        const required = ['ort.min.js', 'jszip.min.js', 'wakeword.js', 'melspectrogram.onnx', 'multi_jarvis_v9.3.zip'];
+        const installed = required.every((name) => existsSync(join(process.cwd(), 'src', 'companion', 'local-wakeword', name)));
+        return this.jsonResponse(res, 200, {
+          installed,
+          ...(installed ? {} : { setup: 'Run powershell -ExecutionPolicy Bypass -File scripts/setup-local-wake-word.ps1 once, then reload the HUD.' }),
+        });
       }
       // Optional, one-time-installed local wake-word assets. Only explicit filenames are served.
       if (req.method === 'GET' && url.pathname.startsWith('/hud/local-wakeword/')) {
@@ -197,6 +262,66 @@ export class JarvisServer {
           platform: process.platform,
           uptimeSeconds: Math.round(process.uptime()),
           checks: { auditIntegrity: integrityHealthy, identityState: stateHealthy },
+        });
+      }
+
+      // Owner recovery (JARVIS-US-005): authenticator loss or loss of every
+      // device-management device. Authorized only by the owner control token from
+      // this machine, never by a device session; rate limited; audited without secrets.
+      if (req.method === 'POST' && url.pathname === '/api/owner/recovery') {
+        if (!this.ownerControlToken || !this.jarvis.deviceSecurity) {
+          return this.jsonResponse(res, 503, { error: 'Owner recovery requires a configured owner control token', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
+        }
+        const remote = req.socket.remoteAddress || '';
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) {
+          this.jarvis.audit.record('OWNER_RECOVERY_REJECTED', { reason: 'non_loopback' });
+          return this.jsonResponse(res, 403, { error: 'Owner recovery is only available on the JARVIS host' });
+        }
+        const now = Date.now();
+        this.recoveryFailures = this.recoveryFailures.filter((at) => now - at < 15 * 60_000);
+        if (this.recoveryFailures.length >= 5) {
+          return this.jsonResponse(res, 429, { error: 'Too many failed recovery attempts; wait 15 minutes' });
+        }
+        if (!this.isOwnerControlAuthorized(req)) {
+          this.recoveryFailures.push(now);
+          this.jarvis.audit.record('OWNER_RECOVERY_REJECTED', { reason: 'invalid_owner_token' });
+          return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
+        }
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || body.confirm !== 'RECOVER' ||
+            !['reset_authenticator', 'revoke_device', 'revoke_all_devices'].includes(String(body.action))) {
+          return this.jsonResponse(res, 400, { error: 'Body must be { action: reset_authenticator | revoke_device | revoke_all_devices, confirm: "RECOVER" }' });
+        }
+        const revoke = (deviceId: string): boolean => {
+          if (!this.jarvis.identity.revokeDevice(deviceId, 'Owner recovery')) return false;
+          // Same effects as a normal revocation: approvals, schedules, tasks, phone commands.
+          this.jarvis.onDeviceRevoked(deviceId);
+          this.androidCommands.cancelForDevice(deviceId);
+          return true;
+        };
+        if (body.action === 'reset_authenticator') {
+          const result = this.jarvis.deviceSecurity.ownerResetAuthenticator();
+          return this.jsonResponse(res, 200, { success: true, ...result, next: 'Set up a new authenticator from a device-management device.' });
+        }
+        if (body.action === 'revoke_device') {
+          if (typeof body.deviceId !== 'string' || !body.deviceId) return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+          const target = this.jarvis.identity.getDevice(body.deviceId);
+          if (!target || target.status !== 'ACTIVE') return this.jsonResponse(res, 404, { error: 'Active device not found' });
+          if (!revoke(target.id)) return this.jsonResponse(res, 409, { success: false, error: 'Revocation could not be persisted' });
+          this.jarvis.audit.record('OWNER_RECOVERY_DEVICE_REVOKED', { revokedDeviceId: target.id });
+          return this.jsonResponse(res, 200, { success: true, revokedDeviceIds: [target.id] });
+        }
+        // revoke_all_devices: every active device is revoked and the authenticator reset,
+        // which reopens owner-token bootstrap enrollment. Old keys cannot be re-enrolled.
+        const active = this.jarvis.identity.listDevices().filter((device) => device.status === 'ACTIVE');
+        const revokedDeviceIds = active.filter((device) => revoke(device.id)).map((device) => device.id);
+        const failed = active.length - revokedDeviceIds.length;
+        const authenticator = this.jarvis.deviceSecurity.ownerResetAuthenticator();
+        this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: failed });
+        if (failed > 0) return this.jsonResponse(res, 409, { success: false, revokedDeviceIds, error: `${failed} device(s) could not be revoked durably` });
+        return this.jsonResponse(res, 200, {
+          success: true, revokedDeviceIds, ...authenticator,
+          next: 'Enroll a new device with a NEW key via owner-token bootstrap enrollment (POST /api/enrollment/challenge).',
         });
       }
 
@@ -399,7 +524,81 @@ export class JarvisServer {
         }
       }
 
+      // Owner HUD panels (J-E10) and gateway site management (J-E09). Mounted before the
+      // /api/memory block so /api/memory/import is handled here.
+      if (OWNER_PANEL_PATHS.includes(url.pathname)) {
+        return handleOwnerPanelRoute(req, res, url, {
+          jarvis: this.jarvis,
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
+      // Resource profiles (US-061) and AI provider routing status (US-059). Owner device only.
+      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = req.method === 'GET' ? undefined : await this.readJsonBody(req);
+        if (req.method !== 'GET' && !this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) {
+          return this.jsonResponse(res, 403, { error: 'Resource and provider controls require device-management permission' });
+        }
+        if (req.method === 'GET' && url.pathname === '/api/resources') {
+          await resourceManager.sample();
+          return this.jsonResponse(res, 200, { ...resourceManager.snapshot(), ai: providerRouter.status() });
+        }
+        if (req.method === 'GET' && url.pathname === '/api/ai/providers') {
+          return this.jsonResponse(res, 200, providerRouter.status());
+        }
+        if (req.method === 'POST' && url.pathname === '/api/resources/profile') {
+          const mode = (body as { mode?: unknown }).mode;
+          if (!['auto', 'idle', 'normal', 'intensive'].includes(String(mode))) {
+            return this.jsonResponse(res, 400, { error: 'mode must be auto, idle, normal or intensive' });
+          }
+          resourceManager.setMode(mode as ProfileMode);
+          this.jarvis.audit.record('RESOURCE_PROFILE_SET', { mode }, auth.device.id);
+          return this.jsonResponse(res, 200, resourceManager.snapshot());
+        }
+        if (req.method === 'POST' && url.pathname === '/api/resources/stop') {
+          const id = (body as { id?: unknown }).id;
+          if (id !== undefined && (typeof id !== 'string' || !/^hw-[a-z0-9]{1,12}$/.test(id))) {
+            return this.jsonResponse(res, 400, { error: 'id must be a heavy-work id, or omitted to stop all' });
+          }
+          const stopped = resourceManager.stopHeavyWork(id as string | undefined);
+          this.jarvis.audit.record('RESOURCE_HEAVY_WORK_STOPPED', { stopped, all: id === undefined }, auth.device.id);
+          return this.jsonResponse(res, 200, { stopped, heavyWork: resourceManager.listHeavyWork() });
+        }
+        return this.jsonResponse(res, 405, { error: 'Unsupported resource method or route' });
+      }
+
       // Personal memory is encrypted at rest and restricted to authenticated management devices.
+      // Device sync and offline queues (US-060/027); signed session required on every route.
+      if (url.pathname.startsWith('/api/sync/')) {
+        return handleSyncRoute(req, res, url, {
+          sync: this.syncService,
+          store: this.syncStore,
+          listDevices: () => this.jarvis.identity.listDevices(),
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
+      // LAN peers (J-E11): explicit pairing, allowlist, revocation; never command execution.
+      if (url.pathname === '/api/peers' || url.pathname.startsWith('/api/peers/')) {
+        return handlePeerRoute(req, res, url, {
+          registry: this.peerRegistry,
+          discovery: this.peerDiscovery,
+          audit: this.jarvis.audit,
+          readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
       if (url.pathname.startsWith('/api/memory')) {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
@@ -419,10 +618,99 @@ export class JarvisServer {
         if (req.method === 'GET' && url.pathname === '/api/memory') {
           return this.jsonResponse(res, 200, { status: this.personalMemory.status(), records: this.personalMemory.list() });
         }
+        // Two-tier memory and consent-based learning (US-057/058). Owner device only.
+        const manager = this.jarvis.memoryManager;
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/manager') {
+          return this.jsonResponse(res, 200, { status: manager.status(), candidates: manager.listCandidates('pending') });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/learning') {
+          const enabled = (body as { enabled?: unknown }).enabled;
+          if (typeof enabled !== 'boolean') return this.jsonResponse(res, 400, { error: 'enabled must be a boolean' });
+          manager.setLearningEnabled(enabled);
+          this.jarvis.audit.record('MEMORY_LEARNING_TOGGLED', { enabled }, auth.device.id);
+          return this.jsonResponse(res, 200, { learningEnabled: manager.isLearningEnabled() });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/feedback') {
+          const { category, content, ref } = body as { category?: unknown; content?: unknown; ref?: unknown };
+          if (!['preference', 'project', 'routine', 'general'].includes(String(category)) || typeof content !== 'string') {
+            return this.jsonResponse(res, 400, { error: 'category and content are required' });
+          }
+          try {
+            // Exact and local-semantic duplicate detection against long-term memory.
+            const candidate = await manager.proposeChecked(auth.device.id, category as MemoryCategory, content, {
+              kind: 'feedback',
+              ...(typeof ref === 'string' && ref ? { ref } : {}),
+            });
+            this.jarvis.audit.record('MEMORY_CANDIDATE_PROPOSED', { candidateId: candidate.id, category: candidate.category, source: 'feedback' }, auth.device.id);
+            return this.jsonResponse(res, 201, { candidate });
+          } catch (error) {
+            if (error instanceof DuplicateMemoryError) {
+              return this.jsonResponse(res, 409, { error: error.message, duplicateOf: error.existingId, match: error.match, ...(error.similarity !== undefined ? { similarity: error.similarity } : {}) });
+            }
+            return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Feedback could not be recorded' });
+          }
+        }
+        // Read-only correction history for one memory (J-E06). Corrections themselves go
+        // through the planner and approval path ("update memory <id> to ...").
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/versions') {
+          const id = url.searchParams.get('id');
+          if (!id || !/^[a-f0-9]{32}$/.test(id)) return this.jsonResponse(res, 400, { error: 'id query parameter is required' });
+          const current = manager.longTerm.get(id);
+          if (!current) return this.jsonResponse(res, 404, { error: 'Memory not found' });
+          return this.jsonResponse(res, 200, { current, versions: manager.versionsOf(id) });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/candidates/decide') {
+          const { id, decision, ttlDays } = body as { id?: unknown; decision?: unknown; ttlDays?: unknown };
+          if (typeof id !== 'string' || !['approve', 'reject'].includes(String(decision))) {
+            return this.jsonResponse(res, 400, { error: 'id and decision (approve|reject) are required' });
+          }
+          try {
+            if (decision === 'approve') {
+              const { candidate, memory } = manager.approve(id, typeof ttlDays === 'number' ? ttlDays : undefined);
+              this.jarvis.audit.record('MEMORY_CANDIDATE_APPROVED', { candidateId: id, memoryId: memory.id, category: memory.category }, auth.device.id);
+              return this.jsonResponse(res, 200, { candidate, memoryId: memory.id });
+            }
+            const candidate = manager.reject(id);
+            this.jarvis.audit.record('MEMORY_CANDIDATE_REJECTED', { candidateId: id }, auth.device.id);
+            return this.jsonResponse(res, 200, { candidate });
+          } catch (error) {
+            return this.jsonResponse(res, 409, { error: error instanceof Error ? error.message : 'Candidate could not be decided' });
+          }
+        }
+        // Owner data portability: a plaintext JSON copy for the authenticated owner device.
+        // The audit records only that an export happened and how many records it held.
+        if (req.method === 'GET' && url.pathname === '/api/memory/export') {
+          const records = this.personalMemory.list();
+          this.jarvis.audit.record('PERSONAL_MEMORY_EXPORTED', { recordCount: records.length }, auth.device.id);
+          const exportedAt = new Date().toISOString();
+          res.setHeader('Content-Disposition', `attachment; filename="jarvis-memory-${exportedAt.slice(0, 10)}.json"`);
+          return this.jsonResponse(res, 200, {
+            format: 'jarvis-personal-memory-export',
+            version: 1,
+            exportedAt,
+            notice: 'Plaintext copy of your JARVIS memories. Deleting a memory in JARVIS does not affect this file.',
+            records: records.map(({ id, category, content, createdAt, updatedAt, expiresAt }) => ({
+              id, category, content,
+              createdAt: new Date(createdAt).toISOString(),
+              updatedAt: new Date(updatedAt).toISOString(),
+              ...(expiresAt !== undefined ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
+            })),
+          });
+        }
         return this.jsonResponse(res, 405, { error: 'Unsupported memory method or route' });
       }
 
       // Local TTS is an authenticated, bounded operation; it has no execution authority.
+      // Lets the HUD skip local TTS when Piper is not configured (no 503s in the console).
+      // Reports a boolean only — never executable or model paths.
+      if (req.method === 'GET' && url.pathname === '/api/voice/status') {
+        let localTts = false;
+        try { localTts = Boolean(createConfiguredPiperProvider()); } catch { localTts = false; }
+        // Local speech-to-text (whisper.cpp) availability: boolean only, never paths.
+        let localStt = false;
+        try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
+        return this.jsonResponse(res, 200, { localTts, localStt });
+      }
       if (req.method === 'POST' && url.pathname === '/api/voice/synthesize') {
         const sessionId = req.headers['x-session-id'] as string;
         if (!sessionId) return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
@@ -446,14 +734,27 @@ export class JarvisServer {
         if (!provider) {
           return this.jsonResponse(res, 503, { error: 'Local Piper TTS is not configured', code: 'LOCAL_TTS_NOT_CONFIGURED' });
         }
+        const synthesisAbort = new AbortController();
+        const abortIfDisconnected = (): void => {
+          if (!res.writableEnded) synthesisAbort.abort();
+        };
+        res.once('close', abortIfDisconnected);
+        req.once('aborted', abortIfDisconnected);
         try {
-          const audio = await provider.synthesize(text);
+          const audio = await provider.synthesize(text, synthesisAbort.signal);
+          if (synthesisAbort.signal.aborted || res.destroyed) return;
           res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
           res.end(audio);
           return;
         } catch {
           // Piper stderr and spawn errors may disclose executable/model paths.
-          return this.jsonResponse(res, 502, { error: 'Local speech generation failed' });
+          if (!synthesisAbort.signal.aborted && !res.destroyed) {
+            return this.jsonResponse(res, 502, { error: 'Local speech generation failed' });
+          }
+          return;
+        } finally {
+          res.off('close', abortIfDisconnected);
+          req.off('aborted', abortIfDisconnected);
         }
       }
 
@@ -477,14 +778,51 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         const provider = await this.voiceProviders.pickLocalStt();
         if (!provider) return this.jsonResponse(res, 503, { error: 'No local speech recognition engine is installed', code: 'LOCAL_STT_NOT_CONFIGURED' });
+        const transcriptionAbort = new AbortController();
+        const abortTranscription = (): void => {
+          if (!res.writableEnded && !transcriptionAbort.signal.aborted) transcriptionAbort.abort();
+        };
+        const onResponseClose = (): void => {
+          if (!res.writableEnded) abortTranscription();
+        };
+        req.once('aborted', abortTranscription);
+        res.once('close', onResponseClose);
         try {
-          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'));
+          if (req.aborted || res.destroyed) abortTranscription();
+          const result = await provider.transcribe(Buffer.from(body.audioBase64, 'base64'), transcriptionAbort.signal);
+          if (transcriptionAbort.signal.aborted || res.destroyed || res.writableEnded) return;
           this.jarvis.audit.record('VOICE_TRANSCRIBED_LOCALLY', { provider: result.provider, textLength: result.text.length }, auth.device.id);
           return this.jsonResponse(res, 200, { text: result.text, provider: result.provider, local: result.local });
         } catch {
+          // A disconnected client has no response channel; stop work without writing to it.
+          if (transcriptionAbort.signal.aborted || res.destroyed || res.writableEnded) return;
           // Keep provider diagnostics (including temporary/model paths) out of API responses.
           return this.jsonResponse(res, 422, { error: 'Local speech recognition failed' });
+        } finally {
+          req.off('aborted', abortTranscription);
+          res.off('close', onResponseClose);
         }
+      }
+
+      // Clear one conversation only after signed authentication; device ownership is enforced by the store.
+      if (req.method === 'POST' && url.pathname === '/api/conversation/clear') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || !this.conversationSessions.isValidId(body.conversationId)) {
+          return this.jsonResponse(res, 400, { error: 'A valid conversationId is required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const deviceId = auth.device.id;
+        const clearConversationId: string = body.conversationId;
+        // Serialize clearing with message handling to prevent an in-flight response
+        // from persisting history after the clear operation completes.
+        const cleared = await this.conversationSessions.runExclusive(
+          clearConversationId,
+          () => Promise.resolve(this.conversationSessions.clear(clearConversationId, deviceId)),
+        );
+        return this.jsonResponse(res, cleared ? 200 : 404, { success: cleared });
       }
 
       // Submit user request
@@ -497,7 +835,10 @@ export class JarvisServer {
         if (!this.isJsonObject(body)) {
           return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
         }
-        const { text } = body as { text: string };
+        const { text, conversationId } = body as { text: string; conversationId?: string };
+        if (conversationId !== undefined && !this.conversationSessions.isValidId(conversationId)) {
+          return this.jsonResponse(res, 400, { error: 'conversationId must be a valid conversation UUID' });
+        }
         if (typeof text !== 'string' || !text.trim() || text.length > 4000) {
           return this.jsonResponse(res, 400, { error: 'text must be a non-empty string up to 4000 characters' });
         }
@@ -507,20 +848,158 @@ export class JarvisServer {
         }
         // Conversation requests are handled only after signed-session authentication.
         // Action-like directives continue through the existing planner and PolicyGateway.
-        const conversationMemory = auth.device.permissions.includes(Permission.DEVICE_MANAGE) && this.personalMemory
-          ? this.personalMemory.list().slice(0, 8).map((record) => ({ content: record.content, category: record.category }))
-          : [];
-        const conversationalAnswer = await answerConversationalMessage(text.trim(), conversationMemory);
-        if (conversationalAnswer) {
-          this.jarvis.audit.record('CONVERSATIONAL_ANSWER', { requestLength: text.trim().length, responseLength: conversationalAnswer.length }, auth.device.id);
-          return this.jsonResponse(res, 200, {
-            state: 'ANSWERED',
-            message: conversationalAnswer,
-            data: { kind: 'conversation' },
-          });
+        // Supply only request-relevant memories to the conversational prompt.
+        // The memory store is encrypted and the model treats these records as untrusted data.
+        // Two-tier retrieval: this conversation's working memory plus relevant long-term
+        // memory (long-term only for device-management devices), bounded in size.
+        const canReadLongTerm = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        // Ranked (local semantic + lexical + recency) retrieval is skipped for action
+        // requests, which go to the planner and never use conversational memory context.
+        const conversationMemory = isActionRequest(text.trim())
+          ? []
+          : this.jarvis.memoryManager
+          ? (await this.jarvis.memoryManager.retrieveContextRanked({
+            deviceId: auth.device.id,
+            query: text.trim(),
+            ...(conversationId ? { scope: { kind: 'conversation' as const, id: conversationId } } : {}),
+            includeLongTerm: canReadLongTerm,
+            maxItems: 6,
+            maxChars: 3000,
+          })).map((item) => ({ content: item.content, category: item.tier === 'working' ? 'working_' + item.label : item.label }))
+          : canReadLongTerm && this.personalMemory
+            ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
+            : [];
+
+        // Do not allocate conversation state for commands routed to the execution planner.
+        if (isActionRequest(text.trim())) {
+          const result = await this.jarvis.submitRequest(sessionId, text.trim());
+          return this.jsonResponse(res, 200, result);
         }
-        const result = await this.jarvis.submitRequest(sessionId, text.trim());
-        return this.jsonResponse(res, 200, result);
+        const authDevice = auth.device;
+        const lockId = conversationId || 'unthreaded:' + authDevice.id + ':' + text.trim();
+        return await this.conversationSessions.runExclusive(lockId, async () => {
+          const conversation = this.conversationSessions.getOrCreate(authDevice.id, conversationId);
+          if (!conversation) return this.jsonResponse(res, 403, { error: 'Conversation does not belong to this authenticated device' });
+          // Working memory: short-lived, RAM-only context for this conversation.
+          this.jarvis.memoryManager?.working.put(authDevice.id, 'conversation', conversation.id, 'user_turn', text.trim());
+
+          // Advisory agents share the same device-bound conversation thread and lock.
+          // Only a small recent slice is supplied as untrusted context; it never grants tool authority.
+          const agentRoute = routeAgentRequest(text.trim());
+          if (agentRoute.destination === 'agent' && agentRoute.profile !== 'developer_assistant') {
+            const adapter = createConfiguredAgentModelAdapter();
+            if (adapter) {
+              const limit = this.agentRequestLimiter.consume(authDevice.id);
+              if (!limit.allowed) {
+                this.jarvis.audit.record('ADVISORY_AGENT_RATE_LIMITED', {
+                  profile: agentRoute.profile,
+                  retryAfterSeconds: limit.retryAfterSeconds,
+                }, authDevice.id);
+                res.setHeader('Retry-After', String(limit.retryAfterSeconds));
+                return this.jsonResponse(res, 429, {
+                  error: 'The advisory AI request limit has been reached for this device.',
+                  code: 'ADVISORY_AI_RATE_LIMITED',
+                  retryAfterSeconds: limit.retryAfterSeconds,
+                });
+              }
+              const recentHistory = conversation.history.slice(-3).map((message) => ({
+                label: 'conversation_' + message.role,
+                content: message.content,
+              }));
+              const agentResult = await runAgent({
+                request: text.trim(),
+                profile: agentRoute.profile,
+                context: [
+                  ...conversationMemory.map((item) => ({ label: item.category, content: item.content })),
+                  ...recentHistory,
+                ],
+              }, adapter);
+              if (agentResult.status === 'completed') {
+                const response = agentResult.response;
+                // Model output supplies candidate IDs and reasoning only. All capability
+                // status, platform, risk and approval metadata comes from the trusted catalogue.
+                const capabilityDetails: Array<{
+                  toolId: string;
+                  name: string;
+                  description: string;
+                  platforms: readonly string[];
+                  status: string;
+                  risk: string;
+                  requiresApproval: boolean;
+                  requiresDeviceAgent: boolean;
+                }> = [];
+                if ('candidates' in response) {
+                  for (const candidate of response.candidates) {
+                    const capability = getCapability(candidate.toolId);
+                    if (!capability || capability.status === 'restricted') continue;
+                    capabilityDetails.push({
+                      toolId: capability.id,
+                      name: capability.name,
+                      description: capability.description,
+                      platforms: capability.platforms,
+                      status: capability.status,
+                      risk: capability.risk,
+                      requiresApproval: capability.requiresApproval,
+                      requiresDeviceAgent: capability.requiresDeviceAgent,
+                    });
+                  }
+                }
+                const message = 'summary' in response
+                  ? response.summary
+                  : 'goal' in response
+                    ? response.goal + (response.steps.length ? '\\n' + response.steps.map((step, index) => (index + 1) + '. ' + step.title + ': ' + step.description).join('\\n') : '')
+                    : 'candidates' in response
+                      ? response.candidates.map((candidate) => {
+                        const capability = capabilityDetails.find((item) => item.toolId === candidate.toolId);
+                        if (!capability) return candidate.toolId + ': capability metadata unavailable; do not use.';
+                        const approval = capability.requiresApproval ? 'owner approval required' : 'no separate approval flag';
+                        return capability.name + ' (' + capability.status + ', ' + capability.risk + ' risk, ' + approval + ', platforms: ' + capability.platforms.join(', ') + '): ' + candidate.rationale;
+                      }).join('\\n') || 'No supported tool was identified.'
+                      : 'The agent completed the request.';
+                this.conversationSessions.appendTurn(conversation.id, authDevice.id, text.trim(), message);
+                this.jarvis.audit.record('ADVISORY_AGENT_COMPLETED', { profile: agentResult.profile, requestLength: text.trim().length }, authDevice.id);
+                return this.jsonResponse(res, 200, {
+                  state: 'ANSWERED',
+                  message,
+                  data: {
+                    kind: 'agent',
+                    profile: agentResult.profile,
+                    conversationId: conversation.id,
+                    response,
+                    ...(capabilityDetails.length ? { capabilityDetails } : {}),
+                  },
+                });
+              }
+              this.jarvis.audit.record('ADVISORY_AGENT_FALLBACK', {
+                profile: agentRoute.profile,
+                status: agentResult.status,
+                failureCode: agentResult.status === 'invalid_response' || agentResult.status === 'unavailable'
+                  ? agentResult.failureCode
+                  : 'unexpected_agent_route',
+                requestLength: text.trim().length,
+                contextItemCount: Math.min(8, conversationMemory.length + recentHistory.length),
+              }, authDevice.id);
+            }
+          }
+
+          const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
+          if (conversationalResult) {
+            if (conversationalResult.persistInHistory) {
+              this.conversationSessions.appendTurn(conversation.id, authDevice.id, text.trim(), conversationalResult.answer);
+            }
+            this.jarvis.audit.record('CONVERSATIONAL_ANSWER', {
+              requestLength: text.trim().length,
+              responseLength: conversationalResult.answer.length,
+              persisted: conversationalResult.persistInHistory,
+            }, authDevice.id);
+            return this.jsonResponse(res, 200, {
+              state: 'ANSWERED',
+              message: conversationalResult.answer,
+              data: { kind: 'conversation', conversationId: conversation.id },
+            });
+          }
+          return this.jsonResponse(res, 200, await this.jarvis.submitRequest(sessionId, text.trim()));
+        });
       }
 
       // Approve task
@@ -542,6 +1021,11 @@ export class JarvisServer {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
         const result = await this.jarvis.approveTask(approvalId, sessionId);
+        // An expired approval is a conflict, not a successful approval. The full
+        // task result (state EXPIRED) is included so clients can retire the card.
+        if (result.state === TaskState.EXPIRED) {
+          return this.jsonResponse(res, 409, { ...result, error: result.message });
+        }
         return this.jsonResponse(res, 200, result);
       }
 
@@ -593,7 +1077,9 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (auth.device.platform !== 'Android' || !auth.device.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Android read-only agent permission is required' });
-        const command = this.androidCommands.claimNext(auth.device.id);
+        // Revalidate queued work at claim time: a phone reconnecting later never
+        // receives commands whose requester was revoked or lost permission.
+        const command = this.androidCommands.claimNext(auth.device.id, (queued) => this.isAndroidCommandStillAuthorized(queued));
         return this.jsonResponse(res, 200, { command });
       }
 
@@ -612,10 +1098,35 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (auth.device.platform !== 'Android') return this.jsonResponse(res, 403, { error: 'Only an Android device can return app inventory' });
-        const completed = this.androidCommands.complete(auth.device.id, body.commandId, body.apps as Array<{label:string; packageName:string}>);
-        if (!completed) return this.jsonResponse(res, 409, { error: 'Command is expired, unknown, already completed, or belongs to another device' });
+        const outcome = this.androidCommands.completeDetailed(
+          auth.device.id, body.commandId, body.apps as Array<{label:string; packageName:string}>,
+          (queued) => this.isAndroidCommandStillAuthorized(queued),
+        );
+        // A retried upload of an already-accepted result is acknowledged without
+        // overwriting it, so network retries are idempotent.
+        if (outcome === 'duplicate') return this.jsonResponse(res, 200, { success: true, duplicate: true });
+        if (outcome !== 'completed') {
+          this.jarvis.audit.record('ANDROID_COMMAND_RESULT_REJECTED', { commandId: body.commandId, outcome }, auth.device.id);
+          return this.jsonResponse(res, 409, { error: 'Command result was not accepted', outcome });
+        }
         this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
         return this.jsonResponse(res, 200, { success: true });
+      }
+
+      // Requester cancellation of queued phone work; repeating a cancel is a no-op success.
+      if (req.method === 'POST' && url.pathname === '/api/android/commands/cancel') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.commandId !== 'string') return this.jsonResponse(res, 400, { error: 'commandId is required' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Device-management permission is required' });
+        const outcome = this.androidCommands.cancel(auth.device.id, body.commandId);
+        if (outcome === 'not_found') return this.jsonResponse(res, 404, { error: 'Command not found' });
+        if (outcome === 'not_cancellable') return this.jsonResponse(res, 409, { error: 'Command already finished', outcome });
+        if (outcome === 'cancelled') this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+        return this.jsonResponse(res, 200, { success: true, outcome });
       }
 
       if (req.method === 'GET' && url.pathname === '/api/android/commands/results') {
@@ -692,7 +1203,19 @@ export class JarvisServer {
         const tasks = this.jarvis.listTasks()
           .filter((task) => manager || task.deviceId === auth.device!.id)
           .slice(-30)
-          .map((task) => ({ id: task.id, state: task.state, operation: task.operation, origin: task.origin, createdAt: task.createdAt, updatedAt: task.updatedAt, steps: task.steps || [] }));
+          .map((task) => ({
+            id: task.id,
+            state: task.state,
+            operation: task.operation,
+            origin: task.origin,
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            steps: task.steps || [],
+            // Only expose the exact directive and single-use approval token while consent is pending.
+            ...(task.state === TaskState.AWAITING_APPROVAL && task.approvalId
+              ? { approvalId: task.approvalId, requestText: task.requestText }
+              : {}),
+          }));
         return this.jsonResponse(res, 200, { tasks });
       }
 
@@ -822,6 +1345,16 @@ export class JarvisServer {
     const decision = this.jarvis.policy.evaluate({ operation, parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
     if (!decision.allowed) return { status: 403, error: 'Device is not authorized for this security operation' };
     return { status: 200, device: auth.device };
+  }
+
+  /** Both ends of a queued phone command must still be active and permitted. */
+  private isAndroidCommandStillAuthorized(command: Readonly<{ requesterDeviceId: string; targetDeviceId: string }>): boolean {
+    const requester = this.jarvis.identity.getDevice(command.requesterDeviceId);
+    const target = this.jarvis.identity.getDevice(command.targetDeviceId);
+    return Boolean(
+      requester && requester.status === 'ACTIVE' && requester.permissions.includes(Permission.DEVICE_MANAGE) &&
+      target && target.status === 'ACTIVE' && target.platform === 'Android' && target.permissions.includes(Permission.SYSTEM_INFO_READ),
+    );
   }
 
   private isOwnerControlAuthorized(req: IncomingMessage): boolean {

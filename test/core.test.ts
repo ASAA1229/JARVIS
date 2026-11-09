@@ -328,3 +328,37 @@ test('VOICE-INTENT: spoken "open note pad" resolves to the allowlisted Notepad a
   assert.strictEqual(plan.operations[0].operation, 'app:launch');
   assert.strictEqual(plan.operations[0].parameters.appId, 'notepad');
 });
+
+test('PLANNER-APP-INTENT: application names without an explicit launch verb do not launch apps', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'intent-test', timestamp: Date.now() };
+
+  for (const request of [
+    'What is Notepad?',
+    'Is Calculator installed?',
+    'Tell me about Paint',
+    'Close Notepad',
+  ]) {
+    const plan = await planner.generatePlan(request, context);
+    assert.equal(
+      plan.operations.some((operation) => operation.operation === 'app:launch'),
+      false,
+      request,
+    );
+  }
+});
+
+test('PLANNER-APP-INTENT: explicit launch verbs still map common apps to the allowlist', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'intent-test', timestamp: Date.now() };
+
+  for (const [request, appId] of [
+    ['Hey Jarvis, open Notepad', 'notepad'],
+    ['Please launch Calculator', 'calc'],
+    ['Start Paint', 'mspaint'],
+  ]) {
+    const plan = await planner.generatePlan(request, context);
+    assert.equal(plan.operations[0]?.operation, 'app:launch', request);
+    assert.equal(plan.operations[0]?.parameters.appId, appId, request);
+  }
+});

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JARVIS — Cinematic Autonomous HUD</title>
   <link rel="stylesheet" href="/hud/hud.css">
+  <link rel="stylesheet" href="/hud/hud-panels.css">
 </head>
 <body class="hud-body" data-state="idle" data-speaking="false">
   <!-- Ambient layers: static CSS only, no images and no per-frame work -->
@@ -124,6 +125,7 @@
         <div class="hud-status-banner">
           <span class="hud-state-label" id="hud-state-label" role="status" aria-live="polite" aria-atomic="true">IDLE — READY FOR DIRECTIVE</span>
           <p class="hud-state-sub" id="hud-state-sub">Push-to-talk is available after one-session browser speech consent. Hands-free wake listening stays off until a local audio wake-word engine is installed.</p>
+          <p class="hud-voice-state" id="hud-voice-state" data-state="idle" role="status" aria-live="polite" tabindex="0" aria-label="Voice assistant state">VOICE: IDLE</p>
         </div>
 
         <div class="transcript-box frame hidden" id="transcript-box">
@@ -187,6 +189,41 @@
           </div>
 
           <div class="tasks-timeline-header">
+            <span>RESOURCES &amp; AI</span>
+            <button id="btn-refresh-resources" class="hud-btn-mini" type="button">REFRESH</button>
+          </div>
+          <div id="hud-resources" class="hud-resources" role="region" aria-label="Resource profile and AI provider status" aria-live="polite">
+            <p id="hud-resources-summary" class="task-history-empty">Resource status appears after the secure session is restored.</p>
+            <div class="hud-resources-controls">
+              <label for="hud-resource-mode">PROFILE</label>
+              <select id="hud-resource-mode" aria-label="Resource profile mode">
+                <option value="auto">AUTO</option>
+                <option value="idle">IDLE</option>
+                <option value="normal">NORMAL</option>
+                <option value="intensive">INTENSIVE</option>
+              </select>
+              <button id="btn-stop-heavy-work" class="hud-btn-mini" type="button">STOP HEAVY WORK</button>
+            </div>
+            <ul id="hud-heavy-work" class="hud-heavy-work"></ul>
+          </div>
+          <div class="tasks-timeline-header">
+            <span>SYNC &amp; CONFLICTS</span>
+            <button id="btn-refresh-sync" class="hud-btn-mini" type="button">REFRESH</button>
+          </div>
+          <div id="hud-sync" class="hud-sync" role="region" aria-label="Device sync, conflicts and queued offline commands" aria-live="polite">
+            <p id="hud-sync-summary" class="task-history-empty">Sync status appears after the secure session is restored.</p>
+            <ul id="hud-sync-devices" class="hud-sync-list" aria-label="Synced devices"></ul>
+            <ul id="hud-sync-conflicts" class="hud-sync-list" aria-label="Open sync conflicts"></ul>
+            <ul id="hud-sync-commands" class="hud-sync-list" aria-label="Offline commands awaiting you"></ul>
+          </div>
+          <div class="tasks-timeline-header task-history-heading">
+            <span>RECENT TASKS</span>
+            <button id="btn-refresh-tasks" class="hud-btn-mini" type="button">REFRESH</button>
+          </div>
+          <div id="hud-task-history" class="hud-task-history" role="region" aria-label="Recent task history" aria-live="polite">
+            <div class="task-history-empty">Task history will appear after the secure session is restored.</div>
+          </div>
+          <div class="tasks-timeline-header">
             <span>EXECUTION EVIDENCE FEED</span>
           </div>
           <div class="hud-tasks-feed" id="hud-tasks-feed">
@@ -197,6 +234,7 @@
           </div>
         </div>
       </aside>
+      <section id="hud-owner-panels" class="hud-owner-panels frame" aria-label="Owner control panels"></section>
     </main>
 
     <!-- Command deck: quick directives and text fallback -->
@@ -231,7 +269,7 @@
         <button id="btn-hands-free-toggle" class="hud-btn-mini" title="Enable or disable wake phrase detection" aria-pressed="false">ENABLE WAKE DETECTION</button>
         <button id="btn-hands-free-pause" class="hud-btn-mini" title="Pause or resume wake phrase detection" aria-pressed="false" disabled>PAUSE LISTENING</button>
       </div>
-      <div class="hud-privacy-notice" role="group" aria-label="Voice privacy controls"><p>Local wake detection runs on this device after the optional runtime/model is installed. Browser speech recognition may send command audio to a browser/vendor service; local-only recognition is not guaranteed. Consent is session-only and never stored.</p><label for="allow-browser-speech"><input id="allow-browser-speech" type="checkbox"> I allow browser speech recognition for push-to-talk in this session.</label><label for="allow-wake-browser-speech"><input id="allow-wake-browser-speech" type="checkbox"> I separately allow browser speech recognition after local “Hey Jarvis” detection in this session.</label><p>Wake detection stays unavailable if local model/runtime assets are missing. Typed directives remain available.</p></div>
+      <div class="hud-privacy-notice" role="group" aria-label="Voice privacy controls"><p>Local wake detection runs on this device after the optional runtime/model is installed. Browser speech recognition may send command audio to a browser/vendor service; local-only recognition is not guaranteed. Consent is session-only and never stored.</p><label for="allow-browser-speech"><input id="allow-browser-speech" type="checkbox"> I allow browser speech recognition for push-to-talk in this session.</label><label for="allow-wake-browser-speech"><input id="allow-wake-browser-speech" type="checkbox"> I separately allow browser speech recognition after local “Hey Jarvis” detection in this session.</label><p>Wake detection stays unavailable if local model/runtime assets are missing. Typed directives remain available.</p><label for="stt-provider">Speech-to-text engine: <select id="stt-provider" aria-describedby="stt-provider-note"><option value="browser">Browser speech recognition (may be processed by a cloud service)</option><option value="local">Local Whisper on this laptop (private, needs install)</option></select></label><p id="stt-provider-note" role="status" aria-live="polite">Checking which speech engines are installed…</p><p id="tts-engine-label" role="status" aria-live="polite">Speech output: checking…</p></div>
       <div class="hud-controls hud-controls-right">
         <button id="btn-hands-free" class="hud-btn-mini" type="button" aria-pressed="false">HANDS-FREE CAPTURE: OFF</button>
         <button id="btn-speech-output" class="hud-btn-mini" type="button" aria-pressed="true">VOICE: ON</button>
@@ -242,6 +280,7 @@
 
   <script src="/deviceCrypto.js"></script>
   <script src="/hud/hud.js"></script>
+  <script src="/hud/hud-panels.js"></script>
   <script type="module" src="/hud/gesture.js"></script>
 </body>
 </html>

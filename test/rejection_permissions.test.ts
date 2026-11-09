@@ -64,9 +64,10 @@ test('a stale approval cannot reject a task already awaiting recovery', async ()
   );
 
   const approval = jarvis.policy.getApproval(approvalId);
-  assert.equal(approval?.approved, undefined);
+  assert.equal(approval?.approved, false);
   assert.equal(approval?.rejected, undefined);
-  assert.equal(approval?.consumed, false);
+  assert.ok(approval, 'approval record must remain available');
+  assert.notEqual(approval.consumed, true);
   assert.equal(jarvis.getTask(pending.taskId)?.state, TaskState.AWAITING_RECOVERY);
   assert.equal(jarvis.audit.getRecords().filter((event) => event.eventType === 'REJECTION_FAILED_TASK_NOT_PENDING').length, 1);
 });

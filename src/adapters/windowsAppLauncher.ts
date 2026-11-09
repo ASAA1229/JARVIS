@@ -45,7 +45,11 @@ export function discoveredLaunchResult(
       exactOrUniqueMatch: true,
       newWindowDetected: Boolean(newWindow),
       targetWindowVerified,
-      verificationLimitation: targetWindowVerified ? undefined : 'No trusted AppID-to-process identity mapping is available for this app.',
+      verificationLimitation: targetWindowVerified
+        ? undefined
+        : expectedIdentity
+          ? 'No new window owned by the expected process appeared within the verification window.'
+          : 'No trusted AppID-to-process identity mapping is available for this app.',
       ...(expectedIdentity ? { expectedProcessNames: expectedIdentity.processNames } : {}),
     },
     error: targetWindowVerified ? undefined : 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
@@ -64,6 +68,27 @@ export function discoveredWindowIdentity(name: string): { processNames: string[]
   return DISCOVERED_WINDOW_IDENTITIES[name.trim().toLowerCase()];
 }
 
+/** Packaged-app AUMID: PackageFamilyName!ApplicationId. */
+export const PACKAGED_APP_ID = /^([A-Za-z0-9.-]{1,100}_[a-z0-9]{13})!([A-Za-z0-9._-]{1,64})$/;
+
+/**
+ * Desktop Start-menu entries whose AppID is an executable path carry their own
+ * trusted process identity (the executable basename). Shell-host processes are
+ * never accepted as an identity because they own windows of unrelated apps.
+ */
+export function appIdProcessIdentity(appId: string): { processNames: string[] } | undefined {
+  const match = /(?:^|[\\/])([A-Za-z0-9 ._()+-]{1,80})\.exe$/i.exec(appId.trim());
+  return match ? processIdentityFromExecutable(match[1]) : undefined;
+}
+
+const SHELL_HOST_PROCESSES = new Set(['explorer', 'applicationframehost', 'cmd', 'powershell', 'pwsh', 'rundll32', 'dllhost', 'svchost', 'conhost', 'win32bridge.server']);
+
+export function processIdentityFromExecutable(executable: string): { processNames: string[] } | undefined {
+  const base = executable.trim().split(/[\\/]/).pop()?.replace(/\.exe$/i, '') ?? '';
+  if (!base || base.includes('$') || SHELL_HOST_PROCESSES.has(base.toLowerCase())) return undefined;
+  return { processNames: [base] };
+}
+
 export function matchesExpectedAppWindow(
   window: WindowInfo,
   app: Pick<AllowlistedApp, 'windowMatch'>,
@@ -78,8 +103,19 @@ export function matchesExpectedAppWindow(
     window.title.toLowerCase().includes(match.titleContains.toLowerCase());
 }
 
+/** A focus target is safe only when exactly one window has the trusted app identity. */
+export function selectUniqueExpectedAppWindow(
+  windows: WindowInfo[],
+  app: Pick<AllowlistedApp, 'windowMatch'>,
+): { window?: WindowInfo; matchCount: number } {
+  const matches = windows.filter((window) => matchesExpectedAppWindow(window, app));
+  return { window: matches.length === 1 ? matches[0] : undefined, matchCount: matches.length };
+}
+
 export class WindowsAppLauncherAdapter {
-  private readonly windows = new WindowsWindowManager();
+  constructor(
+    private readonly windows: Pick<WindowsWindowManager, 'snapshot' | 'focusWindow' | 'waitForNewWindow'> = new WindowsWindowManager(),
+  ) {}
 
   // Explicit allowlist of launchable applications
   private readonly allowlist: Map<string, AllowlistedApp> = new Map([
@@ -111,6 +147,46 @@ export class WindowsAppLauncherAdapter {
         executable: 'mspaint.exe',
         processName: 'mspaint.exe',
         windowMatch: { processNames: ['mspaint'], titleContains: 'Paint' },
+      },
+    ],
+    [
+      'explorer',
+      {
+        id: 'explorer',
+        name: 'File Explorer',
+        executable: 'explorer.exe',
+        processName: 'explorer.exe',
+        windowMatch: { processNames: ['explorer'], titleContains: 'File Explorer' },
+      },
+    ],
+    [
+      'taskmgr',
+      {
+        id: 'taskmgr',
+        name: 'Task Manager',
+        executable: 'taskmgr.exe',
+        processName: 'Taskmgr.exe',
+        windowMatch: { processNames: ['taskmgr'], titleContains: 'Task Manager' },
+      },
+    ],
+    [
+      'cmd',
+      {
+        id: 'cmd',
+        name: 'Command Prompt',
+        executable: 'cmd.exe',
+        processName: 'cmd.exe',
+        windowMatch: { processNames: ['cmd'], titleContains: 'Command Prompt' },
+      },
+    ],
+    [
+      'powershell',
+      {
+        id: 'powershell',
+        name: 'PowerShell',
+        executable: 'powershell.exe',
+        processName: 'powershell.exe',
+        windowMatch: { processNames: ['powershell'], titleContains: 'Windows PowerShell' },
       },
     ],
   ]);
@@ -212,11 +288,69 @@ export class WindowsAppLauncherAdapter {
           interrupted: true,
         };
       }
-      // Snapshot existing windows so a launch can be verified by a window that did not
-      // exist before. Failure here (for example a locked desktop) only lowers the
-      // verification level; it never turns into a claimed success.
-      let knownPids = new Set<number>();
-      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
+      // Capture the current desktop once. Besides identifying new windows after
+      // launch, this lets "open Notepad" bring an already-open, unambiguous window
+      // forward instead of spawning a process that may hand off to an existing
+      // singleton and then fail the new-PID verification.
+      let knownWindows: WindowInfo[];
+      try {
+        knownWindows = await this.windows.snapshot(signal);
+      } catch (error) {
+        // Without a trustworthy baseline, JARVIS cannot know whether this app is
+        // already open or safely identify a newly created window. Fail closed:
+        // do not launch a duplicate or report an unverified action as success.
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'JARVIS could not inspect the current Windows desktop, so it did not launch the application. Retry when window inspection is available.',
+          failureKind: signal?.aborted ? 'cancelled' : 'unavailable',
+          interrupted: signal?.aborted || undefined,
+          evidence: {
+            appId: app.id,
+            operation: 'app:launch',
+            desktopSnapshotAvailable: false,
+            launchSkipped: true,
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+          },
+        };
+      }
+      const knownPids = new Set(knownWindows.map((window) => window.pid));
+      const existingSelection = selectUniqueExpectedAppWindow(knownWindows, app);
+      if (existingSelection.matchCount > 1) {
+        return {
+          success: true,
+          outcome: VerificationOutcome.PARTIAL_SUCCESS,
+          data: { appId: app.id, name: app.name, status: 'Already running; multiple matching windows found' },
+          evidence: { reusedExistingWindow: false, ambiguousWindowCount: existingSelection.matchCount, focusAttempted: false, duplicateLaunchPrevented: true },
+          error: 'Multiple existing windows match this application; JARVIS did not choose one or launch a duplicate.',
+        };
+      }
+      if (existingSelection.window) {
+        const existing = existingSelection.window;
+        let focused = await this.windows.focusWindow({ pid: existing.pid }, signal);
+        if (!focused.success && !signal?.aborted && existing.processName !== 'ApplicationFrameHost' && existing.title) {
+          // Store (UWP) apps such as Calculator render inside an ApplicationFrameHost
+          // frame; the app's own CoreWindow cannot take foreground directly. Focus the
+          // frame with the same title — focusWindow still requires exactly one match
+          // and verifies the foreground window afterwards.
+          const framed = await this.windows.focusWindow({ processName: 'ApplicationFrameHost', titleContains: existing.title }, signal);
+          if (framed.success) focused = framed;
+        }
+        if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+          return {
+            ...focused,
+            success: false,
+            error: 'The application is already open, but JARVIS could not verify that its existing window was brought forward. ' + (focused.error || ''),
+            evidence: { ...focused.evidence, appId: app.id, reusedExistingWindow: true },
+          };
+        }
+        return {
+          success: true,
+          outcome: VerificationOutcome.VERIFIED_SUCCESS,
+          data: { appId: app.id, name: app.name, pid: existing.pid, status: 'Already running; existing window focused', windowPid: existing.pid, windowProcess: existing.processName, windowTitle: existing.title },
+          evidence: { appId: app.id, pid: existing.pid, processName: existing.processName, existingWindowDetected: true, reusedExistingWindow: true, mechanism: 'unique existing window snapshot and verified foreground focus', timestamp: Date.now() },
+        };
+      }
 
       // Spawn process detached, WITHOUT shell: true (preventing shell injection attacks)
       const child = spawn(app.executable, [], {
@@ -252,7 +386,49 @@ export class WindowsAppLauncherAdapter {
           evidence: { pid, processName: app.processName, newWindowDetected: true, windowPid: appWindow.pid, mechanism: 'window snapshot before/after launch', timestamp: Date.now() },
         };
       }
-      // No new window: a process check alone cannot prove a usable window exists.
+      // The app may reuse an already-open process/window. Only focus when exactly
+      // one trusted window matches this allowlisted app identity.
+      if (app.windowMatch) {
+        try {
+          const selection = selectUniqueExpectedAppWindow(await this.windows.snapshot(signal), app);
+          if (selection.window) {
+            const existingWindow = selection.window;
+            const focused = await this.windows.focusWindow({ pid: existingWindow.pid }, signal);
+            if (focused.success && focused.outcome === VerificationOutcome.VERIFIED_SUCCESS) {
+              return {
+                success: true,
+                outcome: VerificationOutcome.VERIFIED_SUCCESS,
+                data: {
+                  appId: app.id,
+                  name: app.name,
+                  pid: existingWindow.pid,
+                  status: 'Existing application window focused',
+                  windowTitle: existingWindow.title,
+                },
+                evidence: {
+                  existingWindowReused: true,
+                  windowPid: existingWindow.pid,
+                  windowProcess: existingWindow.processName,
+                  mechanism: 'unique trusted app-window match + verified foreground focus',
+                },
+              };
+            }
+          } else if (selection.matchCount > 1) {
+            return {
+              success: true,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              data: { appId: app.id, name: app.name, status: 'Launch requested; multiple existing windows matched' },
+              evidence: { existingWindowReused: true, ambiguousWindowCount: selection.matchCount, focusAttempted: false },
+              error: 'Multiple existing windows match this application; JARVIS did not choose one to focus.',
+            };
+          }
+        } catch {
+          // A failed snapshot/focus must not be treated as launch verification.
+        }
+      }
+
+      // No uniquely verified usable window: a process check alone cannot prove
+      // that the user-visible application is ready for input.
       await delay(300, undefined, { signal });
       const isRunning = await this.verifyProcessRunning(app.processName, pid, signal);
 
@@ -355,21 +531,77 @@ export class WindowsAppLauncherAdapter {
         return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: "Multiple applications matched '" + query + "'. Ask for the exact app name.", evidence: { query, candidates: matches.map((candidate) => candidate.Name) } };
       }
       const selected = matches[0];
-      let knownPids = new Set<number>();
-      try { knownPids = new Set((await this.windows.snapshot(signal)).map((window) => window.pid)); } catch { /* verification will be PARTIAL */ }
+      let knownWindows: WindowInfo[] = [];
+      let initialSnapshotVerified = false;
+      try {
+        knownWindows = await this.windows.snapshot(signal);
+        initialSnapshotVerified = true;
+      } catch { /* do not launch a known app when existing-window state is unknown */ }
+      const knownPids = new Set(knownWindows.map((window) => window.pid));
+      const expectedIdentity = discoveredWindowIdentity(selected.Name)
+        ?? appIdProcessIdentity(selected.AppID)
+        ?? await this.packagedAppIdentity(selected.AppID, signal);
+      if (expectedIdentity && !initialSnapshotVerified) {
+        return {
+          success: false,
+          outcome: VerificationOutcome.UNCERTAIN,
+          error: 'JARVIS could not inspect existing windows, so it did not launch the discovered application.',
+          evidence: { appId: selected.AppID, existingWindowStateKnown: false, launchPrevented: true },
+        };
+      }
+      if (expectedIdentity) {
+        const existing = selectUniqueExpectedAppWindow(knownWindows, { windowMatch: expectedIdentity });
+        if (existing.matchCount > 1) {
+          return {
+            success: true,
+            outcome: VerificationOutcome.PARTIAL_SUCCESS,
+            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; multiple matching windows found' },
+            evidence: { existingWindowDetected: true, ambiguousWindowCount: existing.matchCount, focusAttempted: false, duplicateLaunchPrevented: true },
+            error: 'Multiple existing windows match this application; JARVIS did not choose one or launch a duplicate.',
+          };
+        }
+        if (existing.window) {
+          const focused = await this.windows.focusWindow({ pid: existing.window.pid }, signal);
+          if (!focused.success || focused.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+            return {
+              ...focused,
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application is already open, but JARVIS could not verify its existing window was brought forward.',
+              evidence: { ...focused.evidence, existingWindowDetected: true, reusedExistingWindow: true },
+            };
+          }
+          return {
+            success: true,
+            outcome: VerificationOutcome.VERIFIED_SUCCESS,
+            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; existing window focused', windowPid: existing.window.pid, windowTitle: existing.window.title },
+            evidence: { existingWindowDetected: true, reusedExistingWindow: true, foregroundFocusVerified: true },
+          };
+        }
+      }
       await execFileAsync('explorer.exe', ['shell:AppsFolder\\' + selected.AppID], {
         timeout: 8_000, windowsHide: true, signal,
       });
       let newWindow: WindowInfo | undefined;
-      const expectedIdentity = discoveredWindowIdentity(selected.Name);
       if (expectedIdentity) {
         const deadline = Date.now() + 8_000;
         while (Date.now() < deadline && !signal?.aborted) {
           try {
             const windows = await this.windows.snapshot(signal);
-            newWindow = windows.find((window) =>
+            const freshWindows = windows.filter((window) =>
               !knownPids.has(window.pid) &&
               matchesExpectedAppWindow(window, { windowMatch: expectedIdentity }));
+            const selection = selectUniqueExpectedAppWindow(freshWindows, { windowMatch: expectedIdentity });
+            if (selection.matchCount > 1) {
+              return {
+                success: true,
+                outcome: VerificationOutcome.PARTIAL_SUCCESS,
+                data: { name: selected.Name, appId: selected.AppID, status: 'Launch requested; multiple matching windows appeared' },
+                evidence: { newWindowDetected: true, ambiguousWindowCount: selection.matchCount, focusAttempted: false },
+                error: 'Multiple new windows match this application; JARVIS cannot safely identify a single target.',
+              };
+            }
+            newWindow = selection.window;
           } catch { newWindow = undefined; }
           if (newWindow) break;
           await delay(400, undefined, { signal }).catch(() => undefined);
@@ -388,6 +620,32 @@ export class WindowsAppLauncherAdapter {
         evidence: { query, discovery: 'Get-StartApps', errorType: error instanceof Error ? error.name : 'UnknownError' },
         interrupted: signal?.aborted,
       };
+    }
+  }
+
+  /**
+   * Resolve a packaged app's executable from its installed AppxManifest. The
+   * AUMID is validated against a strict pattern before it reaches PowerShell.
+   * Any failure leaves the launch unverified (partial) rather than guessing.
+   */
+  private async packagedAppIdentity(appId: string, signal?: AbortSignal): Promise<{ processNames: string[] } | undefined> {
+    const match = PACKAGED_APP_ID.exec(appId);
+    if (!match || process.platform !== 'win32' || signal?.aborted) return undefined;
+    const script = [
+      '$ErrorActionPreference = "Stop"',
+      "$p = Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq '" + match[1] + "' } | Select-Object -First 1",
+      'if (-not $p) { return }',
+      "[xml]$m = Get-Content -LiteralPath (Join-Path $p.InstallLocation 'AppxManifest.xml') -Raw",
+      "$a = @($m.Package.Applications.Application) | Where-Object { $_.Id -eq '" + match[2] + "' } | Select-Object -First 1",
+      'if ($a) { [string]$a.Executable }',
+    ].join('; ');
+    try {
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+        timeout: 6_000, maxBuffer: 16 * 1024, windowsHide: true, signal,
+      });
+      return processIdentityFromExecutable(stdout.trim().split(/\r?\n/)[0] ?? '');
+    } catch {
+      return undefined;
     }
   }
 

@@ -19,13 +19,20 @@ import { WindowsDesktopAgent, DesktopAction } from '../adapters/windowsDesktopAg
 import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
 import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
+import { DeveloperAssistant } from '../developer/developerAssistant.js';
+import { WorkflowEngine } from '../workflows/workflowEngine.js';
+import { GatewaySiteAdmin, isGatewaySiteOperation } from '../gateway/siteAdminOperations.js';
+import { getCapability } from '../capabilities/registry.js';
+import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
 import { AuditLogger } from '../audit/audit.js';
 import { IAIPlannerProvider, MinimizedContext, PlanProposal } from '../planner/planner.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { DeviceSecurityService } from './deviceSecurity.js';
 import { NotificationCenter } from './notifications.js';
 import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
-import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { PersonalMemoryStore, MemoryCategory, MemoryConflictError } from '../memory/personalMemoryStore.js';
+import { MemoryManager } from '../memory/memoryManager.js';
+import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 
@@ -92,6 +99,21 @@ const RETRYABLE_READ_ONLY = new Set([
   'file:search',
   'file:read',
   'app:inventory',
+  'dev:repo_list',
+  'dev:tree',
+  'dev:read',
+  'dev:grep',
+  'dev:git_status',
+  'dev:git_log',
+  'dev:git_diff',
+  'dev:suggestion_list',
+  'dev:pr_draft',
+  'dev:ci_status',
+  'dev:history',
+  'plugin:list',
+  'workflow:list',
+  'workflow:show',
+  'workflow:history',
 ]);
 
 export class JarvisCoreService {
@@ -106,10 +128,18 @@ export class JarvisCoreService {
   public readonly terminal: TerminalRunner;
   public readonly communications: CommunicationsAdapter;
   public readonly verifier: OutcomeVerifier;
+  /** Developer and coding assistant (JARVIS-US-063). */
+  public readonly developer: DeveloperAssistant;
+  /** Permissioned plugins and versioned workflows (JARVIS-US-062). */
+  public readonly workflows: WorkflowEngine;
+  /** Owner management of personal-AI-gateway site keys (J-E09); the JSON store is shared with the gateway. */
+  public readonly gatewaySites = new GatewaySiteAdmin(process.env.JARVIS_SITE_CLIENTS_PATH || './data/site-clients.json');
   public readonly notifications: NotificationCenter;
   public readonly scheduler: Scheduler;
   public planner: IAIPlannerProvider;
   public readonly personalMemory?: PersonalMemoryStore;
+  /** Two-tier memory (working + long-term) and consent-based learning (US-057/058). */
+  public readonly memoryManager?: MemoryManager;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
   private readonly taskJournal?: TaskJournal;
@@ -134,6 +164,24 @@ export class JarvisCoreService {
     this.terminal = new TerminalRunner(this.fileAdapter);
     this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
+    this.developer = new DeveloperAssistant(statePath ? statePath + '.developer' : './data/developer', createConfiguredAgentModelAdapter);
+    this.workflows = new WorkflowEngine({
+      pluginStatePath: statePath ? statePath + '.plugins.json' : './data/plugins.json',
+      workflowStatePath: statePath ? statePath + '.workflows.json' : './data/workflows.json',
+      // A step is usable only if both the planner and the policy gateway allowlist it.
+      isOperationAllowed: (operation, keys) =>
+        this.planner.validatePlanSchema?.({ intent: 'check', operations: [{ operation, parameters: {}, justification: 'check' }], confidence: 1, explanation: 'check' }).valid !== false &&
+        this.policy.describeOperation(operation, keys) !== undefined,
+      isKnownCapability: (id) => {
+        const capability = getCapability(id);
+        return Boolean(capability && capability.status !== 'restricted' && capability.risk !== 'blocked');
+      },
+      planStep: async (text) => {
+        const plan = await this.planner.generatePlan(text, { requesterName: 'workflow-builder', timestamp: Date.now() });
+        return (plan.operations ?? []).map((operation) => ({ operation: operation.operation, parameters: operation.parameters }));
+      },
+      agentAdapter: createConfiguredAgentModelAdapter,
+    });
     this.notifications = new NotificationCenter();
     this.scheduler = new Scheduler(
       this.audit,
@@ -145,6 +193,12 @@ export class JarvisCoreService {
     if (ownerControlToken) {
       this.personalMemory = new PersonalMemoryStore(
         statePath ? statePath + '.memory' : './data/personal-memory.enc',
+        ownerControlToken,
+      );
+      this.memoryManager = new MemoryManager(
+        this.personalMemory,
+        new WorkingMemory(),
+        statePath ? statePath + '.memory-candidates' : './data/memory-candidates.enc',
         ownerControlToken,
       );
       this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken);
@@ -179,11 +233,39 @@ export class JarvisCoreService {
   }
 
   /**
+   * Run an owner-composed list of explicit operations (HUD panels, workflow composer)
+   * through the same pipeline as text requests: plan schema validation, PolicyGateway,
+   * approvals, task journal and audit. Only the planner step is skipped.
+   */
+  public async submitOperations(
+    sessionId: string,
+    label: string,
+    operations: Array<{ operation: string; parameters: Record<string, unknown>; justification?: string }>,
+  ): Promise<TaskResult> {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    if (!auth.valid || !auth.device) {
+      this.audit.record('REQUEST_AUTH_FAILED', { reason: auth.error });
+      throw new Error(`Authentication failed: ${auth.error}`);
+    }
+    const plan: PlanProposal = {
+      intent: String(label).slice(0, 120) || 'Owner-composed operation',
+      operations: operations.map((op) => ({
+        operation: op.operation,
+        parameters: op.parameters,
+        justification: (op.justification || 'Requested explicitly from the owner HUD').slice(0, 200),
+      })) as PlanProposal['operations'],
+      confidence: 1,
+      explanation: 'Explicit owner request from a HUD control; every step is still checked by the policy gateway.',
+    };
+    return this.#processRequest(auth.device, String(label).slice(0, 4000), 'interactive', plan);
+  }
+
+  /**
    * Shared pipeline for interactive and scheduled requests. A scheduled request
    * gets no special authority: it is planned and policy-evaluated exactly like a
    * live one, using the owner device's permissions at the moment it runs.
    */
-  async #processRequest(device: DeviceRecord, requestText: string, origin: 'interactive' | 'schedule'): Promise<TaskResult> {
+  async #processRequest(device: DeviceRecord, requestText: string, origin: 'interactive' | 'schedule', presetPlan?: PlanProposal): Promise<TaskResult> {
     const taskId = `task-${CryptoUtil.randomToken(12)}`;
     const auditIntegrity = this.audit.verifyIntegrity();
     if (!auditIntegrity.valid) {
@@ -227,7 +309,7 @@ export class JarvisCoreService {
     };
     let plan: PlanProposal;
     try {
-      plan = await this.planner.generatePlan(requestText, context);
+      plan = presetPlan ?? await this.planner.generatePlan(requestText, context);
     } catch (error: unknown) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'The planner failed before an operation could be evaluated; no host operation was executed';
@@ -291,6 +373,51 @@ export class JarvisCoreService {
     return this.#evaluateAndProceed(taskId, opRequest, device.id);
   }
 
+  /**
+   * Remove a deleted personal memory's text from task history (in memory and in the
+   * encrypted task journal): memory:save/update request text and parameters, and
+   * memory:list result payloads. Task metadata and audit records are kept.
+   */
+  #scrubDeletedMemoryFromTasks(memoryId: string, content: string): { scrubbedTasks: number; persisted: boolean } {
+    const REDACTED = '[deleted personal memory]';
+    const normalized = content.trim().toLowerCase();
+    const mentions = (value: unknown) => typeof value === 'string' && normalized.length > 0 && value.toLowerCase().includes(normalized);
+    let scrubbedTasks = 0;
+    let persisted = true;
+    for (const task of this.tasks.values()) {
+      let changed = false;
+      const operations = [
+        ...(task.operation ? [{ operation: task.operation, parameters: task.parameters }] : []),
+        ...(task.operations ?? []),
+      ];
+      for (const op of operations) {
+        if (!op.parameters || !['memory:save', 'memory:update'].includes(op.operation)) continue;
+        const linked = op.parameters.id === memoryId || mentions(op.parameters.content) ||
+          (task.result?.evidence as { memoryId?: unknown } | undefined)?.memoryId === memoryId;
+        if (linked && op.parameters.content !== REDACTED) {
+          op.parameters.content = REDACTED;
+          changed = true;
+        }
+      }
+      if (changed || mentions(task.requestText)) {
+        if (task.requestText !== REDACTED) {
+          task.requestText = REDACTED;
+          changed = true;
+        }
+      }
+      const data = task.result?.data;
+      if (Array.isArray(data) && data.some((entry) => (entry as { id?: unknown })?.id === memoryId)) {
+        task.result = { ...task.result!, data: data.filter((entry) => (entry as { id?: unknown })?.id !== memoryId) };
+        changed = true;
+      }
+      if (changed) {
+        scrubbedTasks += 1;
+        if (!this.#persistTask(task)) persisted = false;
+      }
+    }
+    return { scrubbedTasks, persisted };
+  }
+
   #recordStep(task: TaskLifecycleRecord, status: WorkflowStepStatus, outcome?: VerificationOutcome, message?: string): boolean {
     if (!task.steps) task.steps = [];
     task.steps.push({
@@ -341,6 +468,20 @@ export class JarvisCoreService {
   ): Promise<TaskResult> {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
+
+    // Planning and approval are asynchronous boundaries. A user may cancel a
+    // CREATED task while the planner is running, or another lifecycle event may
+    // move it to a terminal/recovery state before policy evaluation resumes.
+    // Only a new workflow step or an explicitly approved step may proceed.
+    if (taskRecord.state !== TaskState.CREATED && taskRecord.state !== TaskState.APPROVED) {
+      return {
+        taskId,
+        state: taskRecord.state,
+        message: taskRecord.error || ('Workflow cannot proceed from state ' + taskRecord.state + '; no operation was started.'),
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
 
     const device = this.identity.getDevice(deviceId);
     if (!device) throw new Error('Device not found');
@@ -475,7 +616,17 @@ export class JarvisCoreService {
         }
         case 'memory:update': {
           if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
-          const updated = this.personalMemory.update(parameters.id as string, parameters.content as string);
+          let updated;
+          try {
+            const expected = typeof parameters.expectedUpdatedAt === 'number' ? parameters.expectedUpdatedAt : undefined;
+            updated = this.personalMemory.update(parameters.id as string, parameters.content as string, expected);
+          } catch (error) {
+            if (error instanceof MemoryConflictError) {
+              // Never overwrite a newer version: report the conflict for owner review.
+              return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: error.message, data: { conflict: true, currentUpdatedAt: error.current.updatedAt }, evidence: { memoryId: parameters.id, conflict: true } };
+            }
+            throw error;
+          }
           if (!updated) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Memory entry not found.', evidence: { memoryId: parameters.id } };
           this.audit.record('PERSONAL_MEMORY_UPDATED', { memoryId: updated.id, category: updated.category }, taskRecord.deviceId, taskId);
           return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: updated.id, category: updated.category, updatedAt: updated.updatedAt }, evidence: { encryptedAtRest: true, memoryId: updated.id } };
@@ -483,12 +634,25 @@ export class JarvisCoreService {
         case 'memory:delete': {
           if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
           const id = parameters.id as string;
+          const existing = this.personalMemory.list().find((record) => record.id === id);
           const deleted = this.personalMemory.delete(id);
           // Prove deletion by re-reading and decrypting the stored file, not by trusting memory.
           const diskVerified = deleted ? this.personalMemory.verifyAbsentOnDisk(id) : false;
-          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified }, taskRecord.deviceId, taskId);
-          if (deleted && !diskVerified) return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified } };
-          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified } };
+          // Secondary copies: task history (and its encrypted journal) holds the text of the
+          // memory:save/update requests and memory:list results. Deletion must cover them too.
+          const scrub = deleted && existing ? this.#scrubDeletedMemoryFromTasks(id, existing.content) : { scrubbedTasks: 0, persisted: true };
+          // Derived copies held by the Memory Manager: working memory, learning candidates,
+          // the local embedding index and correction history (J-E06 deletion boundary).
+          const derived = deleted && existing ? this.memoryManager?.scrubDeleted(id, existing.content) : undefined;
+          const derivedVerified = derived ? derived.derivedVerified : true;
+          this.audit.record('PERSONAL_MEMORY_DELETE', { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted, derivedVerified }, taskRecord.deviceId, taskId);
+          if (deleted && !derivedVerified) {
+            return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: 'The memory was deleted, but its search index or version history could not be verified as purged.', evidence: { memoryId: id, deleted, diskVerified, derivedVerified } };
+          }
+          if (deleted && (!diskVerified || !scrub.persisted)) {
+            return { success: false, outcome: VerificationOutcome.UNCERTAIN, error: diskVerified ? 'The memory was deleted, but task-history copies could not be durably scrubbed.' : 'The memory was removed in memory but the stored file could not be re-verified.', evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
+          }
+          return { success: deleted, outcome: deleted ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: deleted ? undefined : 'Memory entry not found.', data: { deleted }, evidence: { memoryId: id, deleted, diskVerified, secondaryTasksScrubbed: scrub.scrubbedTasks, secondaryPersisted: scrub.persisted } };
         }
         case 'system:get_os_info':
           return this.systemAdapter.getOsInfo();
@@ -537,10 +701,18 @@ export class JarvisCoreService {
             operation: 'desktop:type_text',
             parameters: { text: parameters.text as string, expectProcess: launched.windowProcess },
           } as unknown as DesktopAction, signal);
+          // The launch is a verified side effect, so a typing failure is never a clean
+          // failure of the whole request. Typing is VERIFIED only when the adapter's UI
+          // Automation readback matched; acknowledgement-only stays PARTIAL.
+          const typingFailedCleanly = !typing.success && typing.outcome === VerificationOutcome.VERIFIED_FAILURE;
           return {
             ...typing,
+            ...(typingFailedCleanly ? {
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application opened, but the text was not entered: ' + (typing.error || 'typing failed.'),
+            } : {}),
             data: { launch: launch.data, typing: typing.data },
-            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence },
+            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence, independentlyVerified: typing.outcome === VerificationOutcome.VERIFIED_SUCCESS },
           };
         }
         case 'desktop:type_text':
@@ -583,6 +755,24 @@ export class JarvisCoreService {
           const cancelled = this.scheduler.cancel(String(parameters.id), taskRecord.deviceId);
           return { success: cancelled, outcome: cancelled ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE, error: cancelled ? undefined : 'No active schedule with that id belongs to this device.', evidence: { scheduler: true } };
         }
+        // Developer assistant (JARVIS-US-063): scoped repo tools, draft suggestions,
+        // and approval-gated git operations. Branch protections live in the adapter.
+        case 'dev:repo_connect': case 'dev:repo_disconnect': case 'dev:repo_list': case 'dev:tree':
+        case 'dev:read': case 'dev:grep': case 'dev:git_status': case 'dev:git_log': case 'dev:git_diff':
+        case 'dev:explain': case 'dev:suggest_change': case 'dev:suggestion_list': case 'dev:apply_suggestion':
+        case 'dev:branch_create': case 'dev:commit': case 'dev:push': case 'dev:pr_draft': case 'dev:ci_status':
+          return this.developer.execute(opRequest.operation, parameters, signal);
+        // Plugins and workflows (JARVIS-US-062). Only plugin/template state changes here;
+        // workflow:run returns steps that are spliced into this task below.
+        case 'plugin:install': case 'plugin:list': case 'plugin:enable': case 'plugin:disable':
+        case 'plugin:uninstall': case 'plugin:grant': case 'plugin:revoke':
+        case 'workflow:list': case 'workflow:show': case 'workflow:history': case 'workflow:run':
+        case 'workflow:create': case 'workflow:draft_ai': case 'workflow:approve_draft': case 'workflow:archive':
+        case 'workflow:compose':
+          return this.workflows.execute(opRequest.operation, parameters);
+        case 'gateway:site_list': case 'gateway:site_create': case 'gateway:site_update': case 'gateway:site_revoke':
+          if (!isGatewaySiteOperation(opRequest.operation)) throw new Error('Unknown gateway operation');
+          return this.gatewaySites.execute(opRequest.operation, parameters, taskRecord.deviceId);
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }
@@ -670,8 +860,32 @@ export class JarvisCoreService {
       ? 'completed'
       : verification.honestOutcome === VerificationOutcome.VERIFIED_FAILURE ? 'failed' : 'uncertain';
     this.#recordStep(taskRecord, stepStatus, verification.honestOutcome, verification.message);
-    if (taskRecord.state === TaskState.AWAITING_RECOVERY && taskRecord.interrupted) {
-      return { taskId, state: taskRecord.state, message: taskRecord.error || 'Checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+
+    // Cancellation is a workflow boundary: even if an adapter ignores AbortSignal
+    // and later returns, the current result is uncertain and no dependent step may run.
+    if (rawResult.interrupted || taskRecord.interrupted) {
+      taskRecord.state = TaskState.INTERRUPTED;
+      taskRecord.interrupted = true;
+      taskRecord.error = 'Execution was interrupted. The current side effect may have occurred; remaining workflow steps were skipped. Reconcile before submitting any new request.';
+      this.#skipRemainingSteps(taskRecord);
+      if (!this.#persistTask(taskRecord)) {
+        return { taskId, state: taskRecord.state, message: taskRecord.error || 'Interruption checkpoint failed; reconcile before retrying', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+      }
+      return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.UNCERTAIN, verified: false };
+    }
+
+    // A verified workflow:run expands into its template steps right after the current
+    // step. They then run through the normal lifecycle: policy evaluation, per-step
+    // approval, checkpoints, cancellation and recovery. Nested workflows are rejected
+    // by template validation, so expansion cannot recurse.
+    if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS && taskRecord.operation === 'workflow:run' &&
+        taskRecord.operations && taskRecord.operationIndex !== undefined) {
+      const expanded = (rawResult.data as { steps?: unknown } | undefined)?.steps;
+      if (Array.isArray(expanded) && expanded.length > 0 && expanded.length <= 20 &&
+          expanded.every((step) => step && typeof (step as OperationRequest).operation === 'string' && !(step as OperationRequest).operation.startsWith('workflow:') && !(step as OperationRequest).operation.startsWith('plugin:'))) {
+        taskRecord.operations.splice(taskRecord.operationIndex + 1, 0, ...(expanded as OperationRequest[]).map((step) => ({ operation: step.operation, parameters: step.parameters ?? {} })));
+        this.audit.record('WORKFLOW_EXPANDED', { stepCount: expanded.length, operations: (expanded as OperationRequest[]).map((step) => step.operation) }, taskRecord.deviceId, taskId);
+      }
     }
 
     const hasNextStep = taskRecord.operations !== undefined && taskRecord.operationIndex !== undefined &&
@@ -735,7 +949,9 @@ export class JarvisCoreService {
     approvalId: string,
   ): void {
     const isMemory = approval.operation.startsWith('memory:');
-    const needsManage = isMemory || approval.operation.startsWith('schedule:');
+    const needsManage = isMemory || approval.operation.startsWith('schedule:') ||
+      approval.operation.startsWith('plugin:') || approval.operation.startsWith('workflow:') || approval.operation.startsWith('dev:') ||
+      approval.operation.startsWith('gateway:');
     const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
       approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
       approval.operation.startsWith('comms:');
@@ -782,14 +998,32 @@ export class JarvisCoreService {
     }
 
     if (!approval.approved && !approval.rejected && !approval.consumed && Date.now() >= approval.expiresAt) {
-      const expiredTask = this.tasks.get(approval.taskId);
-      if (expiredTask && expiredTask.state === TaskState.AWAITING_APPROVAL) {
-        expiredTask.state = TaskState.EXPIRED;
-        expiredTask.updatedAt = Date.now();
-        this.#skipRemainingSteps(expiredTask);
-        this.#persistTask(expiredTask);
-        this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: expiredTask.id, deviceId: expiredTask.deviceId });
+      if (pendingTask.state === TaskState.AWAITING_APPROVAL) {
+        pendingTask.state = TaskState.EXPIRED;
+        pendingTask.updatedAt = Date.now();
+        this.#skipRemainingSteps(pendingTask);
+        const checkpointed = this.#persistTask(pendingTask);
+        this.notifications.push('warning', 'task_expired', `Approval expired for ${approval.operation}; nothing was executed.`, { taskId: pendingTask.id, deviceId: pendingTask.deviceId });
+        if (!checkpointed) {
+          return {
+            taskId: pendingTask.id,
+            success: false,
+            state: pendingTask.state,
+            message: pendingTask.error || 'Expired approval could not be checkpointed; execution remains blocked.',
+            outcome: VerificationOutcome.UNCERTAIN,
+            verified: false,
+          };
+        }
       }
+      this.audit.record('APPROVAL_FAILED_EXPIRED', { approvalId }, approver.id, pendingTask.id);
+      return {
+        taskId: pendingTask.id,
+        success: false,
+        state: pendingTask.state,
+        message: 'Approval has expired; no operation was started.',
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        verified: true,
+      };
     }
 
     const resolveRes = this.policy.resolveApproval(approvalId, true, approver.id);
@@ -798,6 +1032,22 @@ export class JarvisCoreService {
     }
 
     const task = pendingTask;
+
+    // Persist the approval transition before policy evaluation can reach an
+    // adapter. If this checkpoint fails, fail closed and never start execution.
+    task.state = TaskState.APPROVED;
+    task.updatedAt = Date.now();
+    if (!this.#persistTask(task)) {
+      this.policy.invalidateApprovals({ taskId: task.id }, 'APPROVAL_CHECKPOINT_FAILED');
+      return {
+        taskId: task.id,
+        success: false,
+        state: task.state,
+        message: task.error || 'Approval could not be checkpointed; execution was blocked.',
+        outcome: VerificationOutcome.UNCERTAIN,
+        verified: false,
+      };
+    }
 
     const opRequest: OperationRequest = {
       operation: approval.operation,
@@ -1013,6 +1263,8 @@ export class JarvisCoreService {
   public onDeviceRevoked(deviceId: DeviceId): void {
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
     const schedules = this.scheduler.cancelForDevice(deviceId);
+    // A revoked device's short-lived working context is discarded immediately.
+    this.memoryManager?.working.clearDevice(deviceId);
     for (const task of this.tasks.values()) {
       if (task.deviceId !== deviceId) continue;
       if (task.state === TaskState.EXECUTING) this.interruptTask(task.id);

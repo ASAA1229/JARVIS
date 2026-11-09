@@ -48,6 +48,21 @@ class DeviceKeyStore(context: Context) {
         return Base64.encodeToString(signer.sign(), Base64.NO_WRAP)
     }
 
+    /** Has an identity been created on this phone yet? (Does not create one.) */
+    fun hasIdentity(): Boolean = prefs.getString("public", null) != null && prefs.getString("private", null) != null
+
+    /**
+     * Destroy this phone's identity after revocation. The laptop refuses to re-enroll a
+     * revoked key, so a fresh key pair is created on the next enrollment.
+     */
+    @Synchronized fun reset() {
+        prefs.edit().clear().apply()
+        try {
+            val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            if (store.containsAlias(alias)) store.deleteEntry(alias)
+        } catch (_: Exception) { /* a missing wrapping key is already the reset state */ }
+    }
+
     fun deviceId(): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(publicKeyPem().toByteArray(Charsets.UTF_8))
         val hex = bytes.joinToString("") { String.format("%02x", it.toInt() and 0xff) }

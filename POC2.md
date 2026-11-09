@@ -1,8 +1,191 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
-**Updated:** 2026-10-24  
-**Baseline:** source tree 6222e1964774c78e6853d6113335b1a3f0284881; documentation head 6dd9d8d62ccf2610fb458da159fc1dd11f47079c; dev integration commit 29df6b8699a8145f2163efee0c0ac306af2e7adc  
-**Rule:** A capability does not move to POC.md as accepted until its acceptance criteria pass with recorded evidence. No new requirements document is needed for this gap closure; update this file and the existing project docs.
+**Status snapshot:** 2026-11-09  
+**Branch reviewed:** `new`  
+**Latest inspected feature commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
+**Overall status:** **IN PROGRESS — NOT RELEASE-READY**
+
+## Owner execution boundary — 2026-11-09
+
+**Development is ACTIVE; testing and validation are PAUSED.** Continue source implementation on the existing `new` branch. Do not run tests, builds, lint, audits, CI, browser checks, device checks or release operations until the owner explicitly resumes them. Tests may be authored or updated but must not be executed. This document remains the actionable gap register.
+
+Since the earlier 2026-11-05 snapshot, source changes on `new` include bounded AI context selection/budget accounting, local Whisper cancellation and subprocess cleanup, transcription cancellation on client disconnect, and immediate voice capture after local wake detection to avoid losing command words spoken in the same utterance. These changes are **implemented in source, not verified**. The MSI voice-to-app path, actual app launch and independent result verification remain unaccepted.
+
+> This file is the actionable gap register. The epics and delivery sequence are in [docs/EPICS.md](docs/EPICS.md), and implementable user stories with acceptance criteria are in [docs/USER_STORIES.md](docs/USER_STORIES.md). Existing epics are being closed before introducing unrelated feature streams.
+
+
+## 2026-11-09 implementation/status reconciliation
+
+The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, visual workflow composition, developer-assistant suggestions, memory management and gateway site administration. LAN peer management/discovery/pairing/revocation and owner control routes are also present in the current source baseline. Earlier statements that the visual composer, owner panels or LAN peer discovery were “not built” are superseded by this section.
+
+**Implemented in source, not tested/accepted:** owner-panel shell and tabs; signed API client; approval-aware task reporting; plugin and workflow lists/actions; AI workflow draft; visual composer with capability-catalogue inputs, dependencies and server validation; developer repository/suggestion panel; memory list/edit/delete/export/import and learning review; gateway site listing/configuration/revocation and one-time key reveal listing. Do not infer the backend routes or every user journey are fully accepted from the UI presence alone.
+
+**Development still required:** close voice-to-command dispatch and verified Windows outcomes; review owner-panel input constraints, accessibility and failure handling; complete remaining memory lifecycle and device synchronization; finish partial-side-effect recovery and supported Windows app control; complete any remaining provider/integration gaps already in E07; reconcile the documentation with the exact source tree as implementation continues.
+
+**Testing paused:** all automated, manual, CI/Jenkins, browser and device checks are pending. Do not claim any newly added feature passes. Target MSI and both Android phones remain owner-acceptance dependencies.
+
+## Current work-left summary
+
+1. Close the **Voice Interaction & Cinematic HUD** epic with target-MSI wake, capture, consent, TTS/STT, resource and browser acceptance.
+2. Complete the **Security, Identity & Approval** adversarial/lifecycle review and prove exact-head tests.
+3. Close **Windows Desktop Control** through real target-process binding, safe foreground interaction, and independently verified application outcomes.
+4. Complete **Advanced Multi-Step Execution & Recovery** fault injection, crash/restart and partial-side-effect reconciliation.
+5. Finish **Android Companion & Cross-Device Control** software/build work, then independently enroll and revoke both physical phones.
+6. Complete **Memory, Privacy & Personalization** lifecycle, retrieval, retention, deletion and cross-device behavior.
+7. Complete the **AI Agent & Prompt Orchestration** implementation gaps within the existing E07 scope: provider resilience, richer context governance, agent routing coverage, and response-quality acceptance.
+8. Finish existing **AI, Integrations & Productivity Automation** boundaries and end-to-end workflows already represented in the repository.
+9. Run exact-head build, typecheck, unit/integration tests, browser smoke, Android build and target-device acceptance; reconcile all project documentation.
+
+## Evidence rules
+
+- `IMPLEMENTED`: relevant source exists; does not imply tested or accepted.
+- `TEST-AUTHORED`: regression coverage exists; does not imply it has executed.
+- `CI-VERIFIED`: completed CI run for the exact commit is green.
+- `DEVICE-VERIFIED`: the named real target device and scenario passed with recorded evidence.
+- `ACCEPTED`: all applicable implementation, test, CI, device and security gates passed.
+- `BLOCKED`: an external dependency prevents progress; record owner/action and evidence.
+- Do not convert a status based on assumption. Record commit SHA, environment, command/run, expected/actual result and limitation.
+
+## Immediate branch and validation checkpoint
+
+- The `new` branch includes voice lifecycle and consent-revocation changes through `fa7131c2bf3f77c0d8ef245969567d6dbfe723e9`.
+- `src/voice/voiceManager.ts` was hardened and `test/voice_manager.test.ts` was added.
+- Focused voice-manager tests are authored but have **not yet been executed**.
+- The CI workflow is manual-dispatch / PR-to-dev; no exact-head CI run is available from the surfaced Actions history.
+- No physical-device acceptance is implied.
+
+## Prioritized remaining-work register
+
+### P0 — Security, identity and approval foundation
+
+- [ ] Re-run the complete security/build/test suite on the exact current `new` head.
+- [ ] Audit every state-changing route and adapter path to prove there is no policy-gateway bypass.
+- [ ] Exercise approval approve/reject/expiry, duplicate and concurrent resolution, stale task state, replay, parameter/task/device binding and persistence failure.
+- [ ] Verify session expiry, immediate revocation, independent device identity/permissions and fail-closed security-state handling.
+- [ ] Complete route-by-route authorization and error/secret-redaction review plus adversarial tests.
+- [ ] Define and test owner recovery for TOTP/authenticator loss, device-management loss and owner-token rotation.
+- [ ] Verify audit-chain tampering, audit-write failure and recovery behavior.
+- [ ] Preserve hard restrictions: financial/payment apps, credential entry, unrestricted shell, admin elevation, security bypass and voice-only high-risk authorization.
+
+### P1 — Voice Interaction & Cinematic HUD (implementation present; acceptance pending; development paused)
+
+**Development progress — 2026-11-05:** VoiceManager now rejects overlapping capture/review sessions, guards timeout callbacks with a capture generation, cancels and clears transcripts on mute, bounds transcript input to 1,200 characters, separates microphone capture from transcription, and exposes explicit transcription completion. The active HUD also cancels capture/discards the transcript on consent revocation and rechecks consent before a post-wake command can be dispatched. Focused tests cover duplicate starts, review preservation, timeout, cancellation, mute, late callbacks, invalid duration and HUD consent guards. Tests are authored only; execution is pending.
+
+- [ ] Run the local wake-word setup on the target MSI; record runtime/model versions and integrity checks.
+- [ ] Verify microphone permissions, wake accuracy, false positives/negatives, startup/restart, mute, stop, hidden-tab, sleep/resume and cancellation.
+- [ ] Measure CPU, RAM, latency and battery/resource impact during standby and active capture.
+- [ ] Validate wake → acknowledgement → separately consented speech capture → authenticated request → policy decision → execution/result end-to-end.
+- [ ] Verify push-to-talk transcript review and explicit submit; test no-speech, timeout, duplicate callbacks, late results, network/microphone errors and cancellation.
+- [ ] Verify the exact acknowledgement: `Hi sir, I am ready to work.`
+- [ ] Install/configure local Piper TTS and optional local STT; verify audible playback/recognition and interruption on the MSI.
+- [ ] Document browser/vendor speech processing. Do not claim local-only speech unless all audio processing is proven local.
+- [ ] Verify HUD accessibility, keyboard operation, responsive layout, visible mic/listening state and privacy controls.
+- [ ] Run browser smoke and focused tests on exact head when CI runners are available.
+
+### P1 — Windows Desktop Control
+
+- [ ] Verify allowlisted Notepad/Calculator/Paint launch via the authenticated real request path on Windows 11.
+- [ ] Prove target process/window identity before typing or invoking controls; abort if focus changes or target is ambiguous.
+- [ ] Test UI Automation discovery and unique selector enforcement across standard and custom-rendered applications.
+- [ ] Verify clipboard read/write, paste, hotkeys, zoom, click, set-value, cancellation and timeout behavior in real applications.
+- [ ] Independently verify saved/accepted outcomes; keep acknowledgements partial when evidence is absent.
+- [ ] Exercise inaccessible controls, unexpected windows, app crash, user focus changes and interrupted execution.
+- [ ] Validate payment/credential protection beyond process/title heuristics; retain explicit exclusions.
+- [ ] Document the supported application matrix and unsupported control types.
+
+### P1 — Advanced Multi-Step Execution & Recovery
+
+- [ ] Audit every task lifecycle transition and ensure durable journal writes precede dependent side effects.
+- [ ] Fault-inject journal write, audit write, process crash, cancellation, revocation and concurrent approval failures.
+- [ ] Test restart recovery for every non-terminal state; clear stale approvals and never replay automatically.
+- [ ] Exercise partial external side effects and prove that unknown outcomes remain `AWAITING_RECOVERY`.
+- [ ] Verify reconciliation dispositions: confirmed no effect, effect observed (partial only), and still unknown.
+- [ ] Verify recovery UI/API permissions, encrypted notes, redaction and audit evidence.
+- [ ] Confirm no dependent step runs after a failed checkpoint or uncertain result.
+- [ ] Keep automatic resume/retry disabled for non-idempotent or uncertain actions.
+
+### P1 — Android Companion & Cross-Device Control
+
+- [ ] Build and install the native Android app on both actual phones.
+- [ ] Enroll each phone independently; prove unique Android Keystore-backed keys, device identity, sessions and permission scopes.
+- [ ] Verify signed transport, nonce/replay protection, expiry, owner approval, cancellation and immediate revocation.
+- [ ] Revoke phone A and prove phone B remains independently authorized; prove revoked A cannot reconnect or replay queued commands.
+- [ ] Test laptop offline/asleep/restart and phone network changes; reject stale state-changing commands on reconnect.
+- [ ] Validate queue TTL, bounded payloads, duplicate completion, acknowledgement and failure recovery.
+- [ ] Verify companion approval notifications and deep links without granting the phone broader authority.
+- [ ] Record Android OS/device versions, app build, test evidence and limitations. iOS remains future scope.
+
+### P1 — Memory, Privacy & Personalization
+
+- [ ] Complete memory create/read/update/delete lifecycle through signed, policy-gated APIs.
+- [ ] Verify encryption, integrity, category restrictions, TTL/retention and credential/payment-data rejection.
+- [ ] Implement/verify semantic retrieval with bounded context and permission-aware access.
+- [ ] Define conflict resolution and synchronization between laptop and both phones.
+- [ ] Verify deletion from primary storage, indexes, caches, exports and backups; document any retention boundary.
+- [ ] Test memory export/backup and restore without exposing keys or plaintext secrets.
+- [ ] Ensure cloud AI receives only task-authorized context and never receives continuous microphone audio.
+
+### P1/P2 — AI, Integrations & Productivity Automation
+
+- [ ] Verify local AI endpoint configuration, timeout/unavailable behavior and deterministic fallback.
+- [ ] Ensure model output is treated as untrusted advisory data and cannot bypass planner schema validation or policy checks.
+- [ ] Add explicit opt-in for each cloud provider/use; verify key handling via environment only and no committed secrets.
+- [ ] Complete only the integrations already in repository scope; document unsupported APIs and required user permissions.
+- [ ] Verify existing schedule creation/list/cancel, notifications and recurring-task persistence/restart behavior.
+- [ ] Test task cancellation, retries, idempotency and safe failure across existing workflows.
+- [ ] Keep financial/payment actions excluded and do not silently install apps or send communications.
+
+### P1/P2 — AI agent, prompt contracts and conversation orchestration (implementation expanded; validation paused)
+
+**Implemented on `new` at checkpoint `0849597cd569ad288132ca66d1e6183e37eb02ac`:**
+- Versioned prompt registry and role-separated system, developer and user prompt construction.
+- Strict structured response contracts and local validation for conversational, task-planning, tool-selection and summarization profiles.
+- Advisory-agent routing separated from state-changing execution; action requests remain subject to the existing planner and policy gateway.
+- Local-first OpenAI-compatible agent adapter; remote endpoints remain blocked unless explicitly enabled by configuration.
+- Bounded conversation history tied to authenticated device sessions; only visible user/assistant turns are retained.
+- Per-conversation serialization, bounded session count/expiry, LRU eviction, complete-turn trimming, and authenticated conversation clearing.
+- Model-unavailable fallback responses are not persisted as conversational history.
+- Tool candidates are validated against the live capability catalogue; restricted or unknown capability IDs are rejected.
+- Task-plan dependency graphs reject missing, duplicate, self-referential and cyclic dependencies.
+
+**Remaining development / acceptance work:**
+- [ ] Review every prompt profile for injection boundaries, untrusted retrieved context, output minimization and explicit refusal behavior.
+- [ ] Improve provider compatibility and error classification without silently enabling remote inference or paid services.
+- [ ] Define deterministic routing coverage for mixed informational, planning, tool-selection and execution-intent requests.
+- [ ] Enrich tool-candidate results server-side from authoritative capability metadata; never trust model-supplied risk or approval metadata.
+- [ ] Tighten plan consistency rules (status/step consistency, bounded plan size, dependency ordering and risk/approval annotations).
+- [ ] Review conversation session lifecycle across HUD/companion reloads, concurrent tabs, device revocation and server restart.
+- [ ] Define retention, export and deletion behavior for conversation history and ensure it remains separate from long-term personal memory.
+- [ ] Keep model responses advisory only; all state-changing operations must pass the policy gateway.
+- [ ] After testing is explicitly resumed, run schema, routing, prompt-injection, concurrency and provider-failure tests on the exact branch head.
+
+**Current status:** implementation expanded; tests/build/lint/CI and device validation were not run because testing is paused. No agent capability is marked accepted.
+
+### P2 — Release, compatibility and resource acceptance
+
+- [ ] Run exact-head Node build, TypeScript check, complete automated suite and browser security smoke.
+- [ ] Run Python utility tests and Android Gradle build where applicable.
+- [ ] Run dependency/security audit and record findings; do not claim zero vulnerabilities without output.
+- [ ] Validate supported Windows/browser/Android versions and graceful unsupported-platform behavior.
+- [ ] Measure idle/active CPU, memory, disk, network and battery impact against the balanced-resource target.
+- [ ] Complete accessibility, keyboard-only, screen-size and error-state checks.
+- [ ] Produce final evidence-based audit; update README, POC, POC2 and cross-device status together.
+- [ ] Keep `main` untouched; integration remains PR-only to `dev`.
+
+## Scope and sequencing rules
+
+1. Finish the existing epics before opening unrelated feature streams.
+2. Prioritize software-testable implementation and development work first; retain tests and acceptance criteria as mandatory gates, but do not describe unexecuted tests as passing.
+3. Physical-device steps are explicit owner acceptance tasks and cannot be substituted with hosted CI.
+4. No new cloud spend or paid dependency is assumed. Local-first and free-only operation remain project constraints.
+5. Do not weaken security controls to make a demo pass.
+6. No PR is created unless explicitly requested. If requested, non-main work targets `dev`; never automate a merge to `dev` or `main`.
+
+---
+
+## Historical gap and implementation log
+
+The historical sections below are retained for traceability. Their status notes describe the state at the time they were written; use the 2026-11-05 register above for current prioritization.
 
 ## Existing Epic Closure Plan — 2026-10-30
 
@@ -470,3 +653,208 @@ Implemented on `new`: browser-based hands-free standby now checks visibility and
 - Browser-based wake recognition now uses bounded exponential retry delays and pauses after five consecutive unsuccessful session endings, rather than repeatedly reopening the microphone.
 - A usable transcript resets the retry counter. Local wake-word detection remains separate; browser speech recognition still requires its explicit consent setting.
 - Runtime/browser acceptance testing has not been run; verify recovery, pause, resume, mute, and hidden-tab behavior on the target MSI before treating this as validated.
+
+## Development increment — safe application intent routing
+
+**Implementation commit:** `09b45366318ed27ee109b8635d56b0448c65b3c8`  
+**Status:** IMPLEMENTED / TEST-AUTHORED / CI PENDING
+
+- Changed the local planner so a known app name alone is not enough to create an `app:launch` operation; an explicit launch verb is required.
+- Added support for `open`, `launch`, `start`, `run` and `bring up` phrasing, including a leading Hey/Hello/Hi JARVIS wake phrase.
+- Kept known apps mapped to their allowlisted IDs and left generic app discovery on its existing policy/approval path.
+- Added regression cases for informational mentions and explicit voice-style launch commands.
+- Exact-head CI and real MSI voice-to-app execution have not yet been verified.
+
+## CI failure triage — remediation applied, rerun pending
+
+The latest surfaced JARVIS CI run (`41890545131`) is for an earlier commit, not the current branch head. Android build, dependency audit, TypeScript build and TypeScript check passed in that run; the automated suite failed.
+
+Remediation applied on `new`:
+- Removed a duplicated second copy of the artifact-integrity test suite that redeclared module-level constants.
+- Aligned the Piper WAV size-validation message with the test's size-specific diagnostic.
+- Corrected the rejection test to assert the documented initial `approved: false` state for a newly created approval.
+- Updated the HUD regression assertion to validate actual separation of final and interim speech-recognition segments rather than depending on a comment string.
+
+The earlier run also contained these failures; their fixes are in the branch history:
+- Voice capture timeout was cleared before transcription completion.
+- A test expected an obsolete HUD source comment; current source uses explicit `result.isFinal` and interim-result filtering.
+- The approval/recovery path now checks task state before resolving an approval.
+
+**Not yet verified:** no successful Actions run has been observed for the current `new` head. Do not mark JARVIS CI green until a fresh exact-head run completes.
+
+## Voice-to-app execution — session feedback gap
+
+**Status:** IMPLEMENTED / TEST-AUTHORED / VALIDATION PENDING
+
+- The HUD now gives an audible and visible “directive not sent” explanation when no authenticated device session is restored. It no longer leaves the operator with only the wake acknowledgement in that failure case.
+- An explicit “open Notepad” request is planned as app:launch; policy approval is a separate required stage where applicable. The app must not launch merely because the wake phrase was detected.
+- Remaining validation: confirm browser speech capture receives the command after local wake detection, confirm the signed /api/request call, inspect the approval card, approve it, and verify the Notepad window on the MSI.
+- Automated tests have not yet been run on the latest commit. Do not treat this increment as end-to-end verified.
+
+## Voice-to-app follow-up — already-open application handling
+
+**Status:** IMPLEMENTED / TEST-AUTHORED / VALIDATION PENDING
+
+- Fixed a launch-verification gap for apps that reuse an existing process/window: a unique matching existing window is now focused and verified instead of relying only on detecting a new PID.
+- Multiple matching windows are not selected arbitrarily. Focus failure is surfaced as failure, not success.
+- Added two focused regression tests. Still pending: run the full suite, exact-head CI, and test a cold launch plus already-open Notepad on the MSI.
+
+
+## Development increment — approval card concurrency and outcome clarity
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- The HUD now prevents concurrent resolution requests for the same approval and disables the card controls during the request.
+- A verified terminal response removes the card; non-terminal/unknown outcomes remain visible and cannot be mistaken for task completion.
+- Communication ambiguity is reported as unknown, with an explicit instruction to refresh task status before retrying. This avoids treating a possibly-consumed single-use approval as safely retryable.
+- Per current instruction, no tests or CI were run. Exact-head validation and MSI acceptance remain outstanding.
+
+## Development increment — task timeline and recovery review in HUD
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added a recent-task panel backed by the authenticated task-list API, with manual refresh and periodic refresh.
+- Timeline refreshes after new directives and approval decisions so the HUD can catch server-side state transitions instead of relying only on local messages.
+- Task cards expose safe status metadata and expandable workflow step summaries; raw task parameters and result payloads are not rendered.
+- Interrupted and recovery-pending tasks now expose the existing manual reconciliation endpoint. The owner can record `confirmed_no_effect`, `effect_observed`, or `still_unknown` with a required observation note.
+- Reconciliation is review/annotation only; the HUD does not retry, resume, or replay the task. Server-side ownership, authentication, durable-journal and note validation remain authoritative.
+- Per instruction, no tests or CI were run. UI and MSI acceptance remain outstanding.
+
+
+## Development increment — task details and recovery transition clarity
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added an expandable detail view for each task, including task reference, operation, state, origin, created/updated timestamps, and safe step summaries.
+- Kept task parameters and result payloads out of the HUD.
+- Prevented overlapping manual reconciliation requests for the same task.
+- Recovery feedback now names the submitted disposition and displays the state returned by the server. Observed effects are not represented as verified completion, and unknown outcomes remain explicitly unresolved.
+- Refreshes task history after a confirmed review; no action is retried, resumed, or replayed.
+- Per instruction, no tests, build, lint, CI, or device validation were run.
+
+
+## Development increment — task stop/cancel workflow boundary
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added authenticated stop/cancel actions directly to task history cards: running tasks can request interruption; pending/approval tasks can be cancelled before execution.
+- Added per-task in-flight protection and clear response/error feedback.
+- Tightened the execution lifecycle so an interrupted adapter outcome is always treated as uncertain, remaining dependent steps are recorded as skipped, and the workflow returns without starting another operation.
+- The UI explicitly distinguishes a stop request from rollback: an in-flight external effect may already have occurred and requires reconciliation.
+- No tests, build, lint, CI, or target-device validation were run.
+
+
+## Development increment — workflow state revalidation and approval checkpointing
+
+**Status:** IMPLEMENTED / VALIDATION NOT RUN
+
+- Added a state gate at the policy-evaluation boundary. Only CREATED workflow steps and APPROVED steps can proceed; delayed planner results cannot revive cancelled, expired, interrupted, failed, or recovery-pending tasks.
+- Expired approvals now terminate the handler immediately after marking the task EXPIRED and skipping dependent steps. The operation is not evaluated or executed.
+- Approval acceptance is durably checkpointed as APPROVED before execution can begin. A failed checkpoint blocks execution and invalidates the approval where possible.
+- Added JARVIS-US-040. Concurrency/fault-injection tests and exact-head validation remain outstanding.
+- No tests, build, lint, CI, or device validation were run.
+
+## Shared DevOps pipeline and artifact integrity — remaining work (2026-11-05)
+
+**Current status: SOURCE IMPLEMENTATION IN PROGRESS; VALIDATION PAUSED; NEXUS PAUSED**
+
+### Implemented source baseline
+- Shared artifact-integrity tooling is present in `scripts/artifact-integrity.mjs`, including manifest creation/verification, SHA-256 handling, deterministic release identity, strict build-provenance validation, and CI metadata normalization.
+- Customer package verification is present in `scripts/customer-release-verifier.mjs`, including authenticated manifest-ignore policy handling and release-identity binding.
+- Jenkins pipeline definitions and GitHub Actions workflows include artifact packaging, CycloneDX SBOM generation, signing/checksum workflow foundations, and fail-fast command handling.
+- Signing credential exposure is narrowed to signing steps; temporary private-key files are cleaned up after use.
+- JARVIS and Portfolio maintain corresponding DevOps implementations, with project-specific workflow differences preserved.
+
+### Remaining development work
+1. **Manifest schema hardening:** validate manifest header fields, file inventory array/count consistency, safe relative paths, duplicate normalized paths, non-negative safe-integer sizes, and canonical SHA-256 values before checksum verification.
+2. **Archive inventory verification:** define and implement safe archive-member comparison so the manifest inventory can be checked against actual packaged files; do not claim per-file archive verification until implemented.
+3. **Customer delivery workflow:** complete the documented sequence for manifest-ignore policy, manifest validation, package checksum validation, and actionable failure reporting.
+4. **Provenance consistency:** keep project, repository, branch, commit, build number, CI provider and release identity consistent across manifest, signature, checksum and pipeline context.
+5. **Pipeline configuration:** document required Jenkins credentials/environment variables and GitHub Actions secrets by variable name only; never store secret values in the repository.
+6. **Operational evidence:** when validation resumes, execute exact-head GitHub Actions/Jenkins workflows, verify artifact contents, signatures, checksums and SBOM, and retain sanitized evidence.
+7. **Release/rollback guidance:** document how to reject/quarantine invalid packages, identify the failed validation stage, and recover without silently accepting partial artifacts.
+
+### Explicitly paused / excluded
+- Nexus publishing and Nexus credential/repository configuration remain paused; do not enable publishing or contact Nexus as part of routine development.
+- Tests, builds, lint, audits, CI execution, and device/customer acceptance remain paused by the current development-only instruction.
+- Do not update production branches, create PRs, merge, deploy, or publish without explicit approval.
+
+### Acceptance gate
+The DevOps POC is not complete until manifest schema and archive inventory are verified, customer-package validation produces reliable reports, exact-head pipeline execution succeeds, and the owner approves the recorded evidence. Source implementation alone is not acceptance.
+
+
+## Owner-approved development direction and reprioritization — 2026-11-08
+
+The owner has completed the 50-question development requirements exercise. This is the current product-direction authority where older gap-register wording implies a narrower scope or an outdated priority. Existing implementation evidence and open gaps above remain valid unless explicitly superseded here.
+
+### Confirmed product direction
+
+JARVIS is to become one unified personal AI application and the central AI platform for the owner's ecosystem. Personal AI/chat is the first capability priority, followed by developer/coding assistance. The longer-term scope includes specialized agents, voice, desktop and browser automation, memory/knowledge, productivity, DevOps, Android companion workflows and extensible integrations.
+
+### Architecture and operating constraints
+
+- Present one coherent all-in-one application; retain internal modular boundaries and background workers rather than splitting prematurely into independently deployed microservices.
+- Support local AI plus multiple configured cloud providers with adaptive selection based on privacy, cost, availability, task and explicit owner authorization. Zero ongoing cost remains the default; no paid provider is silently activated.
+- Split memory into RAM-like Working Memory and durable Long-Term Memory. Add a Memory Manager for retrieval, promotion, summarization, correction, expiry, deletion, export and sync.
+- “Learning” means consented memory and preference adaptation initially. Do not silently train models on private chats or transmit private data to cloud providers.
+- Device communication combines laptop-primary hub, optional peer-to-peer and offline synchronization/conflict resolution.
+- Adapt CPU/RAM/battery use to idle, normal and intensive workloads on the existing laptop and two phones.
+- Preserve default-deny authorization, encrypted data, signed approvals, auditability, owner recovery, no admin elevation, no unrestricted shell, no financial/payment automation and no automatic replay of uncertain side effects.
+
+### Reprioritized development sequence
+
+1. Finish existing implemented features and close the highest-value current gaps without regressing existing behavior.
+2. Resolve dependencies and build foundational capabilities before dependent features.
+3. Prioritize shared services/contracts that enable JARVIS–Portfolio integration.
+4. Deliver essential personal AI/chat and memory capabilities before optional advanced features.
+5. Continue with developer assistance, agents, voice/automation, Android synchronization, plugin ecosystem and future extensibility in dependency order.
+
+### Gap-register interpretation
+
+- Existing P0/P1 security, voice, desktop, workflow, Android, memory, AI and gateway gaps remain in scope.
+- The new requirements expand the target product; they do not imply that any unimplemented feature is complete.
+- Keep implementation status separate from acceptance evidence. Do not run validation or release actions unless separately authorized.
+- Do not create a new unrelated feature stream before reconciling dependencies with the existing epics.
+
+## Development continuation checkpoint — 2026-11-09 12:22 IST
+
+**Current inspected `new` branch head:** `92d1057f33877a3fa4ebca65c7c6b894bd23480b`. The earlier feature SHA in this document is a feature checkpoint, not the current branch head.
+
+**Mode:** development ACTIVE; testing/validation PAUSED. Continue implementation only. Do not run tests, typecheck, lint, builds, audits, browser checks, Android/Windows device checks, CI/Jenkins or release steps. Authored tests may be changed but remain unexecuted.
+
+### Reconciled implemented baseline
+- Owner HUD panels for plugins, workflows, visual workflow composition, developer assistant, memory and gateway site administration are in source.
+- LAN peer management, discovery, pairing/revocation and owner-control routes are in source.
+- Voice manager lifecycle, local wake integration, bounded capture, consent checks, command normalization and policy-gated dispatch are in source.
+- Portfolio gateway integration and shared DevOps integrity/provenance foundations are already represented in the repository.
+- These are implementation states only; no latest-head test or device acceptance is implied.
+
+### Development queue — work in this order
+1. **E02/E03:** trace and complete wake → same-utterance or follow-up capture → transcript normalization → authenticated policy request → approval → Windows app launch → independent outcome reporting. Handle empty/partial transcripts, revoked consent, timeout, focus changes and uncertain results safely.
+2. **E10:** finish owner-panel API/UI contract alignment, parameter validation, loading/empty/error states, keyboard/screen-reader behavior and explicit confirmation for destructive operations.
+3. **E06/E05:** complete memory lifecycle/retrieval/deletion consistency and signed cross-device sync/conflict handling; finish Android software gaps without claiming physical-phone acceptance.
+4. **E04:** close partial-side-effect and crash/restart reconciliation gaps; uncertain work must stop for owner review.
+5. **E07:** close remaining provider/integration gaps within existing scope; preserve local-first defaults and explicit cloud opt-in.
+
+### Constraints carried into every story
+- Default-deny policy; least privilege; task/device/parameter-bound approvals; tamper-evident audit; fail closed on security persistence errors.
+- No administrator elevation, arbitrary shell, credential/payment entry, financial actions, silent installs, or automatic replay of uncertain state-changing actions.
+- No secrets in source, prompts, logs, docs or screenshots. Local-first/zero-cost baseline; cloud speech/model use requires explicit opt-in.
+- Windows 11 laptop primary; two Android companion phones independently trusted; iOS future scope.
+- Stay on `new`. No PR, merge, push to `dev`/`main`, deployment, tunnel, secret changes, Jenkins run or Nexus publication without explicit authorization. Nexus stays disabled.
+
+### Acceptance status
+All newly touched functionality is **IMPLEMENTED — NEEDS TESTING** unless a specific earlier exact-head evidence record says otherwise. No status may be upgraded while testing is paused. After the owner resumes testing, capture exact commit, command/run, device, expected/actual result and limitations.
+
+
+## Voice command development increment — 2026-11-09
+
+**Implemented, not tested:** `src/planner/planner.ts` now includes a narrow first-syllable recovery for the speech-recognition output `pen <application>`, converting it to the existing allowlisted launch grammar `open <application>`. Added authored cases for “pen Notepad” and “pen up Notepad” in `test/planner-launch-phrasing.test.ts`. No test/build/typecheck/CI/device check was run. This does not change the app allowlist or authorization model; app launches still pass through the existing planner, policy and approval flow. Target-MSI acceptance remains required.
+
+
+
+## Latest development increment review — 2026-11-09 13:30 IST
+
+On `new`, Windows Start-menu launch now uses conservative executable-AppID-to-process identity mapping, excludes shell-host identities, checks for a unique matching window, and reuses/focuses a uniquely identified existing window. Unknown or ambiguous identity continues to return a partial/uncertain result rather than false success. Android owner panels now support laptop/phone/merge resolution for sync conflicts and explicit run/discard decisions for held commands; the laptop still enforces policy and approval.
+
+A focused Windows AppID identity test file was added but not run. **Testing remains PAUSED.** Target-MSI voice-to-app acceptance, Android build/enrollment/two-device drills, and exact-head validation remain open. No test, build, typecheck, lint, audit, browser/device check, CI/Jenkins or release operation was performed.

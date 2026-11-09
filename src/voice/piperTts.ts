@@ -20,7 +20,7 @@ const MAX_PIPER_STDERR_BYTES = 8 * 1024;
  */
 export function validatePiperWav(audio: Buffer): string | undefined {
   if (audio.length < 44 || audio.length > MAX_PIPER_AUDIO_BYTES) {
-    return `Speech audio must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
+    return `Speech audio size must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
   }
   if (audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
     return 'Piper output is not a RIFF/WAVE file.';
@@ -55,14 +55,16 @@ export function validatePiperWav(audio: Buffer): string | undefined {
 export class PiperTtsProvider {
   constructor(private readonly config: PiperConfig) {}
 
-  async synthesize(text: string): Promise<Buffer> {
+  async synthesize(text: string, signal?: AbortSignal): Promise<Buffer> {
     const normalized = text.trim();
     if (!normalized || normalized.length > 1200) {
       throw new Error('Speech text must contain 1–1200 characters.');
     }
-    if (/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(normalized)) {
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(normalized)) {
       throw new Error('Speech text contains unsupported control characters.');
     }
+
+    if (signal?.aborted) throw new Error('Local speech generation was cancelled.');
 
     const child = spawn(this.config.executable, ['--model', this.config.model, '--output_file', '-'], {
       shell: false,
@@ -77,7 +79,11 @@ export class PiperTtsProvider {
     let settled = false;
 
     return await new Promise<Buffer>((resolve, reject) => {
-      const cleanup = (): void => clearTimeout(timer);
+      const onAbort = (): void => fail(new Error('Local speech generation was cancelled.'));
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      };
       const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
@@ -89,6 +95,7 @@ export class PiperTtsProvider {
         fail(new Error('Local speech generation timed out.'));
       }, timeoutMs);
 
+      signal?.addEventListener('abort', onAbort, { once: true });
       child.stdout.on('data', (chunk: Buffer) => {
         if (settled) return;
         stdoutBytes += chunk.length;
@@ -128,7 +135,7 @@ export class PiperTtsProvider {
         }
         resolve(audio);
       });
-      child.stdin.end(normalized + '\\n');
+      child.stdin.end(normalized + '\n');
     });
   }
 }

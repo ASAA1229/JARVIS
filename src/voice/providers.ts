@@ -128,21 +128,60 @@ export class WhisperCppProvider implements SpeechToTextProvider {
     await fs.writeFile(temporary, wav, { flag: 'wx', mode: 0o600 });
     try {
       const text = await new Promise<string>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error('Local speech recognition was cancelled.'));
+          return;
+        }
+
         const child = spawn(this.cliPath, ['-m', this.modelPath, '-f', temporary, '-l', this.language, '-nt', '-np'], {
           shell: false,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         let output = '';
-        const timer = setTimeout(() => { child.kill(); reject(new Error('Local speech recognition timed out.')); }, 60_000);
-        const onAbort = (): void => { child.kill(); reject(new Error('Local speech recognition was cancelled.')); };
-        signal?.addEventListener('abort', onAbort, { once: true });
-        child.stdout?.on('data', (chunk: Buffer) => { if (output.length < 20_000) output += chunk.toString('utf8'); });
-        child.on('error', () => { clearTimeout(timer); reject(new Error('Local speech recognition could not be started.')); });
-        child.on('close', (code) => {
+        let settled = false;
+        let timedOut = false;
+        let cancelled = false;
+        const cleanup = (): void => {
           clearTimeout(timer);
           signal?.removeEventListener('abort', onAbort);
-          if (code === 0) resolve(output); else reject(new Error('Local speech recognition failed.'));
+        };
+        const finish = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (error) reject(error); else resolve(output);
+        };
+        const stop = (): void => {
+          if (child.exitCode === null && child.signalCode === null) child.kill();
+        };
+        const onAbort = (): void => {
+          cancelled = true;
+          stop();
+          finish(new Error('Local speech recognition was cancelled.'));
+        };
+        const timer = setTimeout(() => {
+          timedOut = true;
+          stop();
+          finish(new Error('Local speech recognition timed out.'));
+        }, 60_000);
+
+        signal?.addEventListener('abort', onAbort, { once: true });
+        // Close the race between the initial check and listener registration.
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        child.stdout?.on('data', (chunk: Buffer) => {
+          if (output.length < 20_000) output += chunk.toString('utf8').slice(0, 20_000 - output.length);
+        });
+        child.on('error', () => finish(new Error('Local speech recognition could not be started.')));
+        child.on('close', (code) => {
+          if (settled) return;
+          if (cancelled) finish(new Error('Local speech recognition was cancelled.'));
+          else if (timedOut) finish(new Error('Local speech recognition timed out.'));
+          else if (code === 0) finish();
+          else finish(new Error('Local speech recognition failed.'));
         });
       });
       // Whisper emits bracketed non-speech markers such as [BLANK_AUDIO]; those are not words.

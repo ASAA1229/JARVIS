@@ -21,6 +21,53 @@ async function main() {
 
   await server.start();
   console.log(`✅ JARVIS Core service is listening on http://127.0.0.1:${config.port}`);
+
+  // Adaptive resource profiles (US-061): sample CPU/RAM/battery and let the
+  // profile defer recurring background jobs when the laptop is constrained.
+  const { resourceManager } = await import('./resources/resourceManager.js');
+  resourceManager.start();
+  server.getService().scheduler.setBackgroundGate(() => !resourceManager.limits().recurringJobsAllowed);
+
+  // Optional personal AI gateway for websites (OpenAI-compatible /v1 on its own port).
+  const gatewayPort = process.env.JARVIS_SITE_GATEWAY_PORT;
+  if (gatewayPort) {
+    const port = Number(gatewayPort);
+    if (!Number.isSafeInteger(port) || port < 1 || port > 65535 || port === config.port) {
+      throw new Error('JARVIS_SITE_GATEWAY_PORT must be a free TCP port different from PORT');
+    }
+    const [{ SiteAiGateway }, { SiteClientStore }, { getModelEndpoint }] = await Promise.all([
+      import('./gateway/siteAiGateway.js'),
+      import('./gateway/siteClientStore.js'),
+      import('./conversation/agentModelAdapter.js'),
+    ]);
+    const { providerRouter } = await import('./ai/providerRouter.js');
+    // Bind to loopback by default: a Cloudflare Tunnel connects locally, so the gateway
+    // never needs to listen on the LAN. A non-loopback host requires an explicit opt-in.
+    const requestedHost = process.env.JARVIS_SITE_GATEWAY_HOST || '127.0.0.1';
+    const loopback = ['127.0.0.1', '::1', 'localhost'].includes(requestedHost);
+    if (!loopback && process.env.JARVIS_SITE_GATEWAY_ALLOW_NON_LOOPBACK !== 'true') {
+      throw new Error('JARVIS_SITE_GATEWAY_HOST must be a loopback address unless JARVIS_SITE_GATEWAY_ALLOW_NON_LOOPBACK=true');
+    }
+    const gateway = new SiteAiGateway({
+      host: requestedHost,
+      store: new SiteClientStore(process.env.JARVIS_SITE_CLIENTS_PATH || './data/site-clients.json'),
+      audit: server.getService().audit,
+      modelEndpoint: getModelEndpoint,
+      concurrency: () => {
+        const limits = resourceManager.limits();
+        return { perClient: limits.gatewayMaxConcurrentPerClient, total: limits.gatewayMaxConcurrentTotal };
+      },
+      registerHeavyWork: (label, cancel) => resourceManager.registerHeavyWork('model_inference', label, cancel),
+      reportOutcome: (endpoint, ok) => {
+        const id = endpoint.id;
+        if (id !== 'local' && id !== 'openai' && id !== 'anthropic') return;
+        if (ok) providerRouter.reportSuccess(id);
+        else providerRouter.reportFailure(id);
+      },
+    });
+    await gateway.start(port);
+    console.log(`✅ JARVIS site AI gateway is listening on http://${requestedHost}:${port}/v1 (site keys: npm run site-key -- list)`);
+  }
 }
 
 main().catch((err) => {

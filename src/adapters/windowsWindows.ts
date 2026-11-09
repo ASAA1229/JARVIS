@@ -42,6 +42,9 @@ export function classifyPowerShellError(error: unknown, signal?: AbortSignal): W
   if (haystack.includes('TARGET_MISMATCH')) {
     return new WindowsAgentError('target_mismatch', 'The foreground window is not the intended application; no action was taken.');
   }
+  if (haystack.includes('CLIPBOARD_EMPTY')) {
+    return new WindowsAgentError('unavailable', 'The clipboard has no text to paste; nothing was sent.');
+  }
   if (haystack.includes('NO_WINDOW') || haystack.includes('Cannot find a process')) {
     return new WindowsAgentError('unavailable', 'The target application or window is not available.');
   }
@@ -227,26 +230,43 @@ export class WindowsWindowManager {
       }
       const window = matches[0];
       const script = [
-        "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class JarvisFocus { [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindowAsync(IntPtr h, int cmd); [DllImport(\"user32.dll\")] public static extern bool IsIconic(IntPtr h); [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); }' -ErrorAction SilentlyContinue",
+        "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class JarvisFocus { [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindowAsync(IntPtr h, int cmd); [DllImport(\"user32.dll\")] public static extern bool IsIconic(IntPtr h); [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport(\"user32.dll\")] public static extern bool AttachThreadInput(uint a, uint b, bool attach); [DllImport(\"user32.dll\")] public static extern bool BringWindowToTop(IntPtr h); [DllImport(\"kernel32.dll\")] public static extern uint GetCurrentThreadId(); [DllImport(\"user32.dll\")] public static extern IntPtr GetAncestor(IntPtr h, uint flags); }' -ErrorAction SilentlyContinue",
         `$p = Get-Process -Id ${window.pid} -ErrorAction Stop`,
         '$h = $p.MainWindowHandle',
         "if ($h -eq [IntPtr]::Zero) { throw 'NO_WINDOW' }",
+        // Store (UWP) apps expose an inner CoreWindow hosted by ApplicationFrameHost;
+        // focus and verify the top-level root window that actually becomes foreground.
+        '$root = [JarvisFocus]::GetAncestor($h, 2)',
+        'if ($root -ne [IntPtr]::Zero) { $h = $root }',
         'if ([JarvisFocus]::IsIconic($h)) { [void][JarvisFocus]::ShowWindowAsync($h, 9) }',
-        '[void][JarvisFocus]::SetForegroundWindow($h)',
+        // Windows foreground-lock refuses SetForegroundWindow from a background
+        // process. Temporarily sharing input state with the current foreground
+        // thread lets the focus change through without injecting any keystroke;
+        // the readback below remains the source of truth.
+        '$x = [uint32]0',
+        '$fgThread = [JarvisFocus]::GetWindowThreadProcessId([JarvisFocus]::GetForegroundWindow(), [ref]$x)',
+        '$me = [JarvisFocus]::GetCurrentThreadId()',
+        '$attached = ($fgThread -ne 0 -and $fgThread -ne $me) -and [JarvisFocus]::AttachThreadInput($me, $fgThread, $true)',
+        'try { [void][JarvisFocus]::BringWindowToTop($h); [void][JarvisFocus]::SetForegroundWindow($h) } finally { if ($attached) { [void][JarvisFocus]::AttachThreadInput($me, $fgThread, $false) } }',
         'Start-Sleep -Milliseconds 350',
         '$fp = [uint32]0',
-        '[void][JarvisFocus]::GetWindowThreadProcessId([JarvisFocus]::GetForegroundWindow(), [ref]$fp)',
+        '$fh = [JarvisFocus]::GetForegroundWindow()',
+        '[void][JarvisFocus]::GetWindowThreadProcessId($fh, [ref]$fp)',
         '[Console]::Out.WriteLine("FOREGROUND_PID=" + $fp)',
+        '[Console]::Out.WriteLine("FOREGROUND_IS_TARGET=" + ($fh -eq $h))',
       ].join('; ');
       const output = await this.runPowerShell(script, signal);
       const match = output.match(/FOREGROUND_PID=(\d+)/);
       const foregroundPid = match ? Number(match[1]) : NaN;
-      if (foregroundPid === window.pid) {
+      // The exact focused top-level window handle is equally strong evidence; it is
+      // what Store apps report, since their frame belongs to ApplicationFrameHost.
+      const foregroundIsTarget = /FOREGROUND_IS_TARGET=True/.test(output);
+      if (foregroundPid === window.pid || foregroundIsTarget) {
         return {
           success: true,
           outcome: VerificationOutcome.VERIFIED_SUCCESS,
           data: { pid: window.pid, processName: window.processName, title: window.title },
-          evidence: { host: 'windows', mechanism: 'SetForegroundWindow + GetForegroundWindow readback', foregroundPidVerified: true },
+          evidence: { host: 'windows', mechanism: 'SetForegroundWindow + GetForegroundWindow readback', foregroundPidVerified: foregroundPid === window.pid, foregroundWindowVerified: foregroundIsTarget },
         };
       }
       return {

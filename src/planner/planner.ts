@@ -1,3 +1,9 @@
+import { DEVELOPER_OPERATIONS } from '../developer/operations.js';
+import { planDeveloperRequest } from '../developer/developerPlanner.js';
+import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
+import { GATEWAY_SITE_OPERATIONS } from '../gateway/siteAdminOperations.js';
+import { planWorkflowRequest } from '../workflows/workflowPlanner.js';
+
 export interface ProposedOperation {
   operation: string;
   parameters: Record<string, unknown>;
@@ -31,6 +37,33 @@ function splitForegroundTarget(value: string): { name: string; expectProcess?: s
   const expectProcess = match[1].replace(/\.exe$/i, '');
   return name ? { name, expectProcess } : { name: value.trim() };
 }
+function normalizeVoiceDirective(value: string): string {
+  let directive = String(value || '')
+    .trim()
+    .replace(/[，。！？]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:(?:(?:hey|hello|hi|ok|okay)\s+)?jarvis\b[,.!:]?\s*)+/i, '')
+    .trim();
+
+  // Convert conversational launch requests into one explicit launch intent.
+  // This does not add any new executable operation or bypass policy checks.
+  directive = directive
+    // Some speech recognizers clip the first syllable of "open" at capture start.
+    // Repair only the bounded "pen <target>" form; do not rewrite arbitrary words.
+    .replace(/^pen\s+/i, 'open ')
+    .replace(/^(?:would you mind|can you|could you|would you|please)\s+(?:please\s+)?(?:get me|bring me|open|launch|start|run|fire up)\s+/i, 'open ')
+    .replace(/^(?:get me|bring me|fire up)\s+/i, 'open ')
+    .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
+    .replace(/^(?:i want you to|i need you to)\s+(open|launch|start|run)\s+/i, '$1 ')
+    .replace(/^(?:please)\s+(open|launch|start|run|bring up)\s+/i, '$1 ')
+    .replace(/\s+(?:please|for me|thanks|thank you)[.!?]*$/i, '')
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return directive;
+}
+
 export class LocalHeuristicPlanner implements IAIPlannerProvider {
   public readonly name = 'local-heuristic-v1';
 
@@ -71,6 +104,9 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'app:inventory',
     'comms:handoff_email',
     'comms:unsupported',
+    ...DEVELOPER_OPERATIONS,
+    ...WORKFLOW_OPERATIONS,
+    ...GATEWAY_SITE_OPERATIONS,
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
@@ -111,8 +147,17 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     return { valid: errors.length === 0, errors };
   }
 
-  public async generatePlan(requestText: string, context: MinimizedContext): Promise<PlanProposal> {
+  public async generatePlan(rawRequestText: string, context: MinimizedContext): Promise<PlanProposal> {
+    const requestText = normalizeVoiceDirective(rawRequestText);
     const text = requestText.toLowerCase().trim();
+
+    // Developer assistant (JARVIS-US-063): explicit, repo-scoped phrases only.
+    const developerPlan = planDeveloperRequest(requestText);
+    if (developerPlan) return developerPlan;
+
+    // Plugins and workflows (JARVIS-US-062): explicit phrases only.
+    const workflowPlan = planWorkflowRequest(requestText);
+    if (workflowPlan) return workflowPlan;
 
     const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
     if (rememberName && rememberName[1].trim()) {
@@ -248,6 +293,15 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
+    if (/\b(?:what|which)\s+(?:app|application|program|window)\s+(?:is\s+)?(?:currently\s+)?(?:active|in\s+the\s+foreground)\b|\bwhat(?:'s| is)\s+(?:the\s+)?(?:active|current)\s+window\b|\bwhich\s+window\s+am\s+i\s+using\b/i.test(requestText)) {
+      return {
+        intent: 'Identify the active application window',
+        operations: [{ operation: 'desktop:inspect_window', parameters: {}, justification: 'Owner asked which application is currently active' }],
+        confidence: 0.9,
+        explanation: 'Will report the foreground application and window title, plus accessible control names; it will not read control values.',
+      };
+    }
+
     // Window discovery and focus.
     if (/\b(?:what|which)\s+(?:apps?|windows|applications|programs)\s+(?:are\s+)?(?:open|running)\b|\b(?:list|show)\s+(?:my\s+)?(?:open\s+)?windows\b/i.test(requestText)) {
       return { intent: 'List open application windows', operations: [{ operation: 'desktop:list_windows', parameters: {}, justification: 'Owner asked what is open' }], confidence: 0.88, explanation: 'Will list open window titles; payment and financial apps are excluded.' };
@@ -314,9 +368,20 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(inspect|describe|what is in)\s+(?:the\s+)?(?:current|active|foreground)\s+window\b/i.test(requestText)) {
-      return { intent: 'Inspect current foreground window controls', operations: [{ operation: 'desktop:inspect_window', parameters: {}, justification: 'User requested current-window context' }], confidence: 0.86, explanation: 'Will inspect accessible control names in the foreground window; control values are not read.' };
+    const inspectWindow = requestText.match(/\b(?:inspect|describe|show)\s+(?:(?:the\s+)?(?:current|active|foreground)\s+)?window(?:\s+in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i)
+      || requestText.match(/\b(?:inspect|describe|show)\s+(?:the\s+)?([A-Za-z0-9._-]{1,64})\s+window\s*$/i);
+    if (inspectWindow) {
+      const expectProcess = inspectWindow[1]?.replace(/\.exe$/i, '');
+      return {
+        intent: expectProcess ? 'Inspect a specifically named application window' : 'Inspect current foreground window controls',
+        operations: [{ operation: 'desktop:inspect_window', parameters: expectProcess ? { expectProcess } : {}, justification: expectProcess ? 'User explicitly named the application to inspect' : 'User requested current-window context' }],
+        confidence: 0.86,
+        explanation: expectProcess
+          ? 'Will inspect accessible control names only if the foreground process matches the named application; control values are not read.'
+          : 'Will inspect accessible control names in the foreground window; control values are not read.',
+      };
     }
+
     const clickControl = requestText.match(/\bclick\s+(?:the\s+)?(?:button|control)\s+(?:named\s+)?["“]?(.+?)["”]?\s*$/i);
     if (clickControl && clickControl[1].trim()) {
       const target = splitForegroundTarget(clickControl[1]);
@@ -329,14 +394,23 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
 
     // Explicit desktop interaction requests. The policy gateway still requires approval.
-    if (/\b(zoom in|zoom closer|enlarge)\b/.test(text)) {
-      return { intent: 'Zoom in on the foreground application', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'in' }, justification: 'User explicitly requested zoom in' }], confidence: 0.9, explanation: 'Will send the foreground app zoom-in shortcut after approval.' };
+    const zoomRequest = requestText.match(/\b(zoom\s+in|zoom\s+closer|enlarge|zoom\s+out|zoom\s+smaller|shrink|reset\s+zoom|normal\s+zoom)\s+(?:in|on)\s+([A-Za-z0-9._-]{1,64})\s*$/i)
+      || requestText.match(/\b(zoom\s+in|zoom\s+closer|enlarge|zoom\s+out|zoom\s+smaller|shrink|reset\s+zoom|normal\s+zoom)\s*$/i);
+    if (zoomRequest) {
+      const phrase = zoomRequest[1].toLowerCase();
+      const direction = /reset|normal/.test(phrase) ? 'reset' : /out|smaller|shrink/.test(phrase) ? 'out' : 'in';
+      const expectProcess = zoomRequest[2]?.replace(/\.exe$/i, '');
+      if (!expectProcess) return { intent: 'Zoom destination required', operations: [], confidence: 0.98, explanation: 'Name the application to zoom, for example “zoom in on Chrome”. JARVIS will not send shortcuts to an unknown foreground window.', uncertainty: 'No explicit destination process was supplied for zoom.' };
+      return { intent: 'Zoom the named application', operations: [{ operation: 'desktop:zoom', parameters: { direction, expectProcess }, justification: 'User explicitly named the zoom direction and destination process' }], confidence: 0.9, explanation: 'Will send the zoom shortcut only if the foreground process matches the named application, after approval.' };
     }
-    if (/\b(zoom out|zoom smaller|shrink)\b/.test(text)) {
-      return { intent: 'Zoom out on the foreground application', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'out' }, justification: 'User explicitly requested zoom out' }], confidence: 0.9, explanation: 'Will send the foreground app zoom-out shortcut after approval.' };
+    const hotkeyRequest = requestText.match(/\b(?:press|hit)\s+(ctrl|control|alt|shift)(?:\s*\+\s*|\s+)(c|v|a|s|f|n|z|y|enter|tab|escape|esc)\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (hotkeyRequest) {
+      const modifier = hotkeyRequest[1].toLowerCase() === 'control' ? 'CTRL' : hotkeyRequest[1].toUpperCase();
+      const key = hotkeyRequest[2].toUpperCase() === 'ESCAPE' ? 'ESC' : hotkeyRequest[2].toUpperCase();
+      return { intent: 'Send an allowlisted shortcut to the named application', operations: [{ operation: 'desktop:hotkey', parameters: { keys: [modifier, key], expectProcess: hotkeyRequest[3].replace(/\.exe$/i, '') }, justification: 'User supplied an allowlisted key combination and named its destination process' }], confidence: 0.9, explanation: 'Will send the shortcut only if the foreground process matches the named application, after approval.' };
     }
-    if (/\b(reset zoom|normal zoom)\b/.test(text)) {
-      return { intent: 'Reset foreground application zoom', operations: [{ operation: 'desktop:zoom', parameters: { direction: 'reset' }, justification: 'User explicitly requested zoom reset' }], confidence: 0.9, explanation: 'Will send the foreground app zoom reset shortcut after approval.' };
+    if (/\b(?:press|hit)\s+(?:ctrl|control|alt|shift)\b/i.test(requestText)) {
+      return { intent: 'Shortcut destination or key combination required', operations: [], confidence: 0.98, explanation: 'Provide a supported key combination and application, for example “press Ctrl+S in Notepad”.', uncertainty: 'The shortcut is incomplete or has no explicit destination process.' };
     }
     const ownerName = (context.memory || []).map((item) => {
       const match = item.match(/\b(?:owner|user|my)\s+name\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{0,79})/i);
@@ -346,41 +420,87 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
       return { intent: 'Launch Notepad and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId: 'notepad', text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will open Notepad and enter the owner name saved in personal memory after approval.' };
     }
-    if (/\b(?:write|type|enter)\s+(?:my name|my full name)\b/i.test(requestText)) {
+    const launchOwnerName = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+(?:my name|my full name)\s*$/i);
+    if (launchOwnerName) {
       if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
-      return { intent: 'Enter the saved owner name', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName }, justification: 'Use owner name from approved personal memory' }], confidence: 0.95, explanation: 'Will enter the owner name saved in personal memory after approval.' };
+      const appId = launchOwnerName[1].toLowerCase() === 'calculator' ? 'calc' : launchOwnerName[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
+      return { intent: 'Launch an allowlisted application and enter the saved owner name', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: ownerName }, justification: 'Use verified owner profile data in the explicitly requested application' }], confidence: 0.95, explanation: 'Will launch the named application, verify its target window, and enter the saved owner name after approval.' };
     }
-    const launchAndType = requestText.match(/\bopen\s+(?:the\s+)?(notepad|calculator|paint)\b.*\b(?:write|type|enter)\s+[“"]?(.+?)[”"]?\s*$/i);
-    if (launchAndType && launchAndType[2].trim()) {
+    const ownerNameRequest = requestText.match(/\b(?:write|type|enter)\s+(?:my name|my full name)\s*(?:in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i);
+    if (ownerNameRequest) {
+      if (!ownerName) return { intent: 'Owner profile detail required', operations: [], confidence: 0.95, explanation: 'I do not have a verified owner name configured. Tell me the exact name to write or save it in your owner profile first.', uncertainty: 'Owner name is not available in verified profile context.' };
+      const targetProcess = ownerNameRequest[1]?.replace(/\.exe$/i, '');
+      if (!targetProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I have the saved owner name, but I will not type into whichever window happens to be active. Say “type my name in Notepad” or name the exact target application.', uncertainty: 'No explicit destination process was supplied for text entry.' };
+      return { intent: 'Enter the saved owner name in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName, expectProcess: targetProcess }, justification: 'Use verified owner profile data and pin text entry to the explicitly named process' }], confidence: 0.95, explanation: 'Will enter the saved owner name only if the foreground window belongs to the named application, after approval.' };
+    }
+    const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b\s*(?:and|then|,)?\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
+    if (launchAndType) {
       const appId = launchAndType[1].toLowerCase() === 'calculator' ? 'calc' : launchAndType[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
-      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: launchAndType[2].trim() }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.88, explanation: 'Will launch the requested allowlisted application and enter the supplied text after approval.' };
+      let suppliedText = launchAndType[2].trim();
+      if ((suppliedText.startsWith('"') && suppliedText.endsWith('"')) || (suppliedText.startsWith('“') && suppliedText.endsWith('”')) || (suppliedText.startsWith("'") && suppliedText.endsWith("'"))) {
+        suppliedText = suppliedText.slice(1, -1).trim();
+      }
+      if (!suppliedText || suppliedText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(suppliedText)) {
+        return { intent: 'Combined desktop instruction needs clearer text', operations: [], confidence: 0.96, explanation: 'The text to enter must be a single line containing 1–500 printable characters. No application was launched and no text was entered.', uncertainty: 'The requested text is empty, too long, or contains unsupported control characters.' };
+      }
+      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: suppliedText }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.9, explanation: 'Will launch the requested allowlisted application, verify its target window, and enter the supplied text only after approval.' };
     }
-    const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s*$/i);
+    const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)\s*$/i);
     if (typeMatch && typeMatch[1].trim()) {
-      return { intent: 'Enter explicit text in the foreground application', operations: [{ operation: 'desktop:type_text', parameters: { text: typeMatch[1].trim() }, justification: 'User provided the text to enter' }], confidence: 0.88, explanation: 'Will paste the explicitly supplied text into the foreground application after approval.' };
+      const target = splitForegroundTarget(typeMatch[1].trim());
+      const explicitText = target.name.replace(/^[“"']|[”"']$/g, '').trim();
+      if (!target.expectProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I will not type into whichever window happens to be active. Specify the destination, for example “type Hello in Notepad”.', uncertainty: 'No explicit destination process was supplied for text entry.' };
+      if (!explicitText || explicitText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(explicitText)) return { intent: 'Text entry needs clearer input', operations: [], confidence: 0.96, explanation: 'The text must contain 1–500 printable characters. No text was entered.', uncertainty: 'Text is empty, too long, or contains unsupported control characters.' };
+      return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess: target.expectProcess }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named application, after approval.' };
     }
-    const pasteMatch = requestText.match(/\bpaste\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s+(?:here|there|into\s+(?:this|the\s+current)\s+(?:app|document|note))\s*$/i);
-    if (pasteMatch && pasteMatch[1].trim()) {
-      return { intent: 'Paste explicit text in the foreground application', operations: [{ operation: 'desktop:paste_text', parameters: { text: pasteMatch[1].trim() }, justification: 'User specified text and destination context' }], confidence: 0.8, explanation: 'Will paste the supplied text into the foreground application after approval.' };
-    }
-    if (/\bcopy\s+(?:this|the selected text)\s+and\s+paste\s+(?:it\s+)?(?:in|into)\s+(?:notepad|notes)\b/i.test(requestText)) {
+    // "copy this [in Chrome] and paste it in Notepad": a bounded three-step workflow.
+    // The copy source must be named, matching the single-step copy rule below.
+    const copyThenPaste = requestText.match(/\bcopy\s+(?:this|that|it|the\s+selection|(?:the\s+)?selected\s+text)(?:\s+(?:in|from)\s+([A-Za-z0-9._-]{1,64}))?\s*(?:,\s*)?(?:and|then)\s+(?:then\s+)?paste\s+(?:it|this|that)\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (copyThenPaste) {
+      const source = copyThenPaste[1]?.replace(/\.exe$/i, '');
+      const destination = copyThenPaste[2].replace(/\.exe$/i, '');
+      if (!source) return { intent: 'Copy source application required', operations: [], confidence: 0.98, explanation: `Name the application containing the selection, for example “copy selected text in Chrome and paste it in ${destination}”. JARVIS will not copy from an unknown foreground window.`, uncertainty: 'No explicit source process was supplied for clipboard copy.' };
       return {
-        intent: 'Copy current selection into Notepad',
+        intent: 'Copy the selection from one application and paste it into another',
         operations: [
-          { operation: 'desktop:copy_selection', parameters: {}, justification: 'Copy the explicitly referenced current selection' },
-          { operation: 'app:launch', parameters: { appId: 'notepad' }, justification: 'Open Notepad as the requested destination' },
-          { operation: 'desktop:paste_clipboard', parameters: {}, justification: 'Paste the copied selection into the foreground Notepad window' },
+          { operation: 'desktop:copy_selection', parameters: { expectProcess: source }, justification: 'User explicitly named the source application for copying its current selection' },
+          { operation: 'app:launch', parameters: { appId: destination.toLowerCase() }, justification: 'Bring the named paste destination to the foreground' },
+          { operation: 'desktop:paste_clipboard', parameters: { expectProcess: destination }, justification: 'User explicitly named the clipboard paste destination' },
         ],
-        confidence: 0.82,
-        explanation: 'This workflow copies the current selection, opens Notepad, and pastes it. JARVIS will request approval for each state-changing step.',
+        confidence: 0.88,
+        explanation: 'Will copy only from the named source, open or focus the destination, and paste only if its process matches — each step after approval.',
       };
     }
-    if (/\b(copy|copy this|copy selected text)\b/.test(text)) {
-      return { intent: 'Copy selected text from the foreground application', operations: [{ operation: 'desktop:copy_selection', parameters: {}, justification: 'User explicitly requested copying the current selection' }], confidence: 0.82, explanation: 'Will copy the foreground selection after approval; clipboard data may be sensitive.' };
+    // Pronouns refer to the clipboard, never to literal text to paste.
+    const pasteClipboard = requestText.match(/\bpaste\s+(?:the\s+)?(?:clipboard|it|this|that|copied\s+text|the\s+copied\s+text|the\s+selection)\s+(?:in|into)\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (pasteClipboard) {
+      return { intent: 'Paste clipboard into the named application', operations: [{ operation: 'desktop:paste_clipboard', parameters: { expectProcess: pasteClipboard[1].replace(/\.exe$/i, '') }, justification: 'User explicitly named the clipboard paste destination' }], confidence: 0.9, explanation: 'Will paste only if the foreground process matches the named destination application.' };
+    }
+    const pasteMatch = requestText.match(/\bpaste\s+(?:the following\s+)?[“"]?(.+?)[”"]?\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (pasteMatch && pasteMatch[1].trim()) {
+      return { intent: 'Paste explicit text in the named application', operations: [{ operation: 'desktop:paste_text', parameters: { text: pasteMatch[1].trim(), expectProcess: pasteMatch[2].replace(/\.exe$/i, '') }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will paste the supplied text only if the foreground process matches the named application, after approval.' };
+    }
+    if (/\bpaste\b/i.test(requestText)) {
+      return { intent: 'Paste destination required', operations: [], confidence: 0.98, explanation: 'Name the destination application, for example “paste this in Notepad”. JARVIS will not paste into an unknown foreground window.', uncertainty: 'No explicit destination process was supplied for paste.' };
+    }
+    const copySelection = requestText.match(/\bcopy\s+(?:this|the\s+selected\s+text|selected\s+text)\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (copySelection) {
+      const expectProcess = copySelection[1].replace(/\.exe$/i, '');
+      return { intent: 'Copy selected text from the named application', operations: [{ operation: 'desktop:copy_selection', parameters: { expectProcess }, justification: 'User explicitly named the source application for copying its current selection' }], confidence: 0.9, explanation: 'Will copy only if the foreground process matches the named source application; clipboard contents may be sensitive.' };
+    }
+    if (/\bcopy\b/i.test(requestText)) {
+      return { intent: 'Copy source application required', operations: [], confidence: 0.98, explanation: 'Name the application containing the selection, for example “copy selected text in Chrome”.', uncertainty: 'No explicit source process was supplied for clipboard copy.' };
     }
 
-    // 2. Application launch requests
-    if (/\b(notepad|note\s*pad|notes)\b/.test(text)) {
+    // 2. Application launch requests.
+    // Require an explicit launch verb: merely asking about an application must
+    // never cause a state-changing app:launch operation.
+    const launchIntent = /^\s*(?:(?:(?:hey|hello|hi|ok|okay)\s+)?jarvis\b[,.!:]?\s*)?(?:please\s+)?(?:open|launch|start|run|bring\s+up)\s+(?:the\s+)?(.+?)\s*$/i.exec(requestText);
+    const launchTarget = launchIntent?.[1]?.trim()
+      .replace(/[.!?,;:]+$/g, '')
+      .replace(/\s+(?:please|for me)$/i, '')
+      .trim() ?? '';
+    if (launchTarget && /^(?:notepad|note\s*pad)$/i.test(launchTarget)) {
       return {
         intent: 'Launch Notepad application',
         operations: [
@@ -395,7 +515,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(calc|calculator)\b/.test(text)) {
+    if (launchTarget && /^(?:calc|calculator)$/i.test(launchTarget)) {
       return {
         intent: 'Launch Calculator application',
         operations: [
@@ -410,24 +530,32 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
-    if (/\b(paint|draw)\b/.test(text)) {
+    const builtInLaunchAliases: Array<{ names: RegExp; appId: string; displayName: string }> = [
+      { names: /^(?:paint|microsoft paint)$/i, appId: 'mspaint', displayName: 'Paint' },
+      { names: /^(?:file explorer|windows explorer|explorer)$/i, appId: 'explorer', displayName: 'File Explorer' },
+      { names: /^(?:task manager|windows task manager)$/i, appId: 'taskmgr', displayName: 'Task Manager' },
+      { names: /^(?:command prompt|cmd|cmd prompt)$/i, appId: 'cmd', displayName: 'Command Prompt' },
+      { names: /^(?:powershell|windows powershell)$/i, appId: 'powershell', displayName: 'PowerShell' },
+      { names: /^(?:chrome|google chrome)$/i, appId: 'Google Chrome', displayName: 'Google Chrome' },
+      { names: /^(?:edge|microsoft edge)$/i, appId: 'Microsoft Edge', displayName: 'Microsoft Edge' },
+    ];
+    const builtInAlias = builtInLaunchAliases.find((entry) => entry.names.test(launchTarget));
+    if (builtInAlias) {
       return {
-        intent: 'Launch Paint application',
-        operations: [
-          {
-            operation: 'app:launch',
-            parameters: { appId: 'mspaint' },
-            justification: 'User requested launching Paint',
-          },
-        ],
-        confidence: 0.95,
-        explanation: 'Interpreted as launching allowlisted Paint application',
+        intent: 'Launch ' + builtInAlias.displayName + ' application',
+        operations: [{
+          operation: 'app:launch',
+          parameters: { appId: builtInAlias.appId },
+          justification: 'User requested launching ' + builtInAlias.displayName,
+        }],
+        confidence: 0.93,
+        explanation: 'Interpreted as launching ' + builtInAlias.displayName + ' through the Windows application launcher.',
       };
     }
 
-    const genericOpen = requestText.match(/^\s*(?:please\s+)?open\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79})\s*$/i);
-    if (genericOpen && genericOpen[1].trim()) {
-      const appName = genericOpen[1].trim();
+    const genericOpen = /^[A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}$/.test(launchTarget);
+    if (genericOpen && launchTarget) {
+      const appName = launchTarget;
       if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
         return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
       }

@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { MemoryVersionHistory } from './memoryVersions.js';
 
 export type MemoryCategory = 'preference' | 'project' | 'routine' | 'general';
 
@@ -11,6 +12,8 @@ export interface PersonalMemory {
   createdAt: number;
   updatedAt: number;
   expiresAt?: number;
+  /** Where an approved learned memory came from (JARVIS-US-058 attribution). */
+  source?: { kind: string; ref?: string; approvedAt: number };
 }
 
 interface MemoryPayload { version: 1; records: PersonalMemory[]; }
@@ -23,10 +26,28 @@ const DENIED_CATEGORIES = new Set(['credential', 'secret', 'financial', 'payment
 const INSTRUCTION_LIKE = /(ignore (?:all |any |the )?(?:previous|prior|above|earlier) (?:instructions|rules)|disregard (?:your|the) (?:instructions|rules|policy)|you (?:must|should) now |system prompt|<\/?(?:system|assistant|tool)>|act as (?:an? )?(?:administrator|root)|bypass (?:the )?(?:policy|approval|security))/i;
 const STOP_WORDS = new Set(['the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'is', 'are', 'what', 'my', 'me', 'i', 'you', 'it', 'do', 'does', 'with', 'about', 'tell']);
 
+/** Raised when a correction was based on an outdated copy of the memory. */
+export class MemoryConflictError extends Error {
+  constructor(readonly current: PersonalMemory) {
+    super('This memory changed since it was read; review the current version before correcting it.');
+  }
+}
+
+/** Normalized form used for exact-duplicate detection. */
+export function normalizeMemoryText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 export class PersonalMemoryStore {
   private readonly key: Buffer;
   private records = new Map<string, PersonalMemory>();
   private healthy = true;
+  private versions?: MemoryVersionHistory;
+
+  /** Keep previous contents on correction and purge them on deletion (J-E06). */
+  public attachVersionHistory(history: MemoryVersionHistory): void {
+    this.versions = history;
+  }
 
   constructor(private readonly filePath: string, ownerControlToken: string) {
     if (ownerControlToken.length < 32) throw new Error('Personal memory requires a configured owner control token of at least 32 characters.');
@@ -105,8 +126,8 @@ export class PersonalMemoryStore {
     return [...this.records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map((r) => ({ ...r }));
   }
 
-  public save(category: MemoryCategory, content: string, ttlDays?: number): PersonalMemory {
-    if (!this.healthy) throw new Error('Memory store is unhealthy.');
+  /** Validate category and content without storing anything (used for learning candidates). */
+  public assertStorable(category: MemoryCategory, content: string): void {
     if (!['preference', 'project', 'routine', 'general'].includes(category) || DENIED_CATEGORIES.has(category)) {
       throw new Error('This memory category is not permitted.');
     }
@@ -115,31 +136,65 @@ export class PersonalMemoryStore {
     }
     if (DENIED_CONTENT.test(content)) throw new Error('This content appears to contain credentials or sensitive financial data and cannot be stored.');
     if (INSTRUCTION_LIKE.test(content)) throw new Error('This content reads like an instruction to the assistant, so it cannot be stored as trusted memory.');
+  }
+
+  public save(category: MemoryCategory, content: string, ttlDays?: number, source?: PersonalMemory['source']): PersonalMemory {
+    if (!this.healthy) throw new Error('Memory store is unhealthy.');
+    this.assertStorable(category, content);
     if (ttlDays !== undefined && (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > 3650)) {
       throw new Error('Memory TTL must be an integer from 1 to 3650 days.');
     }
+    // Exact duplicates (same category, same normalized text) return the existing record.
+    const duplicate = this.findExactDuplicate(category, content);
+    if (duplicate) return duplicate;
     const now = Date.now();
     const record: PersonalMemory = {
       id: randomBytes(16).toString('hex'), category, content: content.trim(),
       createdAt: now, updatedAt: now,
       expiresAt: ttlDays === undefined ? undefined : now + ttlDays * 24 * 60 * 60 * 1000,
+      ...(source ? { source } : {}),
     };
     this.records.set(record.id, record);
     try { this.persist(); } catch (error) { this.records.delete(record.id); throw error; }
     return { ...record };
   }
 
-  /** Correct an existing memory's text. Same content rules as save; category, id and expiry are unchanged. */
-  public update(id: string, content: string): PersonalMemory | undefined {
+  public get(id: string): PersonalMemory | undefined {
+    const record = this.records.get(id);
+    return record ? { ...record } : undefined;
+  }
+
+  public findExactDuplicate(category: MemoryCategory, content: string): PersonalMemory | undefined {
+    const normalized = normalizeMemoryText(content);
+    if (!normalized) return undefined;
+    for (const record of this.records.values()) {
+      if (record.category === category && normalizeMemoryText(record.content) === normalized &&
+          (record.expiresAt === undefined || record.expiresAt > Date.now())) {
+        return { ...record };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Correct an existing memory's text. Same content rules as save; category, id and expiry
+   * are unchanged. When expectedUpdatedAt is supplied and the record changed since, a
+   * MemoryConflictError is raised instead of silently overwriting newer owner data.
+   */
+  public update(id: string, content: string, expectedUpdatedAt?: number): PersonalMemory | undefined {
     if (!this.healthy) throw new Error('Memory store is unhealthy.');
     const existing = this.records.get(id);
     if (!existing) return undefined;
+    if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) throw new MemoryConflictError({ ...existing });
     if (typeof content !== 'string' || !content.trim() || content.length > 4000) throw new Error('Memory content must contain 1–4000 characters.');
     if (DENIED_CONTENT.test(content)) throw new Error('This content appears to contain credentials or sensitive financial data and cannot be stored.');
     if (INSTRUCTION_LIKE.test(content)) throw new Error('This content reads like an instruction to the assistant, so it cannot be stored as trusted memory.');
+    if (existing.content === content.trim()) return { ...existing };
     const updated: PersonalMemory = { ...existing, content: content.trim(), updatedAt: Date.now() };
     this.records.set(id, updated);
     try { this.persist(); } catch (error) { this.records.set(id, existing); throw error; }
+    // The previous text is kept in the encrypted, bounded version history.
+    this.versions?.record(id, existing.content, existing.updatedAt);
     return { ...updated };
   }
 
@@ -147,6 +202,20 @@ export class PersonalMemoryStore {
    * Retrieve only memories that share meaningful words with the request, so planning and
    * conversation receive relevant context instead of the owner's whole memory.
    */
+  /** Active (unexpired) records, for ranking by the Memory Manager. */
+  public active(): PersonalMemory[] {
+    if (!this.healthy) return [];
+    const now = Date.now();
+    return [...this.records.values()].filter((record) => record.expiresAt === undefined || record.expiresAt > now).map((record) => ({ ...record }));
+  }
+
+  /** Number of meaningful query words that appear in the text. */
+  public static lexicalScore(query: string, text: string): number {
+    const words = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !STOP_WORDS.has(word)));
+    if (words.size === 0) return 0;
+    return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => words.has(word)).length;
+  }
+
   public relevant(query: string, limit = 5): PersonalMemory[] {
     if (!this.healthy) return [];
     const words = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !STOP_WORDS.has(word)));
@@ -181,6 +250,8 @@ export class PersonalMemoryStore {
     if (!existing) return false;
     this.records.delete(id);
     try { this.persist(); } catch (error) { this.records.set(id, existing); throw error; }
+    // Previous versions are part of the record and go with it.
+    this.versions?.purge(id);
     return true;
   }
 
