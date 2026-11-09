@@ -1,5 +1,31 @@
 # JARVIS POC2 — Remaining Gaps, Blockers, and Acceptance Plan
 
+## Owner-approved execution baseline — 2026-11-09
+
+**Authority:** The owner has explicitly resumed development, testing and enhancement. This section supersedes prior statements in this document that testing/development is paused.
+
+- **Active development branch:** `new` (baseline commit: `b669004bcad0278838c5edbe811eb90993009764`). Keep changes on this branch.
+- **Testing:** ACTIVE. Run relevant automated checks and CI against each candidate commit; clearly separate automated results from owner-only laptop/Android acceptance.
+- **Release boundary:** No merge to `dev` or `main`, no production deployment, public tunnel, Nexus publication, production-secret changes or paid service activation without separate explicit approval. Keep Nexus disabled.
+- **Cost/privacy:** Zero recurring cost by default; local-first; optional cloud providers only when configured and explicitly authorized. Never commit credentials.
+- **Safety:** Default-deny policy, least privilege, approval for sensitive operations, auditability, no unrestricted shell/admin elevation, no payment actions, and no automatic replay of uncertain side effects.
+- **Target devices:** Windows 11 laptop first; two Android phones for companion/approval acceptance; iOS is future scope.
+
+### Product decisions confirmed in the 50-question preference round
+
+- Unified personal AI operating system with chat, voice, multimodal interaction, desktop control, task planning/execution, dashboard/HUD and background task monitoring.
+- Hybrid local/cloud AI with automatic task-appropriate provider/model selection; extensible specialized agents under a central orchestrator.
+- Owner-controlled short- and long-term memory, consent-based learning, extensible integrations, offline-first device synchronization and guarded autonomy.
+- Adaptive cross-platform architecture, authentication options (MFA/passkeys/biometrics/device approval), risk-based authorization, audit logs and emergency shutdown.
+- Complete long-term vision is a direction, not a requirement to defer a usable MVP until every feature exists. Deliver in dependency-ordered increments.
+
+### Current branch evidence at authorization
+
+- The `new` branch head is `b669004bcad0278838c5edbe811eb90993009764`.
+- No CI status is attached to this exact SHA at the time of this documentation update. Historical local test counts and older CI runs are not proof for this commit.
+- Known development/verification priorities remain: voice-to-command dispatch and independently verified Windows outcomes; owner-panel accessibility and API/UI contract alignment; memory lifecycle and cross-device recovery; multi-step partial-side-effect recovery; Android build/device acceptance; provider resilience and exact-head CI.
+- Story states must be updated only from source inspection and executed evidence. Use **IMPLEMENTED — NEEDS TESTING**, **TEST FAILED**, **TEST PASSED (exact SHA)**, **OWNER ACCEPTANCE PENDING**, or **ACCEPTED** precisely; do not infer acceptance from file presence.
+
 **Status snapshot:** 2026-11-09  
 **Branch reviewed:** `test`  
 **Latest inspected feature commit:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
