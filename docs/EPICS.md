@@ -1,8 +1,8 @@
 # JARVIS — Epic Register and Delivery Plan
 
-**Updated:** 2026-11-05  
+**Updated:** 2026-11-09  
 **Planning branch:** `new`  
-**Latest code checkpoint:** `0849597cd569ad288132ca66d1e6183e37eb02ac` (documentation refresh baseline)  
+**Latest inspected code checkpoint:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
 **Overall:** Existing epics remain open until their acceptance gates are met.
 
 This register organizes the epics already present in `POC2.md`; it does not introduce unrelated feature streams. Source code and authored tests are implementation evidence only. See [POC.md](../POC.md) for the implemented baseline, [POC2.md](../POC2.md) for the detailed work-left checklist, and [USER_STORIES.md](USER_STORIES.md) for story-level acceptance criteria.
@@ -32,7 +32,8 @@ _Status baseline 2026-11-07 — see POC.md section 2 for done / needs testing / 
 | JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | Agents/contracts VERIFIED LOCALLY; integrations partial | Useful local/cloud AI and existing integrations without policy bypass |
 | JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Resources measured (idle 0 % CPU, 66 MB); exact-head CI run pending | Exact-head software, security, device and resource evidence |
 | JARVIS-E08 | Shared DevOps Pipeline, Provenance & Artifact Integrity | P1 | Integrity tooling VERIFIED LOCALLY; first CI/Jenkins run pending; Nexus disabled | Traceable, verifiable release artifacts |
-| JARVIS-E09 | Personal AI Gateway for Websites | P1 | Gateway VERIFIED ON TARGET LAPTOP (portfolio → llama3.2); public tunnel pending | Owner's sites use JARVIS via API key instead of a paid AI API |
+| JARVIS-E09 | Personal AI Gateway for Websites | P1 | Gateway implementation present; public tunnel and production acceptance pending | Owner's sites use JARVIS via API key instead of a paid AI API |
+| JARVIS-E10 | Owner Control Panels & Visual Workflow Composition | P1 | UI and routes IMPLEMENTED IN SOURCE; testing paused | One signed, policy-aware owner workspace for plugins, workflows, developer tools, memory and gateway sites |
 
 ---
 
@@ -282,3 +283,13 @@ The core now rechecks task state when policy evaluation resumes after asynchrono
 ### E08 implementation note — provenance and signing foundations (2026-11-05)
 
 The shared artifact-integrity implementation validates explicit project identity, recognized CI provider, source commit/build metadata and current-environment consistency. Customer verification binds the authenticated policy to the manifest release identity. Pipeline definitions include SBOM, checksum/signing foundations and scoped temporary signing-key handling. Exact-head pipeline and package acceptance remain outstanding; testing is paused.
+
+
+## JARVIS-E10 — Owner Control Panels & Visual Workflow Composition
+
+**Priority:** P1
+**Current status (2026-11-09): IMPLEMENTED IN SOURCE — TESTING PAUSED.** The HUD exposes Plugins, Workflows, Composer, Developer, Memory and Gateway Sites panels. The composer uses the server capability catalogue and server-side validation; state-changing actions must continue through signed requests, policy checks and approval gates.
+
+**Remaining development:** harden panel input bounds and error states; ensure stale/unknown capability metadata cannot be trusted by the client; improve keyboard/screen-reader behavior; align every panel operation with server-side authorization; ensure sensitive gateway keys are revealed once only and never logged. Confirm missing/loading/offline states do not imply success.
+
+**Exit gate:** exact-head tests and browser accessibility checks pass; each state-changing action is verified to require policy authorization and applicable owner approval; no secret appears in DOM logs or persistent client storage; owner acceptance recorded. Testing is paused, so this epic remains OPEN.
