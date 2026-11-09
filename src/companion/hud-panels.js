@@ -13,6 +13,7 @@
     { id: 'developer', label: 'Developer' },
     { id: 'memory', label: 'Memory' },
     { id: 'gateway', label: 'Gateway sites' },
+    { id: 'peers', label: 'LAN peers' },
   ];
 
   // ---------- small DOM helpers (no innerHTML: all text is untrusted) ----------
@@ -413,6 +414,60 @@
     );
   };
 
+  // LAN peers (J-E11): explicit pairing, allowlist, presence. Peers can only send status/sync notices.
+  P.panels.peers = async (body) => {
+    const status = el('div', { class: 'op-status', role: 'status', 'aria-live': 'polite' });
+    const [peerInfo, deviceInfo] = await Promise.all([api('/api/peers'), api('/api/devices').catch(() => ({ devices: [] }))]);
+    const discovery = peerInfo.discovery || {};
+    const peers = Array.isArray(peerInfo.peers) ? peerInfo.peers : [];
+    const peerIds = new Set(peers.map((peer) => peer.deviceId));
+    const peerList = el('ul', { class: 'op-list' });
+    if (!peers.length) peerList.appendChild(el('li', { text: 'No paired peers.' }));
+    for (const peer of peers) {
+      peerList.appendChild(el('li', { class: 'op-item' }, [
+        el('span', { text: (peer.name || peer.deviceId) + ' — ' + String(peer.state || 'unknown').replace(/_/g, ' ') }),
+        el('span', { class: 'op-meta', text: ' · paired ' + new Date(peer.pairedAt).toLocaleDateString() + (peer.lastSeenAt ? ' · last seen ' + new Date(peer.lastSeenAt).toLocaleString() : '') + (peer.pendingSyncNotices ? ' · ' + peer.pendingSyncNotices + ' sync notice(s)' : '') }),
+        el('div', { class: 'op-actions' }, [
+          button('Revoke peer', async () => {
+            if (!window.confirm('Remove this device from the LAN peer allowlist?')) return;
+            try { await api('/api/peers/revoke', 'POST', { deviceId: peer.deviceId }); status.textContent = 'Peer revoked.'; P.refresh && P.refresh(); }
+            catch (error) { status.textContent = error instanceof Error ? error.message : 'Revoke failed.'; }
+          }),
+        ]),
+      ]));
+    }
+    const candidates = (deviceInfo.devices || []).filter((device) => device.status === 'ACTIVE' && !peerIds.has(device.id));
+    const select = el('select', { class: 'op-input', 'aria-label': 'Device to pair' });
+    for (const device of candidates) select.appendChild(el('option', { value: device.id, text: (device.name || device.id) + ' (' + device.platform + ')' }));
+    const codeOut = el('p', { class: 'op-meta', role: 'status', 'aria-live': 'polite' });
+    const pending = peerInfo.pendingPairing;
+    if (pending && pending.expiresAt > Date.now()) codeOut.textContent = 'A pairing is waiting for device ' + pending.deviceId + ' until ' + new Date(pending.expiresAt).toLocaleTimeString() + '.';
+    const pairControls = candidates.length
+      ? el('div', { class: 'op-actions' }, [select, button('Start pairing', async () => {
+        try {
+          const pairing = await api('/api/peers/pair/start', 'POST', { deviceId: select.value });
+          codeOut.textContent = 'Enter code ' + pairing.code + ' on that device before ' + new Date(pairing.expiresAt).toLocaleTimeString() + '.';
+        } catch (error) { codeOut.textContent = error instanceof Error ? error.message : 'Pairing could not start.'; }
+      })])
+      : (() => {
+        // Device list unavailable to this session: allow pairing by the enrolled device id.
+        const manual = el('input', { class: 'op-input', 'aria-label': 'Enrolled device id to pair', placeholder: 'Enrolled device id' });
+        return el('div', { class: 'op-actions' }, [manual, button('Start pairing', async () => {
+          if (!manual.value.trim()) { codeOut.textContent = 'Enter an enrolled device id.'; return; }
+          try {
+            const pairing = await api('/api/peers/pair/start', 'POST', { deviceId: manual.value.trim() });
+            codeOut.textContent = 'Enter code ' + pairing.code + ' on that device before ' + new Date(pairing.expiresAt).toLocaleTimeString() + '.';
+          } catch (error) { codeOut.textContent = error instanceof Error ? error.message : 'Pairing could not start.'; }
+        })]);
+      })();
+    body.replaceChildren(
+      note('Discovery: ' + (discovery.state || 'unavailable') + (discovery.state === 'disabled' ? ' (set JARVIS_PEER_DISCOVERY=true to enable LAN announcements)' : '') + '. Pairing works only between enrolled devices.'),
+      el('h4', { class: 'op-subhead', text: 'Paired peers' }), peerList,
+      el('h4', { class: 'op-subhead', text: 'Pair a device' }), pairControls, codeOut,
+      status,
+    );
+  };
+
   P.panels.memory = async (body) => {
     const [list, manager] = await Promise.all([api('/api/memory'), api('/api/memory/manager').catch(() => null)]);
     const status = el('div', { class: 'op-status', role: 'status', 'aria-live': 'polite' });
@@ -429,7 +484,8 @@
         el('div', { class: 'op-actions' }, [
           button('Edit', () => {
             if (editor.hidden) { editor.hidden = false; return; }
-            runOperation('memory:update', { id: record.id, content: editor.value.trim() }, status, 'Correct memory ' + record.id);
+            // Conflict check: the server refuses the correction if the memory changed since it was listed.
+            runOperation('memory:update', { id: record.id, content: editor.value.trim(), expectedUpdatedAt: record.updatedAt }, status, 'Correct memory ' + record.id);
           }),
           button('Delete (approval)', () => runOperation('memory:delete', { id: record.id }, status, 'Delete memory ' + record.id)),
         ]),

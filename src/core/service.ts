@@ -30,7 +30,7 @@ import { CryptoUtil } from '../crypto/crypto.js';
 import { DeviceSecurityService } from './deviceSecurity.js';
 import { NotificationCenter } from './notifications.js';
 import { Scheduler, ScheduledJob, JobRunResult } from '../scheduler/scheduler.js';
-import { PersonalMemoryStore, MemoryCategory } from '../memory/personalMemoryStore.js';
+import { PersonalMemoryStore, MemoryCategory, MemoryConflictError } from '../memory/personalMemoryStore.js';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
@@ -616,7 +616,17 @@ export class JarvisCoreService {
         }
         case 'memory:update': {
           if (!this.personalMemory) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Personal memory is not configured.', evidence: { memoryAvailable: false } };
-          const updated = this.personalMemory.update(parameters.id as string, parameters.content as string);
+          let updated;
+          try {
+            const expected = typeof parameters.expectedUpdatedAt === 'number' ? parameters.expectedUpdatedAt : undefined;
+            updated = this.personalMemory.update(parameters.id as string, parameters.content as string, expected);
+          } catch (error) {
+            if (error instanceof MemoryConflictError) {
+              // Never overwrite a newer version: report the conflict for owner review.
+              return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: error.message, data: { conflict: true, currentUpdatedAt: error.current.updatedAt }, evidence: { memoryId: parameters.id, conflict: true } };
+            }
+            throw error;
+          }
           if (!updated) return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Memory entry not found.', evidence: { memoryId: parameters.id } };
           this.audit.record('PERSONAL_MEMORY_UPDATED', { memoryId: updated.id, category: updated.category }, taskRecord.deviceId, taskId);
           return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { id: updated.id, category: updated.category, updatedAt: updated.updatedAt }, evidence: { encryptedAtRest: true, memoryId: updated.id } };

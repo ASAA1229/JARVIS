@@ -45,7 +45,11 @@ export function discoveredLaunchResult(
       exactOrUniqueMatch: true,
       newWindowDetected: Boolean(newWindow),
       targetWindowVerified,
-      verificationLimitation: targetWindowVerified ? undefined : 'No trusted AppID-to-process identity mapping is available for this app.',
+      verificationLimitation: targetWindowVerified
+        ? undefined
+        : expectedIdentity
+          ? 'No new window owned by the expected process appeared within the verification window.'
+          : 'No trusted AppID-to-process identity mapping is available for this app.',
       ...(expectedIdentity ? { expectedProcessNames: expectedIdentity.processNames } : {}),
     },
     error: targetWindowVerified ? undefined : 'Windows accepted the launch request, but JARVIS cannot independently verify that the observed window belongs to the selected application.',
@@ -62,6 +66,27 @@ const DISCOVERED_WINDOW_IDENTITIES: Record<string, { processNames: string[]; tit
 
 export function discoveredWindowIdentity(name: string): { processNames: string[]; titleContains?: string } | undefined {
   return DISCOVERED_WINDOW_IDENTITIES[name.trim().toLowerCase()];
+}
+
+/** Packaged-app AUMID: PackageFamilyName!ApplicationId. */
+export const PACKAGED_APP_ID = /^([A-Za-z0-9.-]{1,100}_[a-z0-9]{13})!([A-Za-z0-9._-]{1,64})$/;
+
+/**
+ * Desktop Start-menu entries whose AppID is an executable path carry their own
+ * trusted process identity (the executable basename). Shell-host processes are
+ * never accepted as an identity because they own windows of unrelated apps.
+ */
+export function appIdProcessIdentity(appId: string): { processNames: string[] } | undefined {
+  const match = /(?:^|[\\/])([A-Za-z0-9 ._()+-]{1,80})\.exe$/i.exec(appId.trim());
+  return match ? processIdentityFromExecutable(match[1]) : undefined;
+}
+
+const SHELL_HOST_PROCESSES = new Set(['explorer', 'applicationframehost', 'cmd', 'powershell', 'pwsh', 'rundll32', 'dllhost', 'svchost', 'conhost', 'win32bridge.server']);
+
+export function processIdentityFromExecutable(executable: string): { processNames: string[] } | undefined {
+  const base = executable.trim().split(/[\\/]/).pop()?.replace(/\.exe$/i, '') ?? '';
+  if (!base || base.includes('$') || SHELL_HOST_PROCESSES.has(base.toLowerCase())) return undefined;
+  return { processNames: [base] };
 }
 
 export function matchesExpectedAppWindow(
@@ -513,7 +538,9 @@ export class WindowsAppLauncherAdapter {
         initialSnapshotVerified = true;
       } catch { /* do not launch a known app when existing-window state is unknown */ }
       const knownPids = new Set(knownWindows.map((window) => window.pid));
-      const expectedIdentity = discoveredWindowIdentity(selected.Name);
+      const expectedIdentity = discoveredWindowIdentity(selected.Name)
+        ?? appIdProcessIdentity(selected.AppID)
+        ?? await this.packagedAppIdentity(selected.AppID, signal);
       if (expectedIdentity && !initialSnapshotVerified) {
         return {
           success: false,
@@ -593,6 +620,32 @@ export class WindowsAppLauncherAdapter {
         evidence: { query, discovery: 'Get-StartApps', errorType: error instanceof Error ? error.name : 'UnknownError' },
         interrupted: signal?.aborted,
       };
+    }
+  }
+
+  /**
+   * Resolve a packaged app's executable from its installed AppxManifest. The
+   * AUMID is validated against a strict pattern before it reaches PowerShell.
+   * Any failure leaves the launch unverified (partial) rather than guessing.
+   */
+  private async packagedAppIdentity(appId: string, signal?: AbortSignal): Promise<{ processNames: string[] } | undefined> {
+    const match = PACKAGED_APP_ID.exec(appId);
+    if (!match || process.platform !== 'win32' || signal?.aborted) return undefined;
+    const script = [
+      '$ErrorActionPreference = "Stop"',
+      "$p = Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq '" + match[1] + "' } | Select-Object -First 1",
+      'if (-not $p) { return }',
+      "[xml]$m = Get-Content -LiteralPath (Join-Path $p.InstallLocation 'AppxManifest.xml') -Raw",
+      "$a = @($m.Package.Applications.Application) | Where-Object { $_.Id -eq '" + match[2] + "' } | Select-Object -First 1",
+      'if ($a) { [string]$a.Executable }',
+    ].join('; ');
+    try {
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+        timeout: 6_000, maxBuffer: 16 * 1024, windowsHide: true, signal,
+      });
+      return processIdentityFromExecutable(stdout.trim().split(/\r?\n/)[0] ?? '');
+    } catch {
+      return undefined;
     }
   }
 

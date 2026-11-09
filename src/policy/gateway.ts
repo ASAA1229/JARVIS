@@ -102,7 +102,7 @@ export class PolicyGateway {
     ],
     ...[
       ['memory:save', ['category', 'content', 'ttlDays']],
-      ['memory:update', ['id', 'content']],
+      ['memory:update', ['id', 'content', 'expectedUpdatedAt']],
       ['memory:list', []],
       ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],

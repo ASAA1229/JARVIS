@@ -173,7 +173,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: false,
-    notes: 'Encrypted local store, companion review/save/correct/delete, and policy-gated operations exist. Semantic embeddings, backup-wide deletion, and cross-device sync are not implemented.',
+    notes: 'Two-tier memory (RAM working memory + encrypted long-term store) with owner-approved learning, local semantic retrieval when an Ollama embedding model is installed (lexical fallback otherwise), duplicate detection, versioned corrections with conflict checks, export/import, and owner-reviewed cross-device sync. Deletion covers the store, task history, embedding index, versions and learning candidates; copies outside JARVIS (e.g. OneDrive backups of data/) are not reached.',
   },
   {
     id: 'workflow.multi-step',

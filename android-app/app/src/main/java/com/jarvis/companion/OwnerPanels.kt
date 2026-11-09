@@ -70,6 +70,16 @@ class OwnerPanels(
         button(root, "Review conflicts & held commands") { loadSyncOverview() }
         syncList = list(root)
 
+        header(root, "LAN PEER PAIRING")
+        val pairingCode = field(root, "6-digit pairing code from the laptop HUD", "")
+        button(root, "Confirm pairing") {
+            run("Pairing") {
+                session.guard { client().confirmPeerPairing(pairingCode.text.toString()) }
+                    .also { activity.runOnUiThread { pairingCode.setText("") } }
+            }
+        }
+        button(root, "Peer status") { run("Checking") { session.guard { client().peerStatus() } } }
+
         header(root, "NOTIFICATIONS")
         button(root, if (session.notificationsEnabled) "Approval alerts: ON (tap to turn off)" else "Approval alerts: OFF (tap to turn on)") {
             session.notificationsEnabled = !session.notificationsEnabled

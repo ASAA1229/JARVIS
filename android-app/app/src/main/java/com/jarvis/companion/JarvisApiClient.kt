@@ -238,6 +238,24 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         return if (taskId.isNotBlank()) "Resolution submitted as task $taskId; approve it to apply." else "Conflict resolved."
     }
 
+    /**
+     * LAN peer pairing (J-E11): this phone confirms the 6-digit code the owner started on
+     * the laptop, using its own signed session. Pairing only allows status/sync notices.
+     */
+    fun confirmPeerPairing(code: String): String {
+        val digits = code.trim()
+        require(Regex("^[0-9]{6}$").matches(digits)) { "Enter the 6-digit pairing code shown on the laptop." }
+        val result = signedPost("/api/peers/pair/confirm", JSONObject().put("code", digits))
+        return if (result.optBoolean("paired")) "Paired with the laptop as a LAN peer." else "Pairing was not confirmed."
+    }
+
+    /** Whether this phone is a paired peer and whether LAN discovery is running on the hub. */
+    fun peerStatus(): String {
+        val result = signedGet("/api/peers")
+        val state = result.optJSONObject("discovery")?.optString("state") ?: "unavailable"
+        return (if (result.optBoolean("paired")) "Paired LAN peer" else "Not paired") + " · discovery: " + state
+    }
+
     /** Held offline commands run only when the owner explicitly says so. */
     fun decideHeldCommand(commandId: String, run: Boolean): String {
         val result = signedPost("/api/sync/commands/decide",
