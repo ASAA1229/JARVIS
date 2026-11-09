@@ -28,14 +28,6 @@ const run = (script: string, args: string[], ok = true, cwd = root) => {
   return r;
 };
 
-const packDirectory = (source: string, archive: string) => {
-  const r = spawnSync('tar', ['-czf', path.basename(archive), '-C', path.relative(path.dirname(archive), source), '.'], {
-    cwd: path.dirname(archive),
-    encoding: 'utf8',
-  });
-  assert.equal(r.status, 0);
-};
-
 /** Package a directory like CI: a gzip tarball of the directory contents. */
 function packDirectory(source: string, archive: string) {
   // Relative paths keep GNU tar on Windows from parsing "C:" as a remote host.
