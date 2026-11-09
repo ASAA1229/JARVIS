@@ -489,3 +489,8 @@ JARVIS is the authoritative AI/agent service. Portfolio is a separate applicatio
 - Tests may be authored/updated but must not be executed while testing is paused.
 
 **Evidence rule:** source presence is implementation evidence only. All changed/new stories remain OPEN / NEEDS TESTING until exact-head checks and required owner-device acceptance are completed after testing resumes.
+
+
+## Voice command normalization increment — 2026-11-09
+
+A defensive normalization step was added to the local heuristic planner: when a recognizer clips the initial syllable of “open”, the bounded input form `pen <application>` is normalized to `open <application>`. The repair is deliberately narrow and does not rewrite arbitrary words. Regression cases for `pen Notepad` and `pen up Notepad` were authored. **Testing remains paused; no tests were executed.** This is a source-level mitigation, not proof of the target-MSI voice flow; the complete wake/capture/policy/approval/launch/outcome path remains open.
