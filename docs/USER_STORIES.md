@@ -1,7 +1,7 @@
 # JARVIS — User Stories and Acceptance Criteria
 
 **Repository:** `ASAA1229/JARVIS`  
-**Branch:** `new`  
+**Branch:** `test`  
 **Updated:** 2026-11-09  
 **Rule:** Every story remains OPEN until its acceptance criteria are evidenced on the exact branch revision.
 
