@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const utility = path.join(root, 'scripts', 'artifact-integrity.mjs');
 
-function run(args: string[], expectSuccess = true) {
+function run(args: string[], expectSuccess = true, projectName = 'integrity-test') {
   const result = spawnSync(process.execPath, [utility, ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, PROJECT_NAME: 'integrity-test', GIT_COMMIT: 'test-commit', BUILD_NUMBER: 'test-build', REQUIRE_BUILD_PROVENANCE: 'false' },
+    env: { ...process.env, PROJECT_NAME: projectName, GIT_COMMIT: 'test-commit', BUILD_NUMBER: 'test-build', REQUIRE_BUILD_PROVENANCE: 'false' },
   });
   if (expectSuccess) {
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -53,6 +53,13 @@ describe('artifact integrity utility', () => {
     run(['verify', artifactDir, manifest, archive]);
     run(['hash', archive, checksum]);
     run(['verify-hash', archive, checksum]);
+  });
+
+  it('accepts the JARVIS project identifier during manifest validation', () => {
+    run(['create', artifactDir, manifest], true, 'JARVIS');
+    const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+    assert.equal(parsed.project, 'JARVIS');
+    run(['verify', artifactDir, manifest], true, 'JARVIS');
   });
 
   it('rejects modified, missing, and unexpected files', () => {

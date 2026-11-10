@@ -300,10 +300,10 @@ async function verifyArchiveInventory(archivePath, expected) {
     if (verboseListing.length > listingLimit) throw new Error('Verbose archive listing exceeds the 64 MiB safety limit.');
   });
 
-  const verboseLines = verboseListing.split('\\n').filter(Boolean);
+  const verboseLines = verboseListing.split(/\r?\n/).filter(Boolean);
   const archived = new Map();
   const problems = [];
-  for (const rawName of listing.split('\\n')) {
+  for (const rawName of listing.split(/\r?\n/)) {
     if (!rawName) continue;
     const member = normalizeArchiveMember(rawName);
     if (!member) continue;
