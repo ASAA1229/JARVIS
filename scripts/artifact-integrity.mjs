@@ -189,7 +189,7 @@ function validateManifestStructure(manifest, requireArtifact = false) {
   if (!Number.isSafeInteger(manifest.fileCount) || manifest.fileCount < 0) invalid.push('fileCount');
   else if (Array.isArray(manifest.files) && manifest.fileCount !== manifest.files.length) invalid.push('fileCount/files.length');
   if (typeof manifest.project !== 'string' || !manifest.project.trim() ||
-      manifest.project !== manifest.project.trim() || /[\\x00-\\x1f\\x7f]/.test(manifest.project)) invalid.push('project');
+      manifest.project !== manifest.project.trim() || /[\x00-\x1f\x7f]/.test(manifest.project)) invalid.push('project');
   if (!manifest.source || typeof manifest.source !== 'object' || Array.isArray(manifest.source)) {
     invalid.push('source');
   } else {
