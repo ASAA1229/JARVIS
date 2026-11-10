@@ -2490,7 +2490,7 @@ async function startLocalSttCapture(mode, windowMs) {
   let speechStarted = false;
   let lastVoiceAt = 0;
   let finished = false;
-  const startedAt = Date.now();
+  let startedAt = 0;
   const MAX_CAPTURE_MS = 12000;
   const SILENCE_AFTER_SPEECH_MS = 900;
   const SPEECH_RMS = 0.015;
@@ -2559,13 +2559,6 @@ async function startLocalSttCapture(mode, windowMs) {
     setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
   };
   localSttCapture = controller;
-  watchdog = setInterval(() => {
-    const now = Date.now();
-    if (!speechStarted && now - startedAt > windowMs) void finish(false);
-    else if (speechStarted && now - lastVoiceAt > SILENCE_AFTER_SPEECH_MS) void finish(false);
-    else if (now - startedAt > MAX_CAPTURE_MS) void finish(false);
-  }, 150);
-
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
     if (finished) { release(); return; }
@@ -2586,6 +2579,17 @@ async function startLocalSttCapture(mode, windowMs) {
     };
     source.connect(processor);
     processor.connect(context.destination);
+    // Start the wake window only after microphone permission and the audio graph
+    // are ready. Counting setup time here can expire the 2.5 s same-utterance
+    // window before a single microphone sample is captured.
+    startedAt = Date.now();
+  watchdog = setInterval(() => {
+    const now = Date.now();
+    if (!speechStarted && now - startedAt > windowMs) void finish(false);
+    else if (speechStarted && now - lastVoiceAt > SILENCE_AFTER_SPEECH_MS) void finish(false);
+    else if (now - startedAt > MAX_CAPTURE_MS) void finish(false);
+  }, 150);
+
   } catch (error) {
     finished = true;
     if (watchdog) clearInterval(watchdog);
