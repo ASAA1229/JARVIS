@@ -143,6 +143,11 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
     assert.match(jsText, /NO SPEECH DETECTED/);
+    // Local wake timeout must not include browser microphone permission/audio-graph setup.
+    const audioGraphReady = jsText.indexOf('processor.connect(context.destination);');
+    const wakeWindowStart = jsText.indexOf('watchdog = setInterval', audioGraphReady);
+    assert.ok(audioGraphReady >= 0 && wakeWindowStart > audioGraphReady,
+      'local wake capture timeout starts only after the microphone audio graph is ready');
     assert.match(jsText, /MICROPHONE UNAVAILABLE/);
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
