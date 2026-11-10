@@ -140,10 +140,11 @@ export class WhisperCppProvider implements SpeechToTextProvider {
         });
         let output = '';
         let settled = false;
-        let timedOut = false;
-        let cancelled = false;
+        let stopError: Error | undefined;
+        let killEscalation: ReturnType<typeof setTimeout> | null = null;
         const cleanup = (): void => {
           clearTimeout(timer);
+          if (killEscalation !== null) clearTimeout(killEscalation);
           signal?.removeEventListener('abort', onAbort);
         };
         const finish = (error?: Error): void => {
@@ -152,34 +153,47 @@ export class WhisperCppProvider implements SpeechToTextProvider {
           cleanup();
           if (error) reject(error); else resolve(output);
         };
-        const stop = (): void => {
-          if (child.exitCode === null && child.signalCode === null) child.kill();
+        const requestStop = (error: Error): void => {
+          if (settled || stopError) return;
+          stopError = error;
+          if (child.exitCode !== null || child.signalCode !== null) return;
+          try {
+            child.kill();
+          } catch {
+            // The close/error event remains authoritative for process completion.
+          }
+          // Do not remove the temporary WAV or settle the request until the child
+          // has actually closed. Escalate once if a native process ignores the
+          // initial termination request.
+          killEscalation = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) {
+              try { child.kill('SIGKILL'); } catch { /* close event handles completion */ }
+            }
+          }, 2_000);
         };
         const onAbort = (): void => {
-          cancelled = true;
-          stop();
-          finish(new Error('Local speech recognition was cancelled.'));
+          requestStop(new Error('Local speech recognition was cancelled.'));
         };
         const timer = setTimeout(() => {
-          timedOut = true;
-          stop();
-          finish(new Error('Local speech recognition timed out.'));
+          requestStop(new Error('Local speech recognition timed out.'));
         }, 60_000);
 
         signal?.addEventListener('abort', onAbort, { once: true });
         // Close the race between the initial check and listener registration.
         if (signal?.aborted) {
           onAbort();
-          return;
         }
         child.stdout?.on('data', (chunk: Buffer) => {
           if (output.length < 20_000) output += chunk.toString('utf8').slice(0, 20_000 - output.length);
         });
-        child.on('error', () => finish(new Error('Local speech recognition could not be started.')));
+        // Drain stderr even though provider diagnostics are deliberately not
+        // returned to callers; an unread pipe can otherwise stall the child.
+        child.stderr?.on('data', () => undefined);
+        child.on('error', () => {
+          finish(stopError ?? new Error('Local speech recognition could not be started.'));
+        });
         child.on('close', (code) => {
-          if (settled) return;
-          if (cancelled) finish(new Error('Local speech recognition was cancelled.'));
-          else if (timedOut) finish(new Error('Local speech recognition timed out.'));
+          if (stopError) finish(stopError);
           else if (code === 0) finish();
           else finish(new Error('Local speech recognition failed.'));
         });
