@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JarvisServer } from '../src/server/server.js';
@@ -99,6 +99,34 @@ test('loss of every management device: revoke all, then fresh enrollment needs a
   const service = server.getService();
   const reuse = service.identity.enrollDevice(service.identity.createEnrollmentChallenge([Permission.SYSTEM_INFO_READ]).challengeToken, 'old-manager', manager.keys.publicKey);
   assert.equal(reuse.success, false);
+});
+
+test('revoke-all preserves the authenticator when any device revocation cannot be persisted', async () => {
+  const manager = enroll([Permission.SYSTEM_INFO_READ, Permission.DEVICE_MANAGE], 'storage-failure-manager');
+  const statePath = join(dir, 'devices.json');
+  const backupPath = join(dir, 'devices.json.backup');
+  const service = server.getService();
+  const resetsBefore = service.audit.getRecords().filter((record) => record.eventType === 'OWNER_RECOVERY_AUTHENTICATOR_RESET').length;
+
+  // Make the device-state destination unusable after enrollment so revocation cannot
+  // be durably committed. Restore the original file even if an assertion fails.
+  renameSync(statePath, backupPath);
+  mkdirSync(statePath);
+  try {
+    const response = await recover({ action: 'revoke_all_devices', confirm: 'RECOVER' });
+    assert.equal(response.status, 409);
+    const payload = await response.json() as { success: boolean; error: string; next: string };
+    assert.equal(payload.success, false);
+    assert.match(payload.error, /authenticator reset was not performed/);
+    assert.match(payload.next, /retry recovery/);
+    const resetsAfter = service.audit.getRecords().filter((record) => record.eventType === 'OWNER_RECOVERY_AUTHENTICATOR_RESET').length;
+    assert.equal(resetsAfter, resetsBefore);
+    const persisted = JSON.parse(readFileSync(backupPath, 'utf8')) as { devices: Array<{ id: string; status: string }> };
+    assert.equal(persisted.devices.find((device) => device.id === manager.deviceId)?.status, 'ACTIVE');
+  } finally {
+    rmSync(statePath, { recursive: true, force: true });
+    renameSync(backupPath, statePath);
+  }
 });
 
 test('repeated wrong tokens are rate limited', async () => {
