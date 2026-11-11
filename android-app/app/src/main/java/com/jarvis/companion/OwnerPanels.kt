@@ -99,9 +99,9 @@ class OwnerPanels(
             if (pending.isEmpty()) approvalsList.addView(text("No actions are waiting for approval."))
             for (item in pending) {
                 approvalsList.addView(text("${item.operation}\n\"${item.requestText}\""))
-                val row = row(approvalsList)
-                rowButton(row, "Approve") { confirm("Approve this exact action?\n\n${item.requestText}") { decide(item, true) } }
-                rowButton(row, "Reject") { decide(item, false) }
+                val actionRow: LinearLayout = newActionRow(approvalsList)
+                rowButton(actionRow, "Approve") { confirm("Approve this exact action?\n\n${item.requestText}") { decide(item, true) } }
+                rowButton(actionRow, "Reject") { decide(item, false) }
             }
         }
         "${pending.size} approval(s) waiting."
@@ -121,8 +121,8 @@ class OwnerPanels(
             for (task in tasks.take(20)) {
                 tasksList.addView(text("${task.state} - ${task.operation.ifBlank { "planning" }} (${time(task.updatedAt)})"))
                 if (task.state in setOf("CREATED", "AWAITING_APPROVAL", "EXECUTING")) {
-                    val row = row(tasksList)
-                    rowButton(row, if (task.state == "EXECUTING") "Stop" else "Cancel") {
+                    val actionRow: LinearLayout = newActionRow(tasksList)
+                    rowButton(actionRow, if (task.state == "EXECUTING") "Stop" else "Cancel") {
                         run("Cancelling") { session.guard { client().cancelTask(task.id) } }
                     }
                 }
@@ -156,8 +156,8 @@ class OwnerPanels(
             if (memories.isEmpty()) memoryList.addView(text("No long-term memories."))
             for (memory in memories) {
                 memoryList.addView(text("[${memory.category}] ${memory.content}"))
-                val row = row(memoryList)
-                rowButton(row, "Forget") {
+                val actionRow: LinearLayout = newActionRow(memoryList)
+                rowButton(actionRow, "Forget") {
                     confirm("Ask JARVIS to forget this memory? You will approve the deletion.") {
                         run("Requesting deletion") {
                             val reply = session.guard { client().requestMemoryDelete(memory.id) }
@@ -177,9 +177,9 @@ class OwnerPanels(
             if (candidates.isEmpty()) candidatesList.addView(text("No learning suggestions are waiting."))
             for (candidate in candidates) {
                 candidatesList.addView(text("[${candidate.category}, from ${candidate.source}] ${candidate.content}"))
-                val row = row(candidatesList)
-                rowButton(row, "Remember") { run("Saving") { session.guard { client().decideCandidate(candidate.id, true) } } }
-                rowButton(row, "Discard") { run("Discarding") { session.guard { client().decideCandidate(candidate.id, false) } } }
+                val actionRow: LinearLayout = newActionRow(candidatesList)
+                rowButton(actionRow, "Remember") { run("Saving") { session.guard { client().decideCandidate(candidate.id, true) } } }
+                rowButton(actionRow, "Discard") { run("Discarding") { session.guard { client().decideCandidate(candidate.id, false) } } }
             }
         }
         "${candidates.size} suggestion(s)."
@@ -207,22 +207,22 @@ class OwnerPanels(
                 val c = conflicts!!.getJSONObject(i)
                 val id = c.optString("id")
                 syncList.addView(text("Conflict (${c.optString("kind").replace('_', ' ')})\nLaptop: ${c.optString("hubContent").ifBlank { "(deleted)" }}\nPhone: ${c.optString("deviceContent").ifBlank { "(delete)" }}"))
-                val row = row(syncList)
-                rowButton(row, "Keep laptop") { run("Resolving") { session.guard { client().resolveConflict(id, "keep_hub") } } }
-                rowButton(row, "Keep phone") { run("Resolving") { session.guard { client().resolveConflict(id, "keep_device") } } }
-                rowButton(row, "Merge") { mergeDialog(id, c.optString("hubContent"), c.optString("deviceContent")) }
+                val actionRow: LinearLayout = newActionRow(syncList)
+                rowButton(actionRow, "Keep laptop") { run("Resolving") { session.guard { client().resolveConflict(id, "keep_hub") } } }
+                rowButton(actionRow, "Keep phone") { run("Resolving") { session.guard { client().resolveConflict(id, "keep_device") } } }
+                rowButton(actionRow, "Merge") { mergeDialog(id, c.optString("hubContent"), c.optString("deviceContent")) }
             }
             for (i in 0 until (commands?.length() ?: 0)) {
                 val cmd = commands!!.getJSONObject(i)
                 val id = cmd.optString("id")
                 syncList.addView(text("Held command: \"${cmd.optString("text")}\" (expires ${time(cmd.optLong("expiresAt"))})"))
-                val row = row(syncList)
-                rowButton(row, "Run") {
+                val actionRow: LinearLayout = newActionRow(syncList)
+                rowButton(actionRow, "Run") {
                     confirm("Run this held command now? It still goes through normal policy and approval.\n\n${cmd.optString("text")}") {
                         run("Submitting") { session.guard { client().decideHeldCommand(id, true) } }
                     }
                 }
-                rowButton(row, "Discard") { run("Discarding") { session.guard { client().decideHeldCommand(id, false) } } }
+                rowButton(actionRow, "Discard") { run("Discarding") { session.guard { client().decideHeldCommand(id, false) } } }
             }
         }
         "${conflicts?.length() ?: 0} conflict(s), ${commands?.length() ?: 0} held command(s)."
@@ -263,7 +263,7 @@ class OwnerPanels(
 
     private fun list(root: LinearLayout) = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }.also { root.addView(it, params()) }
 
-    private fun row(parent: LinearLayout) = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }.also { parent.addView(it, params()) }
+    private fun newActionRow(parent: LinearLayout) = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }.also { parent.addView(it, params()) }
 
     private fun rowButton(row: LinearLayout, label: String, onClick: () -> Unit) {
         row.addView(Button(activity).apply { text = label; setOnClickListener { onClick() } },
