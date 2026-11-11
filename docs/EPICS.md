@@ -328,3 +328,47 @@ Exact-head [GitHub Actions run #42591404042](https://github.com/ASAA1229/JARVIS/
 - Owner panels and workflow composer still require UI accessibility, error-state and end-to-end contract acceptance.
 
 Local test pass rate is **100%**; do not translate that into an overall product-completion percentage or mark an epic ACCEPTED while its exit criteria remain unmet.
+
+
+## Owner-directed remaining-work completion programme — 2026-11-11
+
+**Authority:** This section supersedes earlier pause instructions and historical execution-order notes in this file. The owner has directed completion of all remaining work, organized under the existing epics, with implementation and validation proceeding in dependency order.
+
+**Working branch:** `new` only. **Current inspected code baseline before this programme:** `b37cc90ad5f25e02ccbedc145f2ac5be28cd730d`. **Latest programme change:** `410b87f4a1231fd6fc7b58a869c31b896143949d` (Android owner-panel Kotlin type-inference fix). No PR, merge, or production release is authorized.
+
+### Completion sequence and work packages
+
+| Order | Epic | Work packages | Exit evidence |
+|---:|---|---|---|
+| 1 | E01 Security, Identity & Approval | Owner recovery; route/adapter permission matrix; approval binding, expiry, replay and concurrency; persistence/audit fault injection; adversarial review | Exact-head security checks, route matrix, fault-injection report, recovery drill |
+| 2 | E02 Voice & HUD | Local wake installation/readiness; wake/capture lifecycle; consent and privacy states; intent dispatch; speech response; cancellation and sleep/resume | Automated regressions plus MSI wake → command → policy/approval → outcome evidence |
+| 3 | E03 Windows Desktop Control | Trusted target identity; focus-change/ambiguous-target stops; supported UI Automation actions; independent result verification; unsupported-app boundaries | Per-app Windows acceptance matrix with saved-result evidence |
+| 4 | E04 Multi-Step Execution & Recovery | Checkpoint ordering; crash/restart; partial external effects; cancellation/revocation; reconciliation and audit | Fault-injection suite and restart/reconciliation evidence; no uncertain action replay |
+| 5 | E05 Android Companion & Cross-Device | Kotlin compile; APK build; two independent enrollments; signed requests; approval/revocation; offline queue and conflict recovery | Android CI build plus both physical phones' acceptance evidence |
+| 6 | E06 Memory, Privacy & Personalization | Working/long-term lifecycle; retrieval/context bounds; correction/retention/export; deletion of derived data; device sync conflicts | Lifecycle/privacy tests, deletion audit and two-device sync evidence |
+| 7 | E07 AI, Integrations & Productivity | Provider failure/fallback; prompt-injection and response-contract review; agent routing; schedules/notifications; supported integration boundaries | Provider/agent/workflow tests and explicit unsupported-capability register |
+| 8 | E10 Owner Panels & Visual Workflows | API/UI contract alignment; input bounds; auth/approval display; accessibility; offline/error/empty/loading states; visual workflow validation | Browser/API contract and accessibility checks; no client-side authority |
+| 9 | E08 DevOps & Artifact Integrity | Python Windows path regression; inventory/archive consistency; provenance/signature/checksum validation; Jenkins/GitHub workflow evidence | Exact-head CI and Jenkins evidence; verified artifacts; Nexus remains disabled |
+| 10 | E09 Personal AI Gateway | Local client integration; key lifecycle and revocation; privacy/rate/output bounds; error and usage reporting | Local end-to-end integration tests; no public tunnel without separate approval |
+| 11 | G01 Release & Compatibility Gate | Full exact-head suite; dependency/security audit; resource and compatibility matrix; accessibility; documentation reconciliation | Complete release evidence pack and owner acceptance; no automatic main merge/deploy |
+
+### Working rules for this programme
+
+- Work from the actual repository source and existing story acceptance criteria; do not reopen foundational requirements already decided.
+- Keep implementation, authored tests, executed tests, exact-head CI, and physical-device acceptance as separate status fields.
+- Fix blockers in the existing architecture; do not replace modules or introduce unrelated feature scope merely to simplify a task.
+- Preserve default-deny authorization, task/device/parameter-scoped approvals, audit integrity, fail-closed persistence, local-first/zero recurring cost, explicit cloud/speech consent, no administrator elevation, no unrestricted shell, no credential/payment/financial automation, and no automatic replay of uncertain side effects.
+- Keep Nexus disabled. No PR, merge to `dev`/`main`, deployment, public tunnel, production-secret change or external publication without separate explicit approval.
+- After each implementation increment, record exact commit, changed files, regression tests added, tests actually run, CI evidence and remaining owner/device acceptance.
+- If a task requires physical access to the MSI or either phone, finish all safe software preparation and provide a precise acceptance procedure; do not fabricate device evidence.
+
+### Programme execution log — 2026-11-11
+
+**E05 software blocker — source fix applied**
+
+- Commit: `410b87f4a1231fd6fc7b58a869c31b896143949d` on `new`.
+- File: `android-app/app/src/main/java/com/jarvis/companion/OwnerPanels.kt`.
+- Change: renamed the row-construction helper to `newActionRow` and explicitly typed local action-row variables as `LinearLayout`, addressing the recursive Kotlin type-inference diagnostic previously reported at `OwnerPanels.kt:112:34`.
+- Tests authored in this increment: none.
+- Tests/build executed in this increment: none. The available commit workflow lookup returned no PR-triggered workflow runs; therefore this is **IMPLEMENTED — BUILD NOT YET VERIFIED**, not a closed blocker.
+- Next E05 action: obtain a successful Android Gradle compile on the exact updated head, then continue to independent enrollment and two-phone acceptance.
