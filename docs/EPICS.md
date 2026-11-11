@@ -1,6 +1,6 @@
 # JARVIS — Epic Register and Delivery Plan
 
-**Updated:** 2026-11-09  
+**Updated:** 2026-11-11  
 **Planning branch:** `new`  
 **Latest inspected code checkpoint:** `03518b9227de13f5dbbd247e9c364b5768bb2a4a`  
 **Overall:** Existing epics remain open until their acceptance gates are met.
@@ -19,21 +19,21 @@ This register organizes the epics already present in `POC2.md`; it does not intr
 
 ## Epic summary
 
-_Status baseline 2026-11-07 — see POC.md section 2 for done / needs testing / pending detail._
+_Status baseline refreshed 2026-11-11; detailed historical evidence below is retained, and the owner-directed programme at the end is authoritative for current execution._
 
 | ID | Epic | Priority | Current disposition | Primary outcome |
 |---|---|---:|---|---|
-| JARVIS-E01 | Security, Identity & Approval Foundation | P0 | Core controls VERIFIED LOCALLY; owner recovery (US-005) pending | Every action is authenticated, authorized, auditable and safely revocable |
+| JARVIS-E01 | Security, Identity & Approval Foundation | P0 | Core controls present; bulk-recovery persistence edge hardened in source; regression/build validation pending | Every action is authenticated, authorized, auditable and safely revocable |
 | JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | HUD + wake runtime VERIFIED LOCALLY; live microphone test by owner pending; Piper pending | Reliable local wake, consented capture, clear HUD and verified speech output |
 | JARVIS-E03 | Windows Desktop Control | P1 | App launch/focus VERIFIED ON TARGET LAPTOP; UI Automation real-app tests pending | Safe, bounded control of supported Windows applications |
 | JARVIS-E04 | Multi-Step Execution & Recovery | P1 | VERIFIED LOCALLY; crash/restart drill pending | Durable workflows that stop safely and recover through human review |
-| JARVIS-E05 | Android Companion & Cross-Device Control | P1 | Server side VERIFIED LOCALLY; APK build + two-phone acceptance pending | Two independently secured phones can approve/control permitted laptop tasks |
+| JARVIS-E05 | Android Companion & Cross-Device Control | P1 | Kotlin recursive-inference source fix committed; Android build and two-phone acceptance pending | Two independently secured phones can approve/control permitted laptop tasks |
 | JARVIS-E06 | Memory, Privacy & Personalization | P1 | Deletion scrub + export VERIFIED LOCALLY; cross-device sync not started | Private, useful, permission-aware memory with retention and deletion |
 | JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | Agents/contracts VERIFIED LOCALLY; integrations partial | Useful local/cloud AI and existing integrations without policy bypass |
 | JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Resources measured (idle 0 % CPU, 66 MB); exact-head CI run pending | Exact-head software, security, device and resource evidence |
 | JARVIS-E08 | Shared DevOps Pipeline, Provenance & Artifact Integrity | P1 | Integrity tooling VERIFIED LOCALLY; first CI/Jenkins run pending; Nexus disabled | Traceable, verifiable release artifacts |
 | JARVIS-E09 | Personal AI Gateway for Websites | P1 | Gateway implementation present; public tunnel and production acceptance pending | Owner's sites use JARVIS via API key instead of a paid AI API |
-| JARVIS-E10 | Owner Control Panels & Visual Workflow Composition | P1 | UI and routes IMPLEMENTED IN SOURCE; testing paused | One signed, policy-aware owner workspace for plugins, workflows, developer tools, memory and gateway sites |
+| JARVIS-E10 | Owner Control Panels & Visual Workflow Composition | P1 | UI and routes IMPLEMENTED IN SOURCE; validation remains pending | One signed, policy-aware owner workspace for plugins, workflows, developer tools, memory and gateway sites |
 
 ---
 
