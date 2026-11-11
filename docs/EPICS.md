@@ -372,3 +372,14 @@ Local test pass rate is **100%**; do not translate that into an overall product-
 - Tests authored in this increment: none.
 - Tests/build executed in this increment: none. The available commit workflow lookup returned no PR-triggered workflow runs; therefore this is **IMPLEMENTED — BUILD NOT YET VERIFIED**, not a closed blocker.
 - Next E05 action: obtain a successful Android Gradle compile on the exact updated head, then continue to independent enrollment and two-phone acceptance.
+
+
+### E01 security increment — fail-safe bulk owner recovery
+
+- Source commit: `de56234c1cf02e460807f5409ecf8f2e875372bb`.
+- Regression-test commit: `e602021337437815ef7a42a2b1ade467f654575a`.
+- Files: `src/server/server.ts`, `test/owner_recovery.test.ts`.
+- Finding: bulk recovery previously attempted to reset the authenticator even when one or more active-device revocations could not be durably persisted. That could leave a previously active management device on disk while removing the second-factor protection.
+- Fix: bulk recovery now returns HTTP 409 before authenticator reset if any revocation fails. The response explains that durable storage must be restored and recovery retried. The successful path resets the authenticator only after all active-device revocations have persisted.
+- Regression coverage: fault-injection test makes the device-state destination unusable, verifies HTTP 409, confirms no additional authenticator-reset audit event, and checks the durable pre-failure device record remains active.
+- Tests/build executed: **not run in this increment**. Commit status lookup currently reports no checks. Status: **IMPLEMENTED — REGRESSION AUTHORED — VALIDATION PENDING**.
