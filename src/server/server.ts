@@ -316,9 +316,23 @@ export class JarvisServer {
         const active = this.jarvis.identity.listDevices().filter((device) => device.status === 'ACTIVE');
         const revokedDeviceIds = active.filter((device) => revoke(device.id)).map((device) => device.id);
         const failed = active.length - revokedDeviceIds.length;
+        if (failed > 0) {
+          // Do not clear the authenticator or reopen bootstrap enrollment unless every
+          // active device revocation is durably persisted. Otherwise an old management
+          // device could survive a restart while its second factor has been reset.
+          this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_PARTIAL_FAILURE', {
+            revokedCount: revokedDeviceIds.length,
+            failedCount: failed,
+          });
+          return this.jsonResponse(res, 409, {
+            success: false,
+            revokedDeviceIds,
+            error: `${failed} device(s) could not be revoked durably; authenticator reset was not performed`,
+            next: 'Restore durable device-state storage and retry recovery before resetting the authenticator.',
+          });
+        }
         const authenticator = this.jarvis.deviceSecurity.ownerResetAuthenticator();
-        this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: failed });
-        if (failed > 0) return this.jsonResponse(res, 409, { success: false, revokedDeviceIds, error: `${failed} device(s) could not be revoked durably` });
+        this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: 0 });
         return this.jsonResponse(res, 200, {
           success: true, revokedDeviceIds, ...authenticator,
           next: 'Enroll a new device with a NEW key via owner-token bootstrap enrollment (POST /api/enrollment/challenge).',
