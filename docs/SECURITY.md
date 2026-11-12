@@ -140,3 +140,12 @@ Security acceptance requires negative tests for authentication, replay, authoriz
 - Hand-landmark output and other sensor-derived signals are not authentication or approval factors.
 - Optional Piper TTS runs with shell execution disabled, bounded input and timeout; use only a trusted executable and appropriately licensed model.
 - Website gateway keys are per-site hashes and must never be exposed in browser bundles, logs or source control.
+
+## Document parser security boundaries
+
+- Binary uploads use the signed device session and canonical base64 validation before parsing.
+- Parser accepts only PDF/DOCX signatures, enforces a 15 MB input cap, 1 MB extracted-text cap, ZIP entry/count/decompression-ratio limits, PDF page limits, bounded command output and per-tool timeouts.
+- DOCX content is extracted without writing archive entries to disk or executing embedded content. Macros and other active content are not executed.
+- PDF/OCR utilities are invoked as fixed local executables with argument arrays (no shell); temporary files are created with restrictive permissions and removed in a finally block.
+- OCR is owner-requested, local-only, English-only and limited to 20 pages. No document bytes are sent to cloud services.
+- Retrieved document text is untrusted data; the conversation prompt explicitly prohibits following instructions embedded in retrieved context. Document retrieval is skipped for action requests, which continue through the policy-controlled planner.
