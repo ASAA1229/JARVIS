@@ -1258,6 +1258,13 @@ The follow-up phrase **“write …”** is now bound to the most recently verif
 **Build status:** source implemented on `new`; authored planner regressions added but not executed. No build, typecheck, lint, tests, browser launch or desktop interaction was performed.
 
 
+### Browser search navigation observation — 2026-11-12
+
+After the approved browser search is submitted, JARVIS now performs a short, foreground-process-bound UI Automation inspection before and after submission. A changed non-empty window title from the expected browser process is recorded as a navigation observation. This is deliberately **not** promoted to verified search success: title changes do not prove that the requested query or results page loaded. If inspection is unavailable or the title does not change, the search remains submitted-but-unverified. Regression tests cover matching browser identity, unchanged titles, wrong-process title changes and missing observations.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN. Browser-specific URL/query/result verification and real-browser acceptance remain open.
+
+
 ### UI Automation selector authorization closure — 2026-11-12
 
 The desktop policy gateway now explicitly allowlists `automationId` for guarded control reads, clicks and value updates. This closes a mismatch where the Windows adapter supported stable AutomationId selectors but the policy rejected them as unexpected parameters. The adapter now requires exactly one selector (a control name OR an AutomationId), rejects competing selectors, and continues to require a unique matching control in the verified foreground window. State-changing click/set actions remain bound to the exact selector, target process and parameters in the task-scoped approval hash; changing the selector after approval is denied. Regression tests were added for selector validation and approval-scope tampering.
