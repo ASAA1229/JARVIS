@@ -145,8 +145,14 @@ client; do not replace the signature headers with an unauthenticated request. In
 JARVIS browser session, use the existing device crypto helper:
 
 ```javascript
-const response = await window.JarvisDeviceCrypto.signedFetch('/api/ai/health', { method: 'GET' });
-console.log(response.status, await response.json());
+const healthResponse = await window.JarvisDeviceCrypto.signedFetch('/api/ai/health', { method: 'GET' });
+console.log('health', healthResponse.status, await healthResponse.json());
+
+const chatResponse = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
+  method: 'POST',
+  body: { text: 'Explain how JARVIS conversation memory works.' },
+});
+console.log('chat', chatResponse.status, await chatResponse.json());
 ```
 
 ## PowerShell API test
