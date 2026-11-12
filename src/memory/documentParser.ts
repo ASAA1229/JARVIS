@@ -1,6 +1,6 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -36,11 +36,11 @@ function decodeXml(value: string): string {
 }
 
 function extractDocxXml(xml: string): string {
-  const textNodes = xml.replace(/<w:tab\\b[^>]*\\/>/g, '\\t').replace(/<w:br\\b[^>]*\\/>/g, '\\n')
-    .replace(/<\\/w:p>/g, '\\n')
-    .replace(/<w:t\\b[^>]*>([\\s\\S]*?)<\\/w:t>/g, (_match, value: string) => decodeXml(value))
-    .replace(/<[^>]+>/g, '');
-  return textNodes.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
+  const tokens = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>|<\/w:p>/g;
+  return [...xml.matchAll(tokens)].map((match) => {
+    if (match[1] !== undefined) return decodeXml(match[1]);
+    return match[0].includes('tab') ? '\t' : '\n';
+  }).join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function readDocxMainXml(buffer: Buffer): string {
@@ -116,16 +116,20 @@ export class DocumentParser {
       try {
         text = await this.runCommand('pdftotext', ['-layout', '-enc', 'UTF-8', path, '-'], 30_000, 4 * 1024 * 1024);
       } catch (error) { textError = error; }
+      const pageBreakCount = (text.match(/\f/g) ?? []).length;
+      const pages = Math.max(1, pageBreakCount);
+      if (pages > MAX_PDF_PAGES) throw new Error('PDF exceeds the 30-page extraction limit.');
       text = text.replace(/\f/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
       if (text.length > MAX_EXTRACTED_CHARS) throw new Error('Extracted PDF text exceeds the 1 MB limit.');
-      const pages = Math.max(1, text.split('\n\n').length);
       if (text.length >= MIN_TEXT_CHARS) return { text, format: 'pdf', extraction: 'text', pages };
+      if (pages > MAX_OCR_PAGES) throw new Error('Scanned PDF exceeds the 20-page OCR limit.');
       if (!allowOcr) {
         if (textError) throw new Error('PDF text extraction requires local Poppler (pdftotext). Install Poppler or enable local OCR.');
         throw new Error('PDF has no usable text layer. Enable OCR to process scanned pages.');
       }
       await this.runCommand('pdftoppm', ['-f', '1', '-l', String(MAX_OCR_PAGES), '-r', '160', '-png', path, prefix], 60_000, 1024 * 1024);
-      const images = (await readdir(directory)).filter((name) => /^page-\d+\.png$/i.test(name)).sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
+      const images = (await readdir(directory)).filter((name) => /^page-\d+\.png$/i.test(name))
+        .sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
       if (!images.length) throw new Error('Local PDF rasterizer produced no OCR pages.');
       if (images.length > MAX_OCR_PAGES) throw new Error('PDF exceeds the 20-page OCR limit.');
       const recognized: string[] = [];
