@@ -1239,3 +1239,10 @@ The native companion now exposes explicit **Enable approval notifications** and 
 Files: `MainActivity.kt`, `CompanionSession.kt`, `ApprovalPollWorker.kt` (existing worker), and `src/capabilities/registry.ts`; documentation updated in `android-app/README.md` and `docs/SECURE_PHONE_CONNECTIVITY.md`.
 
 **Build status:** IMPLEMENTED IN SOURCE — NOT COMPILED. No tests, Gradle build, APK installation, ADB operation or phone acceptance was run in this build-first phase. US-072 remains OPEN / PARTIAL.
+
+
+### Windows app discovery build increment — 2026-11-12
+
+The existing `app:inventory` request now performs bounded Windows Start-menu discovery automatically when explicitly requested, rather than requiring the undocumented/local `JARVIS_ENABLE_START_MENU_INVENTORY=1` toggle. The query remains read-only and capped at 80 entries; financial/payment app names are excluded, and discovered entries do not imply UI automation or verified launch support. Planner feedback now accurately describes this behavior.
+
+**Build status:** IMPLEMENTED IN SOURCE — NOT COMPILED OR TESTED. US-068 remains OPEN / PARTIAL; exact-head compilation and the later per-platform validation phase remain pending.
