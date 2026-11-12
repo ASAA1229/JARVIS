@@ -211,7 +211,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     }
 
     if (/\b(?:what|which|list|show)\s+(?:installed\s+)?(?:apps|applications)\b/i.test(requestText)) {
-      return { intent: 'List application capabilities', operations: [{ operation: 'app:inventory', parameters: {}, justification: 'Owner asked which applications JARVIS can see' }], confidence: 0.88, explanation: 'Will list allowlisted applications and, if enabled, Start-menu names. Presence in the list is not a claim that every operation works in that app.' };
+      return { intent: 'List application capabilities', operations: [{ operation: 'app:inventory', parameters: {}, justification: 'Owner asked which applications JARVIS can see' }], confidence: 0.88, explanation: 'Will list allowlisted applications and bounded Windows Start-menu discovery results. Presence in the list is not a claim that every operation works in that app.' };
     }
 
     const emailDraft = requestText.match(/\b(?:draft|prepare|compose)\s+(?:an?\s+)?email\s+to\s+(\S+)\s+(?:cc\s+(\S+)\s+)?(?:with\s+)?subject\s+["“](.+?)["”]\s+(?:body|saying)\s+["“](.+?)["”]\s*$/i);
