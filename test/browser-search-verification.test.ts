@@ -35,6 +35,16 @@ test('a title change in the wrong process is rejected', () => {
   assert.equal(result.observed, false);
 });
 
+test('a mismatched baseline process also prevents navigation observation', () => {
+  const result = assessBrowserNavigation(
+    { process: 'notepad', windowTitle: 'Untitled - Notepad' },
+    { process: 'chrome', windowTitle: 'Search results - Chrome' },
+    'chrome',
+  );
+  assert.equal(result.processMatches, false);
+  assert.equal(result.observed, false);
+});
+
 test('missing baseline or post-navigation evidence fails closed', () => {
   assert.deepEqual(assessBrowserNavigation(undefined, undefined, 'firefox'), {
     processMatches: false,
