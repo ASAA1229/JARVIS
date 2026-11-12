@@ -405,3 +405,14 @@ Local test pass rate is **100%**; do not translate that into an overall product-
 - Added one-time migration of legacy plaintext queue files. Unsupported versions, malformed ciphertext and GCM authentication failures stop sync rather than silently clearing user data.
 - Wired the native owner panels to the Keystore-backed queue implementation; revocation continues to wipe the queue and its local data key.
 - Android build, migration/revocation tests, TLS connectivity, two-phone enrollment/revocation drills and physical-device acceptance were **not run**. E05 and US-072/US-073 remain OPEN.
+
+
+## Workstation readiness increment — Windows + two Android phones (2026-11-12)
+
+- Branch: `new`.
+- Added `scripts/workstation-preflight.ps1` for read-only tool/ADB readiness checks; device serials are excluded from saved reports.
+- Added `scripts/workstation-test-runner.ps1` for controlled Node tests, TypeScript build, Edge browser smoke, Android unit-test task and debug APK build.
+- Added `docs/WORKSTATION_SETUP.md` with Android Studio SDK/JDK/Gradle/ADB setup, physical-phone connection, command explanations and acceptance/evidence rules.
+- No APK installation, phone configuration, enrollment, revocation, reset, credential access or remote action is automated.
+- Scripts are **NOT EXECUTED / NOT SYNTAX-VALIDATED** in this editing environment. No local tests, build, ADB or device checks were run. Exact-head CI and owner workstation results remain pending.
+- E05/E02/E03 remain OPEN until the workstation run and physical acceptance evidence are reviewed.
