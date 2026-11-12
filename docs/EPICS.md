@@ -438,6 +438,13 @@ Explicit application inventory now performs bounded (maximum 80) read-only Start
 E02/E03 implementation now includes a generic combined launch-and-type request for uniquely discovered installed Windows apps and a new policy-gated `desktop:browser_search` composite operation. Browser actions are process-bound; the search operation reports PARTIAL pending independent page/result verification. Planner regression tests were authored but not run. Short-lived, process-bound follow-up app-session targeting is now implemented in source. App-specific verified media playback remains open. No build or validation was run.
 
 
+### UI Automation selector authorization closure — 2026-11-12
+
+The desktop policy gateway now explicitly allowlists `automationId` for guarded control reads, clicks and value updates. This closes a mismatch where the Windows adapter supported stable AutomationId selectors but the policy rejected them as unexpected parameters. The adapter now requires exactly one selector (a control name OR an AutomationId), rejects competing selectors, and continues to require a unique matching control in the verified foreground window. State-changing click/set actions remain bound to the exact selector, target process and parameters in the task-scoped approval hash; changing the selector after approval is denied. Regression tests were added for selector validation and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN, per the current build-first / test-later sequence. US-014 remains IMPLEMENTED IN SOURCE — NEEDS TESTING; app-specific capability and durable-outcome coverage remain open.
+
+
 ## Permission-controlled desktop interaction update — 2026-11-12
 
 The current voice-to-desktop vertical slice covers app launch, explicit dictated text entry, and browser-scoped search through the central approval gateway. The next uncovered user-visible request is app-scoped media playback. A deterministic planner guard and capability entry now prevent unsafe global media-key execution until a player-specific adapter can bind the requested app and track and independently verify playback. This is source-level work only; no build or tests were run.
