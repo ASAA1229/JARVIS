@@ -71,7 +71,7 @@ class MainActivity : Activity() {
                 client = api
                 if (api.hasSession()) {
                     session.enrolled = true
-                    runOnUiThread { enableApprovalAlerts() }
+                    runOnUiThread { status.text = "Phone enrolled. Approval notifications remain off until you enable them below." }
                 }
                 result
             } }
@@ -91,6 +91,20 @@ class MainActivity : Activity() {
                 val reply = session.guard { api.sendRequest(request.text.toString()) }
                 reply.state + ": " + reply.message
             } }
+        }, params())
+        column.addView(TextView(this).apply {
+            text = "APPROVAL NOTIFICATIONS"; textSize = 18f
+        }, params())
+        column.addView(TextView(this).apply {
+            text = "Optional background polling checks for pending approvals at Android's minimum periodic interval (about 15 minutes). Notification text never includes the directive."
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Enable approval notifications"
+            setOnClickListener { requestApprovalAlerts() }
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Disable approval notifications"
+            setOnClickListener { disableApprovalAlerts() }
         }, params())
 
         column.addView(TextView(this).apply {
@@ -168,12 +182,41 @@ class MainActivity : Activity() {
         status.text = "Enrollment details filled from the QR link. Enter the laptop URL, then tap Request enrollment."
     }
 
-    private fun enableApprovalAlerts() {
+    private fun requestApprovalAlerts() {
+        if (!session.enrolled || !keys.hasIdentity()) {
+            status.text = "Enroll this phone with owner approval before enabling notifications."
+            return
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 41)
+            return
         }
-        if (session.notificationsEnabled) ApprovalPollWorker.schedule(this)
+        session.notificationsEnabled = true
+        ApprovalPollWorker.schedule(this)
+        status.text = "Approval notifications enabled. Android checks periodically; delivery is not real-time."
+    }
+
+    private fun disableApprovalAlerts() {
+        session.notificationsEnabled = false
+        ApprovalPollWorker.cancel(this)
+        status.text = "Approval notifications disabled. No background approval polling will run."
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 41) return
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted && session.enrolled && keys.hasIdentity()) {
+            session.notificationsEnabled = true
+            ApprovalPollWorker.schedule(this)
+            status.text = "Approval notifications enabled. Android checks periodically; delivery is not real-time."
+        } else {
+            session.notificationsEnabled = false
+            ApprovalPollWorker.cancel(this)
+            status.text = "Notification permission was not granted. Background approval polling remains disabled."
+        }
     }
 
     private fun discoverPhoneApps() {
