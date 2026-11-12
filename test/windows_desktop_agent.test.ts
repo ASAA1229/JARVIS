@@ -5,6 +5,22 @@ import { buildControlActionScript, buildForegroundFocusAssertionScript, buildRea
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
+test('UI Automation supports AutomationId selectors and rejects competing selectors', async () => {
+  const readScript = buildReadControlScript(undefined, 'MainDocumentTitle');
+  const clickScript = buildControlActionScript('desktop:click_control', undefined, undefined, 'SaveButton');
+  assert.match(readScript, /AutomationIdProperty, 'MainDocumentTitle'/);
+  assert.match(clickScript, /AutomationIdProperty, 'SaveButton'/);
+
+  const { WindowsDesktopAgent } = await import('../src/adapters/windowsDesktopAgent.js');
+  const agent = new WindowsDesktopAgent();
+  const ambiguous = await agent.execute({
+    operation: 'desktop:click_control',
+    parameters: { name: 'Save', automationId: 'SaveButton' },
+  });
+  assert.equal(ambiguous.success, false);
+  assert.match(ambiguous.error || '', /either a control name or automationId, not both/i);
+});
+
 test('desktop:read_control requires a unique control and redacts sensitive values', () => {
   const script = buildReadControlScript("Account name");
   assert.match(script, /\$matches = \$root\.FindAll/);
