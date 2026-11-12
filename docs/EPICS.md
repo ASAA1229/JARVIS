@@ -496,3 +496,25 @@ Required outcomes:
 **Exit gate:** All five OS families have buildable artifacts, documented compatibility ranges, native capability adapters, exact-head automated checks, security review and real-device/host acceptance. Shared-core test success or a single platform package does not close this gate.
 
 **Current disposition:** REQUIREMENT ACCEPTED; implementation PARTIAL. Windows and Android code paths exist; macOS/Linux native desktop adapters and iOS app are not implemented. The current Android APK workflow is an internal debug packaging path only.
+
+
+
+## JARVIS-G03 — Concurrent Task Orchestration & Deadlock Safety
+
+**Type:** cross-cutting runtime reliability and execution architecture  
+**Goal:** Let independent JARVIS tasks run concurrently while safely coordinating shared desktop, memory, workflow and workspace resources.
+
+Required outcomes:
+- Bounded global and per-device execution capacity with bounded queues and admission timeouts.
+- Priority-aware scheduling with aging so interactive work remains responsive without starving background tasks.
+- Atomic multi-resource locking, canonical lock ordering and guaranteed release on success, failure, timeout or cancellation.
+- Explicit duplicate-task prevention and cancellation propagation for queued/running work.
+- Dependency DAG validation and, later, safe parallel execution of explicitly independent workflow branches.
+- Concurrent dispatch of independent scheduled jobs while preserving durable at-most-once state before execution.
+- Queue/worker metrics, graceful shutdown/drain, crash recovery and honest partial/uncertain outcomes.
+- A separate bounded worker-thread pool only for measured CPU-bound work; async I/O must not create one thread per task.
+- No distributed multi-process execution until transactional shared queue/lease coordination exists.
+
+**Initial implementation:** `TaskCoordinator` now bounds adapter execution to 4 globally / 2 per device, queues up to 200 waiting operations, applies interactive-vs-scheduled priority with aging, supports queue timeout and cancellation, rejects duplicate active task IDs, and atomically acquires sorted resource locks. The service derives desktop, memory, workflow-registry and workspace locks. The scheduler dispatches independent due jobs concurrently after persisting each at-most-once advancement.
+
+**Exit gate:** Stress-tested concurrency limits, resource isolation, cancellation, queue timeout, duplicate admission, starvation, overlapping scheduler ticks, graceful shutdown, crash recovery and exact-head CI; then owner acceptance on real desktop/devices. Initial source and regression tests are committed but not built or executed. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
