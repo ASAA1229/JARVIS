@@ -3,6 +3,7 @@ package com.jarvis.companion
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 /**
@@ -19,21 +20,37 @@ import java.util.UUID
  * The queue file lives in the app's private storage. It contains memory text, so
  * keep the device encrypted and the app data excluded from cloud backup.
  */
-class SyncClient(private val api: JarvisApiClient, private val queueFile: File) {
+class SyncClient(private val api: JarvisApiClient, private val queueFile: File, private val keys: DeviceKeyStore) {
     data class Conflict(val id: String, val memoryId: String, val kind: String)
     data class SyncReport(val pushed: Int, val outcomes: Map<String, Int>, val changedMemories: Int, val conflicts: List<Conflict>)
 
     private val maxQueued = 200
     private val defaultTtlSeconds = 24 * 60 * 60
 
-    private fun load(): JSONObject =
-        if (queueFile.exists()) JSONObject(queueFile.readText(Charsets.UTF_8))
-        else JSONObject().put("seq", 0L).put("lastPull", 0L).put("queue", JSONArray())
+    private fun load(): JSONObject {
+        if (!queueFile.exists()) return JSONObject().put("seq", 0L).put("lastPull", 0L).put("queue", JSONArray())
+        val packed = queueFile.readBytes()
+        require(packed.size <= 2 * 1024 * 1024 + 64) { "Encrypted sync queue exceeds the size limit." }
+        // One-time migration for queues created by older versions. Immediately rewrite
+        // the parsed queue using Android Keystore encryption; never continue in plaintext.
+        if (packed.isNotEmpty() && packed[0] == '{'.code.toByte()) {
+            val legacy = JSONObject(String(packed, Charsets.UTF_8))
+            save(legacy)
+            return legacy
+        }
+        val plain = keys.decryptLocalData(packed)
+        return JSONObject(String(plain, Charsets.UTF_8))
+    }
 
     private fun save(state: JSONObject) {
+        val plain = state.toString().toByteArray(Charsets.UTF_8)
+        val encrypted = keys.encryptLocalData(plain)
         val temporary = File(queueFile.parentFile, queueFile.name + ".tmp")
-        temporary.writeText(state.toString(), Charsets.UTF_8)
-        check(temporary.renameTo(queueFile) || run { queueFile.delete(); temporary.renameTo(queueFile) }) { "Could not save the sync queue." }
+        FileOutputStream(temporary).use { output ->
+            output.write(encrypted)
+            output.fd.sync()
+        }
+        check(temporary.renameTo(queueFile)) { "Could not atomically replace the encrypted sync queue." }
     }
 
     @Synchronized
