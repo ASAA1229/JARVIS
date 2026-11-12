@@ -8,6 +8,7 @@ import { inflateRawSync } from 'node:zlib';
 const execFile = promisify(execFileCallback);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_EXTRACTED_CHARS = 1_000_000;
+const MAX_EXTRACTED_BYTES = 2 * 1024 * 1024;
 const MAX_PDF_PAGES = 30;
 const MAX_OCR_PAGES = 20;
 const MIN_TEXT_CHARS = 40;
@@ -92,12 +93,15 @@ export class DocumentParser {
     if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_FILE_BYTES) {
       throw new Error('Document must be a non-empty file no larger than 15 MB.');
     }
+    if (typeof filename !== 'string' || !filename.trim() || filename.length > 240 || /[\\\\/\\/\\u0000-\\u001f]/.test(filename)) {
+      throw new Error('Document source name must be a plain filename.');
+    }
     const extension = filename.toLowerCase().slice(filename.lastIndexOf('.'));
     if (extension === '.docx') {
       if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('DOCX file signature is invalid.');
       const text = extractDocxXml(readDocxMainXml(bytes));
       if (!text) throw new Error('DOCX contains no extractable text.');
-      if (text.length > MAX_EXTRACTED_CHARS) throw new Error('Extracted document text exceeds the 1 MB limit.');
+      if (text.length > MAX_EXTRACTED_CHARS || Buffer.byteLength(text, 'utf8') > MAX_EXTRACTED_BYTES) throw new Error('Extracted document text exceeds the 1 MB character or 2 MB byte limit.');
       return { text, format: 'docx', extraction: 'text' };
     }
     if (extension !== '.pdf') throw new Error('Only PDF and DOCX files can use binary document parsing.');
@@ -120,7 +124,7 @@ export class DocumentParser {
       const pages = Math.max(1, pageBreakCount);
       if (pages > MAX_PDF_PAGES) throw new Error('PDF exceeds the 30-page extraction limit.');
       text = text.replace(/\f/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-      if (text.length > MAX_EXTRACTED_CHARS) throw new Error('Extracted PDF text exceeds the 1 MB limit.');
+      if (text.length > MAX_EXTRACTED_CHARS || Buffer.byteLength(text, 'utf8') > MAX_EXTRACTED_BYTES) throw new Error('Extracted PDF text exceeds the 1 MB character or 2 MB byte limit.');
       if (text.length >= MIN_TEXT_CHARS) return { text, format: 'pdf', extraction: 'text', pages };
       if (pages > MAX_OCR_PAGES) throw new Error('Scanned PDF exceeds the 20-page OCR limit.');
       if (!allowOcr) {
@@ -140,7 +144,7 @@ export class DocumentParser {
       const ocrText = recognized.filter(Boolean).join('\n\n').trim();
       const combined = [text, ocrText].filter(Boolean).join('\n\n');
       if (!combined) throw new Error('OCR completed but no readable text was found.');
-      if (combined.length > MAX_EXTRACTED_CHARS) throw new Error('Extracted PDF text exceeds the 1 MB limit.');
+      if (combined.length > MAX_EXTRACTED_CHARS || Buffer.byteLength(combined, 'utf8') > MAX_EXTRACTED_BYTES) throw new Error('Extracted PDF text exceeds the 1 MB character or 2 MB byte limit.');
       return { text: combined, format: 'pdf', extraction: text ? 'text+ocr' : 'ocr', pages: images.length };
     } finally {
       await rm(directory, { recursive: true, force: true });
