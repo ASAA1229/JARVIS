@@ -159,3 +159,11 @@ Use these statuses precisely:
 A release candidate requires exact-head build/type/lint/tests; route and authorization review; dependency/security/secret scans; crash, persistence, cancellation, concurrency and recovery tests; target Windows acceptance; Android build/install/two-phone acceptance where applicable; provenance/SBOM/artifact integrity; compatibility limits and owner approval.
 
 Never infer a pass from source presence, authored tests, historical runs or a successful build alone.
+
+## PDF, DOCX and OCR requirements
+
+- Signed device-scoped binary ingestion accepts PDF and DOCX up to 15 MB; extracted text is capped at 1 million characters.
+- DOCX extraction is in-process and reads the main document text, including paragraphs, tables, tabs and line breaks.
+- PDF text extraction requires Poppler (`pdftotext`). Scanned-page OCR is opt-in and additionally requires Poppler (`pdftoppm`) and local Tesseract.
+- PDF extraction is limited to 30 pages; OCR is limited to 20 pages at 160 DPI. OCR language is currently English.
+- OCR is never silently enabled. Missing local tools produce an explicit error; no cloud OCR fallback exists.
