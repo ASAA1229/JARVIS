@@ -416,3 +416,8 @@ Local test pass rate is **100%**; do not translate that into an overall product-
 - No APK installation, phone configuration, enrollment, revocation, reset, credential access or remote action is automated.
 - Scripts are **NOT EXECUTED / NOT SYNTAX-VALIDATED** in this editing environment. No local tests, build, ADB or device checks were run. Exact-head CI and owner workstation results remain pending.
 - E05/E02/E03 remain OPEN until the workstation run and physical acceptance evidence are reviewed.
+
+
+## Build-first increment — native Android approval notifications (2026-11-12)
+
+US-072 now includes owner-controlled notification polling: opt-in UI, Android 13+ runtime permission, default-off preference, WorkManager scheduling/cancellation, generic notification content and periodic (not real-time) delivery. The capability registry records this as partial. No tests/build/device acceptance were run; E05 remains OPEN / PARTIAL.
