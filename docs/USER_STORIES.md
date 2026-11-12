@@ -1049,3 +1049,179 @@ The exact-head [JARVIS CI run #42591404042](https://github.com/ASAA1229/JARVIS/a
 - Recovery, memory lifecycle and owner-panel stories remain OPEN until their corresponding exact-head and manual acceptance criteria are evidenced.
 
 **Percentages:** local test pass rate = **100% (345/345)**. Overall story/development completion is not reduced to a single percentage because unexecuted device, CI, security and owner-acceptance gates are not represented by the local test count. No story is closed solely from the Antigravity summary.
+
+
+---
+
+# Exact-objective gap closure backlog — 2026-11-12
+
+**Purpose:** This addendum converts the remaining gaps between the current repository and the complete JARVIS objective into explicit, testable stories. It supplements US-001–US-067; it does not replace existing stories or mark any feature complete.
+
+**Objective:** JARVIS is to become a secure, local-first personal AI operating system across the Windows 11 laptop and two Android phones. It should understand natural voice/text/multimodal requests, plan and execute authorized tasks across supported applications and devices, maintain owner-controlled memory, coordinate specialized AI capabilities, monitor long-running work, and report independently verified outcomes. It must remain extensible rather than claim unrestricted control of every application.
+
+## Consolidated gap register and first-work priority
+
+| Priority | Gap | Current evidence / limitation | First closure target |
+|---|---|---|---|
+| P0 | Full voice-to-action acceptance | Local wake, consent, capture and signed dispatch exist in source; the complete real-microphone → policy/approval → Windows action → independent outcome path is not accepted on the MSI | Close US-006–011 and US-012–016 as one end-to-end vertical slice |
+| P0 | Independent outcome verification | Launch identity has improved; app-specific proof that an action was accepted, saved or completed remains partial | Build a reusable verification contract and supported-app evidence matrix |
+| P0 | Exact-head quality/security evidence | Historical/local test reports and older CI runs do not prove the latest branch head; owner/device checks are separate | Run exact-head checks and record commit-specific evidence; retain device acceptance gates |
+| P1 | Universal capability discovery | The product goal requires discovery of installed apps, official APIs and accessible UI capabilities; current adapters are bounded and coverage is incomplete | Discover → assess capability → select adapter → authorize → verify; report unsupported actions |
+| P1 | End-to-end productivity/communications integrations | Email, WhatsApp, SMS, supported calls/VoIP, Teams, Microsoft 365 and calendar workflows are not complete end-to-end integrations | Implement only supported/official integrations with per-connector permissions and confirmation |
+| P1 | Full Android companion operation | Native app foundation and narrow inventory/sync paths exist; physical two-phone acceptance and broader permitted companion actions remain open | Compile/install, independent enrollment, approval/revocation, notifications and secure reconnect |
+| P1 | Cross-device reachability and continuity | Sync/queue foundations exist; trusted HTTPS/LAN connectivity, offline recovery and both-phone acceptance remain incomplete | Prove laptop/phone connectivity, stale-command rejection and safe reconnect |
+| P1 | Multimodal interaction | Chat/voice foundation exists; a complete privacy-governed image/document/screen-context workflow is not established in the current acceptance baseline | Add consented image/document input, extraction, context boundaries and actionable responses |
+| P1 | Proactive monitoring and background supervision | Scheduling/notifications/resources have foundations; dependable long-running task supervision, event monitoring and verified alerting remain incomplete | Durable monitor lifecycle, bounded resource use, cancellation, alert delivery and recovery |
+| P2 | Operational lifecycle and resilience | Local host/HUD exists; full startup/restart/update/backup/restore/health and recovery acceptance is not consolidated | Owner-controlled lifecycle, health diagnostics, safe update/rollback and backup/restore |
+| P2 | Unified acceptance and capability transparency | Implemented/partial/planned/restricted catalogue exists, but end-to-end coverage and owner-facing evidence need consolidation | Publish per-device/per-app capability matrix with tested limitations and evidence |
+
+## JARVIS-US-068 — Universal application and capability discovery
+
+**Priority:** P1 — after P0 voice/Windows vertical slice.
+
+**Current status:** PARTIAL — capability registry and bounded Windows/Android discovery foundations exist; universal discovery and adapter coverage are not complete.
+
+**As the owner,** I want JARVIS to discover installed applications and their available official APIs, automation interfaces and accessible UI capabilities, so that it can choose the safest supported way to complete a task instead of relying on hard-coded app assumptions.
+
+**Acceptance criteria**
+- Discover installed/built-in applications on the Windows laptop and each enrolled Android phone using platform-permitted mechanisms.
+- Inspect registered official APIs, deep links, command interfaces and accessibility/UI capabilities without bypassing platform security.
+- Maintain a capability record per app, operation, device, permission, adapter and verification method.
+- Select the least-privileged supported adapter; do not treat model suggestions or app names as authority.
+- Unknown, ambiguous, inaccessible or unsupported capabilities fail closed and are explained to the owner.
+- Discovery is refreshable, bounded, auditable and does not silently install apps or enable permissions.
+- Adapter execution still passes the central policy gateway, scoped approval and independent result verification.
+
+## JARVIS-US-069 — End-to-end productivity and communications integrations
+
+**Priority:** P1 — staged by connector after the core execution and verification contract is stable.
+
+**Current status:** PARTIAL / NOT ACCEPTED — schedule, notification and selected gateway foundations exist; the broader communications and productivity workflows are not established as end-to-end accepted integrations.
+
+**As the owner,** I want JARVIS to work with the productivity and communication services I authorize, so that I can manage information and routine work through one assistant.
+
+**Acceptance criteria**
+- Maintain an explicit connector register for email, WhatsApp, SMS, supported cellular/VoIP calls, Microsoft Teams, Microsoft 365, calendars and other approved services.
+- Prefer official APIs and supported platform integrations; use UI automation only where permitted and demonstrably reliable.
+- Each connector declares scopes, data accessed, supported operations, local/cloud processing and revocation behavior.
+- Reading, drafting, sending, editing, deleting, scheduling and calling are distinct capabilities with risk-appropriate approval.
+- Never send a message, email, invitation or place a call merely because a model proposed it; show recipient/content/action for confirmation where required.
+- Handle unavailable APIs, expired tokens, rate limits, duplicate requests and uncertain outcomes without claiming success or blindly retrying.
+- Payment/financial operations and credential entry remain excluded.
+- Each connector has automated contract tests and a documented owner acceptance scenario before being labelled supported.
+
+## JARVIS-US-070 — Privacy-governed multimodal understanding
+
+**Priority:** P1.
+
+**Current status:** GAP — a complete accepted multimodal input workflow is not evidenced by the current story baseline.
+
+**As the owner,** I want to provide images, screenshots, documents and other supported media as context for a request, so that JARVIS can understand more than plain text and voice.
+
+**Acceptance criteria**
+- Support explicitly declared media types and bounded file sizes; reject unsupported or malformed content safely.
+- Explain when processing is local or when data would be sent to a configured cloud provider; obtain required consent before transmission.
+- Extract and summarize content with source references/page or region context where available.
+- Treat media content, OCR text, embedded instructions and metadata as untrusted input, never as system instructions or execution authority.
+- Ask for clarification when the media is ambiguous or insufficient.
+- Any action derived from media follows the same planner, policy, approval, execution and verification path as typed/voice requests.
+- Provide cancellation, deletion/retention controls and clear processing/error states.
+
+## JARVIS-US-071 — Proactive monitoring and background task supervision
+
+**Priority:** P1.
+
+**Current status:** PARTIAL — scheduler, notifications and resource management foundations exist; complete durable monitoring and alert lifecycle acceptance is outstanding.
+
+**As the owner,** I want JARVIS to monitor authorized tasks, device health and workflow progress in the background, so that it can alert me to important changes and keep long-running work under control.
+
+**Acceptance criteria**
+- Owner can explicitly enable, configure, pause and revoke each monitor or scheduled job.
+- Monitor definitions identify data sources, polling/event frequency, resource limits, retention and alert destinations.
+- Background work is durable across restart where required, bounded by CPU/RAM/network budgets and visible in the HUD.
+- Alerts distinguish observed facts, inferred risks and recommended actions; no alert implies an action was completed unless independently verified.
+- Long-running tasks expose progress, cancellation, timeout, failure and recovery state.
+- Quiet/disabled/offline states do not silently suppress critical security or task-integrity events.
+- No remote monitoring or external data collection occurs without explicit authorization.
+
+## JARVIS-US-072 — Native Android companion capability completion
+
+**Priority:** P1.
+
+**Current status:** PARTIAL — native enrollment, signed text requests and narrow app inventory/sync foundations exist; two-phone physical acceptance and broader companion lifecycle remain open.
+
+**As the owner,** I want each Android phone to act as a secure, independently managed JARVIS companion, so that I can receive approvals, notifications and authorized task results on either device.
+
+**Acceptance criteria**
+- Build, install and upgrade the native app on both target phones with documented Android versions.
+- Each phone has its own Keystore-backed identity, session, permissions and revocation state.
+- Support secure notification delivery and deep links for task status/approval without exposing secrets or granting broader authority.
+- Any phone-side app launch or supported device action is explicit, permission-scoped and visible to the phone owner.
+- Accessibility, notification, microphone, camera and background permissions are requested only when a feature needs them and are individually revocable.
+- Revoke one phone and prove the other remains usable; revoked devices cannot reconnect, replay or complete stale commands.
+- Offline, battery restriction, process death, OS restart and network-change scenarios fail safely and recover without duplicate side effects.
+
+## JARVIS-US-073 — Secure cross-device reachability and continuity
+
+**Priority:** P1.
+
+**Current status:** PARTIAL — signed sync/queue and secure-connectivity design exist; end-to-end network and two-phone acceptance remain outstanding.
+
+**As the owner,** I want my laptop and both phones to communicate securely over an explicitly configured private connection, so that JARVIS can coordinate work without exposing the laptop service publicly.
+
+**Acceptance criteria**
+- Support a documented private connectivity mode such as trusted LAN/VPN with HTTPS and certificate validation.
+- The main JARVIS server remains private; no public tunnel or internet exposure is enabled by default.
+- Authenticate every device independently and authorize every operation at execution time.
+- Detect laptop sleep/offline/restart and report reachability honestly.
+- Queue only explicitly permitted work with bounded TTL; revalidate permissions, task state and approvals on reconnect.
+- Reject stale, revoked, duplicate or uncertain state-changing commands; never auto-replay non-idempotent work.
+- Record connectivity, synchronization and recovery outcomes without logging credentials or private payloads.
+
+## JARVIS-US-074 — Verified outcome contract and application acceptance matrix
+
+**Priority:** P0 — foundational to every execution epic.
+
+**Current status:** PARTIAL — task result states and conservative Windows launch verification exist; app-specific outcome evidence is incomplete.
+
+**As the owner,** I want JARVIS to prove what happened after each action using independent evidence, so that it never confuses an acknowledgement, an attempted input or an uncertain result with success.
+
+**Acceptance criteria**
+- Define a shared result contract covering received, planned, awaiting approval, executing, verified success, partial, failed, denied, cancelled and uncertain/recovery-required outcomes.
+- Each adapter declares its independent verification method and evidence strength for each supported operation.
+- Verify the real target process/window/device and observable postcondition, not merely a matching title or successful input call.
+- For save/send/submit operations, use destination/application confirmation or read-back evidence where available; otherwise return partial/uncertain.
+- Preserve redacted evidence, timestamps, device identity and task correlation in the audit trail.
+- Stop dependent workflow steps after failed or uncertain outcomes.
+- Maintain a tested matrix of app × operation × device × verification method × limitations.
+- Automated tests, CI, physical-device acceptance and owner acceptance are separately recorded against the exact commit.
+
+## JARVIS-US-075 — Owner-controlled JARVIS runtime lifecycle and resilience
+
+**Priority:** P2.
+
+**Current status:** GAP — the local server/HUD and recovery foundations exist, but a consolidated owner-controlled runtime lifecycle acceptance story is missing.
+
+**As the owner,** I want JARVIS to start, monitor, recover and update its local services predictably, so that it behaves like a dependable personal operating environment rather than a manually started demo.
+
+**Acceptance criteria**
+- Provide an owner-controlled startup, shutdown, restart and health-status experience for supported local services.
+- Detect crashes, dependency/model unavailability, storage exhaustion and unhealthy components; report the affected capability without falsely reporting the whole system as available.
+- Restart only safe, idempotent services automatically; never replay uncertain user actions or workflows.
+- Provide versioned configuration and migration checks with rollback/recovery guidance.
+- Support encrypted backup and tested restore for owner-approved state, with explicit retention and key-handling rules.
+- Keep diagnostics useful but redact tokens, keys, private prompts, transcripts and sensitive memory.
+- Preserve local-first and zero-recurring-cost defaults; no background installation or paid service activation.
+
+## First implementation order
+
+1. **P0 — Close the voice-to-Windows vertical slice:** reconcile US-006–US-016, add deterministic regression coverage for local wake → same-utterance command → consent → signed request → policy/approval → Windows execution → independent result. Then obtain real MSI microphone and application acceptance.
+2. **P0 — Close the shared outcome contract:** implement/complete US-074 and use its evidence model for every adapter and workflow. Do not claim app success without its declared postcondition evidence.
+3. **P0 — Exact-head validation and security gate:** run the complete automated suite and CI against the candidate SHA; separately track MSI and Android owner acceptance. Fix failures before widening execution scope.
+4. **P1 — Universal capability discovery:** implement US-068 and the app/operation capability matrix, starting with Windows apps already supported and Android's permitted launcher capabilities.
+5. **P1 — Complete Android and private connectivity:** US-072 and US-073, including both phones, secure transport, approval delivery, revocation and offline recovery.
+6. **P1 — Complete productivity connectors:** US-069 one connector at a time, using official APIs and explicit scopes/confirmation.
+7. **P1 — Add multimodal and proactive capabilities:** US-070 and US-071 after privacy, resource and execution contracts are stable.
+8. **P2 — Runtime lifecycle and release hardening:** US-075 plus the existing E08/G01 acceptance gates.
+
+**Backlog rule:** These stories are OPEN. “Implemented in source” is not acceptance. Each must record exact branch/SHA, changed files, tests authored, tests executed, CI URL, device/environment evidence, remaining limitations and owner acceptance. Existing restrictions remain in force: default-deny policy, least privilege, scoped approvals, no payment/financial actions, credential entry, admin elevation, unrestricted shell, silent public exposure, paid activation or automatic replay of uncertain side effects.
