@@ -256,4 +256,29 @@ describe('PolicyGateway approval lifecycle', () => {
   });
 
 
+  test('desktop save verification requires exact approval for path and target process', () => {
+    const device = makeDevice('device-save');
+    const operation = 'desktop:save_and_verify';
+    const parameters = { path: 'Documents/notes.txt', expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-save');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-save', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const changedPath = gateway.evaluate(
+      { operation, parameters: { ...parameters, path: 'Documents/other.txt' } },
+      device,
+      'task-save',
+      approval.id,
+    );
+    assert.equal(changedPath.allowed, false);
+    assert.match(changedPath.reason || '', /scope was modified/i);
+
+    const exact = gateway.evaluate({ operation, parameters }, device, 'task-save', approval.id);
+    assert.equal(exact.allowed, true);
+  });
+
+
 });
