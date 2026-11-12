@@ -983,13 +983,15 @@ export class JarvisServer {
         const documentMatches = !isActionRequest(text.trim()) && this.documentRag
           ? await this.documentRag.search(auth.device.id, text.trim(), 4).catch(() => [])
           : [];
+        // The prompt contract accepts at most five context records. Reserve up to
+        // three slots for document evidence so it is not silently truncated behind memory.
         const authorizedConversationMemory = [
-          ...conversationMemory,
-          ...documentMatches.map((item) => ({
+          ...documentMatches.slice(0, 3).map((item) => ({
             content: item.content,
             category: 'document:' + item.source.sourceName + '#chunk-' + item.source.chunk,
           })),
-        ].slice(0, 8);
+          ...conversationMemory.slice(0, 2),
+        ];
 
         // Do not allocate conversation state for commands routed to the execution planner.
         if (isActionRequest(text.trim())) {
