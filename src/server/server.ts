@@ -46,7 +46,7 @@ export class JarvisServer {
   private readonly androidCommands = new AndroidCommandQueue();
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
-  private readonly conversationSessions = new ConversationSessionStore();
+  private readonly conversationSessions: ConversationSessionStore;
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
@@ -59,6 +59,9 @@ export class JarvisServer {
     const agentConfig = getAgentModelConfigStatus();
     console.info('[JARVIS] Advisory AI configuration:', agentConfig);
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
+    this.conversationSessions = this.ownerControlToken
+      ? new ConversationSessionStore(statePath ? statePath + '.conversations' : './data/conversations.enc', this.ownerControlToken)
+      : new ConversationSessionStore();
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.personalMemory = this.jarvis.personalMemory;
     // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
