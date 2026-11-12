@@ -147,3 +147,13 @@ test('queue snapshot reports task lifecycle and blocking reason without resource
   release();
   await Promise.all([active, queued]);
 });
+
+test('releases task identity before resolving so the next workflow step can reuse it', async () => {
+  const coordinator = new TaskCoordinator(1, 1);
+  const first = await coordinator.run({ taskId: 'workflow-step', deviceId: 'device-a', resources: ['system:read'] }, async () => 'first');
+  assert.equal(first, 'first');
+  const second = await coordinator.run({ taskId: 'workflow-step', deviceId: 'device-a', resources: ['system:read'] }, async () => 'second');
+  assert.equal(second, 'second');
+  assert.equal(coordinator.snapshot().active, 0);
+  assert.equal(coordinator.snapshot().lockedResourceCount, 0);
+});
