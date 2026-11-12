@@ -495,6 +495,13 @@ Named-control reads, clicks, and value updates now accept optional `expectProces
 **Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
 
 
+### App save and durable file verification — 2026-11-12
+
+A new approval-bound composite operation supports an explicit “save [workspace path] in [application]” request. It sends Ctrl+S only to the named foreground process, then independently checks the requested workspace file for a recent modification and, when supplied, expected content. The result is VERIFIED only when the file adapter confirms the saved file; a Save As dialog, unsupported path, inaccessible file or missing modification evidence remains PARTIAL/UNCERTAIN and is never reported as a successful save. The exact path and target process are included in the approval scope. Regression tests cover planner routing and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN. The file must already be addressable within JARVIS's approved workspace; automatic Save As dialog completion and app-specific save workflows remain open.
+
+
 ### App-specific UI Automation toggle support — 2026-11-12
 
 JARVIS now supports an explicit desired-state operation for accessible Windows toggle controls (checkboxes, switches and similar controls) using UI Automation TogglePattern. The request must identify exactly one control by name or AutomationId and specify ON/OFF; the adapter changes state only when needed, reads the state back, and reports verified success only when the requested state is confirmed. Credential and financial control-name heuristics remain blocked. The planner recognizes explicit “set toggle [name] on/off in [app]” requests, and the policy gateway requires a fresh high-risk approval bound to the exact control, desired state and target process. Regression tests cover script construction, planner routing and approval-scope tampering.
