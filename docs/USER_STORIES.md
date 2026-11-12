@@ -1320,7 +1320,7 @@ The Windows Start-menu launcher now returns a normalized top-level `windowPid`, 
 
 ## JARVIS-US-077 — Safe concurrent task execution and resource coordination
 
-**Current status:** **PARTIALLY IMPLEMENTED IN SOURCE — BUILD/TEST PENDING.** Bounded planner/adapter queues, resource locks, queue diagnostics, and bounded independent scheduled-job dispatch are implemented. A deterministic workflow DAG-wave planner exists, but workflow execution itself remains sequential until branch-level approval/checkpoint/recovery semantics are complete. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
+**Current status:** **PARTIALLY IMPLEMENTED IN SOURCE — CORE INTEGRATION / BUILD / TEST PENDING.** Bounded planner/adapter queues, resource locks, queue diagnostics, scheduled-job concurrency, and a standalone branch-aware DAG executor are implemented. The new executor supports per-branch approval references, serialized checkpoint callbacks, resource-conflict exclusion, dependency-aware joins, partial failure and explicit no-effect recovery. The existing workflow:run service path is still sequential until the executor is wired into JarvisCoreService and the encrypted task/approval/audit lifecycle. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
 
 **As the owner,** I want JARVIS to execute independent tasks concurrently while coordinating shared resources, so that multiple requests can progress without race conditions, deadlocks, starvation, duplicate side effects or uncontrolled resource use.
 
@@ -1335,11 +1335,15 @@ The Windows Start-menu launcher now returns a normalized top-level `windowPid`, 
 - Queued tasks can be cancelled or time out without invoking an adapter.
 - Resource locks are acquired atomically in canonical order; conflicting desktop, memory, workflow-registry and workspace operations cannot overlap.
 - All locks and worker slots are released after success, failure, timeout, cancellation or adapter exception.
-- Workflow dependency graphs are validated for unknown nodes and cycles; a bounded deterministic DAG-wave planner is implemented, but actual parallel branch execution remains disabled until per-branch policy, approval, checkpoint, cancellation, join and recovery semantics are implemented.
+- Workflow dependency graphs are validated for unknown nodes and cycles; WorkflowBranchExecutor runs independent DAG nodes concurrently with bounded capacity and conflict-aware resource exclusion. Its injected executor must use the central policy gateway and independent outcome verifier; live workflow:run integration remains open.
 - Independent due schedules can dispatch concurrently, while each schedule remains at-most-once across overlapping ticks and restart.
 - CPU-bound work uses a separate bounded worker-thread pool only when justified by measurement; I/O-bound work uses bounded async concurrency.
 - Shutdown drains or safely interrupts work; interrupted side effects enter recovery and are never blindly replayed.
 - Queue diagnostics distinguish queued/running work and resource/device-capacity blockers; the full owner task view must additionally distinguish awaiting approval, cancelled, failed, partial, uncertain and completed.
+- Each branch has an independent approval reference and checkpoint state; unrelated branches may continue while one awaits approval, and descendants wait for all dependencies to complete.
+- Verified failure, partial or uncertain outcomes block dependent branches while unrelated branches can finish; the run reports partial/uncertain rather than false success.
+- Restarted running branches become uncertain; only owner-reviewed confirmed-no-effect reconciliation may make a new attempt eligible. Effect-observed and still-unknown branches are never automatically replayed.
+- Branch execution is not enabled on the live workflow route until branch child-task records, exact policy-gateway approval consumption, audit, encrypted journal persistence, cancellation and outcome verification are integrated.
 - No concurrency path bypasses authentication, policy, task-scoped approval, audit, durable checkpoints or outcome verification.
 - Horizontal/multi-process execution is disabled until a transactional shared queue and distributed lease/lock design is implemented and tested.
 
