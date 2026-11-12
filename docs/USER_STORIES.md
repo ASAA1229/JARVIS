@@ -1315,3 +1315,29 @@ The Windows Start-menu launcher now returns a normalized top-level `windowPid`, 
 - All existing JARVIS security invariants remain enforced on every platform: default-deny authorization, scoped approvals, auditability, no financial/payment automation, no credential entry, no unrestricted shell/admin elevation and no unsafe automatic replay.
 
 **Definition of done:** Each of the five target OS families has a buildable application/runtime, native adapter implementation for its declared capabilities, automated platform checks, documented compatibility range, secure enrollment and device-level acceptance. Shared-core tests alone do not close this story.
+
+
+
+## JARVIS-US-077 — Safe concurrent task execution and resource coordination
+
+**Current status:** **IMPLEMENTED IN SOURCE — BUILD/TEST PENDING.** Initial bounded task coordinator is integrated into the adapter execution path; independent due scheduler jobs can dispatch concurrently. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
+
+**As the owner,** I want JARVIS to execute independent tasks concurrently while coordinating shared resources, so that multiple requests can progress without race conditions, deadlocks, starvation, duplicate side effects or uncontrolled resource use.
+
+**Acceptance criteria**
+- Global and per-device concurrency are bounded and configurable through validated runtime configuration.
+- The waiting queue is bounded, observable, priority-aware and protected against starvation by priority aging.
+- Interactive, scheduled and background tasks have explicit priority classes; priority never overrides policy or approval.
+- Duplicate task IDs cannot be queued or executed concurrently.
+- Queued tasks can be cancelled or time out without invoking an adapter.
+- Resource locks are acquired atomically in canonical order; conflicting desktop, memory, workflow-registry and workspace operations cannot overlap.
+- All locks and worker slots are released after success, failure, timeout, cancellation or adapter exception.
+- Workflow dependency graphs are validated for unknown nodes and cycles; independent branches may run concurrently only after per-branch policy, approval, join and recovery semantics are implemented.
+- Independent due schedules can dispatch concurrently, while each schedule remains at-most-once across overlapping ticks and restart.
+- CPU-bound work uses a separate bounded worker-thread pool only when justified by measurement; I/O-bound work uses bounded async concurrency.
+- Shutdown drains or safely interrupts work; interrupted side effects enter recovery and are never blindly replayed.
+- Owner-visible task state distinguishes queued, running, blocked-on-resource, awaiting approval, cancelled, failed, partial, uncertain and completed.
+- No concurrency path bypasses authentication, policy, task-scoped approval, audit, durable checkpoints or outcome verification.
+- Horizontal/multi-process execution is disabled until a transactional shared queue and distributed lease/lock design is implemented and tested.
+
+**Definition of done:** Exact-head build and concurrency stress tests prove configured limits, no conflicting resource overlap, no deadlocks in coordinator-managed locks, cancellation safety, queue fairness, duplicate prevention, scheduler at-most-once behavior, crash recovery and owner acceptance on supported platforms.
