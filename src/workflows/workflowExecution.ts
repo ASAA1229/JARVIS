@@ -50,6 +50,8 @@ export interface WorkflowRunOptions {
   approvedApprovals?: Record<string, string>;
   /** Prior durable snapshot for explicit owner-approved resume/reconciliation. */
   resumeFrom?: WorkflowRunCheckpoint;
+  /** Owner-reviewed proof that these uncertain branches had no external effect. */
+  reconciledNoEffectSteps?: string[];
   /** Resource keys must be stable, non-sensitive identifiers. */
   resourcesForStep?: (step: WorkflowStep) => string[];
   executeStep: (step: WorkflowStep, context: WorkflowBranchExecutionContext) => Promise<WorkflowBranchExecutionResult>;
@@ -90,7 +92,15 @@ export class WorkflowBranchExecutor {
       }
       snapshot = prior;
       snapshot.maxParallel = maxParallel;
+      const reconciled = new Set(options.reconciledNoEffectSteps ?? []);
       for (const branch of snapshot.branches) {
+        if (reconciled.has(branch.stepId)) {
+          if (branch.status !== 'uncertain') throw new Error(`Branch ${branch.stepId} is not awaiting uncertain-outcome reconciliation.`);
+          branch.status = 'pending';
+          branch.outcome = undefined;
+          branch.message = 'Owner confirmed no external effect; a new attempt is explicitly authorized.';
+          branch.updatedAt = now;
+        }
         // A process restart while a branch was running leaves the side effect unknown.
         if (branch.status === 'running') {
           branch.status = 'uncertain';
@@ -106,6 +116,18 @@ export class WorkflowBranchExecutor {
             branch.status = 'pending';
             branch.updatedAt = now;
           }
+        }
+      }
+      // A dependency blocked only because a now-reconciled branch was uncertain
+      // may be reconsidered. It remains pending until every prerequisite succeeds.
+      for (const branch of snapshot.branches) {
+        if (branch.status === 'blocked' && branch.dependsOn.every((id) => {
+          const dependency = snapshot.branches.find((item) => item.stepId === id)!;
+          return !TERMINAL_FAILURES.has(dependency.status);
+        })) {
+          branch.status = 'pending';
+          branch.message = 'Dependency graph reopened after explicit recovery review.';
+          branch.updatedAt = now;
         }
       }
     } else {
@@ -174,7 +196,9 @@ export class WorkflowBranchExecutor {
       );
 
       while (running.size < maxParallel && ready.length > 0 && !options.signal?.aborted) {
-        const branch = ready.shift()!;
+        const eligibleIndex = ready.findIndex((candidate) => canAcquire(byId.get(candidate.stepId)!));
+        if (eligibleIndex < 0) break;
+        const branch = ready.splice(eligibleIndex, 1)[0];
         const step = byId.get(branch.stepId)!;
         const resourceKeys = resourcesFor(step);
         for (const key of resourceKeys) activeResources.add(key);
