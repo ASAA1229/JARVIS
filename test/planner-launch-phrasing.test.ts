@@ -72,3 +72,15 @@ test('planner binds follow-up dictated text to a recently verified app session',
   assert.equal(plan.operations[0]?.parameters.text, '------');
   assert.equal(plan.operations[0]?.parameters.expectProcess, 'notepad');
 });
+
+
+test('planner safely declines media playback until an app-scoped verified adapter exists', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'media-playback-test', timestamp: Date.now() };
+  for (const request of ['Play Blinding Lights on Spotify', 'Hey Jarvis, play my playlist in VLC']) {
+    const plan = await planner.generatePlan(request, context);
+    assert.equal(plan.operations.length, 0, request);
+    assert.match(plan.explanation, /app-specific|dedicated/i, request);
+    assert.match(plan.uncertainty || '', /adapter/i, request);
+  }
+});
