@@ -66,6 +66,17 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     notes: 'Static allowlist plus unique Start menu discovery is available. Known Windows inbox apps (Settings, Microsoft Store, Photos, Clock) use conservative process-and-title identity hints for launch verification; unknown discovered apps remain partial because no trusted identity mapping exists.',
   },
   {
+    id: 'desktop.browser-search',
+    name: 'Search the web in a selected browser',
+    description: 'Open or focus an approved browser and submit an explicitly dictated search query.',
+    platforms: ['windows'],
+    status: 'partial',
+    risk: 'high',
+    requiresApproval: true,
+    requiresDeviceAgent: true,
+    notes: 'Chrome and Edge aliases plus Firefox, Brave and Opera discovery are supported as launch targets. The composite operation targets the verified browser process and reports PARTIAL until page load and search-result state are independently verified.',
+  },
+  {
     id: 'desktop.ui-automation',
     name: 'Cross-application desktop interaction',
     description: 'Use accessibility/UI Automation to interact with permitted windows and controls.',
