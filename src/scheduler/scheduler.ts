@@ -165,6 +165,7 @@ export class Scheduler {
     // and the owner has repaired/revalidated the persisted schedule state.
     if (!this.persistHealthy) return;
     const due: ScheduledJob[] = [];
+    let admissionFailed = false;
     for (const job of Array.from(this.jobs.values())) {
       if (!job.active || job.runAt > now || this.inFlight.has(job.id)) continue;
       if (job.everyMinutes && this.deferRecurring()) continue;
@@ -175,7 +176,7 @@ export class Scheduler {
         job.lastState = 'MISSED';
         const persisted = this.persist();
         this.inFlight.delete(job.id);
-        if (!persisted) return;
+        if (!persisted) { admissionFailed = true; break; }
         this.audit.record('SCHEDULE_MISSED', { jobId: job.id }, job.ownerDeviceId);
         continue;
       }
@@ -186,10 +187,15 @@ export class Scheduler {
       // Never execute scheduled work unless its at-most-once advance is durable.
       if (!this.persist()) {
         this.inFlight.delete(job.id);
-        return;
+        admissionFailed = true;
+        break;
       }
       due.push({ ...job });
     }
+
+    // Jobs whose at-most-once advancement was durably stored may still run if a later
+    // job fails admission persistence. The failed and subsequent jobs remain unstarted.
+    void admissionFailed;
 
     // Jobs are independent at scheduling time. The core TaskCoordinator applies
     // the actual global/per-device limits and resource locks before adapter work.
