@@ -147,6 +147,25 @@ test('discovered Start-menu launch is partial when no trusted process identity i
   assert.match(result.error ?? '', /cannot independently verify/i);
 });
 
+test('verified discovered-app launch exposes a bound target for follow-up approved interaction', () => {
+  const window: WindowInfo = { pid: 5300, processName: 'SystemSettings', title: 'Settings' };
+  const result = discoveredLaunchResult(
+    { Name: 'Settings', AppID: 'windows.immersivecontrolpanel' },
+    window,
+    { processNames: ['SystemSettings'], titleContains: 'Settings' },
+  );
+  assert.equal(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
+  assert.deepEqual(result.data, {
+    name: 'Settings',
+    appId: 'windows.immersivecontrolpanel',
+    status: 'Launch requested; a new window appeared',
+    windowPid: 5300,
+    windowProcess: 'SystemSettings',
+    windowTitle: 'Settings',
+    observedWindow: { pid: 5300, processName: 'SystemSettings', title: 'Settings' },
+  });
+});
+
 test('discovered Start-menu launch verifies only a window matching the trusted identity', () => {
   const result = discoveredLaunchResult(
     { Name: 'Settings', AppID: 'windows.immersivecontrolpanel' },
