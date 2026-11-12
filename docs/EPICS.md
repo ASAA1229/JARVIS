@@ -438,6 +438,13 @@ Explicit application inventory now performs bounded (maximum 80) read-only Start
 E02/E03 implementation now includes a generic combined launch-and-type request for uniquely discovered installed Windows apps and a new policy-gated `desktop:browser_search` composite operation. Browser actions are process-bound; the search operation reports PARTIAL pending independent page/result verification. Planner regression tests were authored but not run. Short-lived, process-bound follow-up app-session targeting is now implemented in source. App-specific verified media playback remains open. No build or validation was run.
 
 
+### App-specific UI Automation toggle support — 2026-11-12
+
+JARVIS now supports an explicit desired-state operation for accessible Windows toggle controls (checkboxes, switches and similar controls) using UI Automation TogglePattern. The request must identify exactly one control by name or AutomationId and specify ON/OFF; the adapter changes state only when needed, reads the state back, and reports verified success only when the requested state is confirmed. Credential and financial control-name heuristics remain blocked. The planner recognizes explicit “set toggle [name] on/off in [app]” requests, and the policy gateway requires a fresh high-risk approval bound to the exact control, desired state and target process. Regression tests cover script construction, planner routing and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN. App-specific control patterns beyond Invoke/Value/Toggle, real application coverage and durable workflow outcomes remain open.
+
+
 ### Browser search navigation observation — 2026-11-12
 
 After the approved browser search is submitted, JARVIS performs a short, foreground-process-bound UI Automation inspection before and after submission. A changed non-empty window title from the expected browser process is recorded as a navigation observation. This is not verified search success: title changes do not prove that the requested query or results page loaded. If inspection is unavailable or the title does not change, the search remains submitted-but-unverified. Regression tests cover matching browser identity, unchanged titles, wrong-process title changes and missing observations.
