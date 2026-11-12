@@ -435,4 +435,4 @@ Explicit application inventory now performs bounded (maximum 80) read-only Start
 
 ## Voice-driven app interaction increment — 2026-11-12
 
-E02/E03 implementation now includes a generic combined launch-and-type request for uniquely discovered installed Windows apps and a new policy-gated `desktop:browser_search` composite operation. Browser actions are process-bound; the search operation reports PARTIAL pending independent page/result verification. Planner regression tests were authored but not run. Follow-up app-session targeting and app-specific verified media playback remain open. No build or validation was run.
+E02/E03 implementation now includes a generic combined launch-and-type request for uniquely discovered installed Windows apps and a new policy-gated `desktop:browser_search` composite operation. Browser actions are process-bound; the search operation reports PARTIAL pending independent page/result verification. Planner regression tests were authored but not run. Short-lived, process-bound follow-up app-session targeting is now implemented in source. App-specific verified media playback remains open. No build or validation was run.
