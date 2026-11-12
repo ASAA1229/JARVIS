@@ -20,6 +20,7 @@ export interface TaskCoordinatorSnapshot {
   queued: number;
   activeByDevice: Record<string, number>;
   lockedResources: string[];
+  limits: { global: number; perDevice: number; queued: number };
 }
 
 interface QueueEntry<T> {
@@ -96,6 +97,7 @@ export class TaskCoordinator {
       queued: this.queue.length,
       activeByDevice: Object.fromEntries(this.activeByDevice),
       lockedResources: [...this.heldResources].sort(),
+      limits: { global: this.maxConcurrent, perDevice: this.maxConcurrentPerDevice, queued: this.maxQueue },
     };
   }
 
