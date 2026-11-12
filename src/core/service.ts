@@ -1541,7 +1541,7 @@ export class JarvisCoreService {
       tasks: {
         total: tasks.length,
         running: this.activeExecutionTokens.size,
-        executionQueue: (() => { const snapshot = this.taskCoordinator.snapshot(); const planning = this.planningCoordinator.snapshot(); return { active: snapshot.active, queued: snapshot.queued, limits: snapshot.limits, lockedResourceCount: snapshot.lockedResources.length, planning: { active: planning.active, queued: planning.queued, limits: planning.limits } }; })(),
+        executionQueue: (() => { const snapshot = this.taskCoordinator.snapshot(); const planning = this.planningCoordinator.snapshot(); return { active: snapshot.active, queued: snapshot.queued, activeTasks: snapshot.activeTasks, queuedTasks: snapshot.queuedTasks, limits: snapshot.limits, lockedResourceCount: snapshot.lockedResources.length, planning: { active: planning.active, queued: planning.queued, activeTasks: planning.activeTasks, queuedTasks: planning.queuedTasks, limits: planning.limits } }; })(),
         awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
