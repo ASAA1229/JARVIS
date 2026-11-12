@@ -16,7 +16,7 @@ Allow independent JARVIS tasks to make progress concurrently without allowing co
 - Global active adapter work is bounded to 4 operations; active work per device is bounded to 2.
 - The queue is bounded to 200 waiting operations and defaults to a 30-second admission timeout.
 - Interactive work has a higher initial priority than scheduled work. Priority aging increases a waiting task's effective priority over time to reduce starvation.
-- A task identifier cannot be queued or active twice at once.
+- A task identifier cannot be queued or active twice at once. Nested admission from a coordinated worker is rejected through async execution-context tracking, preventing reentrant lock-order deadlocks.
 - A waiting task can be cancelled through its AbortSignal. It is rejected before its adapter callback starts.
 - Adapter errors and cancellation always release the concurrency slot and every acquired resource lock.
 - Scheduler ticks now advance and durably persist each due job's at-most-once state before dispatching independent jobs concurrently. The core coordinator still applies the actual execution limits.
@@ -39,6 +39,7 @@ A task declares its complete resource set before execution. The coordinator norm
 - **Bounded admission control / bulkhead:** global and per-device limits isolate resource consumption.
 - **Priority queue with aging:** responsive interactive work without indefinite starvation of background tasks.
 - **Atomic multi-resource locking:** all-or-nothing lock acquisition in a canonical order; avoids lock-order cycles.
+- **Reentrancy guard:** async execution-context tracking rejects nested admission from a worker already holding coordinated resources.
 - **DAG validation:** workflow templates already use Kahn's topological-sort algorithm to reject dependency cycles.
 - **At-most-once scheduling:** scheduler persists the next-run state before dispatch, preventing a restart from blindly replaying a due job.
 - **Cooperative cancellation and deadlines:** waiting work can be removed before it starts; executing adapters receive an AbortSignal and the existing execution timeout.
