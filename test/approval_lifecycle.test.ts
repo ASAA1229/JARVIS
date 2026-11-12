@@ -206,4 +206,29 @@ describe('PolicyGateway approval lifecycle', () => {
       /Audit log is unhealthy/,
     );
   });
+  test('AutomationId control actions are allowlisted but approvals remain bound to the exact selector', () => {
+    const device = makeDevice('device-ui-automation');
+    const operation = 'desktop:click_control';
+    const parameters = { automationId: 'SaveButton', expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-ui-automation');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-ui-automation', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const changedSelector = gateway.evaluate(
+      { operation, parameters: { automationId: 'DeleteButton', expectProcess: 'notepad' } },
+      device,
+      'task-ui-automation',
+      approval.id,
+    );
+    assert.equal(changedSelector.allowed, false);
+    assert.match(changedSelector.reason || '', /scope was modified/i);
+
+    const exactSelector = gateway.evaluate({ operation, parameters }, device, 'task-ui-automation', approval.id);
+    assert.equal(exactSelector.allowed, true);
+  });
+
+
 });
