@@ -80,6 +80,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'app:launch',
     'desktop:launch_and_type',
     'desktop:browser_search',
+    'desktop:save_and_verify',
     'desktop:type_text',
     'desktop:paste_text',
     'desktop:hotkey',
@@ -408,6 +409,20 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       const target = splitForegroundTarget(clickControl[1]);
       return { intent: 'Click an exact named foreground control', operations: [{ operation: 'desktop:click_control', parameters: target, justification: 'User specified an exact control name' }], confidence: 0.82, explanation: 'Will bind to the named process when supplied and invoke only if exactly one accessible control matches, after approval.' };
     }
+    const saveToPath = requestText.match(/\bsave\s+(?:the\s+)?(?:current\s+)?(?:document|file)?\s*(?:to|as)?\s*["“]?(.+?)["”]?\s+in\s+([A-Za-z0-9._-]{1,64})\s*$/i);
+    if (saveToPath && saveToPath[1].trim()) {
+      return {
+        intent: 'Save the current application document and verify the requested workspace file',
+        operations: [{
+          operation: 'desktop:save_and_verify',
+          parameters: { path: saveToPath[1].trim(), expectProcess: saveToPath[2].replace(/\.exe$/i, '') },
+          justification: 'User explicitly specified a save destination and target application',
+        }],
+        confidence: 0.84,
+        explanation: 'Will send the save shortcut only to the named application and independently verify that the requested workspace file was modified. Save dialogs or inaccessible paths remain unverified.',
+      };
+    }
+
     const setToggle = requestText.match(/\bset\s+(?:the\s+)?(?:toggle|checkbox|switch)\s+["“]?(.+?)["”]?\s+(on|off)(?:\s+in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i);
     if (setToggle && setToggle[1].trim()) {
       const target = splitForegroundTarget(setToggle[1].trim() + (setToggle[3] ? ' in ' + setToggle[3] : ''));
