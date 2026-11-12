@@ -42,7 +42,7 @@ test('serializes tasks that require the same resource while allowing unrelated r
   );
   await Promise.all([critical('one', 'desktop:device-1'), critical('two', 'desktop:device-1'), critical('three', 'files:workspace')]);
   assert.ok(events.indexOf('end:one') < events.indexOf('start:two') || events.indexOf('end:two') < events.indexOf('start:one'));
-  assert.equal(coordinator.snapshot().lockedResources.length, 0);
+  assert.equal(coordinator.snapshot().lockedResourceCount, 0);
 });
 
 test('atomically acquires sorted resource sets so opposite lock order cannot deadlock', async () => {
@@ -92,7 +92,7 @@ test('failed work always releases slots and resource locks', async () => {
   const coordinator = new TaskCoordinator(1, 1);
   await assert.rejects(coordinator.run({ taskId: 'failure', deviceId: 'a', resources: ['desktop:a'] }, async () => { throw new Error('expected'); }), /expected/);
   assert.equal(coordinator.snapshot().active, 0);
-  assert.deepEqual(coordinator.snapshot().lockedResources, []);
+  assert.deepEqual(coordinator.snapshot().lockedResourceCount, 0);
 });
 
 test('rejects new work when the bounded waiting queue is full', async () => {
@@ -128,7 +128,7 @@ test('rejects nested admission from a coordinated worker instead of risking reen
     NestedTaskExecutionError,
   );
   assert.equal(coordinator.snapshot().active, 0);
-  assert.deepEqual(coordinator.snapshot().lockedResources, []);
+  assert.deepEqual(coordinator.snapshot().lockedResourceCount, 0);
 });
 
 test('queue snapshot reports task lifecycle and blocking reason without resource names', async () => {
