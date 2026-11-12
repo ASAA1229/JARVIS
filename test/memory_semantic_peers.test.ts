@@ -38,6 +38,7 @@ function setup(embedder: Embedder | null) {
 test('embeddings are only resolved for loopback Ollama', () => {
   assert.equal(resolveLocalEmbeddingEndpoint({ JARVIS_AI_BASE_URL: 'https://api.openai.com/v1' } as NodeJS.ProcessEnv), null);
   assert.equal(resolveLocalEmbeddingEndpoint({ JARVIS_AI_BASE_URL: 'http://127.0.0.1:11434/v1' } as NodeJS.ProcessEnv)?.url, 'http://127.0.0.1:11434/api/embeddings');
+  assert.equal(resolveLocalEmbeddingEndpoint({ OLLAMA_URL: 'http://localhost:11434' } as NodeJS.ProcessEnv)?.url, 'http://localhost:11434/api/embeddings');
 });
 
 test('ranked retrieval reports semantic or lexical honestly', async () => {
