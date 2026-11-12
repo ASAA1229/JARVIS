@@ -688,6 +688,40 @@ export class JarvisCoreService {
           return this.communications.handoffEmail(parameters, signal);
         case 'comms:unsupported':
           return this.communications.unsupported(parameters.channel, parameters.reason);
+        case 'desktop:save_and_verify': {
+          const path = parameters.path;
+          const expectProcess = parameters.expectProcess;
+          const contains = parameters.contains;
+          if (typeof path !== 'string' || !path.trim() || path.length > 1024 ||
+              typeof expectProcess !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(expectProcess) ||
+              (contains !== undefined && (typeof contains !== 'string' || !contains || contains.length > 500))) {
+            return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Save verification requires a workspace path, an exact target process and optional expected text.', evidence: { operation: 'desktop:save_and_verify', inputValidated: false } };
+          }
+          const since = Date.now();
+          const save = await this.desktopAgent.execute({
+            operation: 'desktop:hotkey',
+            parameters: { keys: ['CTRL', 'S'], expectProcess },
+          }, signal);
+          if (!save.success) {
+            return { success: false, outcome: save.outcome, error: 'The save shortcut was not confirmed in the named application; file verification was not attempted.', evidence: { save: save.evidence, verificationSkipped: true } };
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 900));
+          const verification = await this.fileAdapter.verifySaved(path, since, contains);
+          if (verification.success && verification.outcome === VerificationOutcome.VERIFIED_SUCCESS) {
+            return {
+              success: true,
+              outcome: VerificationOutcome.VERIFIED_SUCCESS,
+              data: { path: (verification.data as { path?: string } | undefined)?.path, saved: true },
+              evidence: { save: save.evidence, durableFileVerification: verification.evidence, expectedProcess: expectProcess, independentlyVerified: true },
+            };
+          }
+          return {
+            success: false,
+            outcome: verification.outcome === VerificationOutcome.UNCERTAIN ? VerificationOutcome.UNCERTAIN : VerificationOutcome.PARTIAL_SUCCESS,
+            error: 'The save shortcut was sent to the named application, but the requested workspace file was not independently verified as updated. Check the application save dialog and destination before retrying.',
+            evidence: { save: save.evidence, durableFileVerification: verification.evidence, expectedProcess: expectProcess, independentlyVerified: false },
+          };
+        }
         case 'desktop:browser_search': {
           const appId = parameters.appId;
           const query = parameters.query;
