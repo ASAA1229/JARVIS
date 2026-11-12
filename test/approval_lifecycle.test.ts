@@ -231,4 +231,29 @@ describe('PolicyGateway approval lifecycle', () => {
   });
 
 
+  test('toggle approvals bind to the exact desired state and foreground process', () => {
+    const device = makeDevice('device-toggle');
+    const operation = 'desktop:set_toggle';
+    const parameters = { name: 'Enable notifications', state: true, expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-toggle');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-toggle', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const widened = gateway.evaluate(
+      { operation, parameters: { ...parameters, state: false } },
+      device,
+      'task-toggle',
+      approval.id,
+    );
+    assert.equal(widened.allowed, false);
+    assert.match(widened.reason || '', /scope was modified/i);
+
+    const exact = gateway.evaluate({ operation, parameters }, device, 'task-toggle', approval.id);
+    assert.equal(exact.allowed, true);
+  });
+
+
 });
