@@ -16,7 +16,7 @@ export type AgentModelConfigStatus =
   | { status: 'disabled'; reason: 'invalid_url' | 'remote_not_opted_in' | 'insecure_remote_url' | 'invalid_model' };
 
 function readConfiguration() {
-  const rawUrl = process.env.OLLAMA_URL || (process.env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\\/v1\\/?$/i, '');
+  const rawUrl = process.env.OLLAMA_URL || (process.env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\/v1\/?$/i, '');
   const model = process.env.OLLAMA_MODEL || process.env.JARVIS_AI_MODEL || 'llama3.2:latest';
   const apiKey = process.env.JARVIS_AI_API_KEY;
   let endpoint: URL;
@@ -138,7 +138,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
 }
 
 // Agent prompts carry conversation history and owner memory, so they are routed as
-// private (local-only). Agents need OpenAI-compatible JSON mode.
+// private (local-only). Ollama uses native JSON mode; cloud OpenAI uses response_format.
 const AGENT_ROUTE = { taskType: 'agent', containsPrivateData: true, formats: ['ollama', 'openai'] } as const;
 
 export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
@@ -200,7 +200,7 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
 
       let payload: {
         choices?: Array<{ message?: { content?: unknown; refusal?: unknown } }>;
-        message?: { content?: unknown };
+        message?: { content?: unknown; refusal?: unknown };
       };
       try {
         const body = await readBoundedResponse(response);

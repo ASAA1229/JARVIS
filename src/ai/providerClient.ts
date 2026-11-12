@@ -1,6 +1,6 @@
 /**
  * Non-streaming chat completion across provider formats (JARVIS-US-059).
- * OpenAI-compatible (local Ollama, OpenAI) and Anthropic Messages APIs.
+ * Native local Ollama plus OpenAI-compatible and Anthropic Messages APIs.
  * Errors carry a safe kind only; provider bodies and credentials are never surfaced.
  */
 import type { ProviderConfig } from './providerRouter.js';

@@ -67,3 +67,33 @@ test('rejects unsafe or malformed Ollama base URLs', () => {
     model: 'llama3.2:latest',
   }), /base URL/);
 });
+
+test('retries a transient Ollama gateway response once', async () => {
+  let calls = 0;
+  const provider = new OllamaProvider({
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.2:latest',
+  }, async () => {
+    calls += 1;
+    return calls === 1
+      ? new Response('', { status: 503 })
+      : Response.json({ message: { content: 'recovered' } });
+  });
+  assert.equal(await provider.chat([{ role: 'user', content: 'Hello' }]), 'recovered');
+  assert.equal(calls, 2);
+});
+
+test('streams newline-delimited Ollama chat chunks', async () => {
+  const body = [
+    JSON.stringify({ message: { content: 'Hello' }, done: false }),
+    JSON.stringify({ message: { content: ' there' }, done: false }),
+    JSON.stringify({ message: { content: '' }, done: true }),
+  ].join('\n') + '\n';
+  const provider = new OllamaProvider({
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.2:latest',
+  }, async () => new Response(body, { status: 200 }));
+  const chunks: string[] = [];
+  for await (const chunk of provider.stream([{ role: 'user', content: 'Hello' }])) chunks.push(chunk);
+  assert.deepEqual(chunks, ['Hello', ' there']);
+});
