@@ -19,7 +19,7 @@ Allow independent JARVIS tasks to make progress concurrently without allowing co
 - A task identifier cannot be queued or active twice at once. Nested admission from a coordinated worker is rejected through async execution-context tracking, preventing reentrant lock-order deadlocks.
 - A waiting task can be cancelled through its AbortSignal. It is rejected before its adapter callback starts.
 - Adapter errors and cancellation always release the concurrency slot and every acquired resource lock.
-- Scheduler ticks now advance and durably persist each due job's at-most-once state before dispatching independent jobs concurrently. The core coordinator still applies the actual execution limits.
+- Scheduler ticks now advance and durably persist each due job's at-most-once state before dispatching independent jobs concurrently, with a separate four-job dispatch ceiling. The core planner and execution coordinators still apply the stricter actual work limits.
 
 ## Resource isolation
 
