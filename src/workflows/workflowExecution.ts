@@ -93,7 +93,19 @@ export class WorkflowBranchExecutor {
       }
       snapshot = prior;
       snapshot.maxParallel = maxParallel;
+      const branchById = new Map(snapshot.branches.map((branch) => [branch.stepId, branch]));
       const reconciled = new Set(options.reconciledNoEffectSteps ?? []);
+      for (const stepId of reconciled) {
+        if (branchById.get(stepId)?.status !== 'uncertain') {
+          throw new Error(`Branch ${stepId} is not awaiting uncertain-outcome reconciliation.`);
+        }
+      }
+      for (const [stepId, approvalRef] of Object.entries(options.approvedApprovals ?? {})) {
+        const branch = branchById.get(stepId);
+        if (!branch || branch.status !== 'awaiting_approval' || !approvalRef || approvalRef !== branch.approvalRef) {
+          throw new Error(`Approval reference does not match pending branch ${stepId}.`);
+        }
+      }
       for (const branch of snapshot.branches) {
         if (reconciled.has(branch.stepId)) {
           if (branch.status !== 'uncertain') throw new Error(`Branch ${branch.stepId} is not awaiting uncertain-outcome reconciliation.`);
