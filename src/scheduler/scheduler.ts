@@ -164,40 +164,54 @@ export class Scheduler {
     // Persistence failure disables all scheduled execution until the service is restarted
     // and the owner has repaired/revalidated the persisted schedule state.
     if (!this.persistHealthy) return;
+    const due: ScheduledJob[] = [];
     for (const job of Array.from(this.jobs.values())) {
       if (!job.active || job.runAt > now || this.inFlight.has(job.id)) continue;
       if (job.everyMinutes && this.deferRecurring()) continue;
       this.inFlight.add(job.id);
+      if (!job.everyMinutes && now - job.runAt > MISSED_GRACE_MS) {
+        // Missed while the service was down: never replay old one-shot work.
+        job.active = false;
+        job.lastState = 'MISSED';
+        const persisted = this.persist();
+        this.inFlight.delete(job.id);
+        if (!persisted) return;
+        this.audit.record('SCHEDULE_MISSED', { jobId: job.id }, job.ownerDeviceId);
+        continue;
+      }
+      // Advance state and persist BEFORE running so a crash cannot cause a second run.
+      job.lastRunAt = now;
+      job.runCount += 1;
+      if (job.everyMinutes) job.runAt = now + job.everyMinutes * 60_000; else job.active = false;
+      // Never execute scheduled work unless its at-most-once advance is durable.
+      if (!this.persist()) {
+        this.inFlight.delete(job.id);
+        return;
+      }
+      due.push({ ...job });
+    }
+
+    // Jobs are independent at scheduling time. The core TaskCoordinator applies
+    // the actual global/per-device limits and resource locks before adapter work.
+    await Promise.all(due.map(async (snapshot) => {
+      const job = this.jobs.get(snapshot.id);
       try {
-        if (!job.everyMinutes && now - job.runAt > MISSED_GRACE_MS) {
-          // Missed while the service was down: never replay old one-shot work.
-          job.active = false;
-          job.lastState = 'MISSED';
-          this.persist();
-          this.audit.record('SCHEDULE_MISSED', { jobId: job.id }, job.ownerDeviceId);
-          continue;
-        }
-        // Advance state and persist BEFORE running so a crash cannot cause a second run.
-        job.lastRunAt = now;
-        job.runCount += 1;
-        if (job.everyMinutes) job.runAt = now + job.everyMinutes * 60_000; else job.active = false;
-        // Never execute a scheduled task unless the at-most-once advance is durable.
-        // If persistence fails, fail closed; the runner must not be invoked.
-        if (!this.persist()) return;
         let result: JobRunResult;
         try {
-          result = await this.runner({ ...job });
+          result = await this.runner(snapshot);
         } catch {
           result = { state: 'RUNNER_ERROR' };
         }
-        job.lastTaskId = result.taskId;
-        job.lastState = result.state;
-        this.persist();
-        this.audit.record('SCHEDULE_RUN', { jobId: job.id, taskId: result.taskId, state: result.state }, job.ownerDeviceId, result.taskId);
+        if (job) {
+          job.lastTaskId = result.taskId;
+          job.lastState = result.state;
+          this.persist();
+        }
+        this.audit.record('SCHEDULE_RUN', { jobId: snapshot.id, taskId: result.taskId, state: result.state }, snapshot.ownerDeviceId, result.taskId);
       } finally {
-        this.inFlight.delete(job.id);
+        this.inFlight.delete(snapshot.id);
       }
-    }
+    }));
   }
 
   private load(): void {
