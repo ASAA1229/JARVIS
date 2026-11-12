@@ -962,3 +962,10 @@ Next: owner runs preflight on the MSI, confirms both phones show state `device`,
 The Android companion now provides explicit owner controls to enable/disable approval notifications. Notification polling is off by default, requires an enrolled phone, requests Android 13+ notification permission only when enabled, and schedules/cancels the existing WorkManager worker accordingly. Notifications use generic text only; directive contents are not included. Polling runs at Android's periodic-work minimum (about 15 minutes), not real-time push.
 
 Changed: `MainActivity.kt`, `CompanionSession.kt`, capability registry, Android README and secure connectivity docs. Story US-072 remains OPEN / PARTIAL. Source implementation only; no compilation, tests, APK install or device acceptance performed. Continue implementing remaining capabilities on `new`; run the consolidated validation phase after the build backlog is complete.
+
+
+## Workstation runner aligned to build-first instruction — 2026-11-12
+
+The controlled workstation runner now defaults to `BuildAll`: TypeScript compilation and Android debug APK compilation only. Separate `TestWindows`, `TestAndroid` and `TestAll` modes are available for the later individual validation phase. Documentation updated in `docs/WORKSTATION_SETUP.md`.
+
+No tests or builds have been executed in this environment. The runner itself remains unexecuted on the owner's Windows workstation.
