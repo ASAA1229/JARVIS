@@ -155,21 +155,25 @@ export class TaskCoordinator {
     this.activeTaskIds.add(entry.request.taskId);
     this.activeByDevice.set(entry.request.deviceId, (this.activeByDevice.get(entry.request.deviceId) ?? 0) + 1);
 
-    Promise.resolve().then(() => {
-      if (entry.request.signal?.aborted) throw this.abortError();
-      return this.executionContext.run(entry.request.taskId, entry.work);
-    }).then(
-      (value) => entry.resolve(value),
-      (error) => entry.reject(error),
-    ).finally(() => {
+    const release = (): void => {
       this.activeTasks.delete(entry.request.taskId);
       this.activeTaskIds.delete(entry.request.taskId);
       const count = (this.activeByDevice.get(entry.request.deviceId) ?? 1) - 1;
       if (count <= 0) this.activeByDevice.delete(entry.request.deviceId);
       else this.activeByDevice.set(entry.request.deviceId, count);
       for (const resource of entry.request.resources ?? []) this.heldResources.delete(resource);
+      // Release capacity and locks before resolving the caller. A workflow may
+      // immediately submit its next step with the same task id and resources.
       this.pump();
-    });
+    };
+
+    Promise.resolve().then(() => {
+      if (entry.request.signal?.aborted) throw this.abortError();
+      return this.executionContext.run(entry.request.taskId, entry.work);
+    }).then(
+      (value) => { release(); entry.resolve(value); },
+      (error) => { release(); entry.reject(error); },
+    );
   }
 
   private rejectQueued(entry: QueueEntry<unknown>, error: Error): void {
