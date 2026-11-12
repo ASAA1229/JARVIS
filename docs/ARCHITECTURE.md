@@ -137,7 +137,7 @@ flowchart TD
 
 Retrieved content is untrusted data, never system instructions. JARVIS does not automatically fine-tune or modify model weights.
 
-**RAG boundary:** current retrieval is personal-memory RAG, not general document RAG. Document ingestion, parsing, chunking, document ACLs, source citations and document lifecycle remain future work. A database is not required merely to use Ollama.
+**Document RAG:** `src/memory/documentRagStore.ts` provides encrypted local storage, per-device document ownership, bounded chunking, duplicate detection, lexical retrieval and optional loopback-Ollama embeddings. Signed routes expose ingest, search, list and delete. Conversation requests retrieve up to three document chunks alongside a bounded personal-memory context; returned API metadata includes source filename, title, document ID and chunk position. Retrieved content remains untrusted data. The current ingestion contract accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text only; PDF/DOCX and image OCR parsing are not implemented. The index is local and encrypted; no database is required.
 
 ## 7. Task execution and concurrency
 
