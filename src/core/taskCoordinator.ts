@@ -20,6 +20,8 @@ export interface TaskExecutionRequest {
 export interface TaskCoordinatorSnapshot {
   active: number;
   queued: number;
+  activeTasks: string[];
+  queuedTasks: Array<{ taskId: string; priority: number; waitedMs: number; blockedByResource: boolean; blockedByDeviceLimit: boolean }>;
   activeByDevice: Record<string, number>;
   lockedResources: string[];
   limits: { global: number; perDevice: number; queued: number };
@@ -53,6 +55,7 @@ export class NestedTaskExecutionError extends Error {
 export class TaskCoordinator {
   private readonly queue: QueueEntry<unknown>[] = [];
   private readonly activeTasks = new Set<string>();
+  private readonly activeTaskIds = new Set<string>();
   private readonly activeByDevice = new Map<string, number>();
   private readonly heldResources = new Set<string>();
   private readonly executionContext = new AsyncLocalStorage<string>();
@@ -102,6 +105,14 @@ export class TaskCoordinator {
     return {
       active: this.activeByDeviceValuesTotal(),
       queued: this.queue.length,
+      activeTasks: [...this.activeTaskIds].sort(),
+      queuedTasks: this.queue.filter((entry) => !entry.settled).map((entry) => ({
+        taskId: entry.request.taskId,
+        priority: this.effectivePriority(entry, Date.now()),
+        waitedMs: Math.max(0, Date.now() - entry.enqueuedAt),
+        blockedByResource: (entry.request.resources ?? []).some((resource) => this.heldResources.has(resource)),
+        blockedByDeviceLimit: (this.activeByDevice.get(entry.request.deviceId) ?? 0) >= this.maxConcurrentPerDevice,
+      })).sort((a, b) => b.priority - a.priority),
       activeByDevice: Object.fromEntries(this.activeByDevice),
       lockedResources: [...this.heldResources].sort(),
       limits: { global: this.maxConcurrent, perDevice: this.maxConcurrentPerDevice, queued: this.maxQueue },
@@ -136,6 +147,7 @@ export class TaskCoordinator {
     entry.settled = true;
     this.cleanupEntry(entry);
     for (const resource of entry.request.resources ?? []) this.heldResources.add(resource);
+    this.activeTaskIds.add(entry.request.taskId);
     this.activeByDevice.set(entry.request.deviceId, (this.activeByDevice.get(entry.request.deviceId) ?? 0) + 1);
 
     Promise.resolve().then(() => {
@@ -146,6 +158,7 @@ export class TaskCoordinator {
       (error) => entry.reject(error),
     ).finally(() => {
       this.activeTasks.delete(entry.request.taskId);
+      this.activeTaskIds.delete(entry.request.taskId);
       const count = (this.activeByDevice.get(entry.request.deviceId) ?? 1) - 1;
       if (count <= 0) this.activeByDevice.delete(entry.request.deviceId);
       else this.activeByDevice.set(entry.request.deviceId, count);
