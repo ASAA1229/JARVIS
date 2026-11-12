@@ -36,3 +36,27 @@ test('dispatches independent due schedules concurrently without duplicate in-fli
   assert.equal(scheduler.list().every((job) => job.runCount === 1), true);
   rmSync(directory, { recursive: true, force: true });
 });
+
+test('caps scheduled dispatch fan-out and leaves remaining due jobs for the next tick', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-scheduler-cap-'));
+  const audit = new AuditLogger(join(directory, 'audit.log'));
+  let active = 0;
+  let maximum = 0;
+  let calls = 0;
+  const scheduler = new Scheduler(audit, async () => {
+    calls++;
+    active++;
+    maximum = Math.max(maximum, active);
+    await delay(15);
+    active--;
+    return { state: 'COMPLETED' };
+  });
+  const dueAt = Date.now() + 60_000;
+  for (let i = 0; i < 6; i++) assert.equal(scheduler.create(`device-${i}`, `read-only task ${i}`, dueAt).ok, true);
+  await scheduler.tick(dueAt + 1);
+  assert.equal(calls, 4);
+  await scheduler.tick(dueAt + 2);
+  assert.equal(calls, 6);
+  assert.equal(maximum, 4);
+  rmSync(directory, { recursive: true, force: true });
+});
