@@ -932,6 +932,7 @@ export class JarvisCoreService {
       }
     };
 
+    let executionError: unknown;
     try {
       if (signal.aborted) {
         throw new Error('Task was aborted before execution');
@@ -955,6 +956,7 @@ export class JarvisCoreService {
         return rawResult;
       });
     } catch (err: unknown) {
+      executionError = err;
       // Adapter exceptions can contain local paths, command fragments, or other
       // implementation details. Keep the user-facing result generic and retain
       // only a non-sensitive error class for diagnostics.
@@ -969,19 +971,21 @@ export class JarvisCoreService {
       this.activeExecutionTokens.delete(taskId);
     }
 
-    if ((signal.aborted || taskRecord.interrupted) && !dispatchStarted) {
+    if ((signal.aborted || taskRecord.interrupted || executionError !== undefined) && !dispatchStarted) {
       // A task cancelled or timed out while queued has not invoked an adapter.
       // It is safe to mark terminal without an external-side-effect reconciliation.
-      taskRecord.state = executionTimedOut ? TaskState.FAILED : TaskState.CANCELLED;
+      const queueAdmissionFailed = executionError instanceof Error && ['TaskQueueTimeoutError', 'TaskQueueFullError'].includes(executionError.name);
+      const failedBeforeStart = executionTimedOut || queueAdmissionFailed || (!signal.aborted && !taskRecord.interrupted);
+      taskRecord.state = failedBeforeStart ? TaskState.FAILED : TaskState.CANCELLED;
       taskRecord.interrupted = undefined;
-      taskRecord.error = executionTimedOut
-        ? 'Execution capacity was not available before the task deadline; no adapter operation was started.'
+      taskRecord.error = failedBeforeStart
+        ? 'Execution capacity was unavailable before the task deadline; no adapter operation was started.'
         : 'Task was cancelled while waiting for execution capacity; no adapter operation was started.';
       taskRecord.updatedAt = Date.now();
-      this.#recordStep(taskRecord, executionTimedOut ? 'failed' : 'cancelled', VerificationOutcome.VERIFIED_FAILURE, taskRecord.error);
+      this.#recordStep(taskRecord, failedBeforeStart ? 'failed' : 'cancelled', VerificationOutcome.VERIFIED_FAILURE, taskRecord.error);
       this.#skipRemainingSteps(taskRecord);
       this.#persistTask(taskRecord);
-      this.audit.record(executionTimedOut ? 'TASK_QUEUE_TIMEOUT' : 'TASK_CANCELLED_WHILE_QUEUED', { taskId, operation: opRequest.operation }, taskRecord.deviceId, taskId);
+      this.audit.record(failedBeforeStart ? 'TASK_QUEUE_ADMISSION_FAILED' : 'TASK_CANCELLED_WHILE_QUEUED', { taskId, operation: opRequest.operation }, taskRecord.deviceId, taskId);
       return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.VERIFIED_FAILURE, verified: true };
     }
 
