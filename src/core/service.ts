@@ -143,6 +143,8 @@ export class JarvisCoreService {
   public readonly memoryManager?: MemoryManager;
 
   private tasks = new Map<TaskId, TaskLifecycleRecord>();
+  /** Short-lived per-device target, set only after JARVIS independently verifies an app window. */
+  private recentAppTargets = new Map<string, { processName: string; appName: string; windowPid: number; verifiedAt: number }>();
   private readonly taskJournal?: TaskJournal;
   private activeExecutionTokens = new Map<TaskId, AbortController>();
   private readonly startedAt = Date.now();
@@ -309,6 +311,12 @@ export class JarvisCoreService {
       requesterName: device.name,
       timestamp: Date.now(),
       memory: this.personalMemory?.relevant(requestText, 5).map((record) => record.content),
+      ...(this.recentAppTargets.get(device.id) && Date.now() - (this.recentAppTargets.get(device.id)?.verifiedAt ?? 0) <= 15 * 60 * 1000
+        ? {
+          activeAppProcess: this.recentAppTargets.get(device.id)?.processName,
+          activeAppName: this.recentAppTargets.get(device.id)?.appName,
+        }
+        : {}),
     };
     let plan: PlanProposal;
     try {
@@ -665,8 +673,14 @@ export class JarvisCoreService {
           return this.systemAdapter.getBatteryStatus(signal);
         case 'system:get_disk_space':
           return this.systemAdapter.getDiskSpace((parameters.drive as string) || 'C:', signal);
-        case 'app:launch':
-          return this.appAdapter.launchApp(parameters.appId as string, signal);
+        case 'app:launch': {
+          const launched = await this.appAdapter.launchApp(parameters.appId as string, signal);
+          const target = launched.data as { windowPid?: number; windowProcess?: string; name?: string } | undefined;
+          if (launched.success && launched.outcome === VerificationOutcome.VERIFIED_SUCCESS && target?.windowPid && target.windowProcess) {
+            this.recentAppTargets.set(taskRecord.deviceId, { processName: target.windowProcess.replace(/\.exe$/i, ''), appName: target.name || String(parameters.appId), windowPid: target.windowPid, verifiedAt: Date.now() });
+          }
+          return launched;
+        }
         case 'app:inventory':
           return this.appAdapter.inventory(signal);
         case 'comms:handoff_email':
@@ -736,6 +750,12 @@ export class JarvisCoreService {
               evidence: { launch: launch.evidence, focus: focus.evidence, typingSkipped: true },
             };
           }
+          this.recentAppTargets.set(taskRecord.deviceId, {
+            processName: launched.windowProcess.replace(/\.exe$/i, ''),
+            appName: String(parameters.appId),
+            windowPid: launched.windowPid,
+            verifiedAt: Date.now(),
+          });
           const typing = await this.desktopAgent.execute({
             operation: 'desktop:type_text',
             parameters: { text: parameters.text as string, expectProcess: launched.windowProcess },
