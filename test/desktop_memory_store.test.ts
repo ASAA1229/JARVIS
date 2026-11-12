@@ -91,7 +91,7 @@ test('desktop voice intents produce only bounded allowlisted operations', async 
   assert.deepEqual(zoom.operations[0]?.parameters, { direction: 'in', expectProcess: 'Chrome' });
   const unpinnedType = await planner.generatePlan('type Hello JARVIS', context);
   assert.equal(unpinnedType.operations.length, 0);
-  assert.match(unpinnedType.explanation, /will not type into whichever window/);
+  assert.match(unpinnedType.explanation, /will not type into an unknown foreground window/);
   const type = await planner.generatePlan('type Hello JARVIS in notepad', context);
   assert.equal(type.operations[0]?.operation, 'desktop:type_text');
   assert.deepEqual(type.operations[0]?.parameters, { text: 'Hello JARVIS', expectProcess: 'notepad' });
