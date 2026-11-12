@@ -53,3 +53,30 @@ test('insecure remote endpoints are refused', () => {
   assert.deepEqual(loadProviders({ JARVIS_AI_BASE_URL: 'http://example.com/v1', JARVIS_AI_ALLOW_REMOTE: 'true' }).map((p) => p.id), []);
   assert.deepEqual(loadProviders({ ...cloudEnv, JARVIS_CLOUD_OPENAI_BASE_URL: 'http://api.example.com/v1' }).map((p) => p.id), ['local', 'anthropic']);
 });
+
+test('native Ollama settings select the configured model and timeout', () => {
+  const [local] = loadProviders({
+    OLLAMA_URL: 'http://localhost:11434',
+    OLLAMA_MODEL: 'llama3.2:latest',
+    OLLAMA_TIMEOUT: '120',
+  });
+  assert.equal(local?.format, 'ollama');
+  assert.equal(local?.baseUrl, 'http://localhost:11434');
+  assert.equal(local?.model, 'llama3.2:latest');
+  assert.equal(local?.timeoutMs, 120_000);
+});
+
+test('legacy OpenAI-compatible local URL is normalized for native Ollama', () => {
+  const [local] = loadProviders({
+    JARVIS_AI_BASE_URL: 'http://127.0.0.1:11434/v1',
+    JARVIS_AI_MODEL: 'llama3.2',
+  });
+  assert.equal(local?.format, 'ollama');
+  assert.equal(local?.baseUrl, 'http://127.0.0.1:11434');
+  assert.equal(local?.model, 'llama3.2');
+});
+
+test('invalid Ollama timeout disables the local provider instead of silently ignoring configuration', () => {
+  assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '0' }), []);
+  assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '601' }), []);
+});
