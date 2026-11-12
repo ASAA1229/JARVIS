@@ -93,7 +93,7 @@ export class DocumentParser {
     if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_FILE_BYTES) {
       throw new Error('Document must be a non-empty file no larger than 15 MB.');
     }
-    if (typeof filename !== 'string' || !filename.trim() || filename.length > 240 || /[\\\\/\\/\\u0000-\\u001f]/.test(filename)) {
+    if (typeof filename !== 'string' || !filename.trim() || filename.length > 240 || filename.includes('/') || filename.includes('\\\\') || /[\\u0000-\\u001f]/.test(filename)) {
       throw new Error('Document source name must be a plain filename.');
     }
     const extension = filename.toLowerCase().slice(filename.lastIndexOf('.'));
