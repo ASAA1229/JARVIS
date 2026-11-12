@@ -495,6 +495,13 @@ Named-control reads, clicks, and value updates now accept optional `expectProces
 **Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
 
 
+### UI Automation selector authorization closure — 2026-11-12
+
+The desktop policy gateway now explicitly allowlists `automationId` for guarded control reads, clicks and value updates. This closes a mismatch where the Windows adapter supported stable AutomationId selectors but the policy rejected them as unexpected parameters. The adapter now requires exactly one selector (a control name OR an AutomationId), rejects competing selectors, and continues to require a unique matching control in the verified foreground window. State-changing click/set actions remain bound to the exact selector, target process and parameters in the task-scoped approval hash; changing the selector after approval is denied. Regression tests were added for selector validation and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN, per the current build-first / test-later sequence. US-014 remains IMPLEMENTED IN SOURCE — NEEDS TESTING; app-specific capability and durable-outcome coverage remain open.
+
+
 ## Android companion — inventory queue hardening (2026-10-30)
 
 Implemented on `new`:
