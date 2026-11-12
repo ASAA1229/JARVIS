@@ -426,3 +426,8 @@ US-072 now includes owner-controlled notification polling: opt-in UI, Android 13
 ## Workstation runner delivery mode
 
 The workstation runner defaults to build-only (`BuildAll`) and has separate Windows/Android test modes for the later validation phase. No tests/builds were executed while preparing this increment; the scripts still require owner-workstation execution.
+
+
+## US-068 Windows discovery increment — 2026-11-12
+
+Explicit application inventory now performs bounded (maximum 80) read-only Start-menu discovery on Windows by default. Discovered names are not treated as authority or proof of UI automation support; financial/payment names remain excluded. Implemented in source; not compiled/tested. US-068 remains OPEN / PARTIAL.
