@@ -938,3 +938,20 @@ The fixture deliberately does **not** claim acoustic wake accuracy, physical mic
 The native Android sync queue previously persisted memory text and held commands as plaintext JSON in app-private storage. It now uses a dedicated AES-GCM key held by Android Keystore, separate from the device-identity wrapping key. Queue writes are flushed to a temporary file and atomically replaced where supported. Existing plaintext queue data is migrated to encrypted storage on first read. Invalid ciphertext, unsupported versions and authentication failures stop sync without silently discarding or recreating queued data. Device revocation removes the queue and its local data key.
 
 **Not established by this change:** Android compilation, legacy migration tests, tamper detection tests, revocation tests, TLS connectivity, two-phone enrollment/approval/revocation, offline/reconnect behavior, background notification delivery or physical-device acceptance. The laptop remains the policy authority; this change does not add remote Android app control or general background execution.
+
+
+## Windows + Android workstation preparation — 2026-11-12
+
+**Branch:** `new`  
+**Status:** SCRIPTS/DOCUMENTATION ADDED — NOT EXECUTED ON OWNER WORKSTATION.
+
+Added:
+- `scripts/workstation-preflight.ps1`: read-only discovery of Git, Node/npm, Java, system Gradle, ADB, Android Studio, current branch and authorized/unauthorized/offline Android device counts. Device serials are not written to the report.
+- `scripts/workstation-test-runner.ps1`: controlled Windows/Android command runner for Node tests, TypeScript build, browser smoke, Android unit-test task and debug APK build. Missing prerequisites are reported as BLOCKED; command non-zero exits are FAIL.
+- `docs/WORKSTATION_SETUP.md`: Android Studio/SDK/JDK/Gradle/ADB setup, two-phone USB debugging, run instructions, evidence rules and owner-led device acceptance sequence.
+
+Safety boundary: scripts do not install APKs, launch phone apps, alter phone settings, enroll/revoke devices, reset data, access credentials, or execute remote JARVIS actions. Reports are written outside the repository under the user's TEMP directory.
+
+Repository inspection found Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compileSdk 35 and Java 17. The Android project currently has no Gradle Wrapper, so system Gradle must be available. The runner and PowerShell scripts have **not** been executed or syntax-validated in this environment. No tests, builds, ADB checks, physical-device checks or CI runs were performed.
+
+Next: owner runs preflight on the MSI, confirms both phones show state `device`, resolves missing tools, then runs the controlled suite and shares the reviewed Markdown/JSON reports. E05 remains OPEN until Android build, targeted security tests and both-phone acceptance are evidenced on an exact SHA.
