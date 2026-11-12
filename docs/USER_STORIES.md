@@ -1261,3 +1261,8 @@ The follow-up phrase **“write …”** is now bound to the most recently verif
 ### Media playback safety boundary — 2026-11-12
 
 The planner now explicitly recognizes “play [track] on [app]” requests and safely declines execution until an app-specific adapter exists. It will not use a global play/pause shortcut, because that could control a different player and cannot prove which track started. The capability catalogue records app-scoped media playback as **PLANNED**. Remaining implementation: select the first owner-approved player, implement its official/deep-link or supported UI Automation adapter, bind the exact track and app into approval, and independently verify the active track/playback state. No media playback is claimed complete.
+
+
+### Discovered-app follow-up target binding — 2026-11-12
+
+The Windows Start-menu launcher now returns a normalized top-level `windowPid`, `windowProcess` and `windowTitle` only when a discovered app's window matches a trusted process identity. The already-running discovered-app path returns the same target binding after unique-window selection and verified focus. This allows the existing approved `desktop:launch_and_type` composite and short-lived per-device app session to continue into the correct discovered app instead of losing its verified target metadata. Unknown apps without a trusted process identity remain PARTIAL and cannot receive follow-up text input. This is not universal UI Automation support; each app still needs capability-specific operation and outcome coverage.
