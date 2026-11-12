@@ -910,3 +910,21 @@ The exact-head GitHub Actions run [#42591404042](https://github.com/ASAA1229/JAR
 - [ ] Record performance/resource measurements and owner release acceptance.
 
 **Progress reporting:** local test pass rate is 100%; overall product completion is not assigned a percentage because unresolved development, CI and device gates are not interchangeable with test-case counts. Stories remain OPEN until their individual acceptance criteria have exact-head evidence.
+
+
+## P0 implementation increment — deterministic local-wake dispatch regression (2026-11-12)
+
+**Branch:** `new`  
+**Implementation commit:** `344bed3480ef234b80b0727c6bad1057a8e828a4`  
+**Files changed:** `test/browser-smoke.mjs`
+
+Added a deterministic browser fixture for the existing local wake engine boundary. The browser smoke test now exercises the actual HUD orchestration from a simulated local `hey_jarvis` wake callback through consented speech capture, finalized transcript normalization, one request to the signed `/api/request` path, and the explicit on-screen approval state for `Hey Jarvis, open Notepad`.
+
+The fixture deliberately does **not** claim acoustic wake accuracy, physical microphone acceptance, actual Windows Notepad launch or independent host outcome verification. Those remain MSI owner-acceptance requirements.
+
+- Tests authored: deterministic local-wake → same-utterance command → exactly-one-dispatch → approval-gate browser regression.
+- Tests executed: **NOT RUN** — no local Windows/Edge runtime was available in this repository editing session.
+- CI: no workflow run was initiated; the repository workflow is not configured for automatic push validation in this execution.
+- Status: **TEST-AUTHORED — NOT EXECUTED — E02/E03 OPEN**.
+- Next action: run `npm run test:browser` on the Windows development host, fix any regression, then run the full `npm test` and `npm run build` against the exact resulting SHA. After automated success, perform the real MSI microphone → Notepad → verified outcome acceptance.
+
