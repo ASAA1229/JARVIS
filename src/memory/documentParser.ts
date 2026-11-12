@@ -36,10 +36,11 @@ function decodeXml(value: string): string {
 }
 
 function extractDocxXml(xml: string): string {
-  const paragraphs = xml.replace(/<w:tab\b[^>]*\/>/g, '\t').replace(/<w:br\b[^>]*\/>/g, '\n')
-    .replace(/<\/w:p>/g, '\n');
-  const pieces = [...paragraphs.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => decodeXml(match[1]));
-  return pieces.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const textNodes = xml.replace(/<w:tab\\b[^>]*\\/>/g, '\\t').replace(/<w:br\\b[^>]*\\/>/g, '\\n')
+    .replace(/<\\/w:p>/g, '\\n')
+    .replace(/<w:t\\b[^>]*>([\\s\\S]*?)<\\/w:t>/g, (_match, value: string) => decodeXml(value))
+    .replace(/<[^>]+>/g, '');
+  return textNodes.replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
 }
 
 function readDocxMainXml(buffer: Buffer): string {
