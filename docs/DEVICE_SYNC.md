@@ -57,7 +57,7 @@ Receivers verify against the hub-issued peer list, check recipient, expiry, payl
 
 ## Android
 
-`SyncClient.kt` keeps a private queue file (sequence, TTL, max 200 changes), pushes in batches of 50, pulls since the last server time and surfaces open conflicts. `JarvisApiClient` gains `syncNegotiate`, `syncPush`, `syncPull` (query string is not part of the request signature).
+`SyncClient.kt` keeps the bounded queue (sequence, TTL, max 200 changes) encrypted at rest with a separate AES-GCM key held by Android Keystore. It writes through a temporary file and atomic replacement where supported, migrates legacy plaintext queue files on first read, and fails closed if ciphertext authentication or format validation fails. It pushes in batches of 50, pulls since the last server time and surfaces open conflicts. `JarvisApiClient` provides `syncNegotiate`, `syncPush`, `syncPull` (query string is not part of the request signature).
 
 ## What to test (pending)
 
@@ -65,3 +65,10 @@ Receivers verify against the hub-issued peer list, check recipient, expiry, payl
 - Integration: signed push/pull/overview/resolve/decide over HTTP; revoked device rejected.
 - Two-phone: enroll both phones; edit the same memory offline on both; reconnect; confirm one change goes to approval and the other becomes a conflict; resolve each way; revoke phone A and confirm its queued commands/conflicts are discarded while phone B keeps syncing; confirm phone B without DEVICE_MANAGE syncs no memory.
 - P2P: exchange an envelope between phones, then reject a tampered and a replayed one.
+
+
+## Android local queue protection increment — 2026-11-12
+
+The native Android offline sync queue previously stored memory text and held commands as plaintext JSON in app-private storage. It is now encrypted with AES-GCM using a dedicated Android Keystore key, separate from the device-identity wrapping key. Writes are flushed to a temporary file and replaced atomically where the filesystem supports it. Existing plaintext queues are migrated on first read; invalid ciphertext, unsupported versions and authentication failures stop the sync operation rather than silently discarding or recreating user data. Revocation still deletes the queue and its Keystore data key.
+
+**Status:** source implemented on `new`; Android compilation, migration/revocation tests and physical-device acceptance have not been run in this increment.
