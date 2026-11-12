@@ -612,7 +612,9 @@ export class JarvisCoreService {
     }
     const abortController = new AbortController();
     this.activeExecutionTokens.set(taskId, abortController);
-    const timeoutHandle = setTimeout(() => abortController.abort(), EXECUTION_TIMEOUT_MS);
+    let dispatchStarted = false;
+    let executionTimedOut = false;
+    const timeoutHandle = setTimeout(() => { executionTimedOut = true; abortController.abort(); }, EXECUTION_TIMEOUT_MS);
 
     try {
       this.audit.record('EXECUTION_STARTED', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
@@ -944,6 +946,7 @@ export class JarvisCoreService {
         signal,
         queueTimeoutMs: 30_000,
       }, async () => {
+        dispatchStarted = true;
         do {
           attempts++;
           rawResult = await dispatch();
@@ -964,6 +967,22 @@ export class JarvisCoreService {
     } finally {
       clearTimeout(timeoutHandle);
       this.activeExecutionTokens.delete(taskId);
+    }
+
+    if ((signal.aborted || taskRecord.interrupted) && !dispatchStarted) {
+      // A task cancelled or timed out while queued has not invoked an adapter.
+      // It is safe to mark terminal without an external-side-effect reconciliation.
+      taskRecord.state = executionTimedOut ? TaskState.FAILED : TaskState.CANCELLED;
+      taskRecord.interrupted = undefined;
+      taskRecord.error = executionTimedOut
+        ? 'Execution capacity was not available before the task deadline; no adapter operation was started.'
+        : 'Task was cancelled while waiting for execution capacity; no adapter operation was started.';
+      taskRecord.updatedAt = Date.now();
+      this.#recordStep(taskRecord, executionTimedOut ? 'failed' : 'cancelled', VerificationOutcome.VERIFIED_FAILURE, taskRecord.error);
+      this.#skipRemainingSteps(taskRecord);
+      this.#persistTask(taskRecord);
+      this.audit.record(executionTimedOut ? 'TASK_QUEUE_TIMEOUT' : 'TASK_CANCELLED_WHILE_QUEUED', { taskId, operation: opRequest.operation }, taskRecord.deviceId, taskId);
+      return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.VERIFIED_FAILURE, verified: true };
     }
 
     if (signal.aborted || taskRecord.interrupted) {
