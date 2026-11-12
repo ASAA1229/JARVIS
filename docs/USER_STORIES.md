@@ -1256,3 +1256,8 @@ A new `desktop:browser_search` composite operation supports commands such as **�
 The follow-up phrase **“write …”** is now bound to the most recently verified JARVIS-opened app for that device for up to 15 minutes. The target process is included in the approved operation and re-checked against the foreground window before text entry; switching to another app causes a safe refusal. This short-lived session context is in-memory only and is cleared on JARVIS restart. App-specific media playback (including selecting and verifying the requested song) remains a separate open capability; opening a media app or submitting a search is not playback proof.
 
 **Build status:** source implemented on `new`; authored planner regressions added but not executed. No build, typecheck, lint, tests, browser launch or desktop interaction was performed.
+
+
+### Media playback safety boundary — 2026-11-12
+
+The planner now explicitly recognizes “play [track] on [app]” requests and safely declines execution until an app-specific adapter exists. It will not use a global play/pause shortcut, because that could control a different player and cannot prove which track started. The capability catalogue records app-scoped media playback as **PLANNED**. Remaining implementation: select the first owner-approved player, implement its official/deep-link or supported UI Automation adapter, bind the exact track and app into approval, and independently verify the active track/playback state. No media playback is claimed complete.
