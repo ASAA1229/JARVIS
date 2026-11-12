@@ -106,6 +106,7 @@ export class PolicyGateway {
       ['memory:list', []],
       ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],
+      ['desktop:browser_search', ['appId', 'query']],
       ['desktop:type_text', ['text', 'expectProcess']],
       ['desktop:paste_text', ['text', 'expectProcess']],
       ['desktop:hotkey', ['keys', 'expectProcess']],
