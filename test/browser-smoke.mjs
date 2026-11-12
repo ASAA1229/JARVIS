@@ -179,6 +179,26 @@ try {
     }
     Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: MockSpeechRecognition });
     Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: MockSpeechRecognition });
+    // Deterministic local-wake fixture: exercise the real HUD wake callback
+    // without loading model binaries or opening a physical microphone.
+    window.ort = { env: { wasm: {} } };
+    window.JSZip = {};
+    window.__wakeEngineStarted = 0;
+    window.__wakeCallback = null;
+    window.VoicuteWakeWord = {
+      create() {
+        return {
+          async load() {},
+          setL1() {},
+          setL3() {},
+          async start(callback) {
+            window.__wakeEngineStarted += 1;
+            window.__wakeCallback = callback;
+          },
+          stop() {},
+        };
+      },
+    };
     const nativeSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = (callback, milliseconds, ...args) =>
       nativeSetTimeout(callback, milliseconds === 15000 ? 5000 : milliseconds, ...args);
@@ -406,6 +426,54 @@ try {
     throw new Error('A late speech result was accepted after browser-speech consent was revoked');
   }
   await hud.locator('#allow-browser-speech').check();
+
+  // End-to-end local wake → finalized same-utterance command → signed request.
+  // This deterministic fixture validates HUD orchestration, not microphone hardware
+  // or acoustic wake-word accuracy; those remain MSI owner-acceptance checks.
+  await hud.locator('#allow-wake-browser-speech').check();
+  if (await hud.locator('#btn-hands-free-toggle').getAttribute('aria-pressed') !== 'true') {
+    await hud.locator('#btn-hands-free-toggle').click();
+  }
+  await hud.getByText('LOCAL WAKE ACTIVE').waitFor({ state: 'visible', timeout: 5000 });
+  await hud.waitForFunction(() => window.__wakeEngineStarted === 1 && typeof window.__wakeCallback === 'function');
+  let wakeRequestCount = 0;
+  let wakeRequestText = '';
+  await hud.route('**/api/request', async (route) => {
+    wakeRequestCount += 1;
+    wakeRequestText = String(route.request().postDataJSON()?.text || '');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        taskId: 'local-wake-same-utterance-test',
+        approvalId: 'local-wake-approval-test',
+        state: 'AWAITING_APPROVAL',
+        message: 'Confirm the Notepad launch on screen.',
+      }),
+    });
+  });
+  const wakeRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const recognizer = window.__mockRecognizers[index];
+    const result = [{ transcript: 'Hey Jarvis, open Notepad' }];
+    result.isFinal = true;
+    recognizer.onresult({ resultIndex: 0, results: Object.assign([result], { 0: result }) });
+    recognizer.onend();
+    // Duplicate terminal callbacks must not duplicate the action request.
+    recognizer.onend();
+  }, wakeRecognizerIndex);
+  await hud.getByText('AWAITING CONSENT').waitFor({ state: 'visible', timeout: 5000 });
+  if (wakeRequestCount !== 1 || wakeRequestText !== 'open Notepad') {
+    throw new Error(`Local wake flow dispatched ${wakeRequestCount} requests with text "${wakeRequestText}" instead of one normalized "open Notepad" request`);
+  }
+  if (await hud.locator('#approvals-container .approval-card').count() !== 1) {
+    throw new Error('The local-wake command did not remain behind the explicit on-screen approval gate');
+  }
+  await hud.unroute('**/api/request');
+  await hud.locator('#allow-wake-browser-speech').uncheck();
+  await hud.locator('#btn-hands-free-toggle').click();
 
   await hud.locator('#btn-toggle-motion').click();
 
