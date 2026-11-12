@@ -983,6 +983,6 @@ Implemented on `new`:
 - Added an approved `desktop:browser_search` operation for explicit search requests in Chrome, Edge, Firefox, Brave or Opera. It launches/focuses the browser, binds keyboard/text actions to the verified process, enters the exact query and submits it.
 - Added the policy allowlist entry and planner regression cases.
 
-**Honest limitation:** browser search reports PARTIAL until page load/results can be independently verified. A follow-up bare “write …” is not yet supported because a trusted last-opened application context is not yet persisted. Media playback is not yet implemented; opening a music app or searching a track must not be reported as playback.
+**Honest limitation:** browser search reports PARTIAL until page load/results can be independently verified. A follow-up bare “write …” now uses a per-device, in-memory last-opened target for up to 15 minutes after JARVIS independently verifies the app window. The process is pinned in the approved operation and re-checked before typing; the context expires on timeout or JARVIS restart. Media playback is not yet implemented; opening a music app or searching a track must not be reported as playback.
 
 **Validation:** tests authored, not executed. No build, typecheck, lint, browser launch or desktop interaction was performed.
