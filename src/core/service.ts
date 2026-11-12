@@ -708,7 +708,10 @@ export class JarvisCoreService {
           if (!addressBar.success) {
             return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but its address bar could not be targeted; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence } };
           }
-          const entered = await this.desktopAgent.execute({ operation: 'desktop:type_text', parameters: { text: query, expectProcess: target } }, signal);
+          // Prefix with '?' so a URL-like utterance remains a search query rather
+          // than navigating directly to an arbitrary destination.
+          const searchText = '?' + query;
+          const entered = await this.desktopAgent.execute({ operation: 'desktop:type_text', parameters: { text: searchText, expectProcess: target } }, signal);
           if (!entered.success) {
             return { success: false, outcome: entered.outcome === VerificationOutcome.UNCERTAIN ? VerificationOutcome.UNCERTAIN : VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but the search text could not be confirmed in its address bar.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence, textEntry: entered.evidence } };
           }
