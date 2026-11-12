@@ -152,7 +152,7 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
       explanation: 'Two-step read-only workflow',
     });
     const result = await jarvis.submitRequest(companionSessionId, 'check system and memory');
-    assert.strictEqual(result.state, TaskState.COMPLETED);
+    assert.strictEqual(result.state, TaskState.COMPLETED, result.message);
     assert.strictEqual(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
     assert.ok(result.data);
     assert.ok(jarvis.audit.getPublicRecords().some((record) => record.eventType === 'WORKFLOW_STEP_VERIFIED'));
