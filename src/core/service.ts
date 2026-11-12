@@ -673,6 +673,42 @@ export class JarvisCoreService {
           return this.communications.handoffEmail(parameters, signal);
         case 'comms:unsupported':
           return this.communications.unsupported(parameters.channel, parameters.reason);
+        case 'desktop:browser_search': {
+          const appId = parameters.appId;
+          const query = parameters.query;
+          if (typeof appId !== 'string' || !appId.trim() || typeof query !== 'string' || !query.trim() || query.length > 500 || /[\u0000-\u001F\u007F]/.test(query)) {
+            return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Browser search requires a supported browser and 1–500 printable search characters.', evidence: { operation: 'desktop:browser_search', inputValidated: false } };
+          }
+          const launch = await this.appAdapter.launchApp(appId, signal);
+          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
+          const launched = launch.data as { windowPid?: number; windowProcess?: string } | undefined;
+          if (!launched?.windowPid || !launched.windowProcess) {
+            return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but its window identity could not be confirmed; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, searchSkipped: true } };
+          }
+          const focus = await this.desktopAgent.execute({ operation: 'desktop:focus_window', parameters: { pid: launched.windowPid } }, signal);
+          if (!focus.success) {
+            return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but JARVIS could not focus its verified window; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, searchSkipped: true } };
+          }
+          const target = launched.windowProcess.replace(/\.exe$/i, '');
+          const addressBar = await this.desktopAgent.execute({ operation: 'desktop:hotkey', parameters: { keys: ['CTRL', 'L'], expectProcess: target } }, signal);
+          if (!addressBar.success) {
+            return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but its address bar could not be targeted; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence } };
+          }
+          const entered = await this.desktopAgent.execute({ operation: 'desktop:type_text', parameters: { text: query, expectProcess: target } }, signal);
+          if (!entered.success) {
+            return { success: false, outcome: entered.outcome === VerificationOutcome.UNCERTAIN ? VerificationOutcome.UNCERTAIN : VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but the search text could not be confirmed in its address bar.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence, textEntry: entered.evidence } };
+          }
+          const submitted = await this.desktopAgent.execute({ operation: 'desktop:hotkey', parameters: { keys: ['ENTER'], expectProcess: target } }, signal);
+          if (!submitted.success) {
+            return { success: false, outcome: submitted.outcome === VerificationOutcome.UNCERTAIN ? VerificationOutcome.UNCERTAIN : VerificationOutcome.PARTIAL_SUCCESS, error: 'The search text was entered, but submission was not acknowledged. Check the browser before retrying.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence, textEntry: entered.evidence, submit: submitted.evidence } };
+          }
+          return {
+            success: true,
+            outcome: VerificationOutcome.PARTIAL_SUCCESS,
+            data: { browser: appId, query, submitted: true },
+            evidence: { launch: launch.evidence, focus: focus.evidence, addressBarTargeted: addressBar.evidence, queryEntry: entered.evidence, enterAcknowledged: submitted.evidence, pageLoadVerified: false },
+          };
+        }
         case 'desktop:launch_and_type': {
           const launch = await this.appAdapter.launchApp(parameters.appId as string, signal);
           if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
