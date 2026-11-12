@@ -22,6 +22,8 @@ export interface MinimizedContext {
   requesterName: string;
   timestamp: number;
   memory?: string[];
+  activeAppProcess?: string;
+  activeAppName?: string;
 }
 
 export interface IAIPlannerProvider {
@@ -486,9 +488,10 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     if (typeMatch && typeMatch[1].trim()) {
       const target = splitForegroundTarget(typeMatch[1].trim());
       const explicitText = target.name.replace(/^[“"']|[”"']$/g, '').trim();
-      if (!target.expectProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I will not type into whichever window happens to be active. Specify the destination, for example “type Hello in Notepad”.', uncertainty: 'No explicit destination process was supplied for text entry.' };
+      const expectProcess = target.expectProcess || context.activeAppProcess;
+      if (!expectProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'No recently verified JARVIS-opened application is available. Specify the destination, for example “write Hello in Notepad”. JARVIS will not type into an unknown foreground window.', uncertainty: 'No explicit or session-bound destination process was supplied for text entry.' };
       if (!explicitText || explicitText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(explicitText)) return { intent: 'Text entry needs clearer input', operations: [], confidence: 0.96, explanation: 'The text must contain 1–500 printable characters. No text was entered.', uncertainty: 'Text is empty, too long, or contains unsupported control characters.' };
-      return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess: target.expectProcess }, justification: 'User supplied text and explicitly named the destination process' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named application, after approval.' };
+      return { intent: 'Enter explicit text in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: explicitText, expectProcess }, justification: 'User supplied text and the destination process is explicitly named or bound to the recently verified JARVIS app session' }], confidence: 0.9, explanation: 'Will enter the supplied text only if the foreground window belongs to the named or session-bound application, after approval.' };
     }
     // "copy this [in Chrome] and paste it in Notepad": a bounded three-step workflow.
     // The copy source must be named, matching the single-step copy rule below.
