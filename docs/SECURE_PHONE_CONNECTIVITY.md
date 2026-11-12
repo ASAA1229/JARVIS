@@ -27,5 +27,5 @@ If a publicly trusted certificate cannot be issued for your private hostname, st
 - The laptop must be awake and JARVIS/Caddy must be running. This setup does not implement remote wake.
 - A disconnected phone must reconnect and establish a fresh session. Revoked devices must not be re-enrolled without a new owner-approved transaction.
 - If a request times out, treat a state-changing result as unknown; check task/audit status before retrying.
-- The current Android client supports enrollment, authenticated text requests, and local user-initiated app launching. It does not yet receive remote app-control commands, background push tasks, SMS/call actions, or native notifications.
+- The current Android client supports enrollment, authenticated text requests, local user-initiated app launching, bounded read-only app inventory, encrypted offline sync queue storage, and optional WorkManager approval polling. Polling is opt-in and runs no more frequently than Android's 15-minute periodic-work minimum; it is not real-time push. The client does not receive remote arbitrary app-control commands, SMS/call actions, notification-list access, or remote wake.
 - Do not expose the owner-control token or enrollment code in logs, screenshots, issue reports, or chat messages.
