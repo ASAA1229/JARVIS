@@ -955,3 +955,10 @@ Safety boundary: scripts do not install APKs, launch phone apps, alter phone set
 Repository inspection found Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compileSdk 35 and Java 17. The Android project currently has no Gradle Wrapper, so system Gradle must be available. The runner and PowerShell scripts have **not** been executed or syntax-validated in this environment. No tests, builds, ADB checks, physical-device checks or CI runs were performed.
 
 Next: owner runs preflight on the MSI, confirms both phones show state `device`, resolves missing tools, then runs the controlled suite and shares the reviewed Markdown/JSON reports. E05 remains OPEN until Android build, targeted security tests and both-phone acceptance are evidenced on an exact SHA.
+
+
+## Build-first execution update — Android approval notifications (2026-11-12)
+
+The Android companion now provides explicit owner controls to enable/disable approval notifications. Notification polling is off by default, requires an enrolled phone, requests Android 13+ notification permission only when enabled, and schedules/cancels the existing WorkManager worker accordingly. Notifications use generic text only; directive contents are not included. Polling runs at Android's periodic-work minimum (about 15 minutes), not real-time push.
+
+Changed: `MainActivity.kt`, `CompanionSession.kt`, capability registry, Android README and secure connectivity docs. Story US-072 remains OPEN / PARTIAL. Source implementation only; no compilation, tests, APK install or device acceptance performed. Continue implementing remaining capabilities on `new`; run the consolidated validation phase after the build backlog is complete.
