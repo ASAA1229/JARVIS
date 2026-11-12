@@ -1054,3 +1054,23 @@ The target is one consistent JARVIS product with shared identity, permissions, t
 **Delivery rule:** Do not claim platform independence from shared TypeScript code or a successful Android APK build. Each target OS needs its own build/package, native adapter coverage, permission/security review, automated checks and real OS/device acceptance. Compatibility ranges and CPU architectures must be documented; unsupported OS versions must be reported explicitly.
 
 **Priority:** Treat the platform abstraction/contracts and compatibility matrix as cross-cutting architecture work. Continue useful Windows/Android work without blocking it, but new capability implementations must be designed against platform-neutral contracts so macOS, Linux and iOS adapters can be added without rewriting core policy/business logic.
+
+
+
+## Concurrent task execution and deadlock-safety increment — 2026-11-12
+
+**Branch:** `new`
+
+**Implemented in source:**
+- Added `src/core/taskCoordinator.ts`: bounded global/per-device admission (4 global, 2 per device), bounded queue (200), 30-second default queue deadline, priority with aging, duplicate task admission rejection, queued cancellation, and atomic sorted multi-resource locks.
+- Integrated coordination into `JarvisCoreService` immediately around policy-approved adapter dispatch. Interactive requests receive higher queue priority than scheduled work; approvals and policy evaluation remain outside and authoritative.
+- Added resource isolation for per-device desktop/app control, the shared personal-memory store, plugin/workflow registry and workspace/file targets.
+- Changed scheduler ticks to persist each due job's at-most-once advancement before dispatching independent jobs concurrently. The core coordinator continues to enforce actual execution limits.
+- Added regression tests for global/per-device limits, resource exclusivity, opposite lock ordering, queued cancellation, queue timeout, duplicate admission, lock release after errors and overlapping scheduler ticks.
+- Added [TASK_CONCURRENCY.md](docs/TASK_CONCURRENCY.md), documenting the concurrency model, CS methods, safety invariants and remaining stages.
+
+**Computer-science methods:** bounded admission/bulkhead isolation, priority queue with aging, atomic multi-resource locking to remove hold-and-wait deadlock conditions, Kahn DAG cycle detection already present in workflow validation, at-most-once scheduling, cooperative cancellation and fail-safe recovery.
+
+**Important boundaries:** This coordinator is process-local and supports the current single Node service; it is not a distributed lock manager. Existing multi-step operations inside one task remain sequential. Parallel workflow branches, owner-visible queue UI, graceful drain, CPU-bound worker threads and distributed leases remain future work. Async I/O concurrency is not CPU parallelism. No arbitrary thread-per-task model is introduced.
+
+**Evidence:** Source and regression tests committed; no build or tests were run, consistent with the build-first/test-later sequence. This is not yet verified runtime behavior.
