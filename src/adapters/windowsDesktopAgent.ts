@@ -364,7 +364,10 @@ export class WindowsDesktopAgent {
         }
         const normalized = keys.map((key) => String(key).trim().toUpperCase());
         const sequence = normalized.map((key) => {
-          const mapped = HOTKEYS[key];
+          // Permit only single ASCII letters/digits in addition to named keys and
+          // modifiers. This supports bounded shortcuts such as Ctrl+L without
+          // exposing arbitrary SendKeys syntax or shell input.
+          const mapped = HOTKEYS[key] ?? (/^[A-Z0-9]$/.test(key) ? key.toLowerCase() : undefined);
           if (!mapped) throw new Error("Hotkey '" + key + "' is not allowlisted.");
           return mapped;
         }).join('');
