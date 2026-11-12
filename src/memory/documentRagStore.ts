@@ -1,9 +1,8 @@
 /**
- * Local-first, encrypted text-document retrieval.
+ * Local-first, encrypted document retrieval.
  *
- * This first ingestion boundary intentionally accepts UTF-8 text only. Binary
- * formats (PDF/DOCX/etc.) require dedicated parsers and are rejected rather
- * than silently producing empty or misleading indexes.
+ * UTF-8 text is ingested directly. PDF/DOCX bytes are parsed by DocumentParser
+ * before reaching this store, so binary bytes are never mistaken for text.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { EncryptedJsonFile } from './encryptedJsonFile.js';
