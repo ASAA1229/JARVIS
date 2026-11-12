@@ -928,3 +928,13 @@ The fixture deliberately does **not** claim acoustic wake accuracy, physical mic
 - Status: **TEST-AUTHORED — NOT EXECUTED — E02/E03 OPEN**.
 - Next action: run `npm run test:browser` on the Windows development host, fix any regression, then run the full `npm test` and `npm run build` against the exact resulting SHA. After automated success, perform the real MSI microphone → Notepad → verified outcome acceptance.
 
+
+
+## Android and cross-device operation — encrypted offline queue increment (2026-11-12)
+
+**Branch:** `new`  
+**Status:** SOURCE IMPLEMENTED — VALIDATION NOT RUN — E05 OPEN.
+
+The native Android sync queue previously persisted memory text and held commands as plaintext JSON in app-private storage. It now uses a dedicated AES-GCM key held by Android Keystore, separate from the device-identity wrapping key. Queue writes are flushed to a temporary file and atomically replaced where supported. Existing plaintext queue data is migrated to encrypted storage on first read. Invalid ciphertext, unsupported versions and authentication failures stop sync without silently discarding or recreating queued data. Device revocation removes the queue and its local data key.
+
+**Not established by this change:** Android compilation, legacy migration tests, tamper detection tests, revocation tests, TLS connectivity, two-phone enrollment/approval/revocation, offline/reconnect behavior, background notification delivery or physical-device acceptance. The laptop remains the policy authority; this change does not add remote Android app control or general background execution.
