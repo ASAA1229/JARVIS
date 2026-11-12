@@ -98,7 +98,11 @@ export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
 
       for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
         try {
-          const content = await chatCompletion(provider, prompt.messages, {
+          const messages = prompt.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          }));
+          const content = await chatCompletion(provider, messages, {
             temperature: 0.2,
             json: true,
           }, signal);
