@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DocumentRagStore } from '../src/memory/documentRagStore.js';
@@ -76,7 +76,7 @@ test('chunking bounds long documents and retrieval returns chunk-level source po
 test('unsupported binary formats, empty documents and oversized documents are rejected', async () => {
   await withTempDir((directory) => {
     const store = new DocumentRagStore(join(directory, 'documents.enc'), TOKEN);
-    assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'manual.pdf', content: 'binary placeholder' }), /Unsupported document format/);
+    assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'manual.exe', content: 'binary placeholder' }), /Unsupported document format/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'empty.txt', content: '   ' }), /must not be empty/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'large.txt', content: 'x'.repeat(1_000_001) }), /2 MB ingestion limit/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'too-many-chunks.txt', content: 'x'.repeat(700_000) }), /maximum safe chunk count/);
@@ -108,5 +108,30 @@ test('document deletion removes document and derived vector records', async () =
     assert.equal(store.delete('device-a', created.documentId), true);
     assert.equal(store.list('device-a').length, 0);
     assert.equal((await store.search('device-a', 'deletion verification')).length, 0);
+  });
+});
+
+test('tampered encrypted source documents fail closed without overwriting evidence', async () => {
+  await withTempDir((directory) => {
+    const path = join(directory, 'documents.enc');
+    const store = new DocumentRagStore(path, TOKEN);
+    store.ingest({ ownerDeviceId: 'device-a', sourceName: 'guide.txt', content: 'Encrypted source material must remain confidential.' });
+    writeFileSync(path, 'tampered ciphertext');
+    assert.throws(() => new DocumentRagStore(path, TOKEN), /JSON|Unexpected token|position/i);
+    assert.equal(readFileSync(path, 'utf8'), 'tampered ciphertext');
+  });
+});
+
+test('corrupt derived vectors are rebuilt from encrypted source documents', async () => {
+  await withTempDir(async (directory) => {
+    const path = join(directory, 'documents.enc');
+    const store = new DocumentRagStore(path, TOKEN, fakeEmbedder);
+    store.ingest({ ownerDeviceId: 'device-a', sourceName: 'guide.txt', content: 'Encrypted source text remains the authoritative document record.' });
+    await store.search('device-a', 'authoritative document record');
+    writeFileSync(path + '.vectors', 'corrupt derived vector index');
+    const reopened = new DocumentRagStore(path, TOKEN, fakeEmbedder);
+    const results = await reopened.search('device-a', 'authoritative document record');
+    assert.equal(results[0]?.method, 'semantic');
+    assert.match(results[0]?.content || '', /authoritative document record/);
   });
 });
