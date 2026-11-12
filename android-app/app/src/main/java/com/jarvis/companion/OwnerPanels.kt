@@ -88,7 +88,7 @@ class OwnerPanels(
         }
     }
 
-    private fun syncClient() = SyncClient(client(), session.syncQueueFile)
+    private fun syncClient() = SyncClient(client(), session.syncQueueFile, session.keys)
 
     // ---- approvals and tasks ----
 
