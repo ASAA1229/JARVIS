@@ -1,6 +1,6 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -93,7 +93,7 @@ export class DocumentParser {
     if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_FILE_BYTES) {
       throw new Error('Document must be a non-empty file no larger than 15 MB.');
     }
-    if (typeof filename !== 'string' || !filename.trim() || filename.length > 240 || filename.includes('/') || filename.includes('\\\\') || /[\\u0000-\\u001f]/.test(filename)) {
+    if (typeof filename !== 'string' || !filename.trim() || filename.length > 240 || filename.includes('/') || filename.includes(String.fromCharCode(92)) || [...filename].some((character) => character.charCodeAt(0) < 32)) {
       throw new Error('Document source name must be a plain filename.');
     }
     const extension = filename.toLowerCase().slice(filename.lastIndexOf('.'));
@@ -131,14 +131,22 @@ export class DocumentParser {
         if (textError) throw new Error('PDF text extraction requires local Poppler (pdftotext). Install Poppler or enable local OCR.');
         throw new Error('PDF has no usable text layer. Enable OCR to process scanned pages.');
       }
-      await this.runCommand('pdftoppm', ['-f', '1', '-l', String(MAX_OCR_PAGES), '-r', '160', '-png', path, prefix], 60_000, 1024 * 1024);
+      await this.runCommand('pdftoppm', ['-f', '1', '-l', String(MAX_OCR_PAGES), '-scale-to', '1600', '-png', path, prefix], 60_000, 1024 * 1024);
       const images = (await readdir(directory)).filter((name) => /^page-\d+\.png$/i.test(name))
         .sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
       if (!images.length) throw new Error('Local PDF rasterizer produced no OCR pages.');
       if (images.length > MAX_OCR_PAGES) throw new Error('PDF exceeds the 20-page OCR limit.');
       const recognized: string[] = [];
+      const ocrDeadline = Date.now() + 180_000;
+      let totalImageBytes = 0;
       for (const image of images) {
-        const pageText = await this.runCommand('tesseract', [join(directory, image), 'stdout', '-l', 'eng', '--psm', '3'], 30_000, 1024 * 1024);
+        const imagePath = join(directory, image);
+        const imageBytes = (await stat(imagePath)).size;
+        totalImageBytes += imageBytes;
+        if (imageBytes > 8 * 1024 * 1024 || totalImageBytes > 100 * 1024 * 1024) throw new Error('OCR raster output exceeds the safe image storage limit.');
+        const remainingMs = ocrDeadline - Date.now();
+        if (remainingMs <= 0) throw new Error('OCR exceeded its 3-minute processing limit.');
+        const pageText = await this.runCommand('tesseract', [imagePath, 'stdout', '-l', 'eng', '--psm', '3'], Math.min(30_000, remainingMs), 1024 * 1024);
         recognized.push(pageText.trim());
       }
       const ocrText = recognized.filter(Boolean).join('\n\n').trim();
