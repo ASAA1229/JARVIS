@@ -26,7 +26,7 @@ class CompanionSession(private val context: Context) {
         set(value) { prefs.edit().putBoolean("enrolled", value).apply() }
 
     var notificationsEnabled: Boolean
-        get() = prefs.getBoolean("approval_notifications", true)
+        get() = prefs.getBoolean("approval_notifications", false)
         set(value) { prefs.edit().putBoolean("approval_notifications", value).apply() }
 
     /** Approval ids already notified, so the poller does not repeat the same alert. */
