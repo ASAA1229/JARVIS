@@ -77,6 +77,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'system:get_disk_space',
     'app:launch',
     'desktop:launch_and_type',
+    'desktop:browser_search',
     'desktop:type_text',
     'desktop:paste_text',
     'desktop:hotkey',
@@ -438,9 +439,40 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!targetProcess) return { intent: 'Typing destination required', operations: [], confidence: 0.98, explanation: 'I have the saved owner name, but I will not type into whichever window happens to be active. Say “type my name in Notepad” or name the exact target application.', uncertainty: 'No explicit destination process was supplied for text entry.' };
       return { intent: 'Enter the saved owner name in the named application', operations: [{ operation: 'desktop:type_text', parameters: { text: ownerName, expectProcess: targetProcess }, justification: 'Use verified owner profile data and pin text entry to the explicitly named process' }], confidence: 0.95, explanation: 'Will enter the saved owner name only if the foreground window belongs to the named application, after approval.' };
     }
-    const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?(notepad|calculator|paint)\b\s*(?:and|then|,)?\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
+    // Browser search is a single owner-approved composite operation. It submits the
+    // exact query in the named browser; page/result verification remains partial.
+    const browserSearch = requestText.match(/^\s*search\s+(?:for\s+)?[“"']?(.+?)[”"']?\s+on\s+(chrome|google\s+chrome|edge|microsoft\s+edge|firefox|mozilla\s+firefox|brave|brave\s+browser|opera)\s*$/i);
+    if (browserSearch) {
+      const query = browserSearch[1].trim().replace(/[”"']$/, '').trim();
+      const browserName = browserSearch[2].toLowerCase().replace(/\s+/g, ' ');
+      const appId = browserName.includes('chrome') ? 'Google Chrome'
+        : browserName.includes('edge') ? 'Microsoft Edge'
+        : browserName.includes('firefox') ? 'Firefox'
+        : browserName.includes('brave') ? 'Brave'
+        : 'Opera';
+      if (!query || query.length > 500 || /[\u0000-\u001F\u007F]/.test(query)) {
+        return { intent: 'Browser search needs valid search text', operations: [], confidence: 0.98, explanation: 'Provide 1–500 printable characters for the search. No browser was opened.', uncertainty: 'Search text is empty, too long, or contains control characters.' };
+      }
+      return {
+        intent: 'Search the web in the requested browser',
+        operations: [{ operation: 'desktop:browser_search', parameters: { appId, query }, justification: 'Owner explicitly named the search text and browser' }],
+        confidence: 0.94,
+        explanation: 'Will open or focus the named browser, submit the exact query, and report a partial result until the loaded page can be independently verified.',
+      };
+    }
+
+    const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}?)\s+(?:and|then|,)\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
     if (launchAndType) {
-      const appId = launchAndType[1].toLowerCase() === 'calculator' ? 'calc' : launchAndType[1].toLowerCase() === 'paint' ? 'mspaint' : 'notepad';
+      const requestedApp = launchAndType[1].trim();
+      if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(requestedApp)) {
+        return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
+      }
+      const appId = /^(?:note\s*pad)$/i.test(requestedApp) ? 'notepad'
+        : /^calculator$/i.test(requestedApp) ? 'calc'
+        : /^(?:paint|microsoft paint)$/i.test(requestedApp) ? 'mspaint'
+        : /^(?:chrome|google chrome)$/i.test(requestedApp) ? 'Google Chrome'
+        : /^(?:edge|microsoft edge)$/i.test(requestedApp) ? 'Microsoft Edge'
+        : requestedApp;
       let suppliedText = launchAndType[2].trim();
       if ((suppliedText.startsWith('"') && suppliedText.endsWith('"')) || (suppliedText.startsWith('“') && suppliedText.endsWith('”')) || (suppliedText.startsWith("'") && suppliedText.endsWith("'"))) {
         suppliedText = suppliedText.slice(1, -1).trim();
@@ -448,7 +480,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       if (!suppliedText || suppliedText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(suppliedText)) {
         return { intent: 'Combined desktop instruction needs clearer text', operations: [], confidence: 0.96, explanation: 'The text to enter must be a single line containing 1–500 printable characters. No application was launched and no text was entered.', uncertainty: 'The requested text is empty, too long, or contains unsupported control characters.' };
       }
-      return { intent: 'Launch an allowlisted application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: suppliedText }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.9, explanation: 'Will launch the requested allowlisted application, verify its target window, and enter the supplied text only after approval.' };
+      return { intent: 'Launch an installed application and enter explicit text', operations: [{ operation: 'desktop:launch_and_type', parameters: { appId, text: suppliedText }, justification: 'User requested a bounded app launch followed by explicit text entry' }], confidence: 0.9, explanation: 'Will launch the requested installed application, verify its target window, and enter the supplied text only after approval. Unknown or ambiguous apps fail closed.' };
     }
     const typeMatch = requestText.match(/\b(?:type|write|enter)\s+(?:the following\s+)?[“"]?(.+?)\s*$/i);
     if (typeMatch && typeMatch[1].trim()) {
