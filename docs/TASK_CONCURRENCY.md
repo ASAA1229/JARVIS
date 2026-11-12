@@ -21,6 +21,10 @@ Allow independent JARVIS tasks to make progress concurrently without allowing co
 - Adapter errors and cancellation always release the concurrency slot and every acquired resource lock.
 - Scheduler ticks now advance and durably persist each due job's at-most-once state before dispatching independent jobs concurrently, with a separate four-job dispatch ceiling. The core planner and execution coordinators still apply the stricter actual work limits.
 
+## Task lifecycle visibility
+
+The core health snapshot now includes opaque task IDs for active and queued work, queue wait duration, effective priority, and whether a queued item is blocked by a held resource or its device concurrency limit. It also reports separate planner queue state. It deliberately omits resource names, request text, operation parameters and device identifiers so private window titles, paths and user data are not leaked through diagnostics.
+
 ## Resource isolation
 
 Resource keys are derived from operation semantics:
