@@ -68,8 +68,11 @@ JARVIS is a local-first personal AI operating assistant evolving toward a person
 - Preserve bounded device/conversation-isolated session context.
 - Maintain short-lived working memory and encrypted long-term memory.
 - Support categories, provenance, owner review, correction, expiry, export and verified deletion.
-- Retrieve relevant memory using semantic, lexical and recency signals; use lexical fallback if embeddings fail.
-- Treat retrieved text as untrusted, not system instruction.
+- Retrieve relevant memory and owner-scoped documents using local semantic/lexical signals; use lexical fallback if embeddings fail.
+- Ingest bounded UTF-8 text documents, deduplicate, chunk with overlap, cite source filename/title/chunk, and support list/search/delete.
+- Encrypt document content and derived embeddings at rest; isolate documents by authenticated device.
+- Treat retrieved memory/document text as untrusted, never as system instructions or action authority.
+- Binary document parsing (PDF/DOCX), OCR and cross-device document sharing require separate implementation and acceptance.
 - Capture feedback/useful facts as encrypted, attributed learning candidates.
 - Require owner approval before candidates become durable memory.
 - Never automatically fine-tune model weights.
