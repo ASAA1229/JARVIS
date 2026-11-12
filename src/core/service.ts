@@ -1493,6 +1493,7 @@ export class JarvisCoreService {
       tasks: {
         total: tasks.length,
         running: this.activeExecutionTokens.size,
+        executionQueue: (() => { const snapshot = this.taskCoordinator.snapshot(); return { active: snapshot.active, queued: snapshot.queued, limits: snapshot.limits, lockedResourceCount: snapshot.lockedResources.length }; })(),
         awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
