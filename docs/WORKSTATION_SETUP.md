@@ -68,26 +68,31 @@ If node_modules is missing, install project dependencies only after reviewing th
 
 npm ci installs the exact dependency versions in the lockfile and may replace the existing node_modules directory. Do not run it if you have local dependency modifications you need to preserve.
 
-## 4. Run the controlled test runner
+## 4. Build first; test later
 
-Run all available automated checks and Android compilation/unit-test tasks:
+The default mode builds the Windows host and Android APK without running tests:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode All
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode BuildAll
 
-Modes:
+Build modes:
 - Preflight: tool and connected-device readiness only.
-- Windows: Node tests, TypeScript build, and browser smoke.
-- Android: Android Gradle unit-test and debug-APK build tasks.
-- All: Windows and Android checks.
+- BuildWindows: TypeScript compilation via npm run build.
+- BuildAndroid: Android debug APK compilation via Gradle.
+- BuildAll: both builds; this is the default.
 
-Use -SkipBrowserSmoke only when deliberately excluding the Edge browser test. The runner does not install the generated APK or change either phone. It stores JSON and Markdown summaries under %TEMP%\JARVIS-workstation-evidence; review them before sharing.
+Testing is deliberately separate and can be run later, one platform at a time:
+- TestWindows: npm test and browser smoke (omit browser smoke with -SkipBrowserSmoke).
+- TestAndroid: Gradle Android unit-test task.
+- TestAll: both test groups.
 
-The current runner invokes:
-- npm test
-- npm run build
-- npm run test:browser
-- gradle -p android-app testDebugUnitTest
-- gradle -p android-app assembleDebug
+Examples:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode BuildWindows
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode BuildAndroid
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode TestWindows
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\workstation-test-runner.ps1 -Mode TestAndroid
+
+The runner does not install the generated APK or change either phone. It stores JSON and Markdown summaries plus per-command logs under %TEMP%\JARVIS-workstation-evidence. Review and redact logs before sharing; build/test output can contain local paths or test data.
 
 A missing tool or dependency is reported as BLOCKED, not as a test failure. A non-zero command exit is FAIL. A passing Android compile is not physical-device acceptance.
 
