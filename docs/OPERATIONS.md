@@ -101,7 +101,7 @@ Runtime state is stored in local files under configured paths (commonly `data/`)
 - Test restore in an isolated copy.
 - Protect owner-control and encryption keys separately from backups.
 - In-app deletion cannot erase independent OneDrive/cloud-sync/version-history copies. Exclude sensitive runtime state from consumer sync or manage that retention separately.
-- Conversation sessions are process-local, expire after about 30 minutes and are lost on restart.
+- When `JARVIS_OWNER_CONTROL_TOKEN` is configured, conversation sessions are stored in `./data/conversations.enc` (or alongside the configured device state path as `.conversations`), encrypted with AES-256-GCM and restored after restart. Sessions expire after about 30 minutes. Without owner control, history is process-local. Back up the encrypted file only as part of the protected local-state backup set.
 
 Never edit encrypted state files manually. Corrupt or unauthenticated state must fail closed.
 
