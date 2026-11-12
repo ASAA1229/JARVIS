@@ -1,6 +1,6 @@
 # JARVIS Task Concurrency & Deadlock Safety
 
-**Status:** Initial execution-coordination layer implemented in source; build and tests intentionally not run in this increment.  
+**Status:** Bounded task coordination and a branch-aware DAG execution coordinator are implemented in source. Core workflow-route integration, build and tests remain pending.  
 **Branch:** `new`
 
 ## Goals
@@ -53,22 +53,33 @@ A task declares its complete resource set before execution. The coordinator norm
 
 - The coordinator is process-local. It is correct for the current single-host Node service; it is not a distributed lock manager for multiple JARVIS server replicas. A multi-process deployment must add a transactional shared queue/lease store before horizontal scaling.
 - JavaScript async I/O concurrency is not the same as CPU parallelism. Do not create a worker thread for every request. A separate bounded worker-thread pool should be introduced only for measured CPU-bound workloads (for example, local inference preprocessing or expensive media analysis), with message schemas, cancellation, memory limits and shutdown semantics.
-- Current multi-step task execution remains dependency-ordered and sequential within one task. Independent tasks can overlap. Parallel branches inside one workflow require explicit dependency metadata, policy/approval per branch, deterministic join semantics, and partial-side-effect recovery before enabling them.
+- The existing workflow:run service path still expands into the legacy sequential task lifecycle. A new WorkflowBranchExecutor implements bounded concurrent DAG-node execution, branch-scoped approval references, durable checkpoint callbacks, resource conflict exclusion, dependency-aware joins, partial outcomes and explicit no-effect recovery. It is not yet wired into the service route; do not claim live workflow templates execute concurrently until that integration is complete.
 - Resource locks are conservative operation-level isolation, not proof that every third-party application is thread-safe. New adapters must declare their shared resources and must not acquire locks outside the coordinator.
 - The coordinator prevents deadlocks caused by its own resource-lock protocol; it does not claim to detect arbitrary deadlocks inside an operating system, third-party application, native adapter, or external service.
 
-## Workflow DAG execution foundation
+## Workflow branch execution and recovery
 
-`workflowExecutionBatches` now derives deterministic bounded execution waves from validated dependency metadata. It rejects malformed/self/unknown/cyclic dependencies, preserves original step ordering as the tie-breaker, and caps each wave at the requested parallelism. This is a planning primitive only: the current workflow runner still executes steps sequentially. It must not be connected to side-effecting execution until each branch has independent task/approval/checkpoint state, branch cancellation, conflict-aware resource admission, and deterministic join/partial-failure recovery.
+workflowExecutionBatches remains the deterministic DAG-wave planning primitive. The new src/workflows/workflowExecution.ts adds an execution coordinator with the following source-level behavior:
+
+- Runs dependency-ready branches concurrently up to a validated limit (1–8; default 4).
+- Acquires each branch's complete resource-key set before dispatch; conflicting branches serialize while unrelated branches may overlap.
+- Persists the run and each running transition before invoking the injected executor. Checkpoint writes are serialized and promises are kept outside the serializable checkpoint model.
+- Keeps branch status, attempt count, dependency IDs, outcome, approval reference and bounded message independently.
+- An approval-required branch enters awaiting_approval; unrelated branches continue. Descendants remain pending until every prerequisite is completed.
+- Resume requires the same run ID and exact workflow graph. A saved approval reference is not itself authorization: the caller must supply the matching reference only after the normal JARVIS approval endpoint confirms it. The executor callback must still revalidate/consume the exact task/device/operation/parameter-bound approval through the policy gateway.
+- A branch found running after process restart becomes uncertain; it is never automatically retried. Only an owner-reviewed reconciledNoEffectSteps entry can return that branch to pending. Effect-observed and still-unknown outcomes remain non-replayable.
+- Verified failure, partial, uncertain, blocked or cancelled branches block descendants; unrelated branches continue and the run reports partial/uncertain rather than false success.
+- Checkpoint failure before dispatch prevents the executor callback. Failure after dispatch is treated as uncertain because an external effect may have occurred.
+- This module is an orchestration primitive, not a policy adapter. Its callback must be integrated with JarvisCoreService task records, approval lifecycle, audit, encrypted TaskJournal, resource derivation and outcome verifier before live workflow templates use it.
 
 ## Next implementation stages
 
-1. Add execution metrics and owner-visible queue status without exposing sensitive parameters.
-2. Add task dependency graph contracts and bounded DAG execution for explicitly independent, read-only branches first.
-3. Add cancellation propagation for queued and running scheduled work, plus graceful shutdown/drain.
-4. Add worker-thread isolation only for measured CPU-bound tasks.
-5. Add durable multi-process queue/leases only if JARVIS is deployed with more than one core process.
-6. Build, then run concurrency stress, race, cancellation, starvation, crash/recovery and real desktop/device acceptance tests in the user's chosen test phase.
+1. Integrate branch records into the encrypted task journal and owner task timeline; expose parent/child task relationships and per-branch approvals.
+2. Wire WorkflowBranchExecutor into workflow:run through the existing policy gateway, task-scoped approvals, audit and independent outcome verifier. Keep the legacy sequential route until this is complete.
+3. Add graceful shutdown/drain and cancellation propagation across branch workers.
+4. Add validated owner/runtime concurrency settings and owner-visible lifecycle controls.
+5. Add worker-thread isolation only for measured CPU-bound tasks; add durable multi-process queue/leases only if JARVIS runs more than one core process.
+6. Build, then run concurrency stress, race, approval, cancellation, starvation, crash/recovery and real desktop/device acceptance tests in the user's chosen test phase.
 
 ## Acceptance gates
 
@@ -81,4 +92,6 @@ A task declares its complete resource set before execution. The coordinator norm
 - Interactive priority works while aging prevents indefinite starvation.
 - Scheduler dispatches independent due jobs concurrently but never runs one job twice in overlapping ticks.
 - No task bypasses policy, approvals, audit, durable checkpoints or outcome verification.
-- Process restart never automatically replays an uncertain side effect.
+- Workflow approval references are branch-scoped and are not accepted as authority without policy-gateway revalidation.
+- A failed/uncertain dependency blocks descendants while independent branches may complete.
+- Process restart never automatically replays an uncertain side effect; retry requires explicit no-effect reconciliation.
