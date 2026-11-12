@@ -154,6 +154,7 @@ export class WorkflowBranchExecutor {
     const states = new Map(snapshot.branches.map((branch) => [branch.stepId, branch]));
     const activeResources = new Set<string>();
     const running = new Set<string>();
+    const workByStep = new Map<string, Promise<void>>();
     let checkpointTail: Promise<void> = Promise.resolve();
 
     const persist = async () => {
@@ -210,9 +211,11 @@ export class WorkflowBranchExecutor {
         branch.updatedAt = Date.now();
         const approvedApprovalRef = options.approvedApprovals?.[branch.stepId];
         const work = (async () => {
+          let dispatchStarted = false;
           try {
             // Persist the running checkpoint before the executor can cause a side effect.
             await persist();
+            dispatchStarted = true;
             const result = await options.executeStep(step, {
               runId: options.runId,
               stepId: branch.stepId,
@@ -240,26 +243,27 @@ export class WorkflowBranchExecutor {
               await mark(branch, 'cancelled', result.message ?? 'Branch cancelled.');
             }
           } catch (error) {
-            // If execution began and its result/checkpoint is not known, fail closed.
-            branch.outcome = 'uncertain';
-            try { await mark(branch, 'uncertain', error instanceof Error ? error.message : 'Branch execution/checkpoint failed.'); }
-            catch { branch.status = 'uncertain'; branch.updatedAt = Date.now(); }
+            // A failed pre-dispatch checkpoint proves the executor was never called.
+            const status: WorkflowBranchStatus = dispatchStarted ? 'uncertain' : 'failed';
+            if (dispatchStarted) branch.outcome = 'uncertain';
+            try { await mark(branch, status, error instanceof Error ? error.message : 'Branch execution/checkpoint failed.'); }
+            catch { branch.status = status; branch.updatedAt = Date.now(); }
           } finally {
             running.delete(branch.stepId);
             for (const key of resourceKeys) activeResources.delete(key);
           }
         })();
-        // Keep the promise on a local property without exposing it in persisted state.
-        (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work = work;
+        // Keep promises outside the checkpoint object; promises are not serializable.
+        workByStep.set(branch.stepId, work);
       }
 
       if (running.size > 0) {
         const active = snapshot.branches
           .filter((branch) => running.has(branch.stepId))
-          .map((branch) => (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work)
+          .map((branch) => workByStep.get(branch.stepId))
           .filter((work): work is Promise<void> => Boolean(work));
         await Promise.race(active);
-        for (const branch of snapshot.branches) if (!running.has(branch.stepId)) delete (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work;
+        for (const branch of snapshot.branches) if (!running.has(branch.stepId)) workByStep.delete(branch.stepId);
         continue;
       }
 
