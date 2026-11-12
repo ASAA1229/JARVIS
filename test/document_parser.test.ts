@@ -95,5 +95,6 @@ test('PDF OCR is never silently enabled and invalid/unsupported files are reject
   await assert.rejects(new DocumentParser(unavailable).parse('scan.pdf', pdf, { ocr: true }), /tool missing|rasterizer/i);
   await assert.rejects(new DocumentParser().parse('bad.pdf', Buffer.from('not pdf')), /signature is invalid/);
   await assert.rejects(new DocumentParser().parse('archive.zip', Buffer.from('PK')), /Only PDF and DOCX/);
+  await assert.rejects(new DocumentParser().parse('../escape.pdf', pdf), /plain filename/);
   await assert.rejects(new DocumentParser().parse('huge.pdf', Buffer.alloc(15 * 1024 * 1024 + 1)), /15 MB/);
 });
