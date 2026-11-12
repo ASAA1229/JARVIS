@@ -1246,3 +1246,13 @@ Files: `MainActivity.kt`, `CompanionSession.kt`, `ApprovalPollWorker.kt` (existi
 The existing `app:inventory` request now performs bounded Windows Start-menu discovery automatically when explicitly requested, rather than requiring the undocumented/local `JARVIS_ENABLE_START_MENU_INVENTORY=1` toggle. The query remains read-only and capped at 80 entries; financial/payment app names are excluded, and discovered entries do not imply UI automation or verified launch support. Planner feedback now accurately describes this behavior.
 
 **Build status:** IMPLEMENTED IN SOURCE — NOT COMPILED OR TESTED. US-068 remains OPEN / PARTIAL; exact-head compilation and the later per-platform validation phase remain pending.
+
+### Voice-driven app interaction and browser search increment — 2026-11-12
+
+The planner now supports a combined request such as **“Open Notepad and write ------”** for any uniquely discovered installed Windows app, using the existing launch-and-type operation. Payment/financial app names remain blocked. The operation verifies the launched window identity before focusing and entering text.
+
+A new `desktop:browser_search` composite operation supports commands such as **“Search for weather tomorrow on Chrome”**. It is bound to the selected browser process, requires task-scoped approval, focuses the verified browser window, targets the address bar, enters the exact query and submits it. It deliberately returns **PARTIAL** because the current adapter does not yet independently verify page load or the resulting search page.
+
+The follow-up phrase **“write …”** without naming a destination is not yet enabled: JARVIS must preserve a verified app-session target rather than type into whichever window happens to be foreground. App-specific media playback (including selecting and verifying the requested song) remains a separate open capability; opening a media app or submitting a search is not playback proof.
+
+**Build status:** source implemented on `new`; authored planner regressions added but not executed. No build, typecheck, lint, tests, browser launch or desktop interaction was performed.
