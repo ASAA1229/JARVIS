@@ -1024,3 +1024,15 @@ Voice-driven app launch, dictated text entry, and browser-scoped search are impl
 ### Discovered application target continuity — 2026-11-12
 
 Closed a target-binding gap in Windows app discovery: when a Start-menu app has a trusted process identity and a unique verified window, its launch result now exposes normalized process/window identifiers. Already-running discovered apps return the same metadata after verified focus. This enables the existing approval-bound launch-and-type flow and recent-app session context to continue safely for eligible discovered apps. Apps with unknown/ambiguous window identities remain partial and are not eligible for follow-up typing. Regression coverage was authored; no build/tests executed.
+
+
+## Android APK packaging increment — 2026-11-12
+
+**Branch:** `new`  
+**Implementation:** A dedicated `.github/workflows/android-apk.yml` now builds the native Android debug APK on Android source/workflow changes and supports manual dispatch. It uses Java 17, Gradle 8.9 and Android SDK 35, then publishes a 30-day artifact containing `app-debug.apk`, its SHA-256 checksum, and build metadata. The artifact paths are flattened for straightforward download and installation. `android-app/README.md` now documents checksum verification, installation by file manager or ADB, separate enrollment on each phone, and the required secure connection flow.
+
+**Commits:** `38b72b93a691fc4f8785db927c076e8010ad6c14`, `263012576ed173ca8ac4bd5b78d7d23e394b0754`, `410ebd4d56fe72d0ec814de0b2597b0161d68170`.
+
+**Evidence boundary:** The dedicated workflow has started for the exact latest source revision; its result is pending at this checkpoint. No APK has yet been downloaded or installed by this assistant, and neither phone has been enrolled or tested. The generated package is debug-signed for internal testing, not production distribution.
+
+**Remaining blockers before useful phone-to-laptop operation:** The current Node host binds to loopback and does not terminate TLS, while the Android app rejects HTTP. A private, trusted HTTPS bridge to the host must be implemented/configured without exposing a public tunnel. Then install the APK separately on both phones, complete owner-approved enrollment, and validate distinct device identities, signed requests, offline/reconnect behavior, notifications, and one-phone revocation isolation. APK packaging alone does not provide arbitrary remote phone control; current phone app discovery/launch remains user-tap and remote inventory remains bounded/read-only.
