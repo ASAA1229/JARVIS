@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
+test('explicit save requests route to app-scoped durable file verification', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('save C:\\Users\\Owner\\Documents\\notes.txt in notepad', {
+    requesterName: 'save-verification-test',
+    timestamp: Date.now(),
+  });
+  assert.equal(plan.operations[0]?.operation, 'desktop:save_and_verify');
+  assert.equal(plan.operations[0]?.parameters.path, 'C:\\Users\\Owner\\Documents\\notes.txt');
+  assert.equal(plan.operations[0]?.parameters.expectProcess, 'notepad');
+});
+
 test('explicit toggle requests route to approval-bound desired-state operation', async () => {
   const planner = new LocalHeuristicPlanner();
   const plan = await planner.generatePlan('set toggle "Enable notifications" on in notepad', {
