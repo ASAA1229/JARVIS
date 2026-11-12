@@ -436,3 +436,8 @@ Explicit application inventory now performs bounded (maximum 80) read-only Start
 ## Voice-driven app interaction increment — 2026-11-12
 
 E02/E03 implementation now includes a generic combined launch-and-type request for uniquely discovered installed Windows apps and a new policy-gated `desktop:browser_search` composite operation. Browser actions are process-bound; the search operation reports PARTIAL pending independent page/result verification. Planner regression tests were authored but not run. Short-lived, process-bound follow-up app-session targeting is now implemented in source. App-specific verified media playback remains open. No build or validation was run.
+
+
+## Permission-controlled desktop interaction update — 2026-11-12
+
+The current voice-to-desktop vertical slice covers app launch, explicit dictated text entry, and browser-scoped search through the central approval gateway. The next uncovered user-visible request is app-scoped media playback. A deterministic planner guard and capability entry now prevent unsafe global media-key execution until a player-specific adapter can bind the requested app and track and independently verify playback. This is source-level work only; no build or tests were run.
