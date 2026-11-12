@@ -21,6 +21,7 @@ export type DesktopAction =
   | { operation: 'desktop:read_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:click_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:set_value'; parameters: { name?: string; automationId?: string; text: string; expectProcess?: string } }
+  | { operation: 'desktop:set_toggle'; parameters: { name?: string; automationId?: string; state: boolean; expectProcess?: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
   | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
@@ -122,6 +123,27 @@ export function buildControlActionScript(
     '$actual = $pattern.Current.Value',
     'if ($actual -cne ' + "'" + safeText + "'" + ') { throw "UI Automation value verification did not match." }',
     '[Console]::Out.WriteLine("VALUE_VERIFIED")',
+  ].join('; ');
+}
+
+export function buildControlToggleScript(name: string | undefined, state: boolean, automationId?: string): string {
+  const selector = buildControlSelector(name, automationId);
+  return [
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    selector,
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
+    '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+    'if ($matches.Count -ne 1) { throw "Control selector must resolve to exactly one control." }',
+    '$element = $matches.Item(0)',
+    '$actualName = $element.Current.Name',
+    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|otp|one[- ]time password|recovery code|cvv|card number|credit card|debit card|card expiry|expiration date|bank account|account number|routing number|iban|swift code|sort code|security code") { throw "JARVIS policy blocks changing credential or financial controls." }',
+    '$pattern = $null',
+    'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Toggle action." }',
+    '$desired = ' + (state ? '[System.Windows.Automation.ToggleState]::On' : '[System.Windows.Automation.ToggleState]::Off'),
+    'if ($pattern.Current.ToggleState -ne $desired) { $pattern.Toggle() }',
+    'if ($pattern.Current.ToggleState -ne $desired) { throw "Toggle state readback did not match the requested state." }',
+    '[Console]::Out.WriteLine("TOGGLE_VERIFIED")',
   ].join('; ');
 }
 
@@ -443,6 +465,21 @@ export class WindowsDesktopAgent {
           outcome: VerificationOutcome.VERIFIED_SUCCESS,
           data: parsed,
           evidence: { host: 'windows', mechanism: 'UI Automation ValuePattern read', uniqueControlVerified: true, sensitiveValueRedacted: parsed.redacted, valueAvailable: parsed.valueAvailable },
+        };
+      }
+
+      if (action.operation === 'desktop:set_toggle') {
+        const { name, automationId, state } = action.parameters;
+        validateControlSelector(name, automationId);
+        if (typeof state !== 'boolean') throw new Error('Toggle state must be true or false.');
+        const output = await this.runPowerShell(buildControlToggleScript(name, state, automationId), signal);
+        const confirmed = output.includes('TOGGLE_VERIFIED');
+        return {
+          success: confirmed,
+          outcome: confirmed ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
+          data: { controlName: name, automationId, state },
+          evidence: { host: 'windows', mechanism: 'UI Automation TogglePattern with state readback', selector: automationId ? 'AutomationId' : 'Name', stateVerified: confirmed },
+          error: confirmed ? undefined : 'The requested toggle state could not be verified.',
         };
       }
 
