@@ -173,3 +173,42 @@ The optional gateway is a separate listener with OpenAI-compatible `/v1/chat/com
 - JavaScript async I/O concurrency is not CPU parallelism.
 - Multi-process deployment requires a transactional shared queue/lease and state store; current coordination is process-local.
 - A successful build is not device or release acceptance.
+
+
+## 11. Companion and synchronization contracts
+
+The laptop is the default source of truth. Companion capabilities are negotiated through signed sessions. Current sync route family:
+
+| Route | Purpose |
+|---|---|
+| `POST /api/sync/capabilities` | Negotiate hub-sync, offline-queue and p2p-envelope capabilities |
+| `POST /api/sync/push` | Submit up to 50 queued changes |
+| `GET /api/sync/pull?since=<ms>` | Retrieve permitted memory changes and the requesting device's conflicts |
+| `GET /api/sync/peers` | Retrieve enrolled public keys for negotiated peer-envelope devices |
+| `GET /api/sync/overview` | Owner view of devices, sync state, conflicts and queued commands |
+| `POST /api/sync/conflicts/resolve` | Owner resolution: keep hub, keep device or merge |
+| `POST /api/sync/commands/decide` | Owner chooses run or discard for a queued command |
+
+Arrival validation includes active device state, TTL no greater than seven days, non-future creation time, payload bounds, monotonic per-device sequence and replay/change-ID checks. Memory sync is restricted to devices with DEVICE_MANAGE. Memory mutations still pass through planner/policy/approval. Conflicts include concurrent update, deleted-on-hub and update-vs-delete; no last-writer-wins. Offline commands remain waiting for owner decision.
+
+Android SyncClient bounds its encrypted queue to 200 changes, pushes in batches of 50 and uses a separate AES-GCM Android Keystore key. Queue authentication/schema failures stop sync rather than silently resetting state. Peer envelopes are signed by the sender, recipient-bound, expire within 24 hours and include a payload hash and monotonic sequence. LAN discovery/transport remains future work.
+
+## 12. Plugin and workflow model
+
+A workflow is a versioned template of 1–20 steps with unique IDs and acyclic dependencies. Steps must be allowlisted by both planner and policy gateway with permitted parameter keys. Workflow/plugin recursion and self-escalation are prohibited. Each version is appended; history is not rewritten. AI drafts are advisory and cannot run until validated and owner-approved. Existing built-ins include morning-brief and open-dev-workspace.
+
+Plugins are data-only manifests, not executable packages. Installation starts disabled with no grants; each permission is explicitly granted, revocable and checked on every load. Invalid or unknown manifest fields, unsupported versions, restricted capabilities and unapproved permission requests fail closed. Plugin state and workflow state are persisted separately in local state files.
+
+The developer assistant operates only on explicitly connected repositories and granted scopes:
+- read: bounded tree/file/search and Git status/log/diff;
+- suggest: model-generated explanations and draft diffs;
+- git-write: apply reviewed suggestion, create feature branch, commit or push feature branch;
+- ci: read recent CI status when GitHub CLI is available.
+
+Model suggestions never apply/commit/push themselves. Applying, branch creation, commit and push are separately approved. Protected branches and secret/runtime paths are blocked.
+
+## 13. Voice and hand-landmark components
+
+Optional local Piper TTS is invoked by the authenticated signed voice-synthesis route. Input is capped at 1,200 characters; subprocess execution uses no shell; WAV output is validated; response audio is no-store. A 20-second generation timeout applies. If local TTS is unavailable, the HUD can fall back to browser speech synthesis. Browser speech processing may be remote and is not equivalent to local STT.
+
+The bundled MediaPipe Hand Landmarker full-float16 model is served locally rather than fetched from a CDN at runtime. The documented upstream model card identifies Apache-2.0 licensing; the recorded bundle SHA-256 is `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`. Verify source, license, digest and compatibility before replacing it. Hand landmarks are experimental under difficult camera conditions and must never be used as an authorization signal.

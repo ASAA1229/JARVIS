@@ -127,3 +127,13 @@ For suspected compromise, leaked key, invalid audit chain, corrupted encrypted s
 7. Record incident scope, evidence, remediation and retest.
 
 Security acceptance requires negative tests for authentication, replay, authorization, approval binding, persistence failure, audit tampering, secret leakage, prompt injection, path traversal, concurrency races, offline replay, revocation and gateway isolation. A successful build is not security acceptance.
+
+
+## 13. Additional platform-specific controls
+
+- Android rejects cleartext HTTP. Enrollment is approved by an already trusted owner device; no owner token is stored in the app.
+- Android device identity and offline queue encryption use separate Keystore-backed keys. Queue migration/authentication errors fail closed.
+- Optional WorkManager approval polling is not push and does not grant background command authority.
+- Hand-landmark output and other sensor-derived signals are not authentication or approval factors.
+- Optional Piper TTS runs with shell execution disabled, bounded input and timeout; use only a trusted executable and appropriately licensed model.
+- Website gateway keys are per-site hashes and must never be exposed in browser bundles, logs or source control.

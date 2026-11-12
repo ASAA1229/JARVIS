@@ -164,3 +164,24 @@ Prioritize identity/signature/replay/revocation, policy/approval binding, audit/
 Use disposable fixtures and isolated state. Do not test against live personal memory or irreversible actions.
 
 For each result record repository, branch, exact SHA, command/scenario, OS/device, exit code, expected/actual result, sanitized evidence and limitations. Status values: PASS — AUTOMATED (exact SHA), PASS — DEVICE (named device), FAIL, BLOCKED, NOT RUN, OWNER ACCEPTANCE PENDING.
+
+
+## 10. Additional test commands for repository utilities
+
+~~~powershell
+python -m unittest discover -s tests -t . -v
+python -m unittest discover -s tests -p 'test_environment_snapshot.py' -v
+python -m unittest discover -s tests -p 'test_customer_bundle.py' -v
+python -m unittest discover -s tests -p 'test_customer_preupgrade_verifier.py' -v
+python -m unittest discover -s tests -p 'test_release_workflow.py' -v
+~~~
+
+Use synthetic fixtures and temporary output directories. AIX behavior must be tested on a real supported AIX host; Linux tests do not prove AIX command behavior.
+
+For the website gateway, configure the optional port, create a site key, test /v1/health and text chat locally, and keep the key server-side. The gateway's request limits include a 64 KiB body, 40 messages, 48,000 input characters, two concurrent requests per site and four overall. It refuses tool/function/response-format requests. See [Operations](OPERATIONS.md).
+
+## 11. Agent and prompt contribution rules
+
+Prompts are versioned and role-separated. Add or modify prompt profiles only with corresponding structured response schemas and validation tests. Agent routing remains advisory; tool candidates must map to trusted registered capabilities. Do not widen a tool allowlist to satisfy a prompt or test.
+
+Repository assistant scopes are read, suggest, git-write and CI-read. Protected paths include .env*, keys/certificates, .npmrc, credentials, data/, node_modules/, .git/ and local storage. Git commands must use fixed argument arrays rather than shell concatenation. Branch creation, applying a suggestion, commit and push are distinct approved operations.
