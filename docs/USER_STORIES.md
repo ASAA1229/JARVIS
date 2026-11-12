@@ -1320,26 +1320,26 @@ The Windows Start-menu launcher now returns a normalized top-level `windowPid`, 
 
 ## JARVIS-US-077 — Safe concurrent task execution and resource coordination
 
-**Current status:** **IMPLEMENTED IN SOURCE — BUILD/TEST PENDING.** Initial bounded task coordinator is integrated into the adapter execution path; independent due scheduler jobs can dispatch concurrently. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
+**Current status:** **PARTIALLY IMPLEMENTED IN SOURCE — BUILD/TEST PENDING.** Bounded planner/adapter queues, resource locks, queue diagnostics, and bounded independent scheduled-job dispatch are implemented. A deterministic workflow DAG-wave planner exists, but workflow execution itself remains sequential until branch-level approval/checkpoint/recovery semantics are complete. See [TASK_CONCURRENCY.md](TASK_CONCURRENCY.md).
 
 **As the owner,** I want JARVIS to execute independent tasks concurrently while coordinating shared resources, so that multiple requests can progress without race conditions, deadlocks, starvation, duplicate side effects or uncontrolled resource use.
 
 **Acceptance criteria**
-- Global and per-device concurrency are bounded and configurable through validated runtime configuration.
+- Global and per-device concurrency are bounded; limits are constructor-configured and must become validated owner/runtime settings before claiming full configurability.
 - The waiting queue is bounded, observable, priority-aware and protected against starvation by priority aging.
 - Planner/provider admission is separately bounded; cancellation while queued prevents the provider call, and a late result from an uninterruptible active provider cannot proceed to policy or execution.
 - Queue cancellation or admission timeout before adapter start is terminal and records that no side effect began; interruption after adapter start remains uncertain and requires reconciliation.
-- Health reporting exposes bounded active/queued counts and capacity limits without exposing request parameters, secrets or resource paths.
+- Health reporting exposes bounded active/queued counts, opaque task IDs, wait duration, effective priority, blocker categories and capacity limits without exposing request parameters, secrets, device identifiers or resource names.
 - Interactive, scheduled and background tasks have explicit priority classes; priority never overrides policy or approval.
 - Duplicate task IDs cannot be queued or executed concurrently.
 - Queued tasks can be cancelled or time out without invoking an adapter.
 - Resource locks are acquired atomically in canonical order; conflicting desktop, memory, workflow-registry and workspace operations cannot overlap.
 - All locks and worker slots are released after success, failure, timeout, cancellation or adapter exception.
-- Workflow dependency graphs are validated for unknown nodes and cycles; independent branches may run concurrently only after per-branch policy, approval, join and recovery semantics are implemented.
+- Workflow dependency graphs are validated for unknown nodes and cycles; a bounded deterministic DAG-wave planner is implemented, but actual parallel branch execution remains disabled until per-branch policy, approval, checkpoint, cancellation, join and recovery semantics are implemented.
 - Independent due schedules can dispatch concurrently, while each schedule remains at-most-once across overlapping ticks and restart.
 - CPU-bound work uses a separate bounded worker-thread pool only when justified by measurement; I/O-bound work uses bounded async concurrency.
 - Shutdown drains or safely interrupts work; interrupted side effects enter recovery and are never blindly replayed.
-- Owner-visible task state distinguishes queued, running, blocked-on-resource, awaiting approval, cancelled, failed, partial, uncertain and completed.
+- Queue diagnostics distinguish queued/running work and resource/device-capacity blockers; the full owner task view must additionally distinguish awaiting approval, cancelled, failed, partial, uncertain and completed.
 - No concurrency path bypasses authentication, policy, task-scoped approval, audit, durable checkpoints or outcome verification.
 - Horizontal/multi-process execution is disabled until a transactional shared queue and distributed lease/lock design is implemented and tested.
 
