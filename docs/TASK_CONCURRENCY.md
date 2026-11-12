@@ -57,6 +57,10 @@ A task declares its complete resource set before execution. The coordinator norm
 - Resource locks are conservative operation-level isolation, not proof that every third-party application is thread-safe. New adapters must declare their shared resources and must not acquire locks outside the coordinator.
 - The coordinator prevents deadlocks caused by its own resource-lock protocol; it does not claim to detect arbitrary deadlocks inside an operating system, third-party application, native adapter, or external service.
 
+## Workflow DAG execution foundation
+
+`workflowExecutionBatches` now derives deterministic bounded execution waves from validated dependency metadata. It rejects malformed/self/unknown/cyclic dependencies, preserves original step ordering as the tie-breaker, and caps each wave at the requested parallelism. This is a planning primitive only: the current workflow runner still executes steps sequentially. It must not be connected to side-effecting execution until each branch has independent task/approval/checkpoint state, branch cancellation, conflict-aware resource admission, and deterministic join/partial-failure recovery.
+
 ## Next implementation stages
 
 1. Add execution metrics and owner-visible queue status without exposing sensitive parameters.
