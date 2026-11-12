@@ -35,3 +35,26 @@ test('wake-prefix stripping does not turn non-launch speech into a launch', asyn
     assert.notEqual(plan.operations[0]?.operation, 'app:launch', request);
   }
 });
+
+test('planner supports opening a discovered app and dictating text into it', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'app-command-test', timestamp: Date.now() };
+  const plan = await planner.generatePlan('Open Notepad and write ------', context);
+  assert.equal(plan.operations[0]?.operation, 'desktop:launch_and_type');
+  assert.equal(plan.operations[0]?.parameters.appId, 'notepad');
+  assert.equal(plan.operations[0]?.parameters.text, '------');
+
+  const generic = await planner.generatePlan('Open Visual Studio Code and type hello world', context);
+  assert.equal(generic.operations[0]?.operation, 'desktop:launch_and_type');
+  assert.equal(generic.operations[0]?.parameters.appId, 'Visual Studio Code');
+  assert.equal(generic.operations[0]?.parameters.text, 'hello world');
+});
+
+test('planner creates a browser-scoped web search operation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'browser-search-test', timestamp: Date.now() };
+  const plan = await planner.generatePlan('Search for weather tomorrow on Chrome', context);
+  assert.equal(plan.operations[0]?.operation, 'desktop:browser_search');
+  assert.equal(plan.operations[0]?.parameters.appId, 'Google Chrome');
+  assert.equal(plan.operations[0]?.parameters.query, 'weather tomorrow');
+});
