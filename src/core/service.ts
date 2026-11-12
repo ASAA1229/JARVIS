@@ -149,6 +149,7 @@ export class JarvisCoreService {
   private recentAppTargets = new Map<string, { processName: string; appName: string; windowPid: number; verifiedAt: number }>();
   private readonly taskJournal?: TaskJournal;
   private activeExecutionTokens = new Map<TaskId, AbortController>();
+  private activePlanningTokens = new Map<TaskId, AbortController>();
   /** Bounds concurrent adapter work and serializes conflicting host resources. */
   public readonly taskCoordinator = new TaskCoordinator(4, 2, 200, 30_000);
   /** Separately bounds concurrent planner/provider work before adapter admission. */
@@ -225,6 +226,7 @@ export class JarvisCoreService {
   public stopBackgroundServices(): void {
     this.scheduler.stop();
     for (const controller of this.activeExecutionTokens.values()) controller.abort();
+    for (const controller of this.activePlanningTokens.values()) controller.abort();
   }
 
   /**
@@ -325,14 +327,21 @@ export class JarvisCoreService {
         : {}),
     };
     let plan: PlanProposal;
+    const planningController = new AbortController();
+    this.activePlanningTokens.set(taskId, planningController);
     try {
       plan = presetPlan ?? await this.planningCoordinator.run({
         taskId,
         deviceId: device.id,
         priority: origin === 'schedule' ? 10 : 100,
         queueTimeoutMs: 30_000,
+        signal: planningController.signal,
       }, () => this.planner.generatePlan(requestText, context));
     } catch (error: unknown) {
+      this.activePlanningTokens.delete(taskId);
+      if (planningController.signal.aborted || taskRecord.state === TaskState.CANCELLED) {
+        return { taskId, state: TaskState.CANCELLED, message: 'Task cancelled before execution; no operation was started.', verified: false };
+      }
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'The planner failed before an operation could be evaluated; no host operation was executed';
       try {
@@ -351,6 +360,13 @@ export class JarvisCoreService {
         outcome: VerificationOutcome.VERIFIED_FAILURE,
         verified: false,
       };
+    }
+
+    // Cancellation may arrive while an uninterruptible model/provider call is in
+    // progress. Even if that call returns later, its plan must never reach policy or execution.
+    this.activePlanningTokens.delete(taskId);
+    if (planningController.signal.aborted || taskRecord.state === TaskState.CANCELLED) {
+      return { taskId, state: TaskState.CANCELLED, message: 'Task cancelled before execution; no operation was started.', verified: false };
     }
 
     // Validate plan against strict schema. A model-written plan is a proposal only;
@@ -1368,6 +1384,7 @@ export class JarvisCoreService {
       return { success: interrupted, message: interrupted ? 'Interrupt requested. The outcome will be reported as needing reconciliation.' : 'The task was not interruptible.', state: task.state };
     }
     if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
+      this.activePlanningTokens.get(taskId)?.abort();
       this.policy.invalidateApprovals({ taskId }, 'TASK_CANCELLED');
       task.state = TaskState.CANCELLED;
       task.updatedAt = Date.now();
@@ -1432,6 +1449,7 @@ export class JarvisCoreService {
       if (task.deviceId !== deviceId) continue;
       if (task.state === TaskState.EXECUTING) this.interruptTask(task.id);
       else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED) {
+        this.activePlanningTokens.get(task.id)?.abort();
         task.state = TaskState.CANCELLED;
         task.updatedAt = Date.now();
         this.#persistTask(task);
