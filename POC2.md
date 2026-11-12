@@ -969,3 +969,8 @@ Changed: `MainActivity.kt`, `CompanionSession.kt`, capability registry, Android 
 The controlled workstation runner now defaults to `BuildAll`: TypeScript compilation and Android debug APK compilation only. Separate `TestWindows`, `TestAndroid` and `TestAll` modes are available for the later individual validation phase. Documentation updated in `docs/WORKSTATION_SETUP.md`.
 
 No tests or builds have been executed in this environment. The runner itself remains unexecuted on the owner's Windows workstation.
+
+
+## Windows application discovery build increment — 2026-11-12
+
+The explicit `app:inventory` request now queries a bounded Windows Start-menu inventory automatically (maximum 80 entries) without requiring the prior environment toggle. It remains read-only, excludes financial/payment app names, and does not claim discovered apps support UI automation or verified launch. Planner response text updated. US-068 remains OPEN / PARTIAL; no tests or build were run.
