@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TaskCoordinator, TaskAlreadyRunningError, TaskQueueTimeoutError, TaskQueueFullError } from '../src/core/taskCoordinator.js';
+import { TaskCoordinator, TaskAlreadyRunningError, TaskQueueTimeoutError, TaskQueueFullError, NestedTaskExecutionError } from '../src/core/taskCoordinator.js';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -117,4 +117,16 @@ test('interactive priority is selected before lower-priority queued background w
   release();
   await Promise.all([active, background, interactive]);
   assert.deepEqual(order, ['interactive', 'background']);
+});
+
+test('rejects nested admission from a coordinated worker instead of risking reentrant deadlock', async () => {
+  const coordinator = new TaskCoordinator(2, 2);
+  await assert.rejects(
+    coordinator.run({ taskId: 'outer', deviceId: 'a', resources: ['resource:a'] }, async () =>
+      coordinator.run({ taskId: 'inner', deviceId: 'b', resources: ['resource:b'] }, async () => undefined),
+    ),
+    NestedTaskExecutionError,
+  );
+  assert.equal(coordinator.snapshot().active, 0);
+  assert.deepEqual(coordinator.snapshot().lockedResources, []);
 });
