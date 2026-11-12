@@ -1420,9 +1420,9 @@ export class JarvisCoreService {
   }
 
   /**
-   * Derive coarse-grained resource locks from operation semantics. Desktop input
-   * is exclusive per device; personal memory and shared registries are serialized;
-   * file locks are scoped to the canonical target path where one is supplied.
+   * Derive conservative resource locks from operation semantics. Desktop input is
+   * exclusive across the host; memory, registries and shared workspace operations
+   * are serialized until finer-grained resource identity is proven.
    * The coordinator acquires the complete sorted set atomically.
    */
   #executionResources(task: TaskLifecycleRecord, request: OperationRequest): string[] {
