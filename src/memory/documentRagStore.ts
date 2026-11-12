@@ -57,6 +57,7 @@ function safeText(value: string): string {
 function splitIntoChunks(text: string): string[] {
   const chunks: string[] = [];
   let start = 0;
+  let completed = false;
   while (start < text.length && chunks.length < MAX_CHUNKS) {
     let end = Math.min(start + CHUNK_SIZE, text.length);
     if (end < text.length) {
@@ -65,9 +66,10 @@ function splitIntoChunks(text: string): string[] {
     }
     const part = text.slice(start, end).trim();
     if (part) chunks.push(part);
-    if (end >= text.length) break;
+    if (end >= text.length) { completed = true; break; }
     start = Math.max(start + 1, end - CHUNK_OVERLAP);
   }
+  if (!completed) throw new Error('Document exceeds the maximum safe chunk count.');
   return chunks;
 }
 
