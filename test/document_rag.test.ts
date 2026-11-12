@@ -79,6 +79,7 @@ test('unsupported binary formats, empty documents and oversized documents are re
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'manual.pdf', content: 'binary placeholder' }), /Unsupported document format/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'empty.txt', content: '   ' }), /must not be empty/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'large.txt', content: 'x'.repeat(1_000_001) }), /2 MB ingestion limit/);
+    assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'too-many-chunks.txt', content: 'x'.repeat(700_000) }), /maximum safe chunk count/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: '../secret.txt', content: 'secret' }), /plain filename/);
   });
 });
