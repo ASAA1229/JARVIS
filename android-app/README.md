@@ -7,6 +7,7 @@ This is the first native Android companion slice. It supports device-key creatio
 - Requires a trusted HTTPS URL; cleartext HTTP is rejected by both the app and Android manifest.
 - Creates an Ed25519 identity on each phone independently.
 - Encrypts the private-key encoding at rest using AES-GCM and an AES wrapping key held by Android Keystore.
+- Encrypts the offline sync queue (which can contain memory text and held commands) at rest with a separate AES-GCM key held by Android Keystore. Legacy plaintext queues are migrated on first read; authentication or format failures stop sync rather than resetting or overwriting the queue.
 - Uses the JARVIS signed-request contract: session ID, timestamp, one-time nonce, HTTP method/path, and SHA-256 body hash.
 - Enrolling a phone creates a pending request. A currently authorized owner device must approve it before the phone can establish a session.
 - No owner control token is stored in the app.
@@ -37,6 +38,6 @@ The debug APK is written to `android-app/app/build/outputs/apk/debug/app-debug.a
 
 - The initial implementation passed the hosted Android Gradle `assembleDebug` job on 2026-10-30. Physical-device acceptance is still outstanding.
 - No QR scanner is included; the transaction ID and code are entered manually.
-- The app can discover launchable apps locally and open one only after the user taps it. Remote phone app control, SMS/call actions, notification access, push delivery, wake-on-LAN, and a background task service are not implemented.
+- The app can discover launchable apps locally and open one only after the user taps it. A bounded read-only inventory request can be queued by the laptop for a specific active phone and claimed manually in the app; the queue is volatile and supports no remote app launch or arbitrary phone actions. SMS/call actions, notification access, true push delivery, wake-on-LAN, and a general background task service are not implemented.
 - Use a trusted certificate chain on the phones. Do not disable TLS validation or use a permissive trust manager.
 - Install only on test devices until Android build and two-phone revocation/permission tests pass.
