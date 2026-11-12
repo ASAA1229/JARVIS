@@ -151,6 +151,8 @@ export class JarvisCoreService {
   private activeExecutionTokens = new Map<TaskId, AbortController>();
   /** Bounds concurrent adapter work and serializes conflicting host resources. */
   public readonly taskCoordinator = new TaskCoordinator(4, 2, 200, 30_000);
+  /** Separately bounds concurrent planner/provider work before adapter admission. */
+  private readonly planningCoordinator = new TaskCoordinator(2, 1, 100, 30_000);
   private readonly startedAt = Date.now();
   private cpuSample?: { idle: number; total: number };
 
@@ -324,7 +326,12 @@ export class JarvisCoreService {
     };
     let plan: PlanProposal;
     try {
-      plan = presetPlan ?? await this.planner.generatePlan(requestText, context);
+      plan = presetPlan ?? await this.planningCoordinator.run({
+        taskId,
+        deviceId: device.id,
+        priority: origin === 'schedule' ? 10 : 100,
+        queueTimeoutMs: 30_000,
+      }, () => this.planner.generatePlan(requestText, context));
     } catch (error: unknown) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = 'The planner failed before an operation could be evaluated; no host operation was executed';
@@ -1493,7 +1500,7 @@ export class JarvisCoreService {
       tasks: {
         total: tasks.length,
         running: this.activeExecutionTokens.size,
-        executionQueue: (() => { const snapshot = this.taskCoordinator.snapshot(); return { active: snapshot.active, queued: snapshot.queued, limits: snapshot.limits, lockedResourceCount: snapshot.lockedResources.length }; })(),
+        executionQueue: (() => { const snapshot = this.taskCoordinator.snapshot(); const planning = this.planningCoordinator.snapshot(); return { active: snapshot.active, queued: snapshot.queued, limits: snapshot.limits, lockedResourceCount: snapshot.lockedResources.length, planning: { active: planning.active, queued: planning.queued, limits: planning.limits } }; })(),
         awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
