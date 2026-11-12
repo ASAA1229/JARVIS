@@ -92,7 +92,7 @@ Update the website secret after rotation. The laptop must remain awake for local
 
 ## 6. State, backups and retention
 
-Runtime state is stored in local files under configured paths (commonly `data/`): device state, audit records, encrypted personal memory, task journals, workflow/plugin registries, sync queues and gateway metadata.
+Runtime state is stored in local files under configured paths (commonly `data/`): device state, audit records, encrypted personal memory, encrypted document library (`documents.enc`) and derived vectors (`documents.enc.vectors`), conversation history, task journals, workflow/plugin registries, sync queues and gateway metadata.
 
 - Keep data/, .env, keys and local state out of Git and public shares.
 - Use encrypted, access-controlled backup storage.
@@ -103,7 +103,9 @@ Runtime state is stored in local files under configured paths (commonly `data/`)
 - In-app deletion cannot erase independent OneDrive/cloud-sync/version-history copies. Exclude sensitive runtime state from consumer sync or manage that retention separately.
 - When `JARVIS_OWNER_CONTROL_TOKEN` is configured, conversation sessions are stored in `./data/conversations.enc` (or alongside the configured device state path as `.conversations`), encrypted with AES-256-GCM and restored after restart. Sessions expire after about 30 minutes. Without owner control, history is process-local. Back up the encrypted file only as part of the protected local-state backup set.
 
-Never edit encrypted state files manually. Corrupt or unauthenticated state must fail closed.
+Document RAG is enabled only when `JARVIS_OWNER_CONTROL_TOKEN` is configured. Signed endpoints are `POST /api/documents/ingest`, `/api/documents/search`, `/api/documents/list` and `/api/documents/delete`. Ingestion accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text; PDFs, DOCX and image OCR are not supported. Each document is limited to 2 MB, 1 million characters, 500 chunks and the library to 20 million stored chunk characters. Documents are isolated to the authenticated device. Embeddings use the configured loopback Ollama endpoint when available; lexical search remains the fallback.
+
+Never edit encrypted state files manually. Corrupt or unauthenticated document source state must fail closed. The derived embedding index may be rebuilt from the encrypted source library.
 
 ## 7. Recovery
 
