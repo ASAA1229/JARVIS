@@ -218,7 +218,7 @@ export class WindowsAppLauncherAdapter {
       testStatus: app.id === 'notepad' ? 'automated-partial; interactive-laptop-acceptance-required' : 'allowlisted-unverified-on-target-hardware',
     }));
     let discovered: Array<{ applicationId: string; name: string; installationStatus: string; supportedOperations: string[]; risk: string; testStatus: string; limitations: string }> = [];
-    if (process.platform === 'win32' && process.env.JARVIS_ENABLE_START_MENU_INVENTORY === '1') {
+    if (process.platform === 'win32') {
       try {
         const script = [
           '$ErrorActionPreference = "Stop"',
@@ -258,7 +258,7 @@ export class WindowsAppLauncherAdapter {
       evidence: {
         allowlistedCount: allowlisted.length,
         discoveredCount: discovered.length,
-        startMenuQueried: process.env.JARVIS_ENABLE_START_MENU_INVENTORY === '1',
+        startMenuQueried: process.platform === 'win32',
         financialAppsExcluded: true,
       },
     };
