@@ -1258,6 +1258,13 @@ The follow-up phrase **“write …”** is now bound to the most recently verif
 **Build status:** source implemented on `new`; authored planner regressions added but not executed. No build, typecheck, lint, tests, browser launch or desktop interaction was performed.
 
 
+### App-specific UI Automation toggle support — 2026-11-12
+
+JARVIS now supports an explicit desired-state operation for accessible Windows toggle controls (checkboxes, switches and similar controls) using UI Automation TogglePattern. The request must identify exactly one control by name or AutomationId and specify ON/OFF; the adapter changes state only when needed, reads the state back, and reports verified success only when the requested state is confirmed. Credential and financial control-name heuristics remain blocked. The planner recognizes explicit “set toggle [name] on/off in [app]” requests, and the policy gateway requires a fresh high-risk approval bound to the exact control, desired state and target process. Regression tests cover script construction, planner routing and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN. App-specific control patterns beyond Invoke/Value/Toggle, real application coverage and durable workflow outcomes remain open.
+
+
 ### Browser search navigation observation — 2026-11-12
 
 After the approved browser search is submitted, JARVIS now performs a short, foreground-process-bound UI Automation inspection before and after submission. A changed non-empty window title from the expected browser process is recorded as a navigation observation. This is deliberately **not** promoted to verified search success: title changes do not prove that the requested query or results page loaded. If inspection is unavailable or the title does not change, the search remains submitted-but-unverified. Regression tests cover matching browser identity, unchanged titles, wrong-process title changes and missing observations.
