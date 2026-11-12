@@ -14,7 +14,7 @@ This guide prepares a repeatable local workstation and produces evidence for the
 - Android SDK Platform 35 and Android SDK Build-Tools 35.x
 - Android SDK Platform-Tools (includes adb)
 - JDK 17
-- Gradle compatible with Android Gradle Plugin 8.7.3 (or add a Gradle Wrapper in a separately reviewed change)
+- Gradle 8.9 or newer, compatible with Android Gradle Plugin 8.7.3 (or add a Gradle Wrapper in a separately reviewed change)
 - Microsoft Edge for the existing browser smoke test
 
 The Android project uses Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compileSdk 35, minSdk 28, targetSdk 35, and Java/Kotlin target 17. The repository currently does not include android-app/gradlew.bat; the runner therefore requires system Gradle on PATH.
