@@ -117,6 +117,7 @@ export class PolicyGateway {
       ['desktop:read_control', ['name', 'automationId', 'expectProcess']],
       ['desktop:click_control', ['name', 'automationId', 'expectProcess']],
       ['desktop:set_value', ['name', 'automationId', 'text', 'expectProcess']],
+      ['desktop:set_toggle', ['name', 'automationId', 'state', 'expectProcess']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: (operation as string).startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
