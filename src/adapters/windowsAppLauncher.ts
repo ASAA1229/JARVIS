@@ -62,6 +62,17 @@ const DISCOVERED_WINDOW_IDENTITIES: Record<string, { processNames: string[]; tit
   'microsoft store': { processNames: ['WinStore.App'], titleContains: 'Microsoft Store' },
   'photos': { processNames: ['Photos', 'Microsoft.Photos'], titleContains: 'Photos' },
   'clock': { processNames: ['Time', 'WindowsAlarms'], titleContains: 'Clock' },
+  // Browser process identities are stable enough to bind the subsequent address-bar
+  // operation; page titles are intentionally not used as identity evidence.
+  'google chrome': { processNames: ['chrome'] },
+  'chrome': { processNames: ['chrome'] },
+  'microsoft edge': { processNames: ['msedge'] },
+  'edge': { processNames: ['msedge'] },
+  'mozilla firefox': { processNames: ['firefox'] },
+  'firefox': { processNames: ['firefox'] },
+  'brave': { processNames: ['brave'] },
+  'brave browser': { processNames: ['brave'] },
+  'opera': { processNames: ['opera'] },
 };
 
 export function discoveredWindowIdentity(name: string): { processNames: string[]; titleContains?: string } | undefined {
