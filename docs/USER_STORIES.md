@@ -1258,6 +1258,13 @@ The follow-up phrase **“write …”** is now bound to the most recently verif
 **Build status:** source implemented on `new`; authored planner regressions added but not executed. No build, typecheck, lint, tests, browser launch or desktop interaction was performed.
 
 
+### UI Automation selector authorization closure — 2026-11-12
+
+The desktop policy gateway now explicitly allowlists `automationId` for guarded control reads, clicks and value updates. This closes a mismatch where the Windows adapter supported stable AutomationId selectors but the policy rejected them as unexpected parameters. The adapter now requires exactly one selector (a control name OR an AutomationId), rejects competing selectors, and continues to require a unique matching control in the verified foreground window. State-changing click/set actions remain bound to the exact selector, target process and parameters in the task-scoped approval hash; changing the selector after approval is denied. Regression tests were added for selector validation and approval-scope tampering.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN, per the current build-first / test-later sequence. US-014 remains IMPLEMENTED IN SOURCE — NEEDS TESTING; app-specific capability and durable-outcome coverage remain open.
+
+
 ### Media playback safety boundary — 2026-11-12
 
 The planner now explicitly recognizes “play [track] on [app]” requests and safely declines execution until an app-specific adapter exists. It will not use a global play/pause shortcut, because that could control a different player and cannot prove which track started. The capability catalogue records app-scoped media playback as **PLANNED**. Remaining implementation: select the first owner-approved player, implement its official/deep-link or supported UI Automation adapter, bind the exact track and app into approval, and independently verify the active track/playback state. No media playback is claimed complete.
