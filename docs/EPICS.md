@@ -393,3 +393,15 @@ Local test pass rate is **100%**; do not translate that into an overall product-
 - Epic status: **IMPLEMENTED TEST COVERAGE — NEEDS EXECUTION**. E02 and E03 remain OPEN pending exact-head automated checks and physical MSI acceptance.
 - Next: run browser smoke on Windows/Edge; then full Node suite/build and capture exact SHA evidence. Complete the actual microphone-to-Notepad acceptance only on the target MSI.
 
+
+
+## E05 Android cross-device security increment — 2026-11-12
+
+**Branch:** `new`  
+**Scope:** Native Android offline sync queue protection.
+
+- Added a dedicated AES-GCM data key in Android Keystore, separate from the Ed25519 identity-key wrapping key.
+- Encrypted queued memory changes and held commands at rest; writes are flushed to a temporary file and replaced atomically where supported.
+- Added one-time migration of legacy plaintext queue files. Unsupported versions, malformed ciphertext and GCM authentication failures stop sync rather than silently clearing user data.
+- Wired the native owner panels to the Keystore-backed queue implementation; revocation continues to wipe the queue and its local data key.
+- Android build, migration/revocation tests, TLS connectivity, two-phone enrollment/revocation drills and physical-device acceptance were **not run**. E05 and US-072/US-073 remain OPEN.
