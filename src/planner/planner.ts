@@ -163,6 +163,18 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const workflowPlan = planWorkflowRequest(requestText);
     if (workflowPlan) return workflowPlan;
 
+    // Media playback is intentionally not routed through generic desktop hotkeys.
+    // A song/app pair needs a provider-specific search, target binding and playback
+    // postcondition; toggling a global media key could control the wrong application.
+    const mediaRequest = requestText.match(/^\s*(?:please\s+)?(?:play|put on)\s+(.+?)\s+(?:on|in)\s+([A-Za-z0-9 ._-]{1,64})\s*$/i);
+    if (mediaRequest) {
+      const track = mediaRequest[1].trim().replace(/^[“”"']|[“”"']$/g, '').trim();
+      if (!track || track.length > 160 || /[\u0000-\u001F\u007F]/.test(track)) {
+        return { intent: 'Media request needs a valid track and app', operations: [], confidence: 0.98, explanation: 'Provide a track title and an explicit media app. No media application was controlled.', uncertainty: 'Track title is empty, too long, or contains control characters.' };
+      }
+      return { intent: 'Media playback requires an app-specific verified adapter', operations: [], confidence: 0.97, explanation: 'I identified the requested track and application, but I will not send a global play/pause shortcut or claim playback. This app needs a dedicated, permission-scoped search and playback adapter with independent playback-state verification.', uncertainty: 'No verified media playback adapter is currently registered for the requested app.' };
+    }
+
     const rememberName = requestText.match(/\bremember\s+(?:that\s+)?(?:my|owner|user)\s+name\s+is\s+(.+?)\s*$/i);
     if (rememberName && rememberName[1].trim()) {
       return { intent: 'Save owner name to personal memory', operations: [{ operation: 'memory:save', parameters: { category: 'preference', content: 'owner name: ' + rememberName[1].trim() }, justification: 'Owner explicitly requested remembering their name' }], confidence: 0.96, explanation: 'Will save your name in encrypted personal memory after approval.' };
