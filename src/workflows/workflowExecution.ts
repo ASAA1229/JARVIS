@@ -2,7 +2,7 @@ import type { WorkflowStep } from './workflowStore.js';
 
 export type WorkflowBranchStatus =
   | 'pending' | 'running' | 'awaiting_approval' | 'completed'
-  | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'cancelled';
+  | 'failed' | 'partial' | 'uncertain' | 'blocked' | 'skipped' | 'cancelled';
 
 export interface WorkflowBranchCheckpoint {
   runId: string;
@@ -31,6 +31,7 @@ export type WorkflowBranchExecutionResult =
   | { status: 'completed'; message?: string }
   | { status: 'awaiting_approval'; approvalRef: string; message?: string }
   | { status: 'failed'; message: string }
+  | { status: 'partial'; message: string }
   | { status: 'uncertain'; message: string }
   | { status: 'cancelled'; message?: string };
 
@@ -59,7 +60,7 @@ export interface WorkflowRunOptions {
   checkpoint: (snapshot: WorkflowRunCheckpoint) => Promise<void>;
 }
 
-const TERMINAL_FAILURES = new Set<WorkflowBranchStatus>(['failed', 'uncertain', 'blocked', 'skipped', 'cancelled']);
+const TERMINAL_FAILURES = new Set<WorkflowBranchStatus>(['failed', 'partial', 'uncertain', 'blocked', 'skipped', 'cancelled']);
 const MAX_STEPS = 20;
 const MAX_PARALLEL = 8;
 
@@ -229,6 +230,9 @@ export class WorkflowBranchExecutor {
             } else if (result.status === 'failed') {
               branch.outcome = 'verified_failure';
               await mark(branch, 'failed', result.message);
+            } else if (result.status === 'partial') {
+              branch.outcome = 'partial';
+              await mark(branch, 'partial', result.message);
             } else if (result.status === 'uncertain') {
               branch.outcome = 'uncertain';
               await mark(branch, 'uncertain', result.message);
@@ -262,7 +266,13 @@ export class WorkflowBranchExecutor {
       const pending = snapshot.branches.some((branch) => branch.status === 'pending');
       const awaiting = snapshot.branches.some((branch) => branch.status === 'awaiting_approval');
       if (pending && !changed) {
-        // No eligible node and no active worker means malformed/inconsistent dependency state.
+        if (awaiting) {
+          // Keep descendants pending while their prerequisite branch awaits approval.
+          snapshot.status = 'awaiting_approval';
+          await persist();
+          return structuredClone(snapshot);
+        }
+        // With a validated DAG and no active workers, this is an inconsistent state.
         for (const branch of snapshot.branches) if (branch.status === 'pending') await mark(branch, 'blocked', 'No dependency-safe execution path remains.');
         continue;
       }
@@ -270,7 +280,7 @@ export class WorkflowBranchExecutor {
       snapshot.status = awaiting
         ? 'awaiting_approval'
         : snapshot.branches.some((branch) => branch.status === 'uncertain') ? 'uncertain'
-        : snapshot.branches.some((branch) => branch.status === 'failed' || branch.status === 'blocked' || branch.status === 'cancelled') ? 'partial'
+        : snapshot.branches.some((branch) => branch.status === 'failed' || branch.status === 'partial' || branch.status === 'blocked' || branch.status === 'cancelled') ? 'partial'
         : 'completed';
       await persist();
       return structuredClone(snapshot);
