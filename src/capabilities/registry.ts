@@ -96,7 +96,7 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     risk: 'medium',
     requiresApproval: true,
     requiresDeviceAgent: true,
-    notes: 'Foreground UI Automation inspection exposes AutomationId; read/click/set can select by AutomationId or exact control name and require a unique match. Credential/financial fields remain guarded; universal coverage and target-app acceptance remain incomplete.',
+    notes: 'Foreground UI Automation inspection exposes AutomationId; read/click/set and idempotent toggle-state operations can select by AutomationId or exact control name and require a unique match. State changes require exact task-scoped approval and readback; credential/financial fields remain guarded. Universal coverage and target-app acceptance remain incomplete.',
   },
   {
     id: 'desktop.text-and-clipboard',
