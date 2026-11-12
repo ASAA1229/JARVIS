@@ -441,3 +441,8 @@ E02/E03 implementation now includes a generic combined launch-and-type request f
 ## Permission-controlled desktop interaction update — 2026-11-12
 
 The current voice-to-desktop vertical slice covers app launch, explicit dictated text entry, and browser-scoped search through the central approval gateway. The next uncovered user-visible request is app-scoped media playback. A deterministic planner guard and capability entry now prevent unsafe global media-key execution until a player-specific adapter can bind the requested app and track and independently verify playback. This is source-level work only; no build or tests were run.
+
+
+### Desktop app permission continuity — 2026-11-12
+
+A verified Start-menu-discovered application now carries its exact process/window identity into subsequent approval-bound actions. This closes a hand-off gap between dynamic app discovery, the launch-and-type composite, and the per-device recent-app context. Unknown or ambiguous apps still fail closed for text entry. Regression coverage was added but not executed; no build or tests were run during this build-first implementation phase.
