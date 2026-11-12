@@ -114,9 +114,9 @@ export class PolicyGateway {
       ['desktop:copy_selection', ['expectProcess']],
       ['desktop:paste_clipboard', ['expectProcess']],
       ['desktop:inspect_window', ['expectProcess']],
-      ['desktop:read_control', ['name', 'expectProcess']],
-      ['desktop:click_control', ['name', 'expectProcess']],
-      ['desktop:set_value', ['name', 'text', 'expectProcess']],
+      ['desktop:read_control', ['name', 'automationId', 'expectProcess']],
+      ['desktop:click_control', ['name', 'automationId', 'expectProcess']],
+      ['desktop:set_value', ['name', 'automationId', 'text', 'expectProcess']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: (operation as string).startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
