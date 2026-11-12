@@ -1294,3 +1294,24 @@ The planner now explicitly recognizes “play [track] on [app]” requests and s
 ### Discovered-app follow-up target binding — 2026-11-12
 
 The Windows Start-menu launcher now returns a normalized top-level `windowPid`, `windowProcess` and `windowTitle` only when a discovered app's window matches a trusted process identity. The already-running discovered-app path returns the same target binding after unique-window selection and verified focus. This allows the existing approved `desktop:launch_and_type` composite and short-lived per-device app session to continue into the correct discovered app instead of losing its verified target metadata. Unknown apps without a trusted process identity remain PARTIAL and cannot receive follow-up text input. This is not universal UI Automation support; each app still needs capability-specific operation and outcome coverage.
+
+
+## JARVIS-US-076 — Platform-independent desktop and mobile product
+
+**Current status:** **REQUIREMENT ACCEPTED — IMPLEMENTATION PARTIAL.** Existing desktop control is Windows-specific; Android native source exists; macOS, Linux and iOS implementations are not complete. See [PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md).
+
+**As the owner,** I want JARVIS to run as the same secure personal assistant across Windows, macOS, Linux, Android and iOS, so that I can use my identity, permissions, memory, AI and workflows across all my devices.
+
+**Acceptance criteria**
+- JARVIS supports documented, maintained compatibility ranges for Windows, macOS and Linux desktop operating systems.
+- JARVIS provides native companion applications for Android and iOS.
+- Shared core services and versioned language-neutral contracts define identity, sessions, tasks, approvals, policy, audit, memory, capabilities and synchronization.
+- Platform-specific process, window, accessibility, input, notification, secure storage, audio and background behavior is implemented behind native adapters; no OS-specific behavior leaks into shared policy/business logic.
+- Every device receives its own cryptographic identity and independently scoped permissions; enrollment, session expiry and revocation work across platform combinations.
+- Unsupported OS versions and unavailable native capabilities are clearly reported; no feature is described as universal without per-platform evidence.
+- Build/package workflows produce traceable platform artifacts with checksums and appropriate platform signing; debug artifacts are not treated as production releases.
+- CI covers shared core on Windows/macOS/Linux, Android build/emulator checks, and iOS Xcode/simulator checks on macOS runners.
+- Acceptance includes real Windows, macOS and Linux hosts plus Android and iPhone devices, including mixed-platform enrollment, secure communication, offline/reconnect and independent revocation.
+- All existing JARVIS security invariants remain enforced on every platform: default-deny authorization, scoped approvals, auditability, no financial/payment automation, no credential entry, no unrestricted shell/admin elevation and no unsafe automatic replay.
+
+**Definition of done:** Each of the five target OS families has a buildable application/runtime, native adapter implementation for its declared capabilities, automated platform checks, documented compatibility range, secure enrollment and device-level acceptance. Shared-core tests alone do not close this story.
