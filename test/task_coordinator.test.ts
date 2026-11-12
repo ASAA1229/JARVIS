@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TaskCoordinator, TaskAlreadyRunningError, TaskQueueTimeoutError } from '../src/core/taskCoordinator.js';
+import { TaskCoordinator, TaskAlreadyRunningError, TaskQueueTimeoutError, TaskQueueFullError } from '../src/core/taskCoordinator.js';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -93,4 +93,28 @@ test('failed work always releases slots and resource locks', async () => {
   await assert.rejects(coordinator.run({ taskId: 'failure', deviceId: 'a', resources: ['desktop:a'] }, async () => { throw new Error('expected'); }), /expected/);
   assert.equal(coordinator.snapshot().active, 0);
   assert.deepEqual(coordinator.snapshot().lockedResources, []);
+});
+
+test('rejects new work when the bounded waiting queue is full', async () => {
+  const coordinator = new TaskCoordinator(1, 1, 1, 1000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const active = coordinator.run({ taskId: 'active', deviceId: 'a' }, async () => gate);
+  const queued = coordinator.run({ taskId: 'queued', deviceId: 'b' }, async () => undefined);
+  await assert.rejects(coordinator.run({ taskId: 'overflow', deviceId: 'c' }, async () => undefined), TaskQueueFullError);
+  release();
+  await Promise.all([active, queued]);
+});
+
+test('interactive priority is selected before lower-priority queued background work', async () => {
+  const coordinator = new TaskCoordinator(1, 1, 5, 1000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const order: string[] = [];
+  const active = coordinator.run({ taskId: 'active', deviceId: 'a' }, async () => gate);
+  const background = coordinator.run({ taskId: 'background', deviceId: 'b', priority: 10 }, async () => { order.push('background'); });
+  const interactive = coordinator.run({ taskId: 'interactive', deviceId: 'c', priority: 100 }, async () => { order.push('interactive'); });
+  release();
+  await Promise.all([active, background, interactive]);
+  assert.deepEqual(order, ['interactive', 'background']);
 });
