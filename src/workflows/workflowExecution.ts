@@ -48,6 +48,8 @@ export interface WorkflowRunOptions {
   signal?: AbortSignal;
   /** Explicitly confirmed, step-scoped approvals. Stored pending refs are never treated as approval. */
   approvedApprovals?: Record<string, string>;
+  /** Prior durable snapshot for explicit owner-approved resume/reconciliation. */
+  resumeFrom?: WorkflowRunCheckpoint;
   /** Resource keys must be stable, non-sensitive identifiers. */
   resourcesForStep?: (step: WorkflowStep) => string[];
   executeStep: (step: WorkflowStep, context: WorkflowBranchExecutionContext) => Promise<WorkflowBranchExecutionResult>;
@@ -75,31 +77,68 @@ export class WorkflowBranchExecutor {
     this.validateGraph(steps);
 
     const now = Date.now();
-    const snapshot: WorkflowRunCheckpoint = {
-      version: 1,
-      runId: options.runId,
-      status: 'running',
-      maxParallel,
-      branches: steps.map((step) => ({
+    let snapshot: WorkflowRunCheckpoint;
+    if (options.resumeFrom) {
+      const prior = structuredClone(options.resumeFrom);
+      if (prior.version !== 1 || prior.runId !== options.runId || !Array.isArray(prior.branches) ||
+          prior.branches.length !== steps.length || prior.branches.some((branch) => {
+            const step = steps.find((candidate) => candidate.id === branch.stepId);
+            return !step || step.operation !== branch.operation ||
+              JSON.stringify([...step.dependsOn].sort()) !== JSON.stringify([...branch.dependsOn].sort());
+          })) {
+        throw new Error('The saved workflow checkpoint does not match this run and workflow definition.');
+      }
+      snapshot = prior;
+      snapshot.maxParallel = maxParallel;
+      for (const branch of snapshot.branches) {
+        // A process restart while a branch was running leaves the side effect unknown.
+        if (branch.status === 'running') {
+          branch.status = 'uncertain';
+          branch.outcome = 'uncertain';
+          branch.message = 'Process restarted during branch execution. Reconcile before any new attempt.';
+          branch.updatedAt = now;
+        } else if (branch.status === 'awaiting_approval') {
+          const approved = options.approvedApprovals?.[branch.stepId];
+          if (approved && approved !== branch.approvalRef) {
+            throw new Error(`Approval reference does not match pending branch ${branch.stepId}.`);
+          }
+          if (approved && approved === branch.approvalRef) {
+            branch.status = 'pending';
+            branch.updatedAt = now;
+          }
+        }
+      }
+    } else {
+      snapshot = {
+        version: 1,
         runId: options.runId,
-        stepId: step.id,
-        operation: step.operation,
-        dependsOn: [...step.dependsOn],
-        status: 'pending',
-        attempts: 0,
+        status: 'running',
+        maxParallel,
+        branches: steps.map((step) => ({
+          runId: options.runId,
+          stepId: step.id,
+          operation: step.operation,
+          dependsOn: [...step.dependsOn],
+          status: 'pending',
+          attempts: 0,
+          updatedAt: now,
+        })),
         updatedAt: now,
-      })),
-      updatedAt: now,
-    };
+      };
+    }
     await options.checkpoint(structuredClone(snapshot));
     const byId = new Map(steps.map((step) => [step.id, step]));
     const states = new Map(snapshot.branches.map((branch) => [branch.stepId, branch]));
     const activeResources = new Set<string>();
     const running = new Set<string>();
+    let checkpointTail: Promise<void> = Promise.resolve();
 
     const persist = async () => {
       snapshot.updatedAt = Date.now();
-      await options.checkpoint(structuredClone(snapshot));
+      const copy = structuredClone(snapshot);
+      const write = checkpointTail.then(() => options.checkpoint(copy));
+      checkpointTail = write.catch(() => {});
+      await write;
     };
     const mark = async (branch: WorkflowBranchCheckpoint, status: WorkflowBranchStatus, message?: string) => {
       branch.status = status;
@@ -192,7 +231,7 @@ export class WorkflowBranchExecutor {
           .map((branch) => (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work)
           .filter((work): work is Promise<void> => Boolean(work));
         await Promise.race(active);
-        for (const branch of snapshot.branches) delete (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work;
+        for (const branch of snapshot.branches) if (!running.has(branch.stepId)) delete (branch as WorkflowBranchCheckpoint & { __work?: Promise<void> }).__work;
         continue;
       }
 
