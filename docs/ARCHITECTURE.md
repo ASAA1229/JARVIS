@@ -212,3 +212,7 @@ Model suggestions never apply/commit/push themselves. Applying, branch creation,
 Optional local Piper TTS is invoked by the authenticated signed voice-synthesis route. Input is capped at 1,200 characters; subprocess execution uses no shell; WAV output is validated; response audio is no-store. A 20-second generation timeout applies. If local TTS is unavailable, the HUD can fall back to browser speech synthesis. Browser speech processing may be remote and is not equivalent to local STT.
 
 The bundled MediaPipe Hand Landmarker full-float16 model is served locally rather than fetched from a CDN at runtime. The documented upstream model card identifies Apache-2.0 licensing; the recorded bundle SHA-256 is `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`. Verify source, license, digest and compatibility before replacing it. Hand landmarks are experimental under difficult camera conditions and must never be used as an authorization signal.
+
+## Binary document ingestion
+
+The local DocumentParser accepts PDF and DOCX files before encrypted RAG ingestion. DOCX main-document XML is extracted in-process using bounded ZIP/DEFLATE handling. PDF text extraction uses the local Poppler `pdftotext` utility. Scanned PDFs can use opt-in OCR through local Poppler `pdftoppm` plus Tesseract; document bytes are not sent to a cloud OCR provider. Retrieved chunks retain document, filename, and chunk-position citations.
