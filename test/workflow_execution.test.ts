@@ -117,3 +117,60 @@ test('rejects cyclic and invalid workflow graphs', async () => {
   await assert.rejects(() => runner.run([step('a', ['b']), step('b', ['a'])], options), /cycle/);
   await assert.rejects(() => runner.run([step('a', ['missing'])], options), /unknown or self dependency/);
 });
+
+test('resumes only the exact branch whose stored approval was explicitly confirmed', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const first = await runner.run([step('approved'), step('other')], {
+    runId: 'run-resume-approval', maxParallel: 2,
+    checkpoint: async () => {},
+    executeStep: async (item) => item.id === 'approved'
+      ? { status: 'awaiting_approval', approvalRef: 'approval-exact' }
+      : { status: 'completed' },
+  });
+  let approvedContext = '';
+  const resumed = await runner.run([step('approved'), step('other')], {
+    runId: 'run-resume-approval', resumeFrom: first,
+    approvedApprovals: { approved: 'approval-exact' },
+    checkpoint: async () => {},
+    executeStep: async (item, context) => {
+      if (item.id === 'approved') approvedContext = context.approvedApprovalRef ?? '';
+      return { status: 'completed' };
+    },
+  });
+  assert.equal(approvedContext, 'approval-exact');
+  assert.equal(resumed.status, 'completed');
+  assert.equal(resumed.branches.find((item) => item.stepId === 'approved')?.attempts, 2);
+});
+
+test('does not resume an uncertain branch until owner confirms no effect', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const first = await runner.run([step('root'), step('child', ['root'])], {
+    runId: 'run-resume-uncertain',
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'uncertain', message: 'connection lost' }),
+  });
+  let calls = 0;
+  const resumed = await runner.run([step('root'), step('child', ['root'])], {
+    runId: 'run-resume-uncertain', resumeFrom: first,
+    reconciledNoEffectSteps: ['root'],
+    checkpoint: async () => {},
+    executeStep: async () => { calls += 1; return { status: 'completed' }; },
+  });
+  assert.equal(calls, 2);
+  assert.equal(resumed.status, 'completed');
+});
+
+test('rejects approval references that do not match the pending branch', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const first = await runner.run([step('a')], {
+    runId: 'run-bad-approval',
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'awaiting_approval', approvalRef: 'expected' }),
+  });
+  await assert.rejects(() => runner.run([step('a')], {
+    runId: 'run-bad-approval', resumeFrom: first,
+    approvedApprovals: { a: 'different' },
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  }), /does not match pending branch/);
+});
