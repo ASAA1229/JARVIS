@@ -109,7 +109,7 @@ Specialized agents are advisory workers under a central orchestrator. Tool-selec
 
 ## 6. Memory and learning
 
-- **Conversation history:** bounded and isolated by device/conversation; process-local, expires after about 30 minutes and is not restored after server restart.
+- **Conversation history:** bounded and isolated by device/conversation; when owner control is configured, AES-256-GCM encrypted local persistence restores active sessions after restart. Sessions expire after about 30 minutes. Without owner control, history remains process-local.
 - **Working memory:** short-lived RAM context.
 - **Long-term memory:** encrypted local storage with categories, provenance, owner review, retention and deletion controls.
 - **Semantic index:** local Ollama embeddings where configured, combined with lexical overlap and recency; lexical fallback remains available.
