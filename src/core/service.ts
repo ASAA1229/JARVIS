@@ -36,6 +36,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
+import { TaskCoordinator } from './taskCoordinator.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
 
@@ -148,6 +149,8 @@ export class JarvisCoreService {
   private recentAppTargets = new Map<string, { processName: string; appName: string; windowPid: number; verifiedAt: number }>();
   private readonly taskJournal?: TaskJournal;
   private activeExecutionTokens = new Map<TaskId, AbortController>();
+  /** Bounds concurrent adapter work and serializes conflicting host resources. */
+  public readonly taskCoordinator = new TaskCoordinator(4, 2, 200, 30_000);
   private readonly startedAt = Date.now();
   private cpuSample?: { idle: number; total: number };
 
@@ -909,11 +912,22 @@ export class JarvisCoreService {
         throw new Error('Task was aborted before execution');
       }
       let attempts = 0;
-      do {
-        attempts++;
-        rawResult = await dispatch();
-        // One bounded retry, read-only operations only, and only after a timeout.
-      } while (RETRYABLE_READ_ONLY.has(opRequest.operation) && rawResult.failureKind === 'timeout' && attempts < 2 && !signal.aborted);
+      const resources = this.#executionResources(taskRecord, opRequest);
+      rawResult = await this.taskCoordinator.run({
+        taskId,
+        deviceId: taskRecord.deviceId,
+        priority: taskRecord.origin === 'schedule' ? 10 : 100,
+        resources,
+        signal,
+        queueTimeoutMs: 30_000,
+      }, async () => {
+        do {
+          attempts++;
+          rawResult = await dispatch();
+          // One bounded retry, read-only operations only, and only after a timeout.
+        } while (RETRYABLE_READ_ONLY.has(opRequest.operation) && rawResult.failureKind === 'timeout' && attempts < 2 && !signal.aborted);
+        return rawResult;
+      });
     } catch (err: unknown) {
       // Adapter exceptions can contain local paths, command fragments, or other
       // implementation details. Keep the user-facing result generic and retain
@@ -1360,6 +1374,29 @@ export class JarvisCoreService {
       return { success: true, message: 'Task cancelled; nothing was executed.', state: task.state };
     }
     return { success: false, message: `Task is already ${task.state}.`, state: task.state };
+  }
+
+  /**
+   * Derive coarse-grained resource locks from operation semantics. Desktop input
+   * is exclusive per device; personal memory and shared registries are serialized;
+   * file locks are scoped to the canonical target path where one is supplied.
+   * The coordinator acquires the complete sorted set atomically.
+   */
+  #executionResources(task: TaskLifecycleRecord, request: OperationRequest): string[] {
+    const operation = request.operation;
+    const resources = new Set<string>();
+    if (/^(app:|desktop:)/.test(operation)) resources.add(`desktop:${task.deviceId}`);
+    if (/^memory:/.test(operation)) resources.add('memory:personal-store');
+    if (/^(plugin:|workflow:)/.test(operation)) resources.add('workflow:plugin-registry');
+    if (/^(file:|dev:)/.test(operation)) {
+      const candidate = request.parameters.path ?? request.parameters.filePath ?? request.parameters.workspace;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        resources.add(`workspace:${candidate.trim().toLowerCase().replace(/[\\\\/]+$/, '')}`);
+      } else {
+        resources.add(`workspace:device:${task.deviceId}`);
+      }
+    }
+    return [...resources];
   }
 
   /**
