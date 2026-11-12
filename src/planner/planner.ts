@@ -90,6 +90,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:read_control',
     'desktop:click_control',
     'desktop:set_value',
+    'desktop:set_toggle',
     'desktop:list_windows',
     'memory:update',
     'desktop:focus_window',
@@ -407,6 +408,17 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       const target = splitForegroundTarget(clickControl[1]);
       return { intent: 'Click an exact named foreground control', operations: [{ operation: 'desktop:click_control', parameters: target, justification: 'User specified an exact control name' }], confidence: 0.82, explanation: 'Will bind to the named process when supplied and invoke only if exactly one accessible control matches, after approval.' };
     }
+    const setToggle = requestText.match(/\bset\s+(?:the\s+)?(?:toggle|checkbox|switch)\s+["“]?(.+?)["”]?\s+(on|off)(?:\s+in\s+([A-Za-z0-9._-]{1,64}))?\s*$/i);
+    if (setToggle && setToggle[1].trim()) {
+      const target = splitForegroundTarget(setToggle[1].trim() + (setToggle[3] ? ' in ' + setToggle[3] : ''));
+      return {
+        intent: 'Set a uniquely identified foreground toggle control',
+        operations: [{ operation: 'desktop:set_toggle', parameters: { ...target, state: setToggle[2].toLowerCase() === 'on' }, justification: 'User specified the exact toggle control and desired state' }],
+        confidence: 0.82,
+        explanation: 'Will change only a unique accessible toggle in the expected foreground process, require approval, and verify the final state.',
+      };
+    }
+
     const setControl = requestText.match(/\bset\s+(?:the\s+)?(?:field|control)\s+["“]?(.+?)["”]?\s+to\s+["“]?(.+?)["”]?\s*$/i);
     if (setControl && setControl[1].trim() && setControl[2].trim()) {
       const target = splitForegroundTarget(setControl[1]);
