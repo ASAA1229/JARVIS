@@ -80,3 +80,26 @@ test('invalid Ollama timeout disables the local provider instead of silently ign
   assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '0' }), []);
   assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '601' }), []);
 });
+
+test('remote Ollama is not selected for private prompts without explicit cloud authorization', () => {
+  const env = {
+    OLLAMA_URL: 'https://ollama.example.com',
+    OLLAMA_MODEL: 'llama3.2:latest',
+    JARVIS_AI_ALLOW_REMOTE: 'true',
+  };
+  const router = new ProviderRouter(() => env);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: true,
+    cloudAuthorized: true,
+  }).provider, null);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+  }).provider, null);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+    cloudAuthorized: true,
+  }).provider?.id, 'local');
+});

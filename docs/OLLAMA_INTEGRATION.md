@@ -158,6 +158,14 @@ $env:OLLAMA_TIMEOUT = '120'
 .scripts\test-ollama.ps1
 ```
 
+## Provider expansion
+
+The new `AIProvider` contract defines chat, streaming and health-check capabilities.
+Ollama is implemented against the native API. The existing OpenAI-compatible and
+Anthropic transports remain available through the shared provider client. Gemini is
+not enabled yet; a future adapter can implement `AIProvider` and be registered in
+ProviderRouter without changing the conversation API or HUD.
+
 ## Future self-learning path
 
 Keep inference separate from learning. Future work can improve:
