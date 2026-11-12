@@ -190,3 +190,10 @@ A stale-approval guard was also added: approval resolution now requires the asso
 - Regression coverage was added for expired-result visibility, requester/target cancellation, and rejection of completion after cancellation.
 - Scope remains intentionally read-only: this does not enable remote app launch, background execution, notifications, SMS, calls, or general Android control.
 - This is software-side hardening only. Exact-head CI, HTTPS connectivity, independent enrollment/revocation on both physical phones, and real-device acceptance remain outstanding.
+
+
+## Native approval notification implementation — 2026-11-12
+
+The Android companion's existing WorkManager poller is now owner-controlled from the native UI. Polling defaults off, requires an enrolled device, requests Android 13+ notification permission on explicit enable, and is cancelled on explicit disable. Notification content remains generic and does not include directive text. Android periodic work is approximately 15 minutes minimum and must not be described as real-time push.
+
+This is implementation-only evidence. No Gradle compile, tests, APK install, network test, or physical-device acceptance has been run. Two-phone identity, trusted TLS, revocation isolation and offline/reconnect acceptance remain open.
