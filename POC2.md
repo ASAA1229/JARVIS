@@ -991,3 +991,8 @@ Implemented on `new`:
 ### Permission-controlled media playback boundary — 2026-11-12
 
 Voice-driven app launch, dictated text entry, and browser-scoped search are implemented in source with approval and target binding. Media playback remains deliberately unavailable: generic media hotkeys are unsafe because they may control a different player and provide no track-level verification. The planner now recognizes explicit “play [track] on [app]” requests and returns a safe limitation instead of guessing or claiming success. The capability registry marks app-scoped media playback as planned. No build or tests were run; a regression test was authored only.
+
+
+### Discovered application target continuity — 2026-11-12
+
+Closed a target-binding gap in Windows app discovery: when a Start-menu app has a trusted process identity and a unique verified window, its launch result now exposes normalized process/window identifiers. Already-running discovered apps return the same metadata after verified focus. This enables the existing approval-bound launch-and-type flow and recent-app session context to continue safely for eligible discovered apps. Apps with unknown/ambiguous window identities remain partial and are not eligible for follow-up typing. Regression coverage was authored; no build/tests executed.
