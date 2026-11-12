@@ -1,6 +1,6 @@
 # JARVIS Android Companion (initial implementation)
 
-This is the first native Android companion slice. It supports device-key creation, owner-approved enrollment, session creation, and signed text requests. It does not yet control other Android apps or provide background execution.
+This native Android companion supports device-key creation, owner-approved enrollment, signed text requests, local launcher-app discovery/user-tap launch, bounded read-only app inventory, encrypted offline sync queue storage, and optional background approval polling.
 
 ## Security behavior
 
@@ -38,6 +38,8 @@ The debug APK is written to `android-app/app/build/outputs/apk/debug/app-debug.a
 
 - The initial implementation passed the hosted Android Gradle `assembleDebug` job on 2026-10-30. Physical-device acceptance is still outstanding.
 - No QR scanner is included; the transaction ID and code are entered manually.
-- The app can discover launchable apps locally and open one only after the user taps it. A bounded read-only inventory request can be queued by the laptop for a specific active phone and claimed manually in the app; the queue is volatile and supports no remote app launch or arbitrary phone actions. SMS/call actions, notification access, true push delivery, wake-on-LAN, and a general background task service are not implemented.
+- The app can discover launchable apps locally and open one only after the user taps it. A bounded read-only inventory request can be queued by the laptop for a specific active phone and claimed manually in the app; the server queue is volatile and supports no remote app launch or arbitrary phone actions.
+- Optional approval notifications use Android WorkManager polling at the platform's minimum periodic interval (about 15 minutes). They are explicitly opt-in after enrollment and OS notification permission; notification text does not include directive contents. This is not real-time push and depends on Android scheduling, network availability and battery policy.
+- SMS/call actions, notification-list access, wake-on-LAN, remote arbitrary app control, and a general background task service are not implemented.
 - Use a trusted certificate chain on the phones. Do not disable TLS validation or use a permissive trust manager.
 - Install only on test devices until Android build and two-phone revocation/permission tests pass.
