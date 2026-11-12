@@ -121,7 +121,7 @@ Validate the locally installed model end-to-end:
 ```powershell
 npm run test:ollama
 # or
-.scripts\test-ollama.ps1
+.\scripts\test-ollama.ps1
 ```
 
 ## cURL examples
@@ -161,7 +161,7 @@ console.log('chat', chatResponse.status, await chatResponse.json());
 $env:OLLAMA_URL = 'http://localhost:11434'
 $env:OLLAMA_MODEL = 'llama3.2:latest'
 $env:OLLAMA_TIMEOUT = '120'
-.scripts\test-ollama.ps1
+.\scripts\test-ollama.ps1
 ```
 
 ## Provider expansion
