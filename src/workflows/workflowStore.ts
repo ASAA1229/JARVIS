@@ -97,6 +97,48 @@ export function validateWorkflowSteps(steps: unknown, isOperationAllowed: Operat
   return { order, problems };
 }
 
+/**
+ * Build deterministic, bounded execution waves for a validated dependency graph.
+ * Each wave contains only steps whose prerequisites were completed in earlier
+ * waves. Steps in one wave are independent by dependency metadata, but callers
+ * must still apply policy, approval and resource-conflict checks per step.
+ */
+export function workflowExecutionBatches(steps: WorkflowStep[], maxParallel = 4): WorkflowStep[][] {
+  if (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > MAX_STEPS) {
+    throw new Error(`maxParallel must be an integer from 1 to ${MAX_STEPS}.`);
+  }
+  if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_STEPS) {
+    throw new Error(`A workflow needs 1-${MAX_STEPS} steps.`);
+  }
+  const byId = new Map<string, WorkflowStep>();
+  for (const step of steps) {
+    if (!step || typeof step.id !== 'string' || byId.has(step.id) || !Array.isArray(step.dependsOn)) {
+      throw new Error('Workflow graph contains an invalid or duplicate step.');
+    }
+    byId.set(step.id, step);
+  }
+  for (const step of steps) {
+    if (step.dependsOn.some((dependency) => !byId.has(dependency) || dependency === step.id)) {
+      throw new Error(`Step ${step.id} has an unknown or self dependency.`);
+    }
+  }
+
+  const completed = new Set<string>();
+  const batches: WorkflowStep[][] = [];
+  while (completed.size < steps.length) {
+    const ready = steps.filter((step) =>
+      !completed.has(step.id) && step.dependsOn.every((dependency) => completed.has(dependency)),
+    );
+    if (ready.length === 0) throw new Error('Workflow steps contain a dependency cycle.');
+    for (let offset = 0; offset < ready.length; offset += maxParallel) {
+      const batch = ready.slice(offset, offset + maxParallel);
+      batches.push(batch.map((step) => structuredClone(step)));
+      for (const step of batch) completed.add(step.id);
+    }
+  }
+  return batches;
+}
+
 /** Sequential steps: each depends on the previous one. */
 export function chainSteps(operations: Array<{ operation: string; parameters: Record<string, unknown> }>): WorkflowStep[] {
   return operations.map((operation, index) => ({
