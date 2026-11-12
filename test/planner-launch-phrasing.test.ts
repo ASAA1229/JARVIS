@@ -58,3 +58,17 @@ test('planner creates a browser-scoped web search operation', async () => {
   assert.equal(plan.operations[0]?.parameters.appId, 'Google Chrome');
   assert.equal(plan.operations[0]?.parameters.query, 'weather tomorrow');
 });
+
+test('planner binds follow-up dictated text to a recently verified app session', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = {
+    requesterName: 'app-session-test',
+    timestamp: Date.now(),
+    activeAppProcess: 'notepad',
+    activeAppName: 'Notepad',
+  };
+  const plan = await planner.generatePlan('Write ------', context);
+  assert.equal(plan.operations[0]?.operation, 'desktop:type_text');
+  assert.equal(plan.operations[0]?.parameters.text, '------');
+  assert.equal(plan.operations[0]?.parameters.expectProcess, 'notepad');
+});
