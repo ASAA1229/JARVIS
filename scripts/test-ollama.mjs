@@ -13,7 +13,7 @@ const tagsResponse = await fetch(baseUrl + '/api/tags', { signal: signal() });
 if (!tagsResponse.ok) throw new Error('Ollama health check failed with HTTP ' + tagsResponse.status);
 const tags = await tagsResponse.json();
 const installed = Array.isArray(tags.models) ? tags.models.map((entry) => entry.name) : [];
-if (!installed.includes(model)) {
+if (!installed.includes(model) && !( !model.includes(':') && installed.some((name) => typeof name === 'string' && name.split(':', 1)[0] === model))) {
   throw new Error('Model ' + model + ' is not installed. Run: ollama pull ' + model);
 }
 console.log('[JARVIS] Ollama is reachable and model ' + model + ' is installed.');

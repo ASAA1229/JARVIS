@@ -46,10 +46,31 @@ flowchart TD
    `POST /api/chat`, validates the response, and returns text to the existing response contract.
 7. The existing response shape and conversation ID are preserved.
 
-## Memory and retrieval flow
+## Memory flow
+
+```mermaid
+flowchart TD
+  Request[Authenticated conversation request] --> Session[ConversationSessionStore]
+  Session --> Working[WorkingMemory: RAM-only]
+  Request --> Manager[MemoryManager]
+  Working --> Retrieve[Ranked retrieval]
+  Manager --> Retrieve
+  Retrieve --> Semantic[Ollama local embeddings]
+  Retrieve --> LongTerm[Encrypted PersonalMemoryStore]
+  Semantic --> Rank[Semantic + lexical + recency ranking]
+  LongTerm --> Rank
+  Rank --> Prompt[Bounded untrusted context]
+  Prompt --> Model[Ollama /api/chat]
+  Model --> Reply[Assistant response]
+  Reply --> Session
+  Feedback[Owner feedback / conversation outcome] --> Candidate[Encrypted learning candidate]
+  Candidate --> Review[Owner approval or rejection]
+  Review -->|Approve| LongTerm
+```
 
 - Conversation history is isolated per authenticated device and conversation ID in the
-  existing bounded process-local ConversationSessionStore.
+  existing bounded process-local ConversationSessionStore. It currently expires after
+  30 minutes and is not restored after a server restart.
 - Working memory is short-lived and RAM-only.
 - Long-term personal memories remain encrypted at rest in PersonalMemoryStore.
 - MemoryManager ranks relevant memories using local Ollama embeddings plus lexical
@@ -57,8 +78,26 @@ flowchart TD
 - Retrieved content is supplied as untrusted context, never as system instructions.
 - Learning candidates and feedback remain owner-reviewable; no automatic model fine-tuning occurs.
 
-The current semantic retrieval covers stored personal memories. It is not a document
-ingestion/vector-RAG pipeline; document RAG can be added later behind a separate retriever.
+## RAG / retrieval flow
+
+```mermaid
+flowchart LR
+  Query[User query] --> Embed[Local Ollama embedding]
+  Embed --> Compare[Cosine similarity]
+  Query --> Lexical[Lexical overlap]
+  Compare --> Rank[Combine semantic, lexical and recency scores]
+  Lexical --> Rank
+  Rank --> TopK[Bounded relevant memory records]
+  TopK --> Prompt[Conversation prompt]
+  Prompt --> Chat[Ollama /api/chat]
+  Embed -. unavailable .-> Fallback[Lexical + recency fallback]
+  Fallback --> TopK
+```
+
+The existing retrieval is memory-RAG: it searches approved personal memories and
+conversation-scoped working memory. It is not a document ingestion/vector-RAG pipeline;
+document parsing, chunking, access-control metadata and document citations are separate
+future components.
 
 ## Health checks
 
@@ -131,3 +170,32 @@ Keep inference separate from learning. Future work can improve:
 
 Approved facts are stored in the encrypted memory store. Learning candidates require owner
 approval. No online weight updates or automatic fine-tuning are part of this design.
+
+
+## Storage and future schema recommendation
+
+No relational database migration is required for this Ollama provider change. JARVIS
+currently uses encrypted local files for long-term memory, learning candidates and
+semantic vectors, while active conversation sessions are process-local.
+
+If conversation history must survive restarts and synchronize across multiple JARVIS
+instances/devices, introduce a persistence layer with these logical records:
+
+| Entity | Important fields |
+|---|---|
+| conversation_sessions | id, owner_device_id, created_at, updated_at, expires_at, retention_state |
+| conversation_messages | id, conversation_id, sequence, role, encrypted_content, created_at |
+| user_memories | id, owner_id, category, encrypted_content, source_kind, source_ref, approved_at, expires_at |
+| memory_embeddings | memory_id, model, content_hash, encrypted_vector |
+| learning_candidates | id, owner_id, category, encrypted_content, source_kind, source_ref, status, decided_at |
+| feedback_events | id, owner_id, conversation_id, message_id, rating, encrypted_comment, created_at |
+| knowledge_documents | id, owner_id, source, checksum, classification, status |
+| document_chunks | id, document_id, chunk_index, encrypted_content, embedding_id |
+
+Required indexes would include (owner_device_id, updated_at) for sessions,
+(conversation_id, sequence) for messages, and (owner_id, category, updated_at)
+for memories. Retention, export, deletion, tenant isolation and encryption-key rotation
+must be designed before enabling durable transcript storage.
+
+The current encrypted file stores remain the source of truth for this migration. Do not
+create a database merely to support Ollama.

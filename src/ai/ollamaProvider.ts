@@ -202,7 +202,8 @@ export class OllamaProvider implements AIProvider {
       if (!response.ok) return { available: false, modelAvailable: false, model: this.model };
       const payload = await response.json() as { models?: Array<{ name?: unknown }>; version?: unknown };
       const models = Array.isArray(payload.models) ? payload.models : [];
-      const modelAvailable = models.some((item) => item && item.name === this.model);
+      const modelAvailable = models.some((item) => item && (item.name === this.model ||
+        (typeof item.name === 'string' && !this.model.includes(':') && item.name.split(':', 1)[0] === this.model)));
       return {
         available: true,
         modelAvailable,
