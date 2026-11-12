@@ -25,9 +25,9 @@ _Status baseline refreshed 2026-11-11; detailed historical evidence below is ret
 |---|---|---:|---|---|
 | JARVIS-E01 | Security, Identity & Approval Foundation | P0 | Core controls present; bulk-recovery persistence edge hardened in source; regression/build validation pending | Every action is authenticated, authorized, auditable and safely revocable |
 | JARVIS-E02 | Voice Interaction & Cinematic HUD | P1 / active | HUD + wake runtime VERIFIED LOCALLY; live microphone test by owner pending; Piper pending | Reliable local wake, consented capture, clear HUD and verified speech output |
-| JARVIS-E03 | Windows Desktop Control | P1 | App launch/focus VERIFIED ON TARGET LAPTOP; UI Automation real-app tests pending | Safe, bounded control of supported Windows applications |
+| JARVIS-E03 | Cross-Platform Desktop Control | P1 | App launch/focus VERIFIED ON TARGET LAPTOP; UI Automation real-app tests pending | Safe, bounded control of supported Windows applications |
 | JARVIS-E04 | Multi-Step Execution & Recovery | P1 | VERIFIED LOCALLY; crash/restart drill pending | Durable workflows that stop safely and recover through human review |
-| JARVIS-E05 | Android Companion & Cross-Device Control | P1 | APK packaging workflow added; exact-head build pending; private HTTPS bridge and two-phone acceptance remain open | Two independently secured phones can approve/control permitted laptop tasks |
+| JARVIS-E05 | Android/iOS Companion & Cross-Device Control | P1 | APK packaging workflow added; exact-head build pending; private HTTPS bridge and two-phone acceptance remain open | Two independently secured phones can approve/control permitted laptop tasks |
 | JARVIS-E06 | Memory, Privacy & Personalization | P1 | Deletion scrub + export VERIFIED LOCALLY; cross-device sync not started | Private, useful, permission-aware memory with retention and deletion |
 | JARVIS-E07 | AI, Integrations & Productivity Automation | P1 / P2 | Agents/contracts VERIFIED LOCALLY; integrations partial | Useful local/cloud AI and existing integrations without policy bypass |
 | JARVIS-G01 | Release, Compatibility & Resource Acceptance | Cross-cutting gate | Resources measured (idle 0 % CPU, 66 MB); exact-head CI run pending | Exact-head software, security, device and resource evidence |
@@ -474,3 +474,25 @@ The current voice-to-desktop vertical slice covers app launch, explicit dictated
 ### Desktop app permission continuity — 2026-11-12
 
 A verified Start-menu-discovered application now carries its exact process/window identity into subsequent approval-bound actions. This closes a hand-off gap between dynamic app discovery, the launch-and-type composite, and the per-device recent-app context. Unknown or ambiguous apps still fail closed for text entry. Regression coverage was added but not executed; no build or tests were run during this build-first implementation phase.
+
+
+## Owner-directed cross-platform scope — 2026-11-12
+
+The product target is now Windows, macOS and Linux desktop plus Android and iOS mobile. This supersedes historical Windows-only/Android-only target descriptions and any “iOS future scope” statement above. See [PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md) and [US-076](USER_STORIES.md#jarvis-us-076--platform-independent-desktop-and-mobile-product).
+
+**JARVIS-G02 — Platform Independence & Native Adapter Compatibility**  
+**Type:** cross-cutting architecture and release gate  
+**Goal:** Deliver one consistent secure JARVIS product across all five target operating systems.
+
+Required outcomes:
+- Isolate shared core logic from OS-specific process/window/accessibility/input/audio/notification/storage/lifecycle implementations.
+- Define and version common contracts for device identity, sessions, policy, approvals, tasks, audit, memory, capabilities and sync.
+- Build and package desktop targets on Windows, macOS and Linux; build native Android and iOS applications.
+- Implement native adapters and explicit capability/permission matrices for each OS.
+- Add OS-specific CI and simulator/emulator checks, then validate on real hosts/devices.
+- Verify mixed-platform enrollment, signed communication, scoped approvals, offline recovery and independent device revocation.
+- Publish documented OS/version/architecture support ranges and platform-specific limitations.
+
+**Exit gate:** All five OS families have buildable artifacts, documented compatibility ranges, native capability adapters, exact-head automated checks, security review and real-device/host acceptance. Shared-core test success or a single platform package does not close this gate.
+
+**Current disposition:** REQUIREMENT ACCEPTED; implementation PARTIAL. Windows and Android code paths exist; macOS/Linux native desktop adapters and iOS app are not implemented. The current Android APK workflow is an internal debug packaging path only.
