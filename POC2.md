@@ -1036,3 +1036,21 @@ Closed a target-binding gap in Windows app discovery: when a Start-menu app has 
 **Evidence boundary:** The dedicated workflow has started for the exact latest source revision; its result is pending at this checkpoint. No APK has yet been downloaded or installed by this assistant, and neither phone has been enrolled or tested. The generated package is debug-signed for internal testing, not production distribution.
 
 **Remaining blockers before useful phone-to-laptop operation:** The current Node host binds to loopback and does not terminate TLS, while the Android app rejects HTTP. A private, trusted HTTPS bridge to the host must be implemented/configured without exposing a public tunnel. Then install the APK separately on both phones, complete owner-approved enrollment, and validate distinct device identities, signed requests, offline/reconnect behavior, notifications, and one-phone revocation isolation. APK packaging alone does not provide arbitrary remote phone control; current phone app discovery/launch remains user-tap and remote inventory remains bounded/read-only.
+
+
+## Cross-platform product scope expansion — 2026-11-12 (owner-directed)
+
+**This section supersedes earlier Windows-first/Android-only target wording and the statement that iOS is future scope.** JARVIS is required to support:
+
+- Desktop: Windows, macOS and Linux.
+- Mobile: Android and iOS.
+
+The target is one consistent JARVIS product with shared identity, permissions, task/AI/memory contracts, policy and cross-device synchronization—not one identical binary. Desktop OS integrations must be native adapters behind platform-neutral interfaces; Android remains Kotlin/native and iOS requires a new Swift/native client. The TypeScript/Node core is reusable only after its platform dependencies are isolated and each host is validated.
+
+**Architecture specification:** [docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md).
+
+**Current gap:** Existing desktop execution is Windows-specific; macOS/Linux adapters and packages are not implemented. Android source and a debug-APK workflow exist, but exact-head build/install/device acceptance and secure private HTTPS host connectivity remain pending. iOS application, Xcode build/signing, Keychain integration and iPhone acceptance are not implemented. Cross-platform compatibility, signing and release workflows are also open.
+
+**Delivery rule:** Do not claim platform independence from shared TypeScript code or a successful Android APK build. Each target OS needs its own build/package, native adapter coverage, permission/security review, automated checks and real OS/device acceptance. Compatibility ranges and CPU architectures must be documented; unsupported OS versions must be reported explicitly.
+
+**Priority:** Treat the platform abstraction/contracts and compatibility matrix as cross-cutting architecture work. Continue useful Windows/Android work without blocking it, but new capability implementations must be designed against platform-neutral contracts so macOS, Linux and iOS adapters can be added without rewriting core policy/business logic.
