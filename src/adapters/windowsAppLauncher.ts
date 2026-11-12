@@ -254,7 +254,7 @@ export class WindowsAppLauncherAdapter {
     return {
       success: true,
       outcome: VerificationOutcome.VERIFIED_SUCCESS,
-      data: { allowlisted, discovered, startMenuQueried: discovered.length > 0 },
+      data: { allowlisted, discovered, startMenuQueried: process.platform === 'win32' },
       evidence: {
         allowlistedCount: allowlisted.length,
         discoveredCount: discovered.length,
