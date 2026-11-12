@@ -812,6 +812,7 @@ export class JarvisCoreService {
         case 'desktop:read_control':
         case 'desktop:click_control':
         case 'desktop:set_value':
+        case 'desktop:set_toggle':
         case 'desktop:copy_selection':
         case 'desktop:paste_clipboard':
         case 'desktop:list_windows':
