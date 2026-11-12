@@ -47,7 +47,7 @@ const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 180;
 const MAX_RESULTS = 8;
 const MAX_RESULT_CHARS = 1200;
-const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.csv', '.json', '.log', '.yaml', '.yml', '.xml', '.html']);
+const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.csv', '.json', '.log', '.yaml', '.yml', '.xml', '.html', '.pdf', '.docx']);
 const hash = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
 function safeText(value: string): string {
