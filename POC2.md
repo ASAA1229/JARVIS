@@ -974,3 +974,15 @@ No tests or builds have been executed in this environment. The runner itself rem
 ## Windows application discovery build increment — 2026-11-12
 
 The explicit `app:inventory` request now queries a bounded Windows Start-menu inventory automatically (maximum 80 entries) without requiring the prior environment toggle. It remains read-only, excludes financial/payment app names, and does not claim discovered apps support UI automation or verified launch. Planner response text updated. US-068 remains OPEN / PARTIAL; no tests or build were run.
+
+
+## Voice-driven application interaction increment — 2026-11-12
+
+Implemented on `new`:
+- Generalized combined **open application + write/type dictated text** planning beyond the three hard-coded inbox apps. Execution reuses the existing launch-and-type path, which requires a uniquely identified target window before text entry.
+- Added an approved `desktop:browser_search` operation for explicit search requests in Chrome, Edge, Firefox, Brave or Opera. It launches/focuses the browser, binds keyboard/text actions to the verified process, enters the exact query and submits it.
+- Added the policy allowlist entry and planner regression cases.
+
+**Honest limitation:** browser search reports PARTIAL until page load/results can be independently verified. A follow-up bare “write …” is not yet supported because a trusted last-opened application context is not yet persisted. Media playback is not yet implemented; opening a music app or searching a track must not be reported as playback.
+
+**Validation:** tests authored, not executed. No build, typecheck, lint, browser launch or desktop interaction was performed.
