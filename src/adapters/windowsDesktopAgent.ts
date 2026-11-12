@@ -55,6 +55,7 @@ function buildControlSelector(name?: string, automationId?: string): string {
 }
 
 function validateControlSelector(name?: unknown, automationId?: unknown): void {
+  if (name !== undefined && automationId !== undefined) throw new Error('Specify either a control name or automationId, not both.');
   if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 120)) throw new Error('Control name must contain 1–120 characters.');
   if (automationId !== undefined && (typeof automationId !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(automationId))) throw new Error('automationId must contain 1–160 safe identifier characters.');
   if ((typeof automationId !== 'string' || !automationId.trim()) && (typeof name !== 'string' || !name.trim())) throw new Error('Specify a control name or automationId.');
