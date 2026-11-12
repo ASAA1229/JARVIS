@@ -41,6 +41,7 @@ export interface JobRunResult {
 export type JobRunner = (job: ScheduledJob) => Promise<JobRunResult>;
 
 const MAX_ACTIVE_JOBS_PER_DEVICE = 20;
+const MAX_CONCURRENT_SCHEDULE_DISPATCH = 4;
 const MAX_LEAD_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_LEAD_MS = 30 * 1000;
 const MISSED_GRACE_MS = 60 * 60 * 1000;
@@ -166,6 +167,7 @@ export class Scheduler {
     if (!this.persistHealthy) return;
     const due: ScheduledJob[] = [];
     for (const job of Array.from(this.jobs.values())) {
+      if (this.inFlight.size >= MAX_CONCURRENT_SCHEDULE_DISPATCH) break;
       if (!job.active || job.runAt > now || this.inFlight.has(job.id)) continue;
       if (job.everyMinutes && this.deferRecurring()) continue;
       this.inFlight.add(job.id);
