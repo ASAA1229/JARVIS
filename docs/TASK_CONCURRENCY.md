@@ -10,6 +10,9 @@ Allow independent JARVIS tasks to make progress concurrently without allowing co
 ## Current execution model
 
 - Planning and policy evaluation remain per task. Every state-changing operation still passes through the existing policy gateway and its exact task/device/parameter-bound approval.
+
+- Planner/provider work has a separate bounded admission pool (2 globally, 1 per device, 100 waiting). A task cancelled while waiting for planning is removed before the provider call; if an uninterruptible provider call is already active, its eventual result is discarded before policy or execution.
+- A task cancelled or timed out while waiting for adapter capacity is marked terminal without recovery reconciliation because no adapter callback started. Once adapter dispatch has started, interruption remains uncertain and requires reconciliation.
 - Adapter execution is admitted by `TaskCoordinator`.
 - Global active adapter work is bounded to 4 operations; active work per device is bounded to 2.
 - The queue is bounded to 200 waiting operations and defaults to a 30-second admission timeout.
