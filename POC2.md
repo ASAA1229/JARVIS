@@ -119,6 +119,16 @@ The latest reviewed JARVIS commit adds owner HUD panels for plugins, workflows, 
 - [ ] Validate payment/credential protection beyond process/title heuristics; retain explicit exclusions.
 - [ ] Document the supported application matrix and unsupported control types.
 
+### Branch execution development update — 2026-11-12
+
+Implemented in source on `new`: `src/workflows/workflowExecution.ts` now provides bounded concurrent execution for independent DAG nodes; branch-scoped approval references; serialized checkpoint callbacks; resource-conflict exclusion; dependency-aware joins; partial/failed/uncertain outcomes; and resume against the exact saved workflow graph. A restarted `running` branch is converted to `uncertain`, never replayed. A new attempt is eligible only when the owner explicitly records confirmed-no-effect reconciliation. A pending approval pauses only that branch while independent branches continue; descendants remain pending until all prerequisites complete.
+
+Regression tests were authored in `test/workflow_execution.test.ts` for concurrency, join ordering, approval wait/resume, approval-reference mismatch, resource exclusion, partial failure, uncertain outcomes, explicit no-effect recovery, checkpoint failure and invalid graphs. **Tests/build have not been run**, by instruction.
+
+**Important integration boundary:** the existing `workflow:run` route in `JarvisCoreService` still expands and executes steps sequentially. The new executor is not yet connected to child task records, the policy gateway's exact task/device/operation/parameter approval consumption, encrypted `TaskJournal`, audit and independent outcome verifier. Do not describe saved workflow templates as concurrently executing until that service integration and its acceptance tests are complete.
+
+Remaining: integrate parent/child branch lifecycle into the encrypted task journal and owner task timeline; wire branch execution through core policy/approval/audit/verification; propagate cancellation and graceful shutdown; then run exact-head build, stress, approval, crash/recovery and application acceptance tests.
+
 ### P1 — Advanced Multi-Step Execution & Recovery
 
 - [ ] Audit every task lifecycle transition and ensure durable journal writes precede dependent side effects.
