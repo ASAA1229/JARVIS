@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
+test('explicit toggle requests route to approval-bound desired-state operation', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const plan = await planner.generatePlan('set toggle "Enable notifications" on in notepad', {
+    requesterName: 'toggle-control-test',
+    timestamp: Date.now(),
+  });
+  assert.equal(plan.operations[0]?.operation, 'desktop:set_toggle');
+  assert.equal(plan.operations[0]?.parameters.state, true);
+  assert.equal(plan.operations[0]?.parameters.expectProcess, 'notepad');
+});
+
 test('planner normalizes polite and punctuated common app launch requests', async () => {
   const planner = new LocalHeuristicPlanner();
   const context = { requesterName: 'launch-phrasing-test', timestamp: Date.now() };
