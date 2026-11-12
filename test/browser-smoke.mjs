@@ -435,7 +435,7 @@ try {
     await hud.locator('#btn-hands-free-toggle').click();
   }
   await hud.getByText('LOCAL WAKE ACTIVE').waitFor({ state: 'visible', timeout: 5000 });
-  await hud.waitForFunction(() => window.__wakeEngineStarted === 1 && typeof window.__wakeCallback === 'function');
+  try { await hud.waitForFunction(() => window.__wakeEngineStarted === 1 && typeof window.__wakeCallback === 'function', undefined, { timeout: 5000 }); } catch { throw new Error('Wake fixture diagnostics: ' + JSON.stringify(await hud.evaluate(() => ({ started: window.__wakeEngineStarted, callback: typeof window.__wakeCallback, runtime: typeof window.VoicuteWakeWord, ort: Boolean(window.ort), zip: Boolean(window.JSZip), visibility: document.visibilityState, micMuted: localStorage.getItem('jarvis.mic-muted'), state: document.getElementById('hud-state-label')?.textContent || '' })))); }
   let wakeRequestCount = 0;
   let wakeRequestText = '';
   await hud.route('**/api/request', async (route) => {
