@@ -430,6 +430,9 @@ try {
   // End-to-end local wake → finalized same-utterance command → signed request.
   // This deterministic fixture validates HUD orchestration, not microphone hardware
   // or acoustic wake-word accuracy; those remain MSI owner-acceptance checks.
+  // Earlier tests may have selected Local Whisper in shared origin storage; this fixture
+  // explicitly selects the mocked browser recognizer it is about to exercise.
+  await hud.locator('#stt-provider').selectOption('browser');
   await hud.locator('#allow-wake-browser-speech').check();
   if (await hud.locator('#btn-hands-free-toggle').getAttribute('aria-pressed') !== 'true') {
     await hud.locator('#btn-hands-free-toggle').click();
