@@ -77,6 +77,17 @@ const CAPABILITIES: readonly CapabilityDescriptor[] = [
     notes: 'Chrome and Edge aliases plus Firefox, Brave and Opera discovery are supported as launch targets. The composite operation targets the verified browser process and reports PARTIAL until page load and search-result state are independently verified.',
   },
   {
+    id: 'desktop.media-playback',
+    name: 'App-scoped media search and playback',
+    description: 'Find and play a requested track in an explicitly selected, owner-approved media application.',
+    platforms: ['windows'],
+    status: 'planned',
+    risk: 'high',
+    requiresApproval: true,
+    requiresDeviceAgent: true,
+    notes: 'No generic media-key fallback is permitted. Each player needs an app-specific adapter, explicit track/app binding, scoped approval, and independent playback-state evidence; until then requests are safely declined.',
+  },
+  {
     id: 'desktop.ui-automation',
     name: 'Cross-application desktop interaction',
     description: 'Use accessibility/UI Automation to interact with permitted windows and controls.',
