@@ -15,6 +15,7 @@ import { DeviceIdentityManager } from '../core/identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
 import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
 import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
+import { assessBrowserNavigation } from '../adapters/browserSearch.js';
 import { WindowsDesktopAgent, DesktopAction } from '../adapters/windowsDesktopAgent.js';
 import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
 import { TerminalRunner } from '../adapters/terminalRunner.js';
@@ -704,6 +705,11 @@ export class JarvisCoreService {
             return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but JARVIS could not focus its verified window; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, searchSkipped: true } };
           }
           const target = launched.windowProcess.replace(/\.exe$/i, '');
+          const beforeInspection = await this.desktopAgent.execute({ operation: 'desktop:inspect_window', parameters: { expectProcess: target } }, signal);
+          const beforeData = beforeInspection.success ? beforeInspection.data as { process?: string; windowTitle?: string } : undefined;
+          const beforeObservation = beforeData && typeof beforeData.process === 'string' && typeof beforeData.windowTitle === 'string'
+            ? { process: beforeData.process, windowTitle: beforeData.windowTitle }
+            : undefined;
           const addressBar = await this.desktopAgent.execute({ operation: 'desktop:hotkey', parameters: { keys: ['CTRL', 'L'], expectProcess: target } }, signal);
           if (!addressBar.success) {
             return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'The browser opened, but its address bar could not be targeted; search was not submitted.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence } };
@@ -719,11 +725,32 @@ export class JarvisCoreService {
           if (!submitted.success) {
             return { success: false, outcome: submitted.outcome === VerificationOutcome.UNCERTAIN ? VerificationOutcome.UNCERTAIN : VerificationOutcome.PARTIAL_SUCCESS, error: 'The search text was entered, but submission was not acknowledged. Check the browser before retrying.', data: { launch: launch.data }, evidence: { launch: launch.evidence, focus: focus.evidence, addressBar: addressBar.evidence, textEntry: entered.evidence, submit: submitted.evidence } };
           }
+          // A short, target-bound post-submit inspection can observe a browser
+          // title transition. This is useful progress evidence, but never proof
+          // that the requested search results or exact query loaded.
+          await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+          const afterInspection = await this.desktopAgent.execute({ operation: 'desktop:inspect_window', parameters: { expectProcess: target } }, signal);
+          const afterData = afterInspection.success ? afterInspection.data as { process?: string; windowTitle?: string } : undefined;
+          const afterObservation = afterData && typeof afterData.process === 'string' && typeof afterData.windowTitle === 'string'
+            ? { process: afterData.process, windowTitle: afterData.windowTitle }
+            : undefined;
+          const navigation = assessBrowserNavigation(beforeObservation, afterObservation, target);
           return {
             success: true,
             outcome: VerificationOutcome.PARTIAL_SUCCESS,
-            data: { browser: appId, query, submitted: true },
-            evidence: { launch: launch.evidence, focus: focus.evidence, addressBarTargeted: addressBar.evidence, queryEntry: entered.evidence, enterAcknowledged: submitted.evidence, pageLoadVerified: false },
+            data: { browser: appId, query, submitted: true, navigationObserved: navigation.observed, windowTitle: afterObservation?.windowTitle },
+            evidence: {
+              launch: launch.evidence,
+              focus: focus.evidence,
+              addressBarTargeted: addressBar.evidence,
+              queryEntry: entered.evidence,
+              enterAcknowledged: submitted.evidence,
+              beforeInspection: beforeInspection.evidence,
+              afterInspection: afterInspection.evidence,
+              navigation,
+              pageLoadVerified: false,
+              exactSearchResultsVerified: false,
+            },
           };
         }
         case 'desktop:launch_and_type': {
