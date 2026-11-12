@@ -28,6 +28,7 @@ import { DuplicateMemoryError } from '../memory/memoryManager.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
+import { OllamaProvider } from '../ai/ollamaProvider.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -550,7 +551,7 @@ export class JarvisServer {
       }
 
       // Resource profiles (US-061) and AI provider routing status (US-059). Owner device only.
-      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers') {
+      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers' || url.pathname === '/api/ai/health') {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = req.method === 'GET' ? undefined : await this.readJsonBody(req);
@@ -566,6 +567,16 @@ export class JarvisServer {
         }
         if (req.method === 'GET' && url.pathname === '/api/ai/providers') {
           return this.jsonResponse(res, 200, providerRouter.status());
+        }
+        if (req.method === 'GET' && url.pathname === '/api/ai/health') {
+          const ollama = providerRouter.providers().find((item) => item.id === 'local' && item.format === 'ollama');
+          if (!ollama) return this.jsonResponse(res, 503, { available: false, modelAvailable: false, error: 'Ollama is not configured' });
+          const health = await new OllamaProvider({
+            baseUrl: ollama.baseUrl,
+            model: ollama.model,
+            timeoutMs: ollama.timeoutMs,
+          }).healthCheck();
+          return this.jsonResponse(res, health.available && health.modelAvailable ? 200 : 503, health);
         }
         if (req.method === 'POST' && url.pathname === '/api/resources/profile') {
           const mode = (body as { mode?: unknown }).mode;

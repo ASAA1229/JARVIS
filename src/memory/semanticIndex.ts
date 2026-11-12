@@ -24,7 +24,7 @@ export class EmbeddingUnavailableError extends Error {}
 
 /** Resolve the local Ollama embedding endpoint; null when configuration is not loopback. */
 export function resolveLocalEmbeddingEndpoint(env: NodeJS.ProcessEnv = process.env): { url: string; model: string } | null {
-  const raw = (env.JARVIS_AI_BASE_URL || 'http://127.0.0.1:11434/v1').replace(/\/+$/, '').replace(/\/v1$/, '');
+  const raw = (env.OLLAMA_URL || env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\/+$/, '').replace(/\/v1$/, '');
   let parsed: URL;
   try {
     parsed = new URL(raw);
