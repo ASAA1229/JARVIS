@@ -383,3 +383,13 @@ Local test pass rate is **100%**; do not translate that into an overall product-
 - Fix: bulk recovery now returns HTTP 409 before authenticator reset if any revocation fails. The response explains that durable storage must be restored and recovery retried. The successful path resets the authenticator only after all active-device revocations have persisted.
 - Regression coverage: fault-injection test makes the device-state destination unusable, verifies HTTP 409, confirms no additional authenticator-reset audit event, and checks the durable pre-failure device record remains active.
 - Tests/build executed: **not run in this increment**. Commit status lookup currently reports no checks. Status: **IMPLEMENTED — REGRESSION AUTHORED — VALIDATION PENDING**.
+
+
+## E02/E03 P0 increment — local-wake command-dispatch regression (2026-11-12)
+
+- Branch: `new`; implementation commit: `344bed3480ef234b80b0727c6bad1057a8e828a4`.
+- `test/browser-smoke.mjs` now supplies a deterministic local wake-engine fixture and exercises the real HUD callback, consented same-utterance command capture, normalized `open Notepad` dispatch, duplicate terminal-event suppression and explicit approval-card gate.
+- Tests authored: yes. Tests executed: **no**. This fixture is browser orchestration coverage only; it does not emulate microphone acoustics or prove Windows process launch.
+- Epic status: **IMPLEMENTED TEST COVERAGE — NEEDS EXECUTION**. E02 and E03 remain OPEN pending exact-head automated checks and physical MSI acceptance.
+- Next: run browser smoke on Windows/Edge; then full Node suite/build and capture exact SHA evidence. Complete the actual microphone-to-Notepad acceptance only on the target MSI.
+
