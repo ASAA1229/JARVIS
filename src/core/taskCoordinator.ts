@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 /**
  * Bounded, cancellation-aware task execution coordinator.
  *
@@ -44,12 +46,16 @@ export class TaskQueueTimeoutError extends Error {
 export class TaskAlreadyRunningError extends Error {
   constructor() { super('This task already has an active or queued execution.'); this.name = 'TaskAlreadyRunningError'; }
 }
+export class NestedTaskExecutionError extends Error {
+  constructor() { super('Nested task admission from a coordinated worker is blocked to prevent lock-order deadlocks.'); this.name = 'NestedTaskExecutionError'; }
+}
 
 export class TaskCoordinator {
   private readonly queue: QueueEntry<unknown>[] = [];
   private readonly activeTasks = new Set<string>();
   private readonly activeByDevice = new Map<string, number>();
   private readonly heldResources = new Set<string>();
+  private readonly executionContext = new AsyncLocalStorage<string>();
   private sequence = 0;
 
   constructor(
@@ -66,6 +72,7 @@ export class TaskCoordinator {
   }
 
   run<T>(request: TaskExecutionRequest, work: () => Promise<T>): Promise<T> {
+    if (this.executionContext.getStore()) return Promise.reject(new NestedTaskExecutionError());
     if (!request.taskId || !request.deviceId) return Promise.reject(new Error('Task and device identifiers are required.'));
     if (request.signal?.aborted) return Promise.reject(this.abortError());
     if (this.activeTasks.has(request.taskId)) return Promise.reject(new TaskAlreadyRunningError());
@@ -133,7 +140,7 @@ export class TaskCoordinator {
 
     Promise.resolve().then(() => {
       if (entry.request.signal?.aborted) throw this.abortError();
-      return entry.work();
+      return this.executionContext.run(entry.request.taskId, entry.work);
     }).then(
       (value) => entry.resolve(value),
       (error) => entry.reject(error),
