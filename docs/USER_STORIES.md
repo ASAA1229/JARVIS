@@ -1225,3 +1225,8 @@ The exact-head [JARVIS CI run #42591404042](https://github.com/ASAA1229/JARVIS/a
 8. **P2 — Runtime lifecycle and release hardening:** US-075 plus the existing E08/G01 acceptance gates.
 
 **Backlog rule:** These stories are OPEN. “Implemented in source” is not acceptance. Each must record exact branch/SHA, changed files, tests authored, tests executed, CI URL, device/environment evidence, remaining limitations and owner acceptance. Existing restrictions remain in force: default-deny policy, least privilege, scoped approvals, no payment/financial actions, credential entry, admin elevation, unrestricted shell, silent public exposure, paid activation or automatic replay of uncertain side effects.
+
+
+## Android cross-device implementation note — 2026-11-12
+
+For **JARVIS-US-072 (Native Android companion capability completion)** and **JARVIS-US-073 (Secure cross-device reachability and continuity)**, the Android offline sync queue is now encrypted at rest with a dedicated Android Keystore AES-GCM key. Legacy plaintext queues are migrated on first read; integrity/version failures fail closed; revocation wipes the queue and its local data key. This is a source-level security increment only. Android build, automated migration/tamper/revocation tests, trusted TLS connectivity and two-physical-phone acceptance remain outstanding. Both stories remain **OPEN / PARTIAL**.
