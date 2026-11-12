@@ -39,6 +39,7 @@ interface DocumentVector { hash: string; vector: number[] }
 interface VectorPayload { version: 1; model: string; entries: Record<string, DocumentVector> }
 
 const MAX_DOCUMENTS = 200;
+const MAX_LIBRARY_CHARS = 20_000_000;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_DOCUMENT_CHARS = 1_000_000;
 const MAX_CHUNKS = 500;
@@ -99,9 +100,20 @@ export class DocumentRagStore {
       }
       this.documents = new Map(payload.documents.map((doc) => [doc.id, doc]));
     }
-    const vectorPayload = this.vectorFile.read();
-    this.vectors = vectorPayload?.version === 1 && vectorPayload.model === (embedder?.model ?? 'none') && vectorPayload.entries
-      ? vectorPayload
+    let vectorPayload: VectorPayload | undefined;
+    try { vectorPayload = this.vectorFile.read(); } catch {
+      // Embeddings are derived data; rebuild them from the encrypted source documents.
+      vectorPayload = undefined;
+    }
+    const validVectors = vectorPayload?.version === 1 &&
+      vectorPayload.model === (embedder?.model ?? 'none') &&
+      !!vectorPayload.entries && typeof vectorPayload.entries === 'object' && !Array.isArray(vectorPayload.entries) &&
+      Object.values(vectorPayload.entries).every((entry) =>
+        !!entry && typeof entry.hash === 'string' && Array.isArray(entry.vector) &&
+        entry.vector.length > 0 && entry.vector.length <= 8192 &&
+        entry.vector.every((value) => typeof value === 'number' && Number.isFinite(value)));
+    this.vectors = validVectors
+      ? vectorPayload!
       : { version: 1, model: embedder?.model ?? 'none', entries: {} };
     this.pruneVectors();
   }
@@ -152,6 +164,8 @@ export class DocumentRagStore {
     const duplicate = [...this.documents.values()].find((doc) => doc.ownerDeviceId === input.ownerDeviceId && doc.contentHash === contentHash);
     if (duplicate) return { documentId: duplicate.id, chunkCount: duplicate.chunks.length, duplicate: true };
     if (this.documents.size >= MAX_DOCUMENTS) throw new Error('Document library limit reached; delete an existing document first.');
+    const currentLibraryChars = [...this.documents.values()].reduce((total, doc) => total + doc.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0), 0);
+    if (currentLibraryChars + normalized.length > MAX_LIBRARY_CHARS) throw new Error('Document library storage limit reached; delete existing documents first.');
     const parts = splitIntoChunks(normalized);
     if (!parts.length || parts.length > MAX_CHUNKS) throw new Error('Document could not be safely divided within the chunk limit.');
     const now = Date.now();
@@ -206,7 +220,7 @@ export class DocumentRagStore {
         score: queryVector ? semantic * 0.7 + lexical * 0.3 : lexical,
         method: queryVector ? 'semantic' as const : 'lexical' as const,
       };
-    }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, boundedLimit);
+    }).filter((item) => item.method === 'semantic' ? item.score >= 0.18 : item.score > 0).sort((a, b) => b.score - a.score).slice(0, boundedLimit);
   }
 
   public list(ownerDeviceId: string): Array<{ id: string; title: string; sourceName: string; chunkCount: number; createdAt: number }> {
