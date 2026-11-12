@@ -18,9 +18,9 @@ const fakeEmbedder: Embedder = {
   },
 };
 
-function withTempDir(run: (directory: string) => void): void {
+async function withTempDir<T>(run: (directory: string) => T | Promise<T>): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-document-rag-'));
-  try { run(directory); } finally { rmSync(directory, { recursive: true, force: true }); }
+  try { return await run(directory); } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
 test('document text is encrypted at rest and searchable after restart with source citations', async () => {
@@ -46,8 +46,8 @@ test('document text is encrypted at rest and searchable after restart with sourc
   });
 });
 
-test('documents are isolated by device and duplicate content is detected per owner', () => {
-  withTempDir((directory) => {
+test('documents are isolated by device and duplicate content is detected per owner', async () => {
+  await withTempDir((directory) => {
     const store = new DocumentRagStore(join(directory, 'documents.enc'), TOKEN);
     const first = store.ingest({ ownerDeviceId: 'device-a', sourceName: 'a.txt', content: 'Private document about JARVIS recovery.' });
     const duplicate = store.ingest({ ownerDeviceId: 'device-a', sourceName: 'copy.txt', content: 'Private document about JARVIS recovery.' });
@@ -73,8 +73,8 @@ test('chunking bounds long documents and retrieval returns chunk-level source po
   });
 });
 
-test('unsupported binary formats, empty documents and oversized documents are rejected', () => {
-  withTempDir((directory) => {
+test('unsupported binary formats, empty documents and oversized documents are rejected', async () => {
+  await withTempDir((directory) => {
     const store = new DocumentRagStore(join(directory, 'documents.enc'), TOKEN);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'manual.pdf', content: 'binary placeholder' }), /Unsupported document format/);
     assert.throws(() => store.ingest({ ownerDeviceId: 'device-a', sourceName: 'empty.txt', content: '   ' }), /must not be empty/);
