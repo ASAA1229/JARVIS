@@ -107,8 +107,8 @@ test('checkpoint failure before execution prevents the side effect callback', as
     executeStep: async () => { calls += 1; return { status: 'completed' }; },
   });
   assert.equal(calls, 0);
-  assert.equal(result.status, 'uncertain');
-  assert.equal(result.branches[0].status, 'uncertain');
+  assert.equal(result.status, 'partial');
+  assert.equal(result.branches[0].status, 'failed');
 });
 
 test('rejects cyclic and invalid workflow graphs', async () => {
