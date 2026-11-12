@@ -495,6 +495,13 @@ Named-control reads, clicks, and value updates now accept optional `expectProces
 **Epic completion gate:** CI must pass on the latest commit, and the MSI acceptance checklist in `POC.md` must be run interactively. In particular, test Notepad and a browser, duplicate names, focus changes, blocked sensitive fields, and durable file-save verification. Apps that expose neither usable UI Automation patterns nor stable accessible controls still require dedicated adapters; they must be reported as unsupported instead of silently falling back to unsafe input.
 
 
+### Browser search navigation observation — 2026-11-12
+
+After the approved browser search is submitted, JARVIS now performs a short, foreground-process-bound UI Automation inspection before and after submission. A changed non-empty window title from the expected browser process is recorded as a navigation observation. This is deliberately **not** promoted to verified search success: title changes do not prove that the requested query or results page loaded. If inspection is unavailable or the title does not change, the search remains submitted-but-unverified. Regression tests cover matching browser identity, unchanged titles, wrong-process title changes and missing observations.
+
+**Build/test status:** SOURCE AND TESTS COMMITTED — NOT BUILT OR RUN. Browser-specific URL/query/result verification and real-browser acceptance remain open.
+
+
 ### UI Automation selector authorization closure — 2026-11-12
 
 The desktop policy gateway now explicitly allowlists `automationId` for guarded control reads, clicks and value updates. This closes a mismatch where the Windows adapter supported stable AutomationId selectors but the policy rejected them as unexpected parameters. The adapter now requires exactly one selector (a control name OR an AutomationId), rejects competing selectors, and continues to require a unique matching control in the verified foreground window. State-changing click/set actions remain bound to the exact selector, target process and parameters in the task-scoped approval hash; changing the selector after approval is denied. Regression tests were added for selector validation and approval-scope tampering.
