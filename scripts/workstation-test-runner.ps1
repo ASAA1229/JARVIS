@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("All", "Preflight", "Windows", "Android")]
-    [string]$Mode = "All",
+    [ValidateSet("Preflight", "BuildAll", "BuildWindows", "BuildAndroid", "TestWindows", "TestAndroid", "TestAll")]
+    [string]$Mode = "BuildAll",
     [string]$ReportDirectory = (Join-Path $env:TEMP "JARVIS-workstation-evidence"),
     [switch]$SkipBrowserSmoke
 )
@@ -36,28 +36,38 @@ function Invoke-Checked([string]$Name, [string]$Exe, [string[]]$Arguments, [stri
 }
 & $preflightScript -ReportDirectory $ReportDirectory
 if ($Mode -eq "Preflight") { return }
-$npm = Get-Command npm -ErrorAction SilentlyContinue
-$nodeModules = Test-Path (Join-Path $repoRoot "node_modules")
-if ($Mode -in @("All","Windows")) {
+
+$windowsBuild = $Mode -in @("BuildAll","BuildWindows")
+$androidBuild = $Mode -in @("BuildAll","BuildAndroid")
+$windowsTests = $Mode -in @("TestWindows","TestAll")
+$androidTests = $Mode -in @("TestAndroid","TestAll")
+
+if ($windowsBuild -or $windowsTests) {
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    $nodeModules = Test-Path (Join-Path $repoRoot "node_modules")
     if (-not $npm) {
-        Add-Result "Node checks" "npm" 127 0 "BLOCKED" "npm was not found on PATH."
+        Add-Result "Windows Node tasks" "npm" 127 0 "BLOCKED" "npm was not found on PATH."
     } elseif (-not $nodeModules) {
-        Add-Result "Node checks" "npm test / npm run build" 2 0 "BLOCKED" "node_modules is absent. Install dependencies explicitly with npm ci, then rerun."
+        Add-Result "Windows Node tasks" "npm scripts" 2 0 "BLOCKED" "node_modules is absent. Review the lockfile and local changes, then run npm ci explicitly."
+    } elseif ($windowsBuild) {
+        Invoke-Checked "Windows TypeScript build" "npm" @("run","build") $repoRoot
     } else {
-        Invoke-Checked "Node automated tests" "npm" @("test") $repoRoot
-        Invoke-Checked "TypeScript build" "npm" @("run","build") $repoRoot
-        if (-not $SkipBrowserSmoke) { Invoke-Checked "Browser smoke" "npm" @("run","test:browser") $repoRoot }
+        Invoke-Checked "Windows automated tests" "npm" @("test") $repoRoot
+        if (-not $SkipBrowserSmoke) { Invoke-Checked "Windows browser smoke" "npm" @("run","test:browser") $repoRoot }
     }
 }
-if ($Mode -in @("All","Android")) {
+
+if ($androidBuild -or $androidTests) {
     $gradle = Get-Command gradle -ErrorAction SilentlyContinue
     if (-not $gradle) {
-        Add-Result "Android Gradle tests/build" "gradle -p android-app testDebugUnitTest assembleDebug" 127 0 "BLOCKED" "System Gradle was not found. The repository currently has no Gradle Wrapper."
-    } else {
-        Invoke-Checked "Android unit-test task" "gradle" @("-p","android-app","testDebugUnitTest") $repoRoot
+        Add-Result "Android Gradle task" "gradle -p android-app" 127 0 "BLOCKED" "System Gradle was not found. The repository currently has no Gradle Wrapper."
+    } elseif ($androidBuild) {
         Invoke-Checked "Android debug APK build" "gradle" @("-p","android-app","assembleDebug") $repoRoot
+    } else {
+        Invoke-Checked "Android unit tests" "gradle" @("-p","android-app","testDebugUnitTest") $repoRoot
     }
 }
+
 $authorizedDevices = $null
 if (Get-Command adb -ErrorAction SilentlyContinue) {
     $deviceLines = & adb devices 2>$null
@@ -74,18 +84,18 @@ $summary = [ordered]@{
     branch = $branch; mode = $Mode; authorizedAndroidDeviceCount = $authorizedDevices
     deviceAcceptance = if ($authorizedDevices -ge 2) { "READY_FOR_OWNER_DEVICE_DRILLS" } else { "PENDING_TWO_AUTHORIZED_PHONES" }
     results = @($results)
-    note = "No APK installation, app launch, phone setting change, enrollment, revocation, data reset, credential access or remote command execution was performed. Review and redact logs before sharing."
+    note = "Build and test modes are separate. No APK installation, app launch, phone setting change, enrollment, revocation, data reset, credential access or remote command execution was performed. Review and redact logs before sharing."
 }
 $jsonPath = Join-Path $ReportDirectory "test-run-$stamp.json"
 $mdPath = Join-Path $ReportDirectory "test-run-$stamp.md"
 $summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $jsonPath
-$lines = @("# JARVIS workstation test report", "", "- Generated: $($summary.generatedAt)", "- Machine: $($summary.machine)", "- Branch: $($summary.branch)", "- Mode: $Mode", "- Authorized Android devices: $(if ($null -eq $authorizedDevices) { 'ADB unavailable' } else { $authorizedDevices })", "- Physical-device acceptance: $($summary.deviceAcceptance)", "", "| Check | Status | Exit | Duration (s) |", "|---|---:|---:|---:|")
+$lines = @("# JARVIS workstation run report", "", "- Generated: $($summary.generatedAt)", "- Machine: $($summary.machine)", "- Branch: $($summary.branch)", "- Mode: $Mode", "- Authorized Android devices: $(if ($null -eq $authorizedDevices) { 'ADB unavailable' } else { $authorizedDevices })", "- Physical-device acceptance: $($summary.deviceAcceptance)", "", "| Check | Status | Exit | Duration (s) |", "|---|---:|---:|---:|")
 foreach ($r in $results) {
     $lines += "| $($r.name) | $($r.status) | $($r.exitCode) | $($r.durationSeconds) |"
     if ($r.logPath) { $lines += "Log: $($r.logPath)" }
     $lines += "Note: $($r.note)"
 }
-$lines += @("", "## Evidence boundary", "A passing build/test command proves only that command on this machine and this checkout. It does not prove microphone behavior, Android hardware behavior, cross-device enrollment/sync, or owner acceptance.", "", "No APK installation, app launch, phone setting change, enrollment, revocation, data reset, credential access or remote command execution was performed.")
+$lines += @("", "## Evidence boundary", "A passing build proves compilation/package generation only. A passing automated test proves only that test command on this checkout. Neither proves microphone behavior, Android hardware behavior, cross-device enrollment/sync, or owner acceptance.", "", "No APK installation, app launch, phone setting change, enrollment, revocation, data reset, credential access or remote command execution was performed.")
 $lines | Set-Content -Encoding UTF8 $mdPath
 Write-Host ""
 Write-Host "Report files:"
