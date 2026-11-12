@@ -20,7 +20,11 @@ export function assessBrowserNavigation(
   expectedProcess: string,
 ): BrowserNavigationObservation {
   const normalize = (value: string) => value.trim().replace(/\.exe$/i, '').toLowerCase();
-  const processMatches = Boolean(after && normalize(after.process) === normalize(expectedProcess));
+  const processMatches = Boolean(
+    before && after &&
+    normalize(before.process) === normalize(expectedProcess) &&
+    normalize(after.process) === normalize(expectedProcess),
+  );
   const titleChanged = Boolean(
     before && after &&
     before.windowTitle.trim() &&
