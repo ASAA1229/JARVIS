@@ -23,7 +23,7 @@ export interface TaskCoordinatorSnapshot {
   activeTasks: string[];
   queuedTasks: Array<{ taskId: string; priority: number; waitedMs: number; blockedByResource: boolean; blockedByDeviceLimit: boolean }>;
   activeByDevice: Record<string, number>;
-  lockedResources: string[];
+  lockedResourceCount: number;
   limits: { global: number; perDevice: number; queued: number };
 }
 
@@ -114,7 +114,7 @@ export class TaskCoordinator {
         blockedByDeviceLimit: (this.activeByDevice.get(entry.request.deviceId) ?? 0) >= this.maxConcurrentPerDevice,
       })).sort((a, b) => b.priority - a.priority),
       activeByDevice: Object.fromEntries(this.activeByDevice),
-      lockedResources: [...this.heldResources].sort(),
+      lockedResourceCount: this.heldResources.size,
       limits: { global: this.maxConcurrent, perDevice: this.maxConcurrentPerDevice, queued: this.maxQueue },
     };
   }
