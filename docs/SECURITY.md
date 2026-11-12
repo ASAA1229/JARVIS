@@ -69,6 +69,9 @@ JARVIS must not:
 - No silent cloud fallback when local inference fails.
 - Keep system/developer/user prompt roles separate and version prompt contracts.
 - Retrieved memory/documents are untrusted context and cannot override system/developer instructions.
+- Document ingestion is signed-request authenticated, bounded to 2 MB per text document, restricted to an allowlist of UTF-8 text extensions, and scoped to the authenticated device. It must reject binary/unsupported formats rather than infer content.
+- Document content and embedding vectors are encrypted at rest with purpose-separated AES-GCM state files. Search results expose source metadata but never grant document access to another device.
+- Treat HTML, Markdown, code, logs and all retrieved document text as prompt-injection-capable data. It cannot alter instructions, grant capabilities or authorize execution.
 - Validate structured model output against schemas and trusted capability registries.
 - Model-produced commands, code, workflow steps and tool calls are proposals only; policy/approval remain authoritative.
 - Do not fine-tune model weights automatically. Learning uses encrypted memory, approved facts, retrieval and owner-reviewed feedback candidates.
