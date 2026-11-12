@@ -1064,7 +1064,9 @@ The target is one consistent JARVIS product with shared identity, permissions, t
 **Implemented in source:**
 - Added `src/core/taskCoordinator.ts`: bounded global/per-device admission (4 global, 2 per device), bounded queue (200), 30-second default queue deadline, priority with aging, duplicate task admission rejection, queued cancellation, and atomic sorted multi-resource locks.
 - Integrated coordination into `JarvisCoreService` immediately around policy-approved adapter dispatch. Interactive requests receive higher queue priority than scheduled work; approvals and policy evaluation remain outside and authoritative.
-- Added resource isolation for per-device desktop/app control, the shared personal-memory store, plugin/workflow registry and workspace/file targets.
+- Added resource isolation for host-wide desktop/app control, the shared personal-memory store, plugin/workflow registry and shared workspace/file operations.
+- Added a separate bounded planner/provider admission pool (2 global / 1 per device) and exposed safe active/queued/limit metrics in the health snapshot.
+- Added planning cancellation propagation: queued planning is removed; an already-running provider result is discarded if the owner cancels before policy evaluation. Queued adapter cancellation/timeout is distinguished from an interrupted adapter side effect, so a task that never started an adapter does not incorrectly require external-state reconciliation.
 - Changed scheduler ticks to persist each due job's at-most-once advancement before dispatching independent jobs concurrently. The core coordinator continues to enforce actual execution limits.
 - Added regression tests for global/per-device limits, resource exclusivity, opposite lock ordering, queued cancellation, queue timeout, duplicate admission, lock release after errors and overlapping scheduler ticks.
 - Added [TASK_CONCURRENCY.md](docs/TASK_CONCURRENCY.md), documenting the concurrency model, CS methods, safety invariants and remaining stages.
