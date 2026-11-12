@@ -44,7 +44,8 @@ jobs:
           set -euo pipefail
           APK="android-app/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          sha256sum "$APK" > app-debug.apk.sha256
+          cp "$APK" app-debug.apk
+          sha256sum app-debug.apk > app-debug.apk.sha256
           {
             echo "Repository: ${GITHUB_REPOSITORY}"
             echo "Branch: ${GITHUB_REF_NAME}"
@@ -61,7 +62,7 @@ jobs:
         with:
           name: jarvis-android-debug-${{ github.run_number }}-${{ github.sha }}
           path: |
-            android-app/app/build/outputs/apk/debug/app-debug.apk
+            app-debug.apk
             app-debug.apk.sha256
             android-apk-build.txt
           if-no-files-found: error
