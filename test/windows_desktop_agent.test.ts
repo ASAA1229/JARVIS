@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { buildControlActionScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildControlToggleScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
+
+test('UI Automation toggle sets an explicit desired state and verifies readback', () => {
+  const onScript = buildControlToggleScript('Enable notifications', true);
+  const offScript = buildControlToggleScript(undefined, false, 'NotificationsToggle');
+  assert.match(onScript, /ToggleState\]::On/);
+  assert.match(onScript, /TogglePattern/);
+  assert.match(onScript, /Toggle state readback did not match/);
+  assert.match(offScript, /AutomationIdProperty, 'NotificationsToggle'/);
+  assert.match(offScript, /ToggleState\]::Off/);
+  assert.match(offScript, /credential or financial controls/);
+});
 
 test('UI Automation supports AutomationId selectors and rejects competing selectors', async () => {
   const readScript = buildReadControlScript(undefined, 'MainDocumentTitle');
