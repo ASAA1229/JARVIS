@@ -25,10 +25,10 @@ Resource keys are derived from operation semantics:
 
 | Resource | Lock scope | Purpose |
 |---|---|---|
-| Desktop/app control | Per device | Prevent two tasks from racing focus, typing, clicking, or launching on one desktop |
+| Desktop/app control | Per host | Prevent two devices/tasks from racing focus, typing, clicking, or launching on the same physical desktop |
 | Personal memory store | Shared process store | Prevent concurrent mutations from overwriting one another |
 | Plugin/workflow registry | Shared registry | Serialize registry changes |
-| Workspace/file operations | Canonical target path, or per-device fallback | Avoid conflicting writes to the same workspace |
+| Workspace/file operations | Shared workspace | Conservatively serialize file/repository operations until canonical path identity is proven |
 
 A task declares its complete resource set before execution. The coordinator normalizes and sorts all keys and grants the entire set atomically. It never grants a partial set and then waits for another lock. This removes the hold-and-wait condition required for circular-wait deadlocks. Locks are always released in a `finally` path.
 
