@@ -4,6 +4,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
@@ -50,7 +53,11 @@ class SyncClient(private val api: JarvisApiClient, private val queueFile: File, 
             output.write(encrypted)
             output.fd.sync()
         }
-        check(temporary.renameTo(queueFile)) { "Could not atomically replace the encrypted sync queue." }
+        try {
+            Files.move(temporary.toPath(), queueFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary.toPath(), queueFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     @Synchronized
