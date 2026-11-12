@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WindowsAppLauncherAdapter, discoveredLaunchResult, matchesExpectedAppWindow, selectUniqueExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
+import { WindowsAppLauncherAdapter, discoveredLaunchResult, matchesExpectedAppWindow, selectUniqueExpectedAppWindow, discoveredWindowIdentity } from '../src/adapters/windowsAppLauncher.js';
 import { VerificationOutcome } from '../src/core/types.js';
 import type { WindowInfo } from '../src/adapters/windowsWindows.js';
 
@@ -190,4 +190,13 @@ test('the Store-app frame fallback still fails closed when the frame cannot be f
 
   assert.equal(result.success, false);
   assert.match(String(result.error), /could not verify that its existing window was brought forward/);
+});
+
+
+test('supported browser discovery maps each known browser to its process identity', () => {
+  assert.deepEqual(discoveredWindowIdentity('Google Chrome'), { processNames: ['chrome'] });
+  assert.deepEqual(discoveredWindowIdentity('Microsoft Edge'), { processNames: ['msedge'] });
+  assert.deepEqual(discoveredWindowIdentity('Firefox'), { processNames: ['firefox'] });
+  assert.deepEqual(discoveredWindowIdentity('Brave'), { processNames: ['brave'] });
+  assert.deepEqual(discoveredWindowIdentity('Opera'), { processNames: ['opera'] });
 });
