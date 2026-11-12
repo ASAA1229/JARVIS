@@ -240,3 +240,9 @@ The current manifest generator uses PROJECT_NAME, full GIT_COMMIT (or GIT_COMMIT
 The Jenkins-to-manifest handoff and Nexus artifact-set contract are design/schema work, not permission to alter a live Jenkins controller or Nexus. Before activation, the owner/ACI POC must confirm authoritative customer/product/version/release inputs, repository key/format, canonical path hierarchy, supported package formats, trust-anchor distribution, retention and immutability policy.
 
 If approved later, publication must use a unique staging coordinate, verify every uploaded file by read-back SHA-256 and size, and mark the set complete only after every required object is verified. Existing coordinates are immutable; mismatched existing content is a conflict. Customer verification remains offline. Nexus publication remains disabled.
+
+## Local PDF and DOCX ingestion
+
+Use signed `POST /api/documents/ingest-file` with `sourceName`, canonical base64 `documentBase64`, optional `title`, and optional boolean `ocr`. The request body limit is 21 MiB; the decoded file limit is 15 MB. The response reports format and extraction method (`text`, `ocr`, or `text+ocr`).
+
+DOCX needs no external parser. For PDF text extraction install Poppler so `pdftotext` is on PATH. For scanned PDFs, also install `pdftoppm` and Tesseract (`tesseract`) on the JARVIS host; set `ocr: true` explicitly. These tools run locally. No cloud OCR is configured. OCR currently recognizes English and at most 20 pages; normal PDF text extraction supports at most 30 pages. If local tools are missing, PDF ingestion fails with an actionable error rather than returning an empty index.
