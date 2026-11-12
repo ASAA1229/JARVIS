@@ -1385,17 +1385,10 @@ export class JarvisCoreService {
   #executionResources(task: TaskLifecycleRecord, request: OperationRequest): string[] {
     const operation = request.operation;
     const resources = new Set<string>();
-    if (/^(app:|desktop:)/.test(operation)) resources.add(`desktop:${task.deviceId}`);
+    if (/^(app:|desktop:)/.test(operation)) resources.add('desktop:host');
     if (/^memory:/.test(operation)) resources.add('memory:personal-store');
     if (/^(plugin:|workflow:)/.test(operation)) resources.add('workflow:plugin-registry');
-    if (/^(file:|dev:)/.test(operation)) {
-      const candidate = request.parameters.path ?? request.parameters.filePath ?? request.parameters.workspace;
-      if (typeof candidate === 'string' && candidate.trim()) {
-        resources.add(`workspace:${candidate.trim().toLowerCase().replace(/[\\\\/]+$/, '')}`);
-      } else {
-        resources.add(`workspace:device:${task.deviceId}`);
-      }
-    }
+    if (/^(file:|dev:)/.test(operation)) resources.add('workspace:shared');
     return [...resources];
   }
 
