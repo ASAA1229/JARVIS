@@ -130,3 +130,20 @@ test('rejects nested admission from a coordinated worker instead of risking reen
   assert.equal(coordinator.snapshot().active, 0);
   assert.deepEqual(coordinator.snapshot().lockedResources, []);
 });
+
+test('queue snapshot reports task lifecycle and blocking reason without resource names', async () => {
+  const coordinator = new TaskCoordinator(1, 1, 5, 1000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const active = coordinator.run({ taskId: 'desktop-owner-task', deviceId: 'device-a', resources: ['private-window-title'] }, async () => gate);
+  const queued = coordinator.run({ taskId: 'queued-report-task', deviceId: 'device-a', resources: ['private-window-title'] }, async () => undefined);
+  const snapshot = coordinator.snapshot();
+  assert.deepEqual(snapshot.activeTasks, ['desktop-owner-task']);
+  assert.equal(snapshot.queuedTasks.length, 1);
+  assert.equal(snapshot.queuedTasks[0].taskId, 'queued-report-task');
+  assert.equal(snapshot.queuedTasks[0].blockedByResource, true);
+  assert.equal(snapshot.queuedTasks[0].blockedByDeviceLimit, true);
+  assert.equal(JSON.stringify(snapshot).includes('private-window-title'), false);
+  release();
+  await Promise.all([active, queued]);
+});
