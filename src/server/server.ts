@@ -18,6 +18,7 @@ import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '..
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { DocumentRagStore } from '../memory/documentRagStore.js';
+import { DocumentParser } from '../memory/documentParser.js';
 import { OllamaEmbedder, resolveLocalEmbeddingEndpoint } from '../memory/semanticIndex.js';
 import { SyncStateStore } from '../sync/syncStateStore.js';
 import { SyncService } from '../sync/syncService.js';
@@ -50,6 +51,7 @@ export class JarvisServer {
   private recoveryFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
   private readonly documentRag?: DocumentRagStore;
+  private readonly documentParser = new DocumentParser();
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
@@ -887,6 +889,46 @@ export class JarvisServer {
           return this.jsonResponse(res, result.duplicate ? 200 : 201, { state: 'STORED', ...result });
         } catch (error) {
           return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Document ingestion failed' });
+        }
+      }
+
+      // Binary ingestion is local-only: PDF text extraction and optional scanned-page OCR never upload document bytes.
+      if (req.method === 'POST' && url.pathname === '/api/documents/ingest-file') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req, 21 * 1024 * 1024);
+        if (!this.isJsonObject(body) || typeof body.sourceName !== 'string' ||
+            typeof body.documentBase64 !== 'string' ||
+            (body.title !== undefined && typeof body.title !== 'string') ||
+            (body.ocr !== undefined && typeof body.ocr !== 'boolean')) {
+          return this.jsonResponse(res, 400, { error: 'sourceName, base64 document content and optional OCR flag are required' });
+        }
+        if (body.documentBase64.length > 20 * 1024 * 1024 ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body.documentBase64)) {
+          return this.jsonResponse(res, 400, { error: 'Document encoding is invalid or exceeds the 15 MB file limit' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        try {
+          const bytes = Buffer.from(body.documentBase64, 'base64');
+          if (bytes.toString('base64') !== body.documentBase64) return this.jsonResponse(res, 400, { error: 'Document encoding is not canonical base64' });
+          const parsed = await this.documentParser.parse(body.sourceName, bytes, { ocr: body.ocr === true });
+          const result = this.documentRag.ingest({
+            ownerDeviceId: auth.device.id,
+            sourceName: body.sourceName,
+            ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            content: parsed.text,
+          });
+          this.jarvis.audit.record('DOCUMENT_INGESTED', {
+            documentId: result.documentId, chunkCount: result.chunkCount, duplicate: result.duplicate,
+            format: parsed.format, extraction: parsed.extraction, pages: parsed.pages,
+          }, auth.device.id);
+          return this.jsonResponse(res, result.duplicate ? 200 : 201, {
+            state: 'STORED', ...result, format: parsed.format, extraction: parsed.extraction, pages: parsed.pages,
+          });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Document parsing failed' });
         }
       }
 
