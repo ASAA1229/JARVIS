@@ -1327,6 +1327,9 @@ The Windows Start-menu launcher now returns a normalized top-level `windowPid`, 
 **Acceptance criteria**
 - Global and per-device concurrency are bounded and configurable through validated runtime configuration.
 - The waiting queue is bounded, observable, priority-aware and protected against starvation by priority aging.
+- Planner/provider admission is separately bounded; cancellation while queued prevents the provider call, and a late result from an uninterruptible active provider cannot proceed to policy or execution.
+- Queue cancellation or admission timeout before adapter start is terminal and records that no side effect began; interruption after adapter start remains uncertain and requires reconciliation.
+- Health reporting exposes bounded active/queued counts and capacity limits without exposing request parameters, secrets or resource paths.
 - Interactive, scheduled and background tasks have explicit priority classes; priority never overrides policy or approval.
 - Duplicate task IDs cannot be queued or executed concurrently.
 - Queued tasks can be cancelled or time out without invoking an adapter.
