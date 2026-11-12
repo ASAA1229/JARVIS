@@ -1148,14 +1148,14 @@ The exact-head [JARVIS CI run #42591404042](https://github.com/ASAA1229/JARVIS/a
 
 **Priority:** P1.
 
-**Current status:** PARTIAL — native enrollment, signed text requests and narrow app inventory/sync foundations exist; two-phone physical acceptance and broader companion lifecycle remain open.
+**Current status:** PARTIAL — native enrollment, signed text requests, encrypted local sync queue, narrow app inventory, and owner-opt-in WorkManager approval polling are implemented in source; Android build and two-phone physical acceptance remain open.
 
 **As the owner,** I want each Android phone to act as a secure, independently managed JARVIS companion, so that I can receive approvals, notifications and authorized task results on either device.
 
 **Acceptance criteria**
 - Build, install and upgrade the native app on both target phones with documented Android versions.
 - Each phone has its own Keystore-backed identity, session, permissions and revocation state.
-- Support secure notification delivery and deep links for task status/approval without exposing secrets or granting broader authority.
+- Support privacy-preserving approval notifications and deep links without exposing secrets or granting broader authority. Current implementation is periodic WorkManager polling (minimum 15-minute interval), explicitly opt-in after enrollment and OS permission; real-time push is not claimed.
 - Any phone-side app launch or supported device action is explicit, permission-scoped and visible to the phone owner.
 - Accessibility, notification, microphone, camera and background permissions are requested only when a feature needs them and are individually revocable.
 - Revoke one phone and prove the other remains usable; revoked devices cannot reconnect, replay or complete stale commands.
@@ -1230,3 +1230,12 @@ The exact-head [JARVIS CI run #42591404042](https://github.com/ASAA1229/JARVIS/a
 ## Android cross-device implementation note — 2026-11-12
 
 For **JARVIS-US-072 (Native Android companion capability completion)** and **JARVIS-US-073 (Secure cross-device reachability and continuity)**, the Android offline sync queue is now encrypted at rest with a dedicated Android Keystore AES-GCM key. Legacy plaintext queues are migrated on first read; integrity/version failures fail closed; revocation wipes the queue and its local data key. This is a source-level security increment only. Android build, automated migration/tamper/revocation tests, trusted TLS connectivity and two-physical-phone acceptance remain outstanding. Both stories remain **OPEN / PARTIAL**.
+
+
+### Android approval notification build increment — 2026-11-12
+
+The native companion now exposes explicit **Enable approval notifications** and **Disable approval notifications** controls. Notification polling defaults off, can be enabled only after enrollment, requests Android 13+ notification permission at the point of use, and schedules/cancels the existing WorkManager poller according to the owner's choice. Notification content remains generic and does not include directive text. Polling is periodic (Android minimum interval, about 15 minutes), not real-time push.
+
+Files: `MainActivity.kt`, `CompanionSession.kt`, `ApprovalPollWorker.kt` (existing worker), and `src/capabilities/registry.ts`; documentation updated in `android-app/README.md` and `docs/SECURE_PHONE_CONNECTIVITY.md`.
+
+**Build status:** IMPLEMENTED IN SOURCE — NOT COMPILED. No tests, Gradle build, APK installation, ADB operation or phone acceptance was run in this build-first phase. US-072 remains OPEN / PARTIAL.
