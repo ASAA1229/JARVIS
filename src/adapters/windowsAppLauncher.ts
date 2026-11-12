@@ -37,7 +37,12 @@ export function discoveredLaunchResult(
       name: selected.Name,
       appId: selected.AppID,
       status: newWindow ? 'Launch requested; a new window appeared' : 'Launch requested',
-      ...(newWindow ? { observedWindow: { pid: newWindow.pid, processName: newWindow.processName, title: newWindow.title } } : {}),
+      ...(targetWindowVerified && newWindow ? {
+        windowPid: newWindow.pid,
+        windowProcess: newWindow.processName,
+        windowTitle: newWindow.title,
+        observedWindow: { pid: newWindow.pid, processName: newWindow.processName, title: newWindow.title },
+      } : newWindow ? { observedWindow: { pid: newWindow.pid, processName: newWindow.processName, title: newWindow.title } } : {}),
     },
     evidence: {
       discovery: 'Get-StartApps',
@@ -585,7 +590,7 @@ export class WindowsAppLauncherAdapter {
           return {
             success: true,
             outcome: VerificationOutcome.VERIFIED_SUCCESS,
-            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; existing window focused', windowPid: existing.window.pid, windowTitle: existing.window.title },
+            data: { name: selected.Name, appId: selected.AppID, status: 'Already running; existing window focused', windowPid: existing.window.pid, windowProcess: existing.window.processName, windowTitle: existing.window.title },
             evidence: { existingWindowDetected: true, reusedExistingWindow: true, foregroundFocusVerified: true },
           };
         }
