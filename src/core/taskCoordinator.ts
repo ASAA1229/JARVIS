@@ -82,9 +82,14 @@ export class TaskCoordinator {
     if (this.queue.length >= this.maxQueue) return Promise.reject(new TaskQueueFullError());
 
     return new Promise<T>((resolve, reject) => {
-      const entry: QueueEntry<T> = {
+      // The shared queue erases each task's result type. Adapt the generic
+      // resolver at admission so the queue remains type-safe without storing
+      // invariant QueueEntry<T> values in QueueEntry<unknown>.
+      const entry: QueueEntry<unknown> = {
         request: { ...request, priority: request.priority ?? 0, resources: this.normalizeResources(request.resources) },
-        work, resolve, reject, enqueuedAt: Date.now(), sequence: this.sequence++, settled: false,
+        work: async () => await work(),
+        resolve: (value) => resolve(value as T),
+        reject, enqueuedAt: Date.now(), sequence: this.sequence++, settled: false,
       };
       this.activeTasks.add(request.taskId);
       const timeoutMs = request.queueTimeoutMs ?? this.maxQueueWaitMs;
@@ -96,7 +101,7 @@ export class TaskCoordinator {
         entry.abort = () => this.rejectQueued(entry, this.abortError());
         request.signal.addEventListener('abort', entry.abort, { once: true });
       }
-      this.queue.push(entry as QueueEntry<unknown>);
+      this.queue.push(entry);
       this.pump();
     });
   }
