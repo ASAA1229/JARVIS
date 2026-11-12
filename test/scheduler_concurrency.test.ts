@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AuditLogger } from '../src/audit/audit.js';
 import { Scheduler } from '../src/scheduler/scheduler.js';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('dispatches independent due schedules concurrently without duplicate in-flight runs', async () => {
-  const audit = new AuditLogger();
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-scheduler-concurrency-'));
+  const audit = new AuditLogger(join(directory, 'audit.log'));
   let active = 0;
   let maximum = 0;
   let calls = 0;
@@ -30,4 +34,5 @@ test('dispatches independent due schedules concurrently without duplicate in-fli
   assert.equal(calls, 2, 'each due schedule should execute exactly once');
   assert.equal(maximum, 2, 'independent jobs should overlap');
   assert.equal(scheduler.list().every((job) => job.runCount === 1), true);
+  rmSync(directory, { recursive: true, force: true });
 });
