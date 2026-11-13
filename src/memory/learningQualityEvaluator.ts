@@ -44,6 +44,8 @@ export interface LearningQualitySummary {
   candidateApprovals: number;
   candidateRejections: number;
   candidateAcceptanceRate: number | null;
+  /** Telemetry writes that failed since process start. Counters are rolled back, never half-applied. */
+  telemetryWriteFailures: number;
 }
 
 const MAX_SAMPLES = 500;
@@ -56,6 +58,7 @@ function average(values: number[]): number | null {
 export class LearningQualityEvaluator {
   private readonly file: EncryptedJsonFile<LearningQualityFile>;
   private data: LearningQualityFile = { version: 1, samples: [] };
+  private writeFailures = 0;
 
   constructor(filePath: string, ownerControlToken: string) {
     this.file = new EncryptedJsonFile<LearningQualityFile>(filePath, ownerControlToken, 'JARVIS-LEARNING-QUALITY-V1');
@@ -78,9 +81,14 @@ export class LearningQualityEvaluator {
 
   recordCandidateDecision(decision: 'approved' | 'rejected'): LearningQualitySummary {
     if (decision !== 'approved' && decision !== 'rejected') throw new Error('Candidate decision must be approved or rejected.');
-    this.data.candidateDecisions ??= { approved: 0, rejected: 0 };
-    this.data.candidateDecisions[decision] += 1;
-    this.file.write(this.data);
+    const previous = { ...(this.data.candidateDecisions ?? { approved: 0, rejected: 0 }) };
+    this.data.candidateDecisions = { ...previous, [decision]: previous[decision] + 1 };
+    try { this.file.write(this.data); } catch (error) {
+      // Atomic counter: the in-memory value must never run ahead of the durable value.
+      this.data.candidateDecisions = previous;
+      this.writeFailures += 1;
+      throw error;
+    }
     return this.summary();
   }
 
@@ -97,16 +105,21 @@ export class LearningQualityEvaluator {
     if (relevant.size === 0) throw new Error('At least one owner-identified relevant memory ID is required.');
     const hits = retrieved.filter((id) => relevant.has(id)).length;
     const firstRelevant = retrieved.findIndex((id) => relevant.has(id));
-    this.data.samples.push({
+    const previousSamples = this.data.samples;
+    this.data.samples = [...previousSamples, {
       at: Date.now(),
       precisionAtK: retrieved.length ? hits / retrieved.length : 0,
       recallAtK: hits / relevant.size,
       reciprocalRank: firstRelevant < 0 ? 0 : 1 / (firstRelevant + 1),
       helpful: input.rating === 'helpful',
       k: retrieved.length,
-    });
-    if (this.data.samples.length > MAX_SAMPLES) this.data.samples.splice(0, this.data.samples.length - MAX_SAMPLES);
-    this.file.write(this.data);
+    }];
+    if (this.data.samples.length > MAX_SAMPLES) this.data.samples = this.data.samples.slice(-MAX_SAMPLES);
+    try { this.file.write(this.data); } catch (error) {
+      this.data.samples = previousSamples;
+      this.writeFailures += 1;
+      throw error;
+    }
     return this.summary();
   }
 
@@ -139,6 +152,7 @@ export class LearningQualityEvaluator {
       candidateAcceptanceRate: ((this.data.candidateDecisions?.approved ?? 0) + (this.data.candidateDecisions?.rejected ?? 0))
         ? (this.data.candidateDecisions?.approved ?? 0) / ((this.data.candidateDecisions?.approved ?? 0) + (this.data.candidateDecisions?.rejected ?? 0))
         : null,
+      telemetryWriteFailures: this.writeFailures,
     };
   }
 }
