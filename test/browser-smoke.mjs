@@ -460,13 +460,25 @@ try {
   // its post-speech feedback guard. Model repeated detector frames until the
   // guard clears; the first accepted event must still start exactly one capture.
   let wakeCaptureStarted = false;
-  for (let attempt = 0; attempt < 8 && !wakeCaptureStarted; attempt++) {
+  // The HUD may still be inside its bounded post-speech feedback guard when
+  // the fixture begins. Retry detector frames for up to 15 seconds so CI
+  // scheduling and the guard duration cannot make this orchestration test flaky.
+  for (let attempt = 0; attempt < 30 && !wakeCaptureStarted; attempt++) {
     await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
     try {
       await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 500 });
       wakeCaptureStarted = true;
     } catch {
-      if (attempt === 7) throw new Error('Local wake detection did not start speech capture after the speech feedback guard cleared');
+      if (attempt === 29) {
+        const diagnostics = await hud.evaluate(() => ({
+          recognizers: window.__mockRecognizers.length,
+          wakeEngineStarted: window.__wakeEngineStarted,
+          wakeCallback: typeof window.__wakeCallback,
+          hudState: document.getElementById('hud-state-label')?.textContent || '',
+          hudSubstate: document.getElementById('hud-state-sub')?.textContent || '',
+        }));
+        throw new Error(`Local wake detection did not start speech capture within the bounded 15-second feedback-guard window: ${JSON.stringify(diagnostics)}`);
+      }
     }
   }
   await hud.evaluate((index) => {
