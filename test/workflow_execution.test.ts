@@ -174,3 +174,75 @@ test('rejects approval references that do not match the pending branch', async (
     executeStep: async () => ({ status: 'completed' }),
   }), /does not match pending branch/);
 });
+
+
+test('binds resume checkpoints to exact operation parameters', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const original = { ...step('a'), parameters: { document: 'alpha.txt' } };
+  const first = await runner.run([original], {
+    runId: 'run-definition-hash',
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  });
+  const changed = { ...step('a'), parameters: { document: 'beta.txt' } };
+  await assert.rejects(() => runner.run([changed], {
+    runId: 'run-definition-hash',
+    resumeFrom: first,
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  }), /exact workflow definition/);
+});
+
+test('rejects duplicate or missing branch identities in a saved checkpoint', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const first = await runner.run([step('a'), step('b')], {
+    runId: 'run-duplicate-branch',
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  });
+  const corrupted = structuredClone(first);
+  corrupted.branches[1] = { ...corrupted.branches[1], stepId: 'a' };
+  await assert.rejects(() => runner.run([step('a'), step('b')], {
+    runId: 'run-duplicate-branch',
+    resumeFrom: corrupted,
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  }), /exact workflow definition/);
+});
+
+test('cancellation after dispatch converts a late success into uncertain outcome', async () => {
+  const controller = new AbortController();
+  const result = await new WorkflowBranchExecutor().run([step('side-effect')], {
+    runId: 'run-late-cancel',
+    signal: controller.signal,
+    checkpoint: async () => {},
+    executeStep: async () => {
+      controller.abort();
+      return { status: 'completed' };
+    },
+  });
+  assert.equal(result.status, 'uncertain');
+  assert.equal(result.branches[0].status, 'uncertain');
+  assert.match(result.branches[0].message ?? '', /reconcile the external effect/);
+});
+
+test('cancellation after checkpoint but before dispatch prevents execution', async () => {
+  const controller = new AbortController();
+  let writes = 0;
+  let calls = 0;
+  const result = await new WorkflowBranchExecutor().run([step('a')], {
+    runId: 'run-pre-dispatch-cancel',
+    signal: controller.signal,
+    checkpoint: async () => {
+      writes += 1;
+      if (writes === 2) controller.abort();
+    },
+    executeStep: async () => {
+      calls += 1;
+      return { status: 'completed' };
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.status, 'partial');
+  assert.equal(result.branches[0].status, 'cancelled');
+});
