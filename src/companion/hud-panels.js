@@ -525,6 +525,7 @@
           ' · Recall@K: ' + (q.recallAtK === null || q.recallAtK === undefined ? '—' : (q.recallAtK * 100).toFixed(1) + '%') +
           ' · MRR: ' + (q.meanReciprocalRank === null || q.meanReciprocalRank === undefined ? '—' : q.meanReciprocalRank.toFixed(3)) +
           ' · Helpful: ' + (q.helpfulRate === null || q.helpfulRate === undefined ? '—' : (q.helpfulRate * 100).toFixed(1) + '%') +
+          ' · Candidate acceptance: ' + (q.candidateAcceptanceRate === null || q.candidateAcceptanceRate === undefined ? '—' : (q.candidateAcceptanceRate * 100).toFixed(1) + '%') +
           ' · Trend: ' + (q.trend || 'insufficient_data')),
       );
       const retrievedIds = el('input', { class: 'op-input', placeholder: 'Retrieved memory IDs (comma-separated)', 'aria-label': 'Retrieved memory IDs' });
