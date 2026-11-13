@@ -149,7 +149,9 @@ Resource keys cover shared desktop/app control, memory, plugin/workflow registri
 
 The workflow DAG executor supports bounded concurrent branches, branch-scoped approval references, serialized checkpoints, resource exclusion, dependency-aware joins, partial outcomes and explicit no-effect reconciliation. A branch left running after restart becomes uncertain and is never replayed automatically.
 
-**Integration limitation:** the live `workflow:run` service route still uses its sequential lifecycle at this checkpoint. Do not claim saved workflows execute concurrently until the branch executor is wired through child task records, encrypted journal, policy approval consumption, audit and independent outcome verification.
+**Live integration:** `workflow:run` preserves the validated step IDs and dependency edges, then invokes the branch executor through the core task service. Each branch receives an independent child task record; its operation is evaluated by the existing Policy Gateway, any approval is scoped to that child task, and execution returns through the normal adapter and outcome-verifier path. Parent DAG checkpoints and child task records are stored in the encrypted task journal. Checkpoint transitions and branch outcomes are appended to the tamper-evident audit chain. Bounded parallelism and canonical resource locks prevent conflicting host operations from racing.
+
+Approving, rejecting or expiring a branch approval updates that branch and resumes the parent DAG so descendants proceed only after verified success. Restarted in-flight branches remain recovery-required and are never automatically replayed. Exact-head CI, process-kill recovery, uncertain-branch reconciliation and explicit owner-reviewed resume acceptance remain required before this integration is considered fully accepted.
 
 ## 8. Cross-platform strategy
 
