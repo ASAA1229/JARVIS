@@ -155,7 +155,14 @@ export class WorkflowEngine {
     return ok({
       name,
       version: current.version,
-      steps: order.map((step) => ({ operation: step.operation, parameters: step.parameters })),
+      // Preserve the validated dependency graph for the core task lifecycle.
+      // Flattening this to an ordered list silently discards independent branches.
+      steps: order.map((step) => ({
+        id: step.id,
+        operation: step.operation,
+        parameters: step.parameters,
+        dependsOn: [...step.dependsOn],
+      })),
     }, { workflowName: name, workflowVersion: current.version, expandedSteps: order.length, note: 'Each expanded step is policy-checked and approved separately.' });
   }
 
