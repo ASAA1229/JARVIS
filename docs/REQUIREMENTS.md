@@ -28,10 +28,10 @@ JARVIS is a local-first personal AI operating assistant evolving toward a person
 ### 2.2 Voice and HUD
 - Text and consent-controlled voice interaction through the existing HUD.
 - Push-to-talk, transcript review where configured, cancellation, timeout, mute and visible microphone/listening state.
-- Local “Hey Jarvis” wake is the target; explicitly enabled and tested per target device.
+- Local “Hey Jarvis” wake is the target; explicitly enabled and tested per target device. Measure false accepts, false rejects, wake latency and resource use on actual hardware.
 - Target acknowledgement: “Hi sir, I am ready to work.”
 - Optional local Piper TTS; browser speech synthesis fallback. Local TTS does not prove local speech recognition.
-- Voice is not strong authentication and cannot independently authorize high-risk actions.
+- Voice is not strong authentication and cannot independently authorize high-risk actions. End-to-end validation covers microphone, wake, capture, STT, transcript finalization/review, intent/parameter extraction, signed request, policy/approval, execution and independent outcome verification.
 
 ### 2.3 Desktop and app capabilities
 - Discover installed applications and registered capabilities; choose the safest supported official API or UI adapter.
@@ -72,12 +72,12 @@ JARVIS is a local-first personal AI operating assistant evolving toward a person
 - Ingest bounded UTF-8 text documents, deduplicate, chunk with overlap, cite source filename/title/chunk, and support list/search/delete.
 - Encrypt document content and derived embeddings at rest; isolate documents by authenticated device.
 - Treat retrieved memory/document text as untrusted, never as system instructions or action authority.
-- Binary document parsing (PDF/DOCX), OCR and cross-device document sharing require separate implementation and acceptance.
+- PDF/DOCX parsing and opt-in local OCR have implementation documented in the architecture/operations baseline; parser security, relevance, deletion and physical-environment acceptance remain required. Cross-device document sharing remains a separate capability.
 - Capture feedback/useful facts as encrypted, attributed learning candidates.
 - Require owner approval before candidates become durable memory.
-- Never automatically fine-tune model weights.
+- Never automatically fine-tune model weights.\n- Measure retrieval quality using owner-labelled relevance judgements, Precision@K, Recall@K, MRR, helpful/correction feedback and learning-candidate acceptance. Establish a versioned baseline corpus and regression thresholds before claiming learning improvement. Metrics must never auto-promote memory or authorize actions.
 - Define deletion/retention across primary stores, indexes, caches, exports and backups.
-- Current conversation sessions are process-local, expire after about 30 minutes and are lost on restart.
+- When owner control is configured, conversation sessions use encrypted local persistence and restore after restart; sessions expire after about 30 minutes. Without owner control, session history is process-local. Validate the exact configured path and behavior against the deployed build.
 
 ### 2.7 Companion and synchronization
 - Independently enroll each phone with distinct key and permissions.
