@@ -16,9 +16,8 @@ FILES = (
     "scripts/environment_snapshot.py",
     "scripts/compatibility_matrix.py",
     "compatibility/example-matrix.template.json",
-    "docs/customer-preupgrade-verifier.md",
-    "docs/environment-snapshot-utility.md",
-    "docs/compatibility-matrix.md",
+    # Customer documentation is the embedded README-CUSTOMER.md; the per-tool docs/*.md
+    # files were consolidated into canonical guides and are intentionally not shipped.
 )
 README = """# Customer Pre-Upgrade Verification Tool
 

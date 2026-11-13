@@ -41,7 +41,7 @@ class CustomerBundleTests(unittest.TestCase):
             output.write_bytes(b"old bundle")
             sidecar.write_text("old checksum\\n", encoding="utf-8")
             self.assertEqual(main(["--output", str(output), "--force"]), 0)
-            self.assertEqual(sidecar.read_text(encoding="utf-8"), f"{hashlib.sha256(output.read_bytes()).hexdigest()}  {output.name}\\n")
+            self.assertEqual(sidecar.read_text(encoding="utf-8"), f"{hashlib.sha256(output.read_bytes()).hexdigest()}  {output.name}\n")
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(set(archive.namelist()), set(FILES) | {"README-CUSTOMER.md"})
 
