@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PersonalMemoryStore } from '../src/memory/personalMemoryStore.ts';
+import { WorkingMemory } from '../src/memory/workingMemory.ts';
+import { MemoryManager } from '../src/memory/memoryManager.ts';
 import { LearningQualityEvaluator } from '../src/memory/learningQualityEvaluator.ts';
 
 const token = 'learning-quality-test-owner-token-0123456789';
@@ -62,6 +65,48 @@ test('learning quality tracks owner acceptance of proposed learning candidates',
     assert.equal(reloaded.candidateApprovals, 2);
     assert.equal(reloaded.candidateRejections, 1);
     assert.equal(reloaded.candidateAcceptanceRate, 2 / 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('learning quality evaluates the live ranked memory retriever without persisting the query or memory IDs', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-retrieval-'));
+  const candidatesPath = join(dir, 'candidates.enc');
+  try {
+    const store = new PersonalMemoryStore(join(dir, 'memories.enc'), token);
+    const memory = store.save('project', 'JARVIS local wake phrase is Hey Jarvis with explicit microphone consent.');
+    const manager = new MemoryManager(store, new WorkingMemory(), candidatesPath, token);
+    const result = await manager.evaluateRetrieval({
+      query: 'JARVIS local wake phrase microphone consent',
+      relevantIds: [memory.id],
+      rating: 'helpful',
+    });
+    assert.equal(result.retrievedCount, 1);
+    assert.equal(result.quality.sampleCount, 1);
+    assert.equal(result.quality.precisionAtK, 1);
+    assert.equal(result.quality.recallAtK, 1);
+    assert.equal(result.quality.meanReciprocalRank, 1);
+    const persistedQuality = readFileSync(candidatesPath + '.quality', 'utf8');
+    assert.equal(persistedQuality.includes('JARVIS local wake phrase microphone consent'), false);
+    assert.equal(persistedQuality.includes(memory.id), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('live retrieval evaluation rejects invalid query and limit before recording a sample', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-retrieval-'));
+  try {
+    const store = new PersonalMemoryStore(join(dir, 'memories.enc'), token);
+    const manager = new MemoryManager(store, new WorkingMemory(), join(dir, 'candidates.enc'), token);
+    await assert.rejects(() => manager.evaluateRetrieval({
+      query: ' ', relevantIds: ['known'], rating: 'helpful',
+    }), /retrieval query/i);
+    await assert.rejects(() => manager.evaluateRetrieval({
+      query: 'valid query', relevantIds: ['known'], rating: 'helpful', limit: 21,
+    }), /limit/i);
+    assert.equal(manager.status().quality.sampleCount, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
