@@ -1359,6 +1359,7 @@ export class JarvisCoreService {
             verified: false,
           };
         }
+        if (pendingTask.workflowParentTaskId) await this.#settleWorkflowBranchChild(pendingTask, false);
       }
       this.audit.record('APPROVAL_FAILED_EXPIRED', { approvalId }, approver.id, pendingTask.id);
       return {
