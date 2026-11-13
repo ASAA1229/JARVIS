@@ -68,7 +68,7 @@ export class JarvisServer {
     console.info('[JARVIS] Advisory AI configuration:', agentConfig);
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
     this.conversationSessions = this.ownerControlToken
-      ? new ConversationSessionStore(statePath ? statePath + '.conversations' : './data/conversations.enc', this.ownerControlToken)
+      ? new ConversationSessionStore(ConversationSessionStore.resolvePath(statePath), this.ownerControlToken)
       : new ConversationSessionStore();
     if (this.ownerControlToken) {
       const embeddingEndpoint = resolveLocalEmbeddingEndpoint();

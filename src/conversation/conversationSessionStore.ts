@@ -30,7 +30,22 @@ const MAX_HISTORY_CHARACTERS = 12000;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const CONVERSATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export interface ConversationPersistenceInfo {
+  persistent: boolean;
+  encryptedAtRest: boolean;
+  /** Basename-free description only; the absolute path is never exposed through status APIs. */
+  survivesRestart: boolean;
+  idleExpiryMinutes: number;
+  maxSessions: number;
+  maxMessagesPerSession: number;
+}
+
 export class ConversationSessionStore {
+  /** Canonical on-disk location: derived from the configured state path, else ./data/conversations.enc. */
+  static resolvePath(statePath?: string): string {
+    return statePath ? statePath + '.conversations' : './data/conversations.enc';
+  }
+
   private readonly sessions = new Map<string, ConversationRecord>();
   private readonly locks = new Map<string, Promise<void>>();
   private readonly persistence?: EncryptedJsonFile<PersistedConversationState>;
@@ -51,6 +66,18 @@ export class ConversationSessionStore {
       );
       this.load();
     }
+  }
+
+  /** Authoritative description of persistence behavior (documented behavior must match this). */
+  public describe(): ConversationPersistenceInfo {
+    return {
+      persistent: this.persistence !== undefined,
+      encryptedAtRest: this.persistence !== undefined,
+      survivesRestart: this.persistence !== undefined,
+      idleExpiryMinutes: SESSION_TTL_MS / 60_000,
+      maxSessions: MAX_SESSIONS,
+      maxMessagesPerSession: MAX_MESSAGES,
+    };
   }
 
   private load(): void {
