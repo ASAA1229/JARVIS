@@ -42,6 +42,18 @@ test('owner allowlist authorizes cloud per task type and format filters apply', 
   assert.equal(router.route({ taskType: 'developer', containsPrivateData: false }).provider?.id, 'anthropic');
 });
 
+test('first-party Ollama-only routes never fall back to configured cloud providers', () => {
+  const router = new ProviderRouter(() => cloudEnv);
+  router.reportFailure('local');
+  const decision = router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+    formats: ['ollama'],
+  });
+  assert.equal(decision.provider, null);
+  assert.ok(decision.skipped.every((item) => item.id === 'local' || /incompatible format/.test(item.reason)));
+});
+
 test('status never exposes credentials or URLs', () => {
   const status = JSON.stringify(new ProviderRouter(() => cloudEnv).status());
   assert.equal(status.includes('sk-test-not-real'), false);
