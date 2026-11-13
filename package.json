@@ -12,7 +12,8 @@
     "site-key": "tsx src/gateway/siteKeysCli.ts",
     "test:ollama": "node scripts/test-ollama.mjs",
     "owner-recovery": "node scripts/owner-recovery.mjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "perf": "tsx scripts/perf-soak.ts"
   },
   "keywords": [
     "jarvis",

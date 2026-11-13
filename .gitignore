@@ -41,3 +41,25 @@ captures/
 .cxx/
 __pycache__/
 
+
+# Python
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Generated artifacts / local secrets
+*.pem
+*.key
+*.tar.gz
+jarvis-manifest*.json
+jarvis-build.tar.gz.sha256
+jarvis-dependencies.cdx.json
+customer-release-report.json
+perf-report*.json
