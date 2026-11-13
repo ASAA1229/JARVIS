@@ -345,7 +345,7 @@ export class MemoryManager {
     candidate.decidedAt = Date.now();
     candidate.memoryId = memory.id;
     this.persist();
-    this.quality.recordCandidateDecision('approved');
+    try { this.quality.recordCandidateDecision('approved'); } catch { /* Quality telemetry must not turn a committed approval into a reported failure. */ }
     return { candidate: { ...candidate }, memory };
   }
 
@@ -357,7 +357,7 @@ export class MemoryManager {
     // A rejected candidate keeps no copy of the text.
     candidate.content = '[rejected]';
     this.persist();
-    this.quality.recordCandidateDecision('rejected');
+    try { this.quality.recordCandidateDecision('rejected'); } catch { /* Quality telemetry must not turn a committed rejection into a reported failure. */ }
     return { ...candidate };
   }
 
