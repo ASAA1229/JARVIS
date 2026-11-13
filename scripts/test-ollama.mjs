@@ -1,4 +1,11 @@
-const baseUrl = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/+$/, '');
+const configuredUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+const parsedUrl = new URL(configuredUrl);
+if (!['http:', 'https:'].includes(parsedUrl.protocol) ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(parsedUrl.hostname) ||
+    parsedUrl.username || parsedUrl.password || parsedUrl.search || parsedUrl.hash || parsedUrl.pathname !== '/') {
+  throw new Error('Ollama smoke tests are restricted to a loopback URL without credentials or a path.');
+}
+const baseUrl = parsedUrl.origin;
 const model = process.env.OLLAMA_MODEL || 'llama3.2:latest';
 const timeoutSeconds = Number(process.env.OLLAMA_TIMEOUT || 120);
 
