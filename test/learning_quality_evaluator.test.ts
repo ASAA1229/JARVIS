@@ -50,6 +50,23 @@ test('learning quality persists encrypted aggregates and calculates a trend only
   }
 });
 
+test('learning quality tracks owner acceptance of proposed learning candidates', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-quality-'));
+  const path = join(dir, 'quality.enc');
+  try {
+    const evaluator = new LearningQualityEvaluator(path, token);
+    evaluator.recordCandidateDecision('approved');
+    evaluator.recordCandidateDecision('approved');
+    evaluator.recordCandidateDecision('rejected');
+    const reloaded = new LearningQualityEvaluator(path, token).summary();
+    assert.equal(reloaded.candidateApprovals, 2);
+    assert.equal(reloaded.candidateRejections, 1);
+    assert.equal(reloaded.candidateAcceptanceRate, 2 / 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('learning quality rejects invalid ratings, empty ground truth and oversized judgements', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-quality-'));
   try {
