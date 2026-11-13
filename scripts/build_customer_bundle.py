@@ -124,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         sidecar = output_path.with_name(output_path.name + ".sha256")
         if sidecar.is_symlink():
             raise ValueError("Checksum sidecar must not be a symbolic link.")
+        if output_path.exists() and not output_path.is_file():
+            raise ValueError("Output destination must be a regular file when it already exists.")
+        if sidecar.exists() and not sidecar.is_file():
+            raise ValueError("Checksum sidecar destination must be a regular file.")
         # Validate both destinations before creating/replacing either file. This
         # prevents a stale sidecar from leaving a newly-created bundle behind.
         if not args.force:
