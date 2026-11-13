@@ -211,6 +211,12 @@ The developer assistant operates only on explicitly connected repositories and g
 
 Model suggestions never apply/commit/push themselves. Applying, branch creation, commit and push are separately approved. Protected branches and secret/runtime paths are blocked.
 
+## Workflow DAG execution and verification
+
+The Live DAG path is implemented on `new-workflow-dag-integration` and is under CI hardening on `fix-live-dag-ci-hardening`. It creates independently tracked child branches, preserves dependency ordering, applies bounded concurrency/resource locks, routes actions through policy and approval controls, persists encrypted checkpoints, emits audit events and requires outcome verification. A branch is not considered successful merely because its task returned; terminal outcomes must be reconciled against the verifier and dependency state.
+
+The baseline feature CI exposed a checkpoint-validation defect: an `awaiting_approval` branch could carry a terminal outcome. The fix branch now rejects that incompatible persisted state. This change remains unverified until exact-head CI and crash/restart/fault-injection tests pass. See [Project Status](PROJECT_STATUS.md), [Gap Analysis](GAP_ANALYSIS.md) and [Release Readiness](RELEASE_READINESS.md).
+
 ## 13. Voice and hand-landmark components
 
 Optional local Piper TTS is invoked by the authenticated signed voice-synthesis route. Input is capped at 1,200 characters; subprocess execution uses no shell; WAV output is validated; response audio is no-store. A 20-second generation timeout applies. If local TTS is unavailable, the HUD can fall back to browser speech synthesis. Browser speech processing may be remote and is not equivalent to local STT.
