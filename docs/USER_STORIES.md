@@ -102,7 +102,7 @@ Acceptance:
 - Command parameters and target application are confirmed when ambiguous.
 - Authorization and independent outcome verification are identical to typed commands.
 
-Status: **Partial — browser E2E scenarios authored; real microphone/STT and full action-chain acceptance pending.**
+Status: **Partial — browser E2E scenarios cover interim/final transcript, explicit submission, network/no-speech/abort/permission failures, consent revocation and duplicate wake callbacks; real microphone/STT and full action-chain acceptance pending.**
 
 ### JARVIS-US-008 — Receive spoken acknowledgement and results
 As the owner, I want spoken acknowledgement and concise completion/error reports.
@@ -219,7 +219,7 @@ Acceptance:
 - Keep raw prompts, transcripts, memory text and identifiers out of aggregate telemetry.
 - Candidate approval/rejection must remain owner-controlled; metrics cannot auto-promote memory.
 
-Status: **Partial — encrypted aggregate evaluator and HUD/API hooks exist; live retrieval instrumentation, benchmark corpus and regression gates remain.**
+Status: **Partial — encrypted aggregate evaluator now scores the actual ranked long-term retriever; a versioned synthetic benchmark and owner-judgement HUD/API are authored. Exact-head execution, owner-labelled corpus and regression gates remain.**
 
 ## Epic 7 — Android companion and synchronization
 
