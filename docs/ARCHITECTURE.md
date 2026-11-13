@@ -78,9 +78,10 @@ The abstraction is designed to accommodate future OpenAI, Gemini and Anthropic a
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2:latest
 OLLAMA_TIMEOUT=120
+JARVIS_EMBED_MODEL=nomic-embed-text
 ~~~
 
-The native provider calls `POST /api/chat` with normalized role/content messages, generation options and the requested stream mode. It validates response shape, bounds output, classifies timeout/network/HTTP failures, uses bounded retry behavior for retryable failures and logs operational metadata without prompts or secrets.
+The native provider calls `POST /api/chat` with normalized role/content messages, generation options and the requested stream mode. Non-streaming and NDJSON streaming responses are byte-bounded; streaming must end with Ollama's explicit `done` event. HTTP status, timeout, network and malformed-response errors are classified, retry is bounded to one attempt for transient gateway statuses, and logs contain operational metadata only. Live health checks separately report chat-model and optional embedding-model availability.
 
 Timeout is seconds, constrained to 1–600. Streaming uses Ollama newline-delimited JSON when the caller already supports streaming. Health/model checks prove provider availability, not end-to-end workflow acceptance.
 
@@ -112,7 +113,7 @@ Specialized agents are advisory workers under a central orchestrator. Tool-selec
 - **Conversation history:** bounded and isolated by device/conversation; when owner control is configured, AES-256-GCM encrypted local persistence restores active sessions after restart. Sessions expire after about 30 minutes. Without owner control, history remains process-local.
 - **Working memory:** short-lived RAM context.
 - **Long-term memory:** encrypted local storage with categories, provenance, owner review, retention and deletion controls.
-- **Semantic index:** local Ollama embeddings where configured, combined with lexical overlap and recency; lexical fallback remains available.
+- **Semantic index:** local Ollama `POST /api/embed` embeddings using `JARVIS_EMBED_MODEL` (default `nomic-embed-text`) where installed, combined with lexical overlap and recency; lexical fallback remains available.
 - **Learning candidates:** encrypted, attributed candidates from feedback/useful interactions, awaiting owner approval.
 
 ~~~mermaid
