@@ -113,13 +113,23 @@ export class WorkflowBranchExecutor {
       if (prior.version !== 2 || prior.runId !== options.runId || prior.definitionHash !== definitionHash ||
           !Array.isArray(prior.branches) || prior.branches.length !== steps.length ||
           uniqueBranchIds.size !== steps.length || steps.some((step) => !uniqueBranchIds.has(step.id)) ||
+          !['running', 'awaiting_approval', 'completed', 'partial', 'failed', 'cancelled', 'uncertain'].includes(prior.status) ||
+          !Number.isInteger(prior.maxParallel) || prior.maxParallel < 1 || prior.maxParallel > MAX_PARALLEL ||
           prior.branches.some((branch) => {
             const step = steps.find((candidate) => candidate.id === branch.stepId);
+            const validOutcomes = [undefined, 'verified_success', 'verified_failure', 'partial', 'uncertain'];
             return !step || branch.runId !== options.runId || step.operation !== branch.operation ||
-              !Array.isArray(branch.dependsOn) ||
+              !Array.isArray(branch.dependsOn) || branch.dependsOn.some((dependency) => typeof dependency !== 'string') ||
               JSON.stringify([...step.dependsOn].sort()) !== JSON.stringify([...branch.dependsOn].sort()) ||
-              !BRANCH_STATUSES.has(branch.status) || !Number.isInteger(branch.attempts) || branch.attempts < 0 ||
-              !Number.isFinite(branch.updatedAt);
+              !BRANCH_STATUSES.has(branch.status) || !Number.isInteger(branch.attempts) || branch.attempts < 0 || branch.attempts > 1000 ||
+              !Number.isFinite(branch.updatedAt) ||
+              (branch.startedAt !== undefined && !Number.isFinite(branch.startedAt)) ||
+              (branch.approvalRef !== undefined && (typeof branch.approvalRef !== 'string' || branch.approvalRef.length < 1 || branch.approvalRef.length > 256)) ||
+              !validOutcomes.includes(branch.outcome) ||
+              (branch.message !== undefined && (typeof branch.message !== 'string' || branch.message.length > 240)) ||
+              (branch.status === 'awaiting_approval' && !branch.approvalRef) ||
+              (branch.status === 'completed' && branch.outcome !== 'verified_success') ||
+              (branch.status === 'uncertain' && branch.outcome !== 'uncertain');
           })) {
         throw new Error('The saved workflow checkpoint does not match this run and exact workflow definition.');
       }
