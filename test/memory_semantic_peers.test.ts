@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { PersonalMemoryStore, MemoryConflictError } from '../src/memory/personalMemoryStore.js';
 import { WorkingMemory } from '../src/memory/workingMemory.js';
 import { MemoryManager, DuplicateMemoryError } from '../src/memory/memoryManager.js';
-import { SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, type Embedder } from '../src/memory/semanticIndex.js';
+import { SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, OllamaEmbedder, type Embedder } from '../src/memory/semanticIndex.js';
 import { MemoryVersionHistory } from '../src/memory/memoryVersions.js';
 import { PeerRegistry } from '../src/peers/peerRegistry.js';
 import { PeerDiscoveryService, isPrivateLanAddress } from '../src/peers/peerDiscovery.js';
@@ -37,8 +37,32 @@ function setup(embedder: Embedder | null) {
 
 test('embeddings are only resolved for loopback Ollama', () => {
   assert.equal(resolveLocalEmbeddingEndpoint({ JARVIS_AI_BASE_URL: 'https://api.openai.com/v1' } as NodeJS.ProcessEnv), null);
-  assert.equal(resolveLocalEmbeddingEndpoint({ JARVIS_AI_BASE_URL: 'http://127.0.0.1:11434/v1' } as NodeJS.ProcessEnv)?.url, 'http://127.0.0.1:11434/api/embeddings');
-  assert.equal(resolveLocalEmbeddingEndpoint({ OLLAMA_URL: 'http://localhost:11434' } as NodeJS.ProcessEnv)?.url, 'http://localhost:11434/api/embeddings');
+  assert.equal(resolveLocalEmbeddingEndpoint({ JARVIS_AI_BASE_URL: 'http://127.0.0.1:11434/v1' } as NodeJS.ProcessEnv)?.url, 'http://127.0.0.1:11434/api/embed');
+  assert.equal(resolveLocalEmbeddingEndpoint({ OLLAMA_URL: 'http://localhost:11434' } as NodeJS.ProcessEnv)?.url, 'http://localhost:11434/api/embed');
+});
+
+test('Ollama embedder uses native /api/embed and validates returned vectors', async () => {
+  let requestedUrl = '';
+  let requestBody: Record<string, unknown> = {};
+  const embedder = new OllamaEmbedder({
+    url: 'http://localhost:11434/api/embed',
+    model: 'nomic-embed-text',
+  }, async (input, init) => {
+    requestedUrl = String(input);
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ embeddings: [[0.1, 0.2, 0.3]] });
+  });
+  assert.deepEqual(await embedder.embed('local semantic search'), [0.1, 0.2, 0.3]);
+  assert.equal(requestedUrl, 'http://localhost:11434/api/embed');
+  assert.deepEqual(requestBody, { model: 'nomic-embed-text', input: 'local semantic search' });
+});
+
+test('Ollama embedder refuses non-loopback endpoints', () => {
+  assert.throws(() => new OllamaEmbedder({
+    url: 'https://remote.example/api/embed',
+    model: 'nomic-embed-text',
+  }), /local Ollama/);
+  assert.equal(resolveLocalEmbeddingEndpoint({ OLLAMA_URL: 'http://localhost:11434/base?x=1' } as NodeJS.ProcessEnv), null);
 });
 
 test('ranked retrieval reports semantic or lexical honestly', async () => {
