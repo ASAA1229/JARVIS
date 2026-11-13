@@ -21,7 +21,7 @@ Acceptance:
 - Unknown, expired, revoked and replayed requests are rejected.
 - Two Android phones can enroll and operate independently.
 
-Status: **Partial — Android source exists; two-phone physical acceptance pending.**
+Status: **OWNER ACCEPTANCE PENDING:** Android source exists; two-phone physical acceptance pending.
 
 ### JARVIS-US-002 — Approve exact state-changing work
 As the owner, I want approvals bound to the exact device, task, operation, parameters, target and expiry so that changed or replayed requests cannot reuse consent.
@@ -33,7 +33,7 @@ Acceptance:
 - Model output, voice recognition and plugins cannot grant authority.
 - Denial and mismatch are audited without leaking sensitive payloads.
 
-Status: **Implemented — needs adversarial and exact-head testing.**
+Status: **IMPLEMENTED — NEEDS TESTING:** adversarial and exact-head testing.**
 
 ### JARVIS-US-003 — Revoke and recover a device
 As the owner, I want immediate revocation and safe recovery so that a lost phone cannot continue to act.
@@ -44,7 +44,7 @@ Acceptance:
 - Replacement devices enroll with new keys.
 - Other devices remain active unless revoke-all is explicitly selected.
 
-Status: **Implemented — needs device/fault acceptance.**
+Status: **IMPLEMENTED — NEEDS TESTING:** device/fault acceptance.**
 
 ## Epic 2 — Conversation and local AI
 
@@ -58,7 +58,7 @@ Acceptance:
 - Timeouts, unavailable models and malformed responses are bounded and reported.
 - Existing conversation contracts remain stable.
 
-Status: **Implemented — needs exact-head live Ollama testing.**
+Status: **IMPLEMENTED — NEEDS TESTING:** exact-head live Ollama testing.**
 
 ### JARVIS-US-005 — Use specialist agents safely
 As the owner, I want specialist agents to plan and review work without direct host authority.
@@ -69,7 +69,7 @@ Acceptance:
 - All actions pass the normal policy/approval/execution path.
 - Malformed, conflicting or injected outputs fail closed.
 
-Status: **Partial — agent foundation exists; broad quality/regression suite required.**
+Status: **NEEDS TESTING — partial implementation: agent foundation exists; broad quality/regression suite required.**
 
 ## Epic 3 — Voice and hands-free interaction
 
@@ -83,7 +83,7 @@ Acceptance:
 - Consent revocation stops capture and discards pending transcript.
 - Wake phrase alone never authorizes consequential actions.
 
-Status: **Partial — local wake path and browser orchestration exist; hardware/acoustic acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: local wake path and browser orchestration exist; hardware/acoustic acceptance pending.**
 
 ### JARVIS-US-007 — Convert speech into a reviewed command
 As the owner, I want speech converted into a transcript and command proposal that I can review before consequential execution.
@@ -97,7 +97,7 @@ Acceptance:
 - Command parameters and target application are confirmed when ambiguous.
 - Authorization and independent outcome verification are identical to typed commands.
 
-Status: **Partial — browser E2E scenarios cover interim/final transcript, explicit submission, network/no-speech/abort/permission failures, consent revocation and duplicate wake callbacks; real microphone/STT and full action-chain acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: browser E2E scenarios cover interim/final transcript, explicit submission, network/no-speech/abort/permission failures, consent revocation and duplicate wake callbacks; real microphone/STT and full action-chain acceptance pending.**
 
 ### JARVIS-US-008 — Receive spoken acknowledgement and results
 As the owner, I want spoken acknowledgement and concise completion/error reports.
@@ -109,7 +109,7 @@ Acceptance:
 - TTS failure does not affect task correctness or authorization.
 - Audio output can be stopped and is not logged as sensitive content.
 
-Status: **Partial — TTS paths exist; target-device acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: TTS paths exist; target-device acceptance pending.**
 
 ## Epic 4 — Desktop and application automation
 
@@ -122,7 +122,7 @@ Acceptance:
 - Confirm process/window identity and report launch outcome.
 - Respect allowlists, permissions and owner policy.
 
-Status: **Partial — Windows adapter foundation exists; broad app compatibility matrix pending.**
+Status: **NEEDS TESTING — partial implementation: Windows adapter foundation exists; broad app compatibility matrix pending.**
 
 ### JARVIS-US-010 — Interact with application controls
 As the owner, I want JARVIS to perform supported UI actions and verify the resulting state.
@@ -134,7 +134,7 @@ Acceptance:
 - Verify the state change independently.
 - Report unsupported/partial outcomes honestly.
 
-Status: **Partial — selected capabilities exist; app-by-app reliability evidence pending.**
+Status: **NEEDS TESTING — partial implementation: selected capabilities exist; app-by-app reliability evidence pending.**
 
 ## Epic 5 — Task execution, concurrency and recovery
 
@@ -148,7 +148,7 @@ Acceptance:
 - Failed/blocked/uncertain prerequisites prevent dependent execution.
 - Partial outcomes are visible to the owner.
 
-Status: **Implemented — needs integration/fault testing.**
+Status: **IMPLEMENTED — NEEDS TESTING:** integration/fault testing.**
 
 ### JARVIS-US-012 — Execute independent workflow branches safely
 As the owner, I want independent DAG branches to run concurrently while dependent branches wait.
@@ -188,7 +188,7 @@ Acceptance:
 - Cross-device access is permission-bound.
 - Corrupt state fails closed.
 
-Status: **Implemented — needs lifecycle/security acceptance.**
+Status: **IMPLEMENTED — NEEDS TESTING:** lifecycle/security acceptance.**
 
 ### JARVIS-US-015 — Retrieve useful memories and documents
 As the owner, I want relevant memory/document context with source attribution.
@@ -201,7 +201,7 @@ Acceptance:
 - Retrieved text is untrusted and cannot instruct JARVIS to execute actions.
 - Deletion removes source and derived index entries.
 
-Status: **Partial — retrieval/parser foundations exist; adversarial, relevance and deletion tests required.**
+Status: **NEEDS TESTING — partial implementation: retrieval/parser foundations exist; adversarial, relevance and deletion tests required.**
 
 ### JARVIS-US-016 — Measure learning quality
 As the owner, I want evidence that memory and learning improve retrieval and task outcomes rather than simply increasing stored data.
@@ -214,7 +214,7 @@ Acceptance:
 - Keep raw prompts, transcripts, memory text and identifiers out of aggregate telemetry.
 - Candidate approval/rejection must remain owner-controlled; metrics cannot auto-promote memory.
 
-Status: **Partial — encrypted aggregate evaluator now scores the actual ranked long-term retriever; a versioned synthetic benchmark and owner-judgement HUD/API are authored. Exact-head execution, owner-labelled corpus and regression gates remain.**
+Status: **NEEDS TESTING — partial implementation: encrypted aggregate evaluator now scores the actual ranked long-term retriever; a versioned synthetic benchmark and owner-judgement HUD/API are authored. Exact-head execution, owner-labelled corpus and regression gates remain.**
 
 ## Epic 7 — Android companion and synchronization
 
@@ -228,7 +228,7 @@ Acceptance:
 - Background polling behavior and limitations are disclosed.
 - Physical install and two-phone acceptance are recorded.
 
-Status: **Partial — Android source exists; build/install/device acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: Android source exists; build/install/device acceptance pending.**
 
 ### JARVIS-US-018 — Synchronize safely across devices
 As the owner, I want memory and approved changes to synchronize without silently overwriting conflicting data.
@@ -240,7 +240,7 @@ Acceptance:
 - Offline state-changing commands remain held for owner decision.
 - Reconnect, revoked-device and crash recovery tests pass.
 
-Status: **Partial — sync contracts/queue foundation exist; durable end-to-end acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: sync contracts/queue foundation exist; durable end-to-end acceptance pending.**
 
 ## Epic 8 — Cross-platform support
 
@@ -254,7 +254,7 @@ Acceptance:
 - Each platform has automated and physical-device acceptance.
 - No claim of universal support based only on shared UI/API.
 
-Status: **Partial — Windows/Android foundations; macOS/Linux/iOS not accepted.**
+Status: **NEEDS TESTING — partial implementation:** Windows/Android foundations; macOS/Linux/iOS not accepted.
 
 ## Epic 9 — Plugins, developer tools and integrations
 
@@ -267,7 +267,7 @@ Acceptance:
 - All actions use standard policy/approval and audit.
 - Invalid or injected manifests fail closed.
 
-Status: **Partial — plugin/workflow foundation exists; expanded adversarial testing required.**
+Status: **NEEDS TESTING — partial implementation: plugin/workflow foundation exists; expanded adversarial testing required.**
 
 ### JARVIS-US-021 — Use JARVIS as a developer assistant
 As the owner, I want JARVIS to inspect permitted repositories and propose changes without exposing secrets or pushing unapproved work.
@@ -279,7 +279,7 @@ Acceptance:
 - Apply, branch, commit and push are distinct operations.
 - CI evidence refers to exact commit SHA.
 
-Status: **Partial — developer assistant foundation exists; end-to-end scoped Git/CI acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: developer assistant foundation exists; end-to-end scoped Git/CI acceptance pending.**
 
 ## Epic 10 — Build, release and operations
 
@@ -293,7 +293,7 @@ Acceptance:
 - Clean-room verification and backup/restore drills.
 - Release approval remains owner-controlled.
 
-Status: **Partial — utility foundation exists; complete signed release pipeline and operational acceptance pending.**
+Status: **NEEDS TESTING — partial implementation: utility foundation exists; complete signed release pipeline and operational acceptance pending.**
 
 ### JARVIS-US-023 — Operate and recover JARVIS
 As the owner, I want reliable health, diagnostics, backup and recovery without exposing private data.
@@ -305,7 +305,7 @@ Acceptance:
 - Persistence/audit failures fail closed.
 - Recovery distinguishes uncertain external effects.
 
-Status: **Partial — operations documentation and selected health routes exist; measured SLOs and full recovery drills pending.**
+Status: **NEEDS TESTING — partial implementation: operations documentation and selected health routes exist; measured SLOs and full recovery drills pending.**
 
 ## Epic 11 — Privacy, quality and performance
 
