@@ -1246,7 +1246,7 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
-        const result = this.jarvis.rejectTask(approvalId, sessionId);
+        const result = await this.jarvis.rejectTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 
