@@ -63,3 +63,4 @@ jarvis-build.tar.gz.sha256
 jarvis-dependencies.cdx.json
 customer-release-report.json
 perf-report*.json
+sbom-verify-input.cdx.json

@@ -43,7 +43,10 @@ jobs:
       - name: Generate CycloneDX dependency SBOM
         run: npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json
       - name: Verify SBOM against lockfile
-        run: node scripts/sbom-verify.mjs jarvis-dependencies.cdx.json package-lock.json
+        shell: bash
+        run: |
+          npm sbom --sbom-format=cyclonedx > sbom-verify-input.cdx.json
+          node scripts/sbom-verify.mjs sbom-verify-input.cdx.json package-lock.json
       - name: Dependency security audit
         run: npm audit --audit-level=moderate
       - name: TypeScript check
