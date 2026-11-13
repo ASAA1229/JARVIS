@@ -1081,23 +1081,18 @@ export class JarvisCoreService {
       }
     }
 
-    // Preserve and execute independent DAG branches as separate child tasks.
-    // State-changing workflows remain on the established sequential approval path
-    // until their branch-specific approval/resume lifecycle is fully accepted.
+    // Every validated workflow step runs as an isolated child task through the
+    // normal policy/approval/verification pipeline; independent nodes may run
+    // concurrently while dependencies and resource locks remain enforced.
     if (verification.honestOutcome === VerificationOutcome.VERIFIED_SUCCESS &&
         taskRecord.operation === 'workflow:run') {
       const expandedDag = (rawResult.data as { steps?: unknown } | undefined)?.steps;
-      const safeReadOnly = new Set([
-        'system:get_os_info', 'system:get_memory_info', 'system:get_battery_status', 'system:get_disk_space',
-        'desktop:list_windows', 'desktop:read_control', 'file:list', 'file:search', 'file:read',
-        'app:inventory', 'dev:repo_list', 'dev:tree', 'dev:read', 'dev:grep', 'dev:git_status',
-        'dev:git_log', 'dev:git_diff', 'plugin:list', 'workflow:list', 'workflow:show', 'workflow:history',
-      ]);
-      if (Array.isArray(expandedDag) && expandedDag.length >= 2 && expandedDag.length <= 20 &&
+      if (Array.isArray(expandedDag) && expandedDag.length >= 1 && expandedDag.length <= 20 &&
           expandedDag.every((step) => {
             const item = step as Partial<WorkflowStep>;
             return typeof item.id === 'string' && /^[a-z0-9][a-z0-9_-]{0,30}$/i.test(item.id) &&
-              typeof item.operation === 'string' && safeReadOnly.has(item.operation) &&
+              typeof item.operation === 'string' && !item.operation.startsWith('workflow:') &&
+              !item.operation.startsWith('plugin:') &&
               item.parameters !== null && typeof item.parameters === 'object' && !Array.isArray(item.parameters) &&
               Array.isArray(item.dependsOn) && item.dependsOn.every((dependency) => typeof dependency === 'string');
           })) {
