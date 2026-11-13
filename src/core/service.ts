@@ -1473,8 +1473,7 @@ export class JarvisCoreService {
       task.updatedAt = Date.now();
       this.#recordStep(task, 'cancelled', undefined, 'Rejected by approver');
       this.#skipRemainingSteps(task);
-      this.#persistTask(task);
-      if (task.state !== TaskState.REJECTED) {
+      if (!this.#persistTask(task) || task.state !== TaskState.REJECTED) {
         return { success: false, message: task.error || 'Rejection checkpoint failed; task requires recovery.' };
       }
     }
