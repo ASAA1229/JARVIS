@@ -383,8 +383,31 @@ export class MemoryManager {
     return { workingRemoved, candidatesScrubbed, indexRemoved, versionsPurged, derivedVerified };
   }
 
-  recordRetrievalEvaluation(input: LearningQualityInput): LearningQualitySummary {
-    return this.quality.record(input);
+  /**
+   * Evaluate the live ranked long-term retriever against owner-labelled relevant
+   * memory IDs. The query and IDs are used only in memory for this calculation;
+   * only aggregate metrics are persisted.
+   */
+  async evaluateRetrieval(input: {
+    query: string;
+    relevantIds: string[];
+    rating: 'helpful' | 'not_helpful';
+    limit?: number;
+  }): Promise<{ quality: LearningQualitySummary; retrievedCount: number }> {
+    if (!input || typeof input.query !== 'string' || !input.query.trim() || input.query.length > 2000) {
+      throw new Error('A retrieval query of 1–2000 characters is required.');
+    }
+    const limit = input.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+      throw new Error('Retrieval evaluation limit must be an integer from 1 to 20.');
+    }
+    const ranked = await this.rankLongTerm(input.query, limit);
+    const quality = this.quality.record({
+      retrievedIds: ranked.map((entry) => entry.memory.id),
+      relevantIds: input.relevantIds,
+      rating: input.rating,
+    });
+    return { quality, retrievedCount: ranked.length };
   }
 
   status(): {
