@@ -115,6 +115,7 @@ Specialized agents are advisory workers under a central orchestrator. Tool-selec
 - **Long-term memory:** encrypted local storage with categories, provenance, owner review, retention and deletion controls.
 - **Semantic index:** local Ollama `POST /api/embed` embeddings using `JARVIS_EMBED_MODEL` (default `nomic-embed-text`) where installed, combined with lexical overlap and recency; lexical fallback remains available.
 - **Learning candidates:** encrypted, attributed candidates from feedback/useful interactions, awaiting owner approval.
+- **Learning quality:** the owner evaluation path reruns the actual ranked long-term retriever for a supplied query and compares returned memory IDs with owner-labelled relevant IDs. Precision@K, Recall@K, MRR, helpful/correction rates and candidate approval rates are stored as encrypted aggregates; query text and memory IDs are not persisted in quality telemetry. A versioned synthetic benchmark fixture provides deterministic offline regression coverage; it is not a substitute for an owner-labelled production corpus.
 
 ~~~mermaid
 flowchart TD
