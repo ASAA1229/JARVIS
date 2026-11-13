@@ -246,3 +246,48 @@ test('cancellation after checkpoint but before dispatch prevents execution', asy
   assert.equal(result.status, 'partial');
   assert.equal(result.branches[0].status, 'cancelled');
 });
+
+
+test('rejects malformed persisted branch status, approval and outcome fields', async () => {
+  const runner = new WorkflowBranchExecutor();
+  const first = await runner.run([step('a')], {
+    runId: 'run-invalid-checkpoint-fields',
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'awaiting_approval', approvalRef: 'approval-valid' }),
+  });
+  const malformed = structuredClone(first);
+  malformed.branches[0].approvalRef = undefined;
+  await assert.rejects(() => runner.run([step('a')], {
+    runId: 'run-invalid-checkpoint-fields',
+    resumeFrom: malformed,
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  }), /exact workflow definition/);
+
+  const malformedOutcome = structuredClone(first);
+  malformedOutcome.branches[0].outcome = 'verified_success';
+  await assert.rejects(() => runner.run([step('a')], {
+    runId: 'run-invalid-checkpoint-fields',
+    resumeFrom: malformedOutcome,
+    checkpoint: async () => {},
+    executeStep: async () => ({ status: 'completed' }),
+  }), /exact workflow definition/);
+});
+
+test('rejects invalid run metadata before attempting checkpoint writes', async () => {
+  let writes = 0;
+  const first = await new WorkflowBranchExecutor().run([step('a')], {
+    runId: 'run-invalid-metadata',
+    checkpoint: async () => { writes += 1; },
+    executeStep: async () => ({ status: 'completed' }),
+  });
+  const malformed = structuredClone(first);
+  malformed.maxParallel = 0;
+  await assert.rejects(() => new WorkflowBranchExecutor().run([step('a')], {
+    runId: 'run-invalid-metadata',
+    resumeFrom: malformed,
+    checkpoint: async () => { writes += 1; },
+    executeStep: async () => ({ status: 'completed' }),
+  }), /exact workflow definition/);
+  assert.equal(writes, 2);
+});
