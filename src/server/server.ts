@@ -670,29 +670,30 @@ export class JarvisServer {
           return this.jsonResponse(res, 200, { quality: manager.status().quality });
         }
         if (manager && req.method === 'POST' && url.pathname === '/api/memory/evaluation') {
-          const { retrievedIds, relevantIds, rating } = body as {
-            retrievedIds?: unknown; relevantIds?: unknown; rating?: unknown;
+          const { query, relevantIds, rating } = body as {
+            query?: unknown; relevantIds?: unknown; rating?: unknown;
           };
-          if (!Array.isArray(retrievedIds) || !Array.isArray(relevantIds) ||
-              !retrievedIds.every((id) => typeof id === 'string') ||
+          if (typeof query !== 'string' || !Array.isArray(relevantIds) ||
               !relevantIds.every((id) => typeof id === 'string') ||
               !['helpful', 'not_helpful'].includes(String(rating))) {
-            return this.jsonResponse(res, 400, { error: 'retrievedIds, relevantIds and rating (helpful|not_helpful) are required' });
+            return this.jsonResponse(res, 400, { error: 'query, relevantIds and rating (helpful|not_helpful) are required' });
           }
           try {
-            const quality = manager.recordRetrievalEvaluation({
-              retrievedIds: retrievedIds as string[],
+            const evaluation = await manager.evaluateRetrieval({
+              query,
               relevantIds: relevantIds as string[],
               rating: rating as 'helpful' | 'not_helpful',
             });
+            const quality = evaluation.quality;
             this.jarvis.audit.record('MEMORY_RETRIEVAL_EVALUATED', {
               sampleCount: quality.sampleCount,
+              retrievedCount: evaluation.retrievedCount,
               precisionAtK: quality.precisionAtK,
               recallAtK: quality.recallAtK,
               helpfulRate: quality.helpfulRate,
               trend: quality.trend,
             }, auth.device.id);
-            return this.jsonResponse(res, 200, { quality });
+            return this.jsonResponse(res, 200, { quality, retrievedCount: evaluation.retrievedCount });
           } catch (error) {
             return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Evaluation could not be recorded' });
           }
