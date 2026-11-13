@@ -81,7 +81,10 @@ def sha256(path: Path) -> str:
 
 
 def build_bundle(destination: Path, force: bool = False) -> tuple[Path, str]:
-    destination = destination.expanduser().resolve()
+    destination = destination.expanduser()
+    if destination.is_symlink():
+        raise ValueError("Output must not be a symbolic link.")
+    destination = destination.resolve()
     if destination == ROOT or ROOT in destination.parents:
         raise ValueError("Output must be outside the repository to avoid bundling generated files.")
     if destination.exists() and not force:
@@ -108,19 +111,38 @@ def build_bundle(destination: Path, force: bool = False) -> tuple[Path, str]:
         raise
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("customer-preupgrade-tool.zip"))
     parser.add_argument("--force", action="store_true", help="Replace an existing output file")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
-        output, digest = build_bundle(args.output, args.force)
-        sidecar = output.with_name(output.name + ".sha256")
-        if sidecar.exists() and not args.force:
-            raise FileExistsError(f"Refusing to overwrite existing checksum sidecar: {sidecar}")
-        temporary = sidecar.with_name(sidecar.name + ".tmp")
-        temporary.write_text(f"{digest}  {output.name}\\n", encoding="utf-8")
-        temporary.replace(sidecar)
+        requested_output = args.output.expanduser()
+        if requested_output.is_symlink():
+            raise ValueError("Output must not be a symbolic link.")
+        output_path = requested_output.resolve()
+        sidecar = output_path.with_name(output_path.name + ".sha256")
+        if sidecar.is_symlink():
+            raise ValueError("Checksum sidecar must not be a symbolic link.")
+        # Validate both destinations before creating/replacing either file. This
+        # prevents a stale sidecar from leaving a newly-created bundle behind.
+        if not args.force:
+            if output_path.exists():
+                raise FileExistsError(f"Refusing to overwrite existing output: {output_path}")
+            if sidecar.exists():
+                raise FileExistsError(f"Refusing to overwrite existing checksum sidecar: {sidecar}")
+        output, digest = build_bundle(output_path, args.force)
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=sidecar.name + ".", suffix=".tmp", dir=sidecar.parent
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\\n") as stream:
+                stream.write(f"{digest}  {output.name}\\n")
+            temporary.replace(sidecar)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
         print(f"Bundle created: {output}")
         print(f"SHA-256: {digest}")
         print(f"Checksum sidecar: {sidecar}")
