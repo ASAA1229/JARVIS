@@ -22,6 +22,8 @@ import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { DeveloperAssistant } from '../developer/developerAssistant.js';
 import { WorkflowEngine } from '../workflows/workflowEngine.js';
+import { WorkflowBranchExecutor, type WorkflowRunCheckpoint } from '../workflows/workflowExecution.js';
+import type { WorkflowStep } from '../workflows/workflowStore.js';
 import { GatewaySiteAdmin, isGatewaySiteOperation } from '../gateway/siteAdminOperations.js';
 import { getCapability } from '../capabilities/registry.js';
 import { createConfiguredAgentModelAdapter } from '../conversation/agentModelAdapter.js';
@@ -70,6 +72,11 @@ export interface TaskLifecycleRecord {
   steps?: WorkflowStepRecord[];
   /** Owner-reviewed recovery note. This never authorizes automatic replay. */
   reconciliation?: { disposition: 'confirmed_no_effect' | 'effect_observed' | 'still_unknown'; note: string; reviewedAt: number; reviewedBy: DeviceId };
+  /** Encrypted DAG checkpoint and immutable definition used for explicit branch resume. */
+  workflowRun?: WorkflowRunCheckpoint;
+  workflowSteps?: WorkflowStep[];
+  workflowParentTaskId?: TaskId;
+  workflowStepId?: string;
 }
 
 export interface TaskResult {
@@ -1125,6 +1132,100 @@ export class JarvisCoreService {
       data: rawResult.data,
       outcome: verification.honestOutcome,
       verified: verification.verified,
+    };
+  }
+
+  /**
+   * Executes a validated read-only workflow DAG as independent child tasks.
+   * Every child still passes through the normal policy, adapter, verifier and
+   * audit pipeline. Parent checkpoints are encrypted by TaskJournal.
+   */
+  async #runWorkflowDag(parent: TaskLifecycleRecord, steps: WorkflowStep[]): Promise<TaskResult> {
+    const executor = new WorkflowBranchExecutor();
+    const runId = `${parent.id}:workflow`;
+    parent.workflowSteps = structuredClone(steps);
+    parent.state = TaskState.EXECUTING;
+    if (!this.#persistTask(parent)) {
+      return { taskId: parent.id, state: parent.state, message: parent.error || 'Workflow DAG checkpoint failed before dispatch.', verified: false };
+    }
+    this.audit.record('WORKFLOW_DAG_STARTED', { stepCount: steps.length, maxParallel: 4 }, parent.deviceId, parent.id);
+    const checkpoint = await executor.run(steps, {
+      runId,
+      maxParallel: 4,
+      ...(parent.workflowRun ? { resumeFrom: parent.workflowRun } : {}),
+      resourcesForStep: (step) => this.#executionResources(parent, { operation: step.operation, parameters: step.parameters }),
+      checkpoint: async (snapshot) => {
+        parent.workflowRun = snapshot;
+        if (!this.#persistTask(parent)) throw new Error(parent.error || 'Workflow DAG checkpoint persistence failed.');
+        this.audit.record('WORKFLOW_DAG_CHECKPOINT', {
+          status: snapshot.status,
+          branches: snapshot.branches.map((branch) => ({ stepId: branch.stepId, operation: branch.operation, status: branch.status, outcome: branch.outcome })),
+        }, parent.deviceId, parent.id);
+      },
+      executeStep: async (step, context) => {
+        const childId = `${parent.id}:${step.id}` as TaskId;
+        let child = this.tasks.get(childId);
+        if (!child) {
+          child = {
+            id: childId,
+            deviceId: parent.deviceId,
+            requestText: `Workflow branch ${step.id}: ${step.operation}`,
+            state: TaskState.CREATED,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            operation: step.operation,
+            parameters: structuredClone(step.parameters),
+            operations: [{ operation: step.operation, parameters: structuredClone(step.parameters) }],
+            operationIndex: 0,
+            origin: parent.origin,
+            steps: [],
+            workflowParentTaskId: parent.id,
+            workflowStepId: step.id,
+          };
+          this.tasks.set(childId, child);
+          if (!this.#persistTask(child)) throw new Error(child.error || 'Child task could not be durably created.');
+          this.audit.record('WORKFLOW_BRANCH_TASK_CREATED', { stepId: step.id, operation: step.operation }, parent.deviceId, childId);
+        }
+        if (child.state === TaskState.COMPLETED) return { status: 'completed', message: 'Previously verified child task.' };
+        if (child.state === TaskState.FAILED || child.state === TaskState.REJECTED || child.state === TaskState.CANCELLED) {
+          return { status: 'failed', message: child.error || 'Child task did not complete.' };
+        }
+        if (child.state === TaskState.AWAITING_APPROVAL && child.approvalId) {
+          return { status: 'awaiting_approval', approvalRef: child.approvalId, message: 'This branch requires its own approval.' };
+        }
+        if (child.state !== TaskState.CREATED && child.state !== TaskState.APPROVED) {
+          return { status: 'uncertain', message: child.error || 'Child task requires recovery before retry.' };
+        }
+        const result = await this.#evaluateAndProceed(childId, { operation: step.operation, parameters: step.parameters }, child.deviceId);
+        if (result.state === TaskState.COMPLETED && result.verified) return { status: 'completed', message: result.message };
+        if (result.state === TaskState.AWAITING_APPROVAL && result.approvalId) return { status: 'awaiting_approval', approvalRef: result.approvalId, message: result.message };
+        if (result.state === TaskState.AWAITING_RECOVERY || result.state === TaskState.INTERRUPTED) return { status: 'uncertain', message: result.message };
+        if (result.state === TaskState.PARTIAL) return { status: 'partial', message: result.message };
+        if (result.state === TaskState.CANCELLED) return { status: 'cancelled', message: result.message };
+        return { status: 'failed', message: result.message };
+      },
+    });
+    parent.workflowRun = checkpoint;
+    parent.state = checkpoint.status === 'completed' ? TaskState.COMPLETED
+      : checkpoint.status === 'awaiting_approval' ? TaskState.AWAITING_APPROVAL
+      : checkpoint.status === 'uncertain' ? TaskState.AWAITING_RECOVERY
+      : checkpoint.status === 'cancelled' ? TaskState.CANCELLED
+      : checkpoint.status === 'failed' ? TaskState.FAILED : TaskState.PARTIAL;
+    parent.error = checkpoint.status === 'completed' ? undefined
+      : `Workflow DAG ended with status ${checkpoint.status}; inspect branch tasks before retrying.`;
+    if (!this.#persistTask(parent)) {
+      return { taskId: parent.id, state: parent.state, message: parent.error || 'Workflow DAG final checkpoint failed.', outcome: VerificationOutcome.UNCERTAIN, verified: false };
+    }
+    this.audit.record('WORKFLOW_DAG_FINISHED', { status: checkpoint.status, branchCount: checkpoint.branches.length }, parent.deviceId, parent.id);
+    return {
+      taskId: parent.id,
+      state: parent.state,
+      message: parent.state === TaskState.COMPLETED ? 'All independent workflow branches completed and were verified.'
+        : parent.error || 'Workflow DAG requires review.',
+      outcome: parent.state === TaskState.COMPLETED ? VerificationOutcome.VERIFIED_SUCCESS
+        : parent.state === TaskState.AWAITING_RECOVERY ? VerificationOutcome.UNCERTAIN
+        : parent.state === TaskState.PARTIAL ? VerificationOutcome.PARTIAL_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
+      verified: parent.state === TaskState.COMPLETED,
     };
   }
 
