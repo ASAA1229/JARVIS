@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { PersonalMemoryStore } from '../src/memory/personalMemoryStore.ts';
 import { WorkingMemory } from '../src/memory/workingMemory.ts';
 import { MemoryManager } from '../src/memory/memoryManager.ts';
+import { SemanticMemoryIndex } from '../src/memory/semanticIndex.ts';
 import { LearningQualityEvaluator } from '../src/memory/learningQualityEvaluator.ts';
 
 const token = 'learning-quality-test-owner-token-0123456789';
@@ -76,7 +77,9 @@ test('learning quality evaluates the live ranked memory retriever without persis
   try {
     const store = new PersonalMemoryStore(join(dir, 'memories.enc'), token);
     const memory = store.save('project', 'JARVIS local wake phrase is Hey Jarvis with explicit microphone consent.');
-    const manager = new MemoryManager(store, new WorkingMemory(), candidatesPath, token);
+    const manager = new MemoryManager(store, new WorkingMemory(), candidatesPath, token, {
+      index: new SemanticMemoryIndex(join(dir, 'index.enc'), token, null),
+    });
     const result = await manager.evaluateRetrieval({
       query: 'JARVIS local wake phrase microphone consent',
       relevantIds: [memory.id],
@@ -99,7 +102,9 @@ test('live retrieval evaluation rejects invalid query and limit before recording
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-retrieval-'));
   try {
     const store = new PersonalMemoryStore(join(dir, 'memories.enc'), token);
-    const manager = new MemoryManager(store, new WorkingMemory(), join(dir, 'candidates.enc'), token);
+    const manager = new MemoryManager(store, new WorkingMemory(), join(dir, 'candidates.enc'), token, {
+      index: new SemanticMemoryIndex(join(dir, 'index.enc'), token, null),
+    });
     await assert.rejects(() => manager.evaluateRetrieval({
       query: ' ', relevantIds: ['known'], rating: 'helpful',
     }), /retrieval query/i);
