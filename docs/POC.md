@@ -44,7 +44,7 @@ Status terms:
 | Ollama local provider and provider routing | IMPLEMENTED — NEEDS TESTING | Exact-head offline/timeout/streaming/model-missing and real local model checks |
 | Chat, prompts and advisory agents | IMPLEMENTED — NEEDS TESTING | Task-quality evaluation, schema robustness, injection and long-session tests |
 | Windows desktop/application capabilities | PARTIAL | MSI Windows 11 acceptance across launch, focus changes, UI actions and outcome verification |
-| Browser HUD and push-to-talk | IMPLEMENTED — NEEDS TESTING | End-to-end audio and error-path reliability on target machine |
+| Browser HUD and push-to-talk | IMPLEMENTED — NEEDS TESTING; network/no-speech/abort/consent browser scenarios authored | Execute exact-head browser suite and verify real microphone/STT on target machine |
 | Local wake-word path | PARTIAL | Acoustic false-accept/false-reject, noise, distance, CPU and privacy measurements on MSI |
 | Speech-to-command authorization and explicit submission | TEST-AUTHORED / IMPLEMENTED — NEEDS TESTING | Full live path with real microphone/STT and authorized/denied actions |
 | Piper/browser speech output | PARTIAL | Confirm local Piper setup and distinguish remote browser speech fallback |
@@ -52,7 +52,7 @@ Status terms:
 | Concurrent workflow DAG executor | PARTIAL | Wire into live workflow route, isolated branch tasks, journal, policy, audit and verifier |
 | Checkpoint integrity and cancellation uncertainty handling | TEST-AUTHORED / IMPLEMENTED — NEEDS TESTING | Execute new tests on exact head; crash/restart and race testing |
 | Encrypted memory and owner-reviewed learning candidates | IMPLEMENTED — NEEDS TESTING | Lifecycle, deletion, corruption, cross-device isolation and quality validation |
-| Learning quality measurement | PARTIAL | Connect metrics to real retrieval/feedback events; establish baseline and regression gates |
+| Learning quality measurement | PARTIAL — live ranked retrieval hook and versioned synthetic benchmark authored | Run exact-head benchmark; add owner-labelled real retrieval set and regression gates |
 | Text-document RAG | IMPLEMENTED — NEEDS TESTING | Adversarial corpus, retrieval relevance, isolation, deletion and index rebuild tests |
 | PDF/DOCX parsing and opt-in local OCR | IMPLEMENTED — NEEDS TESTING (source documented) | Parser fuzzing, size/ZIP-bomb limits, OCR tool absence/timeouts and citation tests |
 | Android companion | IMPLEMENTED — NEEDS TESTING | Debug build, install, enrollment and independent two-phone acceptance |
