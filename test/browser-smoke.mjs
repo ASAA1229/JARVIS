@@ -494,7 +494,7 @@ try {
   if (wakeRequestCount !== 1 || wakeRequestText !== 'open Notepad') {
     throw new Error(`Local wake flow dispatched ${wakeRequestCount} requests with text "${wakeRequestText}" instead of one normalized "open Notepad" request`);
   }
-  if (await hud.locator('#approvals-container .approval-card').count() !== 1) {
+  if (await hud.locator('#hud-approvals-slot .hud-approval-card').count() !== 1) {
     throw new Error('The local-wake command did not remain behind the explicit on-screen approval gate');
   }
   await hud.unroute('**/api/request');
