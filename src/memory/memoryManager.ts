@@ -345,6 +345,7 @@ export class MemoryManager {
     candidate.decidedAt = Date.now();
     candidate.memoryId = memory.id;
     this.persist();
+    this.quality.recordCandidateDecision('approved');
     return { candidate: { ...candidate }, memory };
   }
 
@@ -356,6 +357,7 @@ export class MemoryManager {
     // A rejected candidate keeps no copy of the text.
     candidate.content = '[rejected]';
     this.persist();
+    this.quality.recordCandidateDecision('rejected');
     return { ...candidate };
   }
 
