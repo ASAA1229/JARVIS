@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { WorkflowStep } from './workflowStore.js';
 
 export type WorkflowBranchStatus =
@@ -19,8 +20,9 @@ export interface WorkflowBranchCheckpoint {
 }
 
 export interface WorkflowRunCheckpoint {
-  version: 1;
+  version: 2;
   runId: string;
+  definitionHash: string;
   status: 'running' | 'awaiting_approval' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'uncertain';
   maxParallel: number;
   branches: WorkflowBranchCheckpoint[];
@@ -63,6 +65,28 @@ export interface WorkflowRunOptions {
 const TERMINAL_FAILURES = new Set<WorkflowBranchStatus>(['failed', 'partial', 'uncertain', 'blocked', 'skipped', 'cancelled']);
 const MAX_STEPS = 20;
 const MAX_PARALLEL = 8;
+const BRANCH_STATUSES = new Set<WorkflowBranchStatus>([
+  'pending', 'running', 'awaiting_approval', 'completed', 'failed',
+  'partial', 'uncertain', 'blocked', 'skipped', 'cancelled',
+]);
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entry]) => [key, canonicalize(entry)]));
+  }
+  return value;
+}
+function workflowDefinitionHash(steps: WorkflowStep[]): string {
+  const definition = steps.map((step) => ({
+    id: step.id,
+    operation: step.operation,
+    parameters: canonicalize(step.parameters),
+    dependsOn: [...step.dependsOn].sort(),
+  })).sort((a, b) => a.id.localeCompare(b.id));
+  return createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+}
 
 /**
  * Runs independent workflow DAG nodes concurrently with per-node approval and
@@ -80,16 +104,34 @@ export class WorkflowBranchExecutor {
     this.validateGraph(steps);
 
     const now = Date.now();
+    const definitionHash = workflowDefinitionHash(steps);
     let snapshot: WorkflowRunCheckpoint;
     if (options.resumeFrom) {
       const prior = structuredClone(options.resumeFrom);
-      if (prior.version !== 1 || prior.runId !== options.runId || !Array.isArray(prior.branches) ||
-          prior.branches.length !== steps.length || prior.branches.some((branch) => {
+      const branchIds = Array.isArray(prior.branches) ? prior.branches.map((branch) => branch?.stepId) : [];
+      const uniqueBranchIds = new Set(branchIds);
+      if (prior.version !== 2 || prior.runId !== options.runId || prior.definitionHash !== definitionHash ||
+          !Array.isArray(prior.branches) || prior.branches.length !== steps.length ||
+          uniqueBranchIds.size !== steps.length || steps.some((step) => !uniqueBranchIds.has(step.id)) ||
+          !['running', 'awaiting_approval', 'completed', 'partial', 'failed', 'cancelled', 'uncertain'].includes(prior.status) ||
+          !Number.isInteger(prior.maxParallel) || prior.maxParallel < 1 || prior.maxParallel > MAX_PARALLEL ||
+          prior.branches.some((branch) => {
             const step = steps.find((candidate) => candidate.id === branch.stepId);
-            return !step || step.operation !== branch.operation ||
-              JSON.stringify([...step.dependsOn].sort()) !== JSON.stringify([...branch.dependsOn].sort());
+            const validOutcomes = [undefined, 'verified_success', 'verified_failure', 'partial', 'uncertain'];
+            return !step || branch.runId !== options.runId || step.operation !== branch.operation ||
+              !Array.isArray(branch.dependsOn) || branch.dependsOn.some((dependency) => typeof dependency !== 'string') ||
+              JSON.stringify([...step.dependsOn].sort()) !== JSON.stringify([...branch.dependsOn].sort()) ||
+              !BRANCH_STATUSES.has(branch.status) || !Number.isInteger(branch.attempts) || branch.attempts < 0 || branch.attempts > 1000 ||
+              !Number.isFinite(branch.updatedAt) ||
+              (branch.startedAt !== undefined && !Number.isFinite(branch.startedAt)) ||
+              (branch.approvalRef !== undefined && (typeof branch.approvalRef !== 'string' || branch.approvalRef.length < 1 || branch.approvalRef.length > 256)) ||
+              !validOutcomes.includes(branch.outcome) ||
+              (branch.message !== undefined && (typeof branch.message !== 'string' || branch.message.length > 240)) ||
+              (branch.status === 'awaiting_approval' && !branch.approvalRef) ||
+              (branch.status === 'completed' && branch.outcome !== 'verified_success') ||
+              (branch.status === 'uncertain' && branch.outcome !== 'uncertain');
           })) {
-        throw new Error('The saved workflow checkpoint does not match this run and workflow definition.');
+        throw new Error('The saved workflow checkpoint does not match this run and exact workflow definition.');
       }
       snapshot = prior;
       snapshot.maxParallel = maxParallel;
@@ -145,8 +187,9 @@ export class WorkflowBranchExecutor {
       }
     } else {
       snapshot = {
-        version: 1,
+        version: 2,
         runId: options.runId,
+        definitionHash,
         status: 'running',
         maxParallel,
         branches: steps.map((step) => ({
@@ -227,6 +270,10 @@ export class WorkflowBranchExecutor {
           try {
             // Persist the running checkpoint before the executor can cause a side effect.
             await persist();
+            if (options.signal?.aborted) {
+              await mark(branch, 'cancelled', 'Cancelled after checkpoint but before dispatch; no operation was started.');
+              return;
+            }
             dispatchStarted = true;
             const result = await options.executeStep(step, {
               runId: options.runId,
@@ -234,6 +281,11 @@ export class WorkflowBranchExecutor {
               ...(approvedApprovalRef ? { approvedApprovalRef } : {}),
               signal: options.signal,
             });
+            if (options.signal?.aborted && result.status !== 'awaiting_approval' && result.status !== 'cancelled') {
+              branch.outcome = 'uncertain';
+              await mark(branch, 'uncertain', 'Cancellation arrived after dispatch; reconcile the external effect before retrying.');
+              return;
+            }
             if (result.status === 'awaiting_approval') {
               if (!result.approvalRef?.trim()) throw new Error('Approval-required result did not include a scoped approval reference.');
               branch.approvalRef = result.approvalRef;

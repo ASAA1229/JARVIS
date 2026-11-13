@@ -67,7 +67,7 @@ async function generateWithConfiguredModel(text: string, memory: ConversationMem
   // a cloud provider is used only when the owner authorized it for this task type.
   const containsPrivateData = memory.length > 0 || history.length > 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const decision = providerRouter.route({ taskType: 'conversation', containsPrivateData });
+    const decision = providerRouter.route({ taskType: 'conversation', containsPrivateData, formats: ['ollama'] });
     const provider = decision.provider;
     if (!provider) return null;
     const messages = buildConversationPrompt({
@@ -77,7 +77,7 @@ async function generateWithConfiguredModel(text: string, memory: ConversationMem
       history: provider.local ? history : [],
     });
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), provider.timeoutMs ?? 120_000);
     try {
       const content = await chatCompletion(provider, messages, { temperature: 0.35, json: true }, controller.signal);
       providerRouter.reportSuccess(provider.id);
@@ -128,7 +128,7 @@ export async function answerConversationalMessageResult(
   if (generated) return { answer: generated, persistInHistory: true };
 
   return {
-    answer: 'I can help with that, sir, but no AI provider returned a valid response. Check that the local model (Ollama) is running and JARVIS_AI_BASE_URL / JARVIS_AI_MODEL are configured. Cloud providers are used only when configured and authorized by you, and never for requests that include personal memory.',
+    answer: 'I can help with that, sir, but no AI provider returned a valid response. Check that Ollama is running and OLLAMA_URL / OLLAMA_MODEL are configured. Cloud providers are used only when configured and authorized by you, and never for requests that include personal memory.',
     persistInHistory: false,
   };
 }

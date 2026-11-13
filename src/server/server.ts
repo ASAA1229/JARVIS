@@ -17,6 +17,9 @@ import { answerConversationalMessageResult, isActionRequest } from '../conversat
 import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
+import { DocumentRagStore } from '../memory/documentRagStore.js';
+import { DocumentParser } from '../memory/documentParser.js';
+import { OllamaEmbedder, resolveLocalEmbeddingEndpoint } from '../memory/semanticIndex.js';
 import { SyncStateStore } from '../sync/syncStateStore.js';
 import { SyncService } from '../sync/syncService.js';
 import { handleSyncRoute } from '../sync/syncRoutes.js';
@@ -28,6 +31,7 @@ import { DuplicateMemoryError } from '../memory/memoryManager.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
+import { OllamaProvider } from '../ai/ollamaProvider.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -45,7 +49,9 @@ export class JarvisServer {
   private readonly androidCommands = new AndroidCommandQueue();
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
-  private readonly conversationSessions = new ConversationSessionStore();
+  private readonly conversationSessions: ConversationSessionStore;
+  private readonly documentRag?: DocumentRagStore;
+  private readonly documentParser = new DocumentParser();
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
@@ -58,6 +64,17 @@ export class JarvisServer {
     const agentConfig = getAgentModelConfigStatus();
     console.info('[JARVIS] Advisory AI configuration:', agentConfig);
     this.ownerControlToken = readOwnerTokenConfig().ownerControlToken;
+    this.conversationSessions = this.ownerControlToken
+      ? new ConversationSessionStore(statePath ? statePath + '.conversations' : './data/conversations.enc', this.ownerControlToken)
+      : new ConversationSessionStore();
+    if (this.ownerControlToken) {
+      const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
+      this.documentRag = new DocumentRagStore(
+        statePath ? statePath + '.documents' : './data/documents.enc',
+        this.ownerControlToken,
+        embeddingEndpoint ? new OllamaEmbedder(embeddingEndpoint) : null,
+      );
+    }
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     this.personalMemory = this.jarvis.personalMemory;
     // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
@@ -550,7 +567,7 @@ export class JarvisServer {
       }
 
       // Resource profiles (US-061) and AI provider routing status (US-059). Owner device only.
-      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers') {
+      if (url.pathname === '/api/resources' || url.pathname.startsWith('/api/resources/') || url.pathname === '/api/ai/providers' || url.pathname === '/api/ai/health') {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = req.method === 'GET' ? undefined : await this.readJsonBody(req);
@@ -566,6 +583,18 @@ export class JarvisServer {
         }
         if (req.method === 'GET' && url.pathname === '/api/ai/providers') {
           return this.jsonResponse(res, 200, providerRouter.status());
+        }
+        if (req.method === 'GET' && url.pathname === '/api/ai/health') {
+          const ollama = providerRouter.providers().find((item) => item.id === 'local' && item.format === 'ollama');
+          if (!ollama) return this.jsonResponse(res, 503, { available: false, modelAvailable: false, error: 'Ollama is not configured' });
+          const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
+          const health = await new OllamaProvider({
+            baseUrl: ollama.baseUrl,
+            model: ollama.model,
+            timeoutMs: ollama.timeoutMs,
+            ...(embeddingEndpoint ? { embeddingModel: embeddingEndpoint.model } : {}),
+          }).healthCheck();
+          return this.jsonResponse(res, health.available && health.modelAvailable ? 200 : 503, health);
         }
         if (req.method === 'POST' && url.pathname === '/api/resources/profile') {
           const mode = (body as { mode?: unknown }).mode;
@@ -636,6 +665,38 @@ export class JarvisServer {
         const manager = this.jarvis.memoryManager;
         if (manager && req.method === 'GET' && url.pathname === '/api/memory/manager') {
           return this.jsonResponse(res, 200, { status: manager.status(), candidates: manager.listCandidates('pending') });
+        }
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/evaluation') {
+          return this.jsonResponse(res, 200, { quality: manager.status().quality });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/evaluation') {
+          const { query, relevantIds, rating } = body as {
+            query?: unknown; relevantIds?: unknown; rating?: unknown;
+          };
+          if (typeof query !== 'string' || !Array.isArray(relevantIds) ||
+              !relevantIds.every((id) => typeof id === 'string') ||
+              !['helpful', 'not_helpful'].includes(String(rating))) {
+            return this.jsonResponse(res, 400, { error: 'query, relevantIds and rating (helpful|not_helpful) are required' });
+          }
+          try {
+            const evaluation = await manager.evaluateRetrieval({
+              query,
+              relevantIds: relevantIds as string[],
+              rating: rating as 'helpful' | 'not_helpful',
+            });
+            const quality = evaluation.quality;
+            this.jarvis.audit.record('MEMORY_RETRIEVAL_EVALUATED', {
+              sampleCount: quality.sampleCount,
+              retrievedCount: evaluation.retrievedCount,
+              precisionAtK: quality.precisionAtK,
+              recallAtK: quality.recallAtK,
+              helpfulRate: quality.helpfulRate,
+              trend: quality.trend,
+            }, auth.device.id);
+            return this.jsonResponse(res, 200, { quality, retrievedCount: evaluation.retrievedCount });
+          } catch (error) {
+            return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Evaluation could not be recorded' });
+          }
         }
         if (manager && req.method === 'POST' && url.pathname === '/api/memory/learning') {
           const enabled = (body as { enabled?: unknown }).enabled;
@@ -839,6 +900,118 @@ export class JarvisServer {
         return this.jsonResponse(res, cleared ? 200 : 404, { success: cleared });
       }
 
+      // Local document RAG: every operation is signed and scoped to the authenticated device.
+      if (req.method === 'POST' && url.pathname === '/api/documents/ingest') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req, 2 * 1024 * 1024 + 64 * 1024);
+        if (!this.isJsonObject(body) || typeof body.sourceName !== 'string' || typeof body.content !== 'string' ||
+            (body.title !== undefined && typeof body.title !== 'string')) {
+          return this.jsonResponse(res, 400, { error: 'sourceName and UTF-8 text content are required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        try {
+          const result = this.documentRag.ingest({
+            ownerDeviceId: auth.device.id,
+            sourceName: body.sourceName,
+            ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            content: body.content,
+          });
+          this.jarvis.audit.record('DOCUMENT_INGESTED', { documentId: result.documentId, chunkCount: result.chunkCount, duplicate: result.duplicate }, auth.device.id);
+          return this.jsonResponse(res, result.duplicate ? 200 : 201, { state: 'STORED', ...result });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Document ingestion failed' });
+        }
+      }
+
+      // Binary ingestion is local-only: PDF text extraction and optional scanned-page OCR never upload document bytes.
+      if (req.method === 'POST' && url.pathname === '/api/documents/ingest-file') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req, 21 * 1024 * 1024);
+        if (!this.isJsonObject(body) || typeof body.sourceName !== 'string' ||
+            typeof body.documentBase64 !== 'string' ||
+            (body.title !== undefined && typeof body.title !== 'string') ||
+            (body.ocr !== undefined && typeof body.ocr !== 'boolean')) {
+          return this.jsonResponse(res, 400, { error: 'sourceName, base64 document content and optional OCR flag are required' });
+        }
+        if (body.documentBase64.length > 20 * 1024 * 1024 ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body.documentBase64)) {
+          return this.jsonResponse(res, 400, { error: 'Document encoding is invalid or exceeds the 15 MB file limit' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        try {
+          const bytes = Buffer.from(body.documentBase64, 'base64');
+          if (bytes.toString('base64') !== body.documentBase64) return this.jsonResponse(res, 400, { error: 'Document encoding is not canonical base64' });
+          const parsed = await this.documentParser.parse(body.sourceName, bytes, { ocr: body.ocr === true });
+          const result = this.documentRag.ingest({
+            ownerDeviceId: auth.device.id,
+            sourceName: body.sourceName,
+            ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            content: parsed.text,
+          });
+          this.jarvis.audit.record('DOCUMENT_INGESTED', {
+            documentId: result.documentId, chunkCount: result.chunkCount, duplicate: result.duplicate,
+            format: parsed.format, extraction: parsed.extraction, pages: parsed.pages,
+          }, auth.device.id);
+          return this.jsonResponse(res, result.duplicate ? 200 : 201, {
+            state: 'STORED', ...result, format: parsed.format, extraction: parsed.extraction, pages: parsed.pages,
+          });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Document parsing failed' });
+        }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/documents/search') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.query !== 'string' ||
+            (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit)))) {
+          return this.jsonResponse(res, 400, { error: 'A query and optional integer limit are required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        try {
+          const results = await this.documentRag.search(auth.device.id, body.query, body.limit ?? 5);
+          return this.jsonResponse(res, 200, {
+            method: results[0]?.method ?? (resolveLocalEmbeddingEndpoint() ? 'semantic_or_lexical_fallback' : 'lexical'),
+            results: results.map((item) => ({ content: item.content, score: item.score, source: item.source })),
+          });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Document search failed' });
+        }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/documents/list') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON object body is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id) });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/documents/delete') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.documentId !== 'string') return this.jsonResponse(res, 400, { error: 'documentId is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
+        const deleted = this.documentRag.delete(auth.device.id, body.documentId);
+        if (deleted) this.jarvis.audit.record('DOCUMENT_DELETED', { documentId: body.documentId }, auth.device.id);
+        return this.jsonResponse(res, deleted ? 200 : 404, { success: deleted });
+      }
+
       // Submit user request
       if (req.method === 'POST' && url.pathname === '/api/request') {
         const sessionId = req.headers['x-session-id'] as string;
@@ -883,6 +1056,18 @@ export class JarvisServer {
           : canReadLongTerm && this.personalMemory
             ? this.personalMemory.relevant(text.trim(), 5).map((record) => ({ content: record.content, category: record.category }))
             : [];
+        const documentMatches = !isActionRequest(text.trim()) && this.documentRag
+          ? await this.documentRag.search(auth.device.id, text.trim(), 4).catch(() => [])
+          : [];
+        // The prompt contract accepts at most five context records. Reserve up to
+        // three slots for document evidence so it is not silently truncated behind memory.
+        const authorizedConversationMemory = [
+          ...documentMatches.slice(0, 3).map((item) => ({
+            content: item.content,
+            category: 'document:' + item.source.sourceName + '#chunk-' + item.source.chunk,
+          })),
+          ...conversationMemory.slice(0, 2),
+        ];
 
         // Do not allocate conversation state for commands routed to the execution planner.
         if (isActionRequest(text.trim())) {
@@ -996,7 +1181,7 @@ export class JarvisServer {
             }
           }
 
-          const conversationalResult = await answerConversationalMessageResult(text.trim(), conversationMemory, conversation.history);
+          const conversationalResult = await answerConversationalMessageResult(text.trim(), authorizedConversationMemory, conversation.history);
           if (conversationalResult) {
             if (conversationalResult.persistInHistory) {
               this.conversationSessions.appendTurn(conversation.id, authDevice.id, text.trim(), conversationalResult.answer);
@@ -1009,7 +1194,7 @@ export class JarvisServer {
             return this.jsonResponse(res, 200, {
               state: 'ANSWERED',
               message: conversationalResult.answer,
-              data: { kind: 'conversation', conversationId: conversation.id },
+              data: { kind: 'conversation', conversationId: conversation.id, ...(documentMatches.length ? { sources: documentMatches.map((item) => item.source) } : {}) },
             });
           }
           return this.jsonResponse(res, 200, await this.jarvis.submitRequest(sessionId, text.trim()));
@@ -1061,7 +1246,7 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
-        const result = this.jarvis.rejectTask(approvalId, sessionId);
+        const result = await this.jarvis.rejectTask(approvalId, sessionId);
         return this.jsonResponse(res, 200, result);
       }
 

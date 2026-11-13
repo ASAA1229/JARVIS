@@ -16,6 +16,7 @@ import { dirname } from 'node:path';
 import { PersonalMemoryStore, normalizeMemoryText, type MemoryCategory, type PersonalMemory } from './personalMemoryStore.js';
 import type { WorkingMemory, WorkingScopeKind } from './workingMemory.js';
 import { MemoryVersionHistory, type MemoryVersion } from './memoryVersions.js';
+import { LearningQualityEvaluator, type LearningQualitySummary } from './learningQualityEvaluator.js';
 import { OllamaEmbedder, SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, type RetrievalMethod } from './semanticIndex.js';
 
 /** Raised when proposed content duplicates an existing long-term memory. */
@@ -79,6 +80,7 @@ export class MemoryManager {
   private data: CandidateFile = { version: 1, learningEnabled: true, candidates: [] };
   readonly index: SemanticMemoryIndex;
   readonly versions: MemoryVersionHistory;
+  readonly quality: LearningQualityEvaluator;
   private lastRetrieval: { method: RetrievalMethod; at: number } | null = null;
 
   constructor(
@@ -94,6 +96,7 @@ export class MemoryManager {
     const endpoint = resolveLocalEmbeddingEndpoint();
     this.index = options.index ?? new SemanticMemoryIndex(`${candidatesPath}.embeddings`, ownerControlToken, endpoint ? new OllamaEmbedder(endpoint) : null);
     this.versions = options.versions ?? new MemoryVersionHistory(`${candidatesPath}.versions`, ownerControlToken);
+    this.quality = new LearningQualityEvaluator(`${candidatesPath}.quality`, ownerControlToken);
     longTerm.attachVersionHistory(this.versions);
     // Drop history for memories that expired or were removed while JARVIS was offline.
     this.versions.reconcile(new Set(longTerm.active().map((record) => record.id)));
@@ -342,6 +345,7 @@ export class MemoryManager {
     candidate.decidedAt = Date.now();
     candidate.memoryId = memory.id;
     this.persist();
+    try { this.quality.recordCandidateDecision('approved'); } catch { /* Quality telemetry must not turn a committed approval into a reported failure. */ }
     return { candidate: { ...candidate }, memory };
   }
 
@@ -353,6 +357,7 @@ export class MemoryManager {
     // A rejected candidate keeps no copy of the text.
     candidate.content = '[rejected]';
     this.persist();
+    try { this.quality.recordCandidateDecision('rejected'); } catch { /* Quality telemetry must not turn a committed rejection into a reported failure. */ }
     return { ...candidate };
   }
 
@@ -378,7 +383,35 @@ export class MemoryManager {
     return { workingRemoved, candidatesScrubbed, indexRemoved, versionsPurged, derivedVerified };
   }
 
+  /**
+   * Evaluate the live ranked long-term retriever against owner-labelled relevant
+   * memory IDs. The query and IDs are used only in memory for this calculation;
+   * only aggregate metrics are persisted.
+   */
+  async evaluateRetrieval(input: {
+    query: string;
+    relevantIds: string[];
+    rating: 'helpful' | 'not_helpful';
+    limit?: number;
+  }): Promise<{ quality: LearningQualitySummary; retrievedCount: number }> {
+    if (!input || typeof input.query !== 'string' || !input.query.trim() || input.query.length > 2000) {
+      throw new Error('A retrieval query of 1–2000 characters is required.');
+    }
+    const limit = input.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+      throw new Error('Retrieval evaluation limit must be an integer from 1 to 20.');
+    }
+    const ranked = await this.rankLongTerm(input.query, limit);
+    const quality = this.quality.record({
+      retrievedIds: ranked.map((entry) => entry.memory.id),
+      relevantIds: input.relevantIds,
+      rating: input.rating,
+    });
+    return { quality, retrievedCount: ranked.length };
+  }
+
   status(): {
+    quality: LearningQualitySummary;
     longTerm: ReturnType<PersonalMemoryStore['status']>;
     working: ReturnType<WorkingMemory['stats']>;
     learningEnabled: boolean;
@@ -386,6 +419,7 @@ export class MemoryManager {
     retrieval: ReturnType<SemanticMemoryIndex['status']> & { lastUsedAt: number | null };
   } {
     return {
+      quality: this.quality.summary(),
       longTerm: this.longTerm.status(),
       working: this.working.stats(),
       learningEnabled: this.data.learningEnabled,

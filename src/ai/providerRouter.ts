@@ -12,7 +12,7 @@
  */
 
 export type ProviderId = 'local' | 'openai' | 'anthropic';
-export type ProviderFormat = 'openai' | 'anthropic';
+export type ProviderFormat = 'ollama' | 'openai' | 'anthropic';
 export type TaskType = 'conversation' | 'agent' | 'site' | 'developer' | 'summarize';
 
 export interface ProviderConfig {
@@ -24,6 +24,8 @@ export interface ProviderConfig {
   local: boolean;
   /** 'free' for local inference; 'paid' for metered cloud APIs. */
   cost: 'free' | 'paid';
+  /** Request timeout in milliseconds; set for local Ollama inference. */
+  timeoutMs?: number;
 }
 
 export interface RoutingRequest {
@@ -80,17 +82,23 @@ function validBaseUrl(raw: string | undefined, requireHttps: boolean): { url: st
 export function loadProviders(env: Env = process.env): ProviderConfig[] {
   const providers: ProviderConfig[] = [];
 
-  // Local/default provider. A non-loopback JARVIS_AI_BASE_URL keeps the legacy
-  // JARVIS_AI_ALLOW_REMOTE opt-in requirement.
-  const localUrl = validBaseUrl(env['JARVIS_AI_BASE_URL'] || 'http://127.0.0.1:11434/v1', false);
-  const localModel = env['JARVIS_AI_MODEL'] || 'llama3.2';
-  if (localUrl && MODEL_PATTERN.test(localModel) && (localUrl.local || env['JARVIS_AI_ALLOW_REMOTE'] === 'true')) {
+  // Native Ollama is the primary local provider. Legacy JARVIS_AI_* settings remain
+  // supported during migration; a legacy /v1 suffix is removed for native /api routes.
+  const legacyUrl = (env['JARVIS_AI_BASE_URL'] || '').replace(/\/v1\/?$/i, '');
+  const localUrl = validBaseUrl(env['OLLAMA_URL'] || legacyUrl || 'http://localhost:11434', false);
+  const localModel = env['OLLAMA_MODEL'] || env['JARVIS_AI_MODEL'] || 'llama3.2:latest';
+  const timeoutRaw = env['OLLAMA_TIMEOUT'];
+  const timeoutSeconds = timeoutRaw === undefined ? 120 : Number(timeoutRaw);
+  const validTimeout = Number.isSafeInteger(timeoutSeconds) && timeoutSeconds >= 1 && timeoutSeconds <= 600;
+  const rootEndpoint = localUrl ? new URL(localUrl.url).pathname === '/' : false;
+  if (localUrl && rootEndpoint && validTimeout && MODEL_PATTERN.test(localModel) &&
+      (localUrl.local || env['JARVIS_AI_ALLOW_REMOTE'] === 'true')) {
     providers.push({
       id: 'local',
-      format: 'openai',
+      format: 'ollama',
       baseUrl: localUrl.url,
       model: localModel,
-      ...(env['JARVIS_AI_API_KEY'] ? { apiKey: env['JARVIS_AI_API_KEY'] } : {}),
+      timeoutMs: timeoutSeconds * 1000,
       local: localUrl.local,
       cost: localUrl.local ? 'free' : 'paid',
     });
@@ -152,13 +160,14 @@ export class ProviderRouter {
     const cloudOk = request.cloudAuthorized === true || allowed.has(request.taskType);
     const formatOk = (provider: ProviderConfig) => !request.formats || request.formats.includes(provider.format);
 
-    const local = providers.find((provider) => provider.id === 'local');
+    const configuredLocal = providers.find((provider) => provider.id === 'local');
+    const local = providers.find((provider) => provider.id === 'local' && provider.local);
     if (local && formatOk(local) && this.isAvailable(local.id)) {
-      // Local is always preferred: zero cost and private by default.
-      return this.remember(request.taskType, { provider: local, reason: 'local provider is the default', skipped });
+      return this.remember(request.taskType, { provider: local, reason: 'local Ollama provider is the default', skipped });
     }
-    if (!local) skipped.push({ id: 'local', reason: 'not configured' });
-    else if (!formatOk(local)) skipped.push({ id: 'local', reason: 'incompatible format' });
+    if (!configuredLocal) skipped.push({ id: 'local', reason: 'not configured' });
+    else if (!configuredLocal.local) skipped.push({ id: 'local', reason: 'configured Ollama endpoint is remote; owner authorization is required' });
+    else if (!formatOk(configuredLocal)) skipped.push({ id: 'local', reason: 'incompatible format' });
     else skipped.push({ id: 'local', reason: 'temporarily unavailable after a recent failure' });
 
     for (const provider of providers.filter((item) => !item.local)) {

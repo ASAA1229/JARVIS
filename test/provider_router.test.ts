@@ -42,6 +42,19 @@ test('owner allowlist authorizes cloud per task type and format filters apply', 
   assert.equal(router.route({ taskType: 'developer', containsPrivateData: false }).provider?.id, 'anthropic');
 });
 
+test('first-party Ollama-only routes never fall back to configured cloud providers', () => {
+  const router = new ProviderRouter(() => ({ ...cloudEnv, JARVIS_CLOUD_ALLOWED_TASKS: 'conversation' }));
+  router.reportFailure('local');
+  const decision = router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+    cloudAuthorized: true,
+    formats: ['ollama'],
+  });
+  assert.equal(decision.provider, null);
+  assert.ok(decision.skipped.every((item) => item.id === 'local' || /incompatible format/.test(item.reason)));
+});
+
 test('status never exposes credentials or URLs', () => {
   const status = JSON.stringify(new ProviderRouter(() => cloudEnv).status());
   assert.equal(status.includes('sk-test-not-real'), false);
@@ -52,4 +65,54 @@ test('status never exposes credentials or URLs', () => {
 test('insecure remote endpoints are refused', () => {
   assert.deepEqual(loadProviders({ JARVIS_AI_BASE_URL: 'http://example.com/v1', JARVIS_AI_ALLOW_REMOTE: 'true' }).map((p) => p.id), []);
   assert.deepEqual(loadProviders({ ...cloudEnv, JARVIS_CLOUD_OPENAI_BASE_URL: 'http://api.example.com/v1' }).map((p) => p.id), ['local', 'anthropic']);
+});
+
+test('native Ollama settings select the configured model and timeout', () => {
+  const [local] = loadProviders({
+    OLLAMA_URL: 'http://localhost:11434',
+    OLLAMA_MODEL: 'llama3.2:latest',
+    OLLAMA_TIMEOUT: '120',
+  });
+  assert.equal(local?.format, 'ollama');
+  assert.equal(local?.baseUrl, 'http://localhost:11434');
+  assert.equal(local?.model, 'llama3.2:latest');
+  assert.equal(local?.timeoutMs, 120_000);
+});
+
+test('legacy OpenAI-compatible local URL is normalized for native Ollama', () => {
+  const [local] = loadProviders({
+    JARVIS_AI_BASE_URL: 'http://127.0.0.1:11434/v1',
+    JARVIS_AI_MODEL: 'llama3.2',
+  });
+  assert.equal(local?.format, 'ollama');
+  assert.equal(local?.baseUrl, 'http://127.0.0.1:11434');
+  assert.equal(local?.model, 'llama3.2');
+});
+
+test('invalid Ollama timeout disables the local provider instead of silently ignoring configuration', () => {
+  assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '0' }), []);
+  assert.deepEqual(loadProviders({ OLLAMA_TIMEOUT: '601' }), []);
+});
+
+test('remote Ollama is not selected for private prompts without explicit cloud authorization', () => {
+  const env = {
+    OLLAMA_URL: 'https://ollama.example.com',
+    OLLAMA_MODEL: 'llama3.2:latest',
+    JARVIS_AI_ALLOW_REMOTE: 'true',
+  };
+  const router = new ProviderRouter(() => env);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: true,
+    cloudAuthorized: true,
+  }).provider, null);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+  }).provider, null);
+  assert.equal(router.route({
+    taskType: 'conversation',
+    containsPrivateData: false,
+    cloudAuthorized: true,
+  }).provider?.id, 'local');
 });

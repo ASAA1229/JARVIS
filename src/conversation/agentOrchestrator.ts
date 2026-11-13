@@ -68,6 +68,8 @@ export class AgentModelProviderError extends Error {
 
 export interface AgentModelAdapter {
   /** Return the model's structured JSON value or its raw JSON text. */
+  /** Provider-specific timeout, in milliseconds. */
+  timeoutMs?: number;
   generate(prompt: BuiltAgentPrompt, signal: AbortSignal): Promise<unknown>;
 }
 
@@ -80,8 +82,8 @@ export interface AgentOrchestrationInput {
 
 const MAX_REQUEST_LENGTH = 12000;
 const MAX_CONTEXT_CANDIDATES = 32;
-const DEFAULT_TIMEOUT_MS = 25000;
-const MAX_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = 120_000;
+const MAX_TIMEOUT_MS = 180_000;
 
 /**
  * Execution directives are never sent to advisory agents. The caller must
@@ -166,8 +168,9 @@ export async function runAgent(
     return { status: 'invalid_response', profile: route.profile, reason: 'The agent prompt could not be assembled from the registered profile.', failureCode: 'prompt_unavailable' };
   }
 
-  const timeoutMs = Number.isFinite(input.timeoutMs)
-    ? Math.min(Math.max(Number(input.timeoutMs), 1000), MAX_TIMEOUT_MS)
+  const configuredTimeout = input.timeoutMs ?? adapter.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(Number(configuredTimeout), 1000), MAX_TIMEOUT_MS)
     : DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;

@@ -82,9 +82,14 @@ export class TaskCoordinator {
     if (this.queue.length >= this.maxQueue) return Promise.reject(new TaskQueueFullError());
 
     return new Promise<T>((resolve, reject) => {
-      const entry: QueueEntry<T> = {
+      // The shared queue erases each task's result type. Adapt the generic
+      // resolver at admission so the queue remains type-safe without storing
+      // invariant QueueEntry<T> values in QueueEntry<unknown>.
+      const entry: QueueEntry<unknown> = {
         request: { ...request, priority: request.priority ?? 0, resources: this.normalizeResources(request.resources) },
-        work, resolve, reject, enqueuedAt: Date.now(), sequence: this.sequence++, settled: false,
+        work: async () => await work(),
+        resolve: (value) => resolve(value as T),
+        reject, enqueuedAt: Date.now(), sequence: this.sequence++, settled: false,
       };
       this.activeTasks.add(request.taskId);
       const timeoutMs = request.queueTimeoutMs ?? this.maxQueueWaitMs;
@@ -96,7 +101,7 @@ export class TaskCoordinator {
         entry.abort = () => this.rejectQueued(entry, this.abortError());
         request.signal.addEventListener('abort', entry.abort, { once: true });
       }
-      this.queue.push(entry as QueueEntry<unknown>);
+      this.queue.push(entry);
       this.pump();
     });
   }
@@ -150,21 +155,25 @@ export class TaskCoordinator {
     this.activeTaskIds.add(entry.request.taskId);
     this.activeByDevice.set(entry.request.deviceId, (this.activeByDevice.get(entry.request.deviceId) ?? 0) + 1);
 
-    Promise.resolve().then(() => {
-      if (entry.request.signal?.aborted) throw this.abortError();
-      return this.executionContext.run(entry.request.taskId, entry.work);
-    }).then(
-      (value) => entry.resolve(value),
-      (error) => entry.reject(error),
-    ).finally(() => {
+    const release = (): void => {
       this.activeTasks.delete(entry.request.taskId);
       this.activeTaskIds.delete(entry.request.taskId);
       const count = (this.activeByDevice.get(entry.request.deviceId) ?? 1) - 1;
       if (count <= 0) this.activeByDevice.delete(entry.request.deviceId);
       else this.activeByDevice.set(entry.request.deviceId, count);
       for (const resource of entry.request.resources ?? []) this.heldResources.delete(resource);
+      // Release capacity and locks before resolving the caller. A workflow may
+      // immediately submit its next step with the same task id and resources.
       this.pump();
-    });
+    };
+
+    Promise.resolve().then(() => {
+      if (entry.request.signal?.aborted) throw this.abortError();
+      return this.executionContext.run(entry.request.taskId, entry.work);
+    }).then(
+      (value) => { release(); entry.resolve(value); },
+      (error) => { release(); entry.reject(error); },
+    );
   }
 
   private rejectQueued(entry: QueueEntry<unknown>, error: Error): void {

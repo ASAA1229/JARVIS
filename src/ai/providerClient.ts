@@ -1,9 +1,11 @@
 /**
  * Non-streaming chat completion across provider formats (JARVIS-US-059).
- * OpenAI-compatible (local Ollama, OpenAI) and Anthropic Messages APIs.
+ * Native local Ollama plus OpenAI-compatible and Anthropic Messages APIs.
  * Errors carry a safe kind only; provider bodies and credentials are never surfaced.
  */
 import type { ProviderConfig } from './providerRouter.js';
+import { AIProviderError } from './aiProvider.js';
+import { OllamaProvider } from './ollamaProvider.js';
 
 export interface ChatMessage {
   /** 'developer' is sent as-is to OpenAI-compatible APIs and folded into the system prompt for Anthropic. */
@@ -29,6 +31,20 @@ export interface ChatOptions {
 const MAX_RESPONSE_CHARS = 256 * 1024;
 
 export async function chatCompletion(provider: ProviderConfig, messages: ChatMessage[], options: ChatOptions, signal: AbortSignal): Promise<string> {
+  if (provider.format === 'ollama') {
+    const ollama = new OllamaProvider({
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+      timeoutMs: provider.timeoutMs ?? 120_000,
+    });
+    try {
+      return await ollama.chat(messages, options, signal);
+    } catch (error) {
+      if (error instanceof AIProviderError) throw new ProviderCallError(error.kind, error.status);
+      throw new ProviderCallError(signal.aborted ? 'timeout' : 'network');
+    }
+  }
+
   let response: Response;
   try {
     if (provider.format === 'anthropic') {

@@ -361,6 +361,60 @@ try {
   await hud.getByText('MICROPHONE PERMISSION REQUIRED').waitFor({ state: 'visible' });
   await hud.getByText('Allow microphone access for this site in browser settings, then retry voice input.').waitFor({ state: 'visible' });
 
+  // Network/service failure must release capture and never dispatch a partial directive.
+  let failedVoiceRequestCount = 0;
+  await hud.route('**/api/request', async (route) => {
+    failedVoiceRequestCount++;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ taskId: 'unexpected-voice-dispatch', state: 'COMPLETED', message: 'unexpected' }) });
+  });
+  const networkFailureRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, networkFailureRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'network' }), networkFailureRecognizerIndex);
+  await hud.getByText('SPEECH SERVICE UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await ptt.getAttribute('aria-pressed') !== 'false' || failedVoiceRequestCount !== 0) {
+    throw new Error('Speech service failure left capture active or dispatched a directive');
+  }
+
+  // Empty final recognition must not be interpreted as a command.
+  const emptyVoiceRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, emptyVoiceRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const empty = [];
+    empty.isFinal = true;
+    window.__mockRecognizers[index].onresult({ resultIndex: 0, results: [empty] });
+    window.__mockRecognizers[index].onend();
+  }, emptyVoiceRecognizerIndex);
+  await delay(150);
+  if (failedVoiceRequestCount !== 0 || await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('An empty finalized utterance created a command or transcript');
+  }
+  await hud.unroute('**/api/request');
+
+  // No-speech and aborted recognizer events must recover without leaving a stale capture.
+  const noSpeechRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, noSpeechRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'no-speech' }), noSpeechRecognizerIndex);
+  await hud.getByText(/NO SPEECH DETECTED|VOICE INPUT INTERRUPTED|VOICE CAPTURE INTERRUPTED/).waitFor({ state: 'visible', timeout: 5000 });
+  if (await ptt.getAttribute('aria-pressed') !== 'false') {
+    throw new Error('No-speech failure did not release the push-to-talk capture state');
+  }
+
+  const abortedRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, abortedRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const recognizer = window.__mockRecognizers[index];
+    recognizer.onerror({ error: 'aborted' });
+    recognizer.onend();
+  }, abortedRecognizerIndex);
+  await delay(100);
+  if (await ptt.getAttribute('aria-pressed') !== 'false' || await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('Aborted voice capture retained stale transcript or active capture state');
+  }
+
   // Finalized speech must be reviewed and explicitly submitted; recognition
   // ending alone must not transmit a directive.
   let explicitVoiceRequestCount = 0;
@@ -381,6 +435,16 @@ try {
   const explicitSubmitRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
   await ptt.click();
   await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, explicitSubmitRecognizerIndex, { timeout: 3000 });
+  // Interim hypotheses are never executable and must not reach the signed API.
+  await hud.evaluate((index) => {
+    const interim = [{ transcript: 'open Notepad' }];
+    interim.isFinal = false;
+    window.__mockRecognizers[index].onresult({ resultIndex: 0, results: [interim] });
+  }, explicitSubmitRecognizerIndex);
+  await delay(150);
+  if (explicitVoiceRequestCount !== 0) {
+    throw new Error('An interim speech hypothesis was submitted before final recognition');
+  }
   await hud.evaluate((index) => {
     const recognizer = window.__mockRecognizers[index];
     recognizer.onresult({
@@ -430,12 +494,15 @@ try {
   // End-to-end local wake → finalized same-utterance command → signed request.
   // This deterministic fixture validates HUD orchestration, not microphone hardware
   // or acoustic wake-word accuracy; those remain MSI owner-acceptance checks.
+  // Earlier tests may have selected Local Whisper in shared origin storage; this fixture
+  // explicitly selects the mocked browser recognizer it is about to exercise.
+  await hud.locator('#stt-provider').selectOption('browser');
   await hud.locator('#allow-wake-browser-speech').check();
   if (await hud.locator('#btn-hands-free-toggle').getAttribute('aria-pressed') !== 'true') {
     await hud.locator('#btn-hands-free-toggle').click();
   }
   await hud.getByText('LOCAL WAKE ACTIVE').waitFor({ state: 'visible', timeout: 5000 });
-  await hud.waitForFunction(() => window.__wakeEngineStarted === 1 && typeof window.__wakeCallback === 'function');
+  try { await hud.waitForFunction(() => window.__wakeEngineStarted >= 1 && typeof window.__wakeCallback === 'function', undefined, { timeout: 5000 }); } catch { throw new Error('Wake fixture diagnostics: ' + JSON.stringify(await hud.evaluate(() => ({ started: window.__wakeEngineStarted, callback: typeof window.__wakeCallback, runtime: typeof window.VoicuteWakeWord, ort: Boolean(window.ort), zip: Boolean(window.JSZip), visibility: document.visibilityState, micMuted: localStorage.getItem('jarvis.mic-muted'), state: document.getElementById('hud-state-label')?.textContent || '' })))); }
   let wakeRequestCount = 0;
   let wakeRequestText = '';
   await hud.route('**/api/request', async (route) => {
@@ -453,8 +520,31 @@ try {
     });
   });
   const wakeRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
-  await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
-  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 3000 });
+  // A wake event can legitimately be ignored while JARVIS is speaking or inside
+  // its post-speech feedback guard. Model repeated detector frames until the
+  // guard clears; the first accepted event must still start exactly one capture.
+  let wakeCaptureStarted = false;
+  // The HUD may still be inside its bounded post-speech feedback guard when
+  // the fixture begins. Retry detector frames for up to 15 seconds so CI
+  // scheduling and the guard duration cannot make this orchestration test flaky.
+  for (let attempt = 0; attempt < 30 && !wakeCaptureStarted; attempt++) {
+    await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
+    try {
+      await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 500 });
+      wakeCaptureStarted = true;
+    } catch {
+      if (attempt === 29) {
+        const diagnostics = await hud.evaluate(() => ({
+          recognizers: window.__mockRecognizers.length,
+          wakeEngineStarted: window.__wakeEngineStarted,
+          wakeCallback: typeof window.__wakeCallback,
+          hudState: document.getElementById('hud-state-label')?.textContent || '',
+          hudSubstate: document.getElementById('hud-state-sub')?.textContent || '',
+        }));
+        throw new Error(`Local wake detection did not start speech capture within the bounded 15-second feedback-guard window: ${JSON.stringify(diagnostics)}`);
+      }
+    }
+  }
   await hud.evaluate((index) => {
     const recognizer = window.__mockRecognizers[index];
     const result = [{ transcript: 'Hey Jarvis, open Notepad' }];
@@ -468,7 +558,7 @@ try {
   if (wakeRequestCount !== 1 || wakeRequestText !== 'open Notepad') {
     throw new Error(`Local wake flow dispatched ${wakeRequestCount} requests with text "${wakeRequestText}" instead of one normalized "open Notepad" request`);
   }
-  if (await hud.locator('#approvals-container .approval-card').count() !== 1) {
+  if (await hud.locator('#hud-approvals-slot .hud-approval-card').count() !== 1) {
     throw new Error('The local-wake command did not remain behind the explicit on-screen approval gate');
   }
   await hud.unroute('**/api/request');

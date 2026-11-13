@@ -129,6 +129,17 @@ export class TaskJournal {
       typeof r.updatedAt === 'number' && Number.isFinite(r.updatedAt) &&
       (r.steps === undefined || (Array.isArray(r.steps) && r.steps.length <= 500)) &&
       (r.operations === undefined || (Array.isArray(r.operations) && r.operations.length <= 100)) &&
+      (r.workflowSteps === undefined || (Array.isArray(r.workflowSteps) && r.workflowSteps.length <= 20 &&
+        r.workflowSteps.every((step) => step && typeof step.id === 'string' && typeof step.operation === 'string' &&
+          step.parameters && typeof step.parameters === 'object' && Array.isArray(step.dependsOn)))) &&
+      (r.workflowRun === undefined || (
+        typeof r.workflowRun === 'object' && r.workflowRun !== null &&
+        r.workflowRun.version === 2 && typeof r.workflowRun.runId === 'string' &&
+        typeof r.workflowRun.definitionHash === 'string' && r.workflowRun.definitionHash.length === 64 &&
+        Array.isArray(r.workflowRun.branches) && r.workflowRun.branches.length <= 20
+      )) &&
+      (r.workflowParentTaskId === undefined || (typeof r.workflowParentTaskId === 'string' && r.workflowParentTaskId.length <= 160)) &&
+      (r.workflowStepId === undefined || (typeof r.workflowStepId === 'string' && r.workflowStepId.length <= 40)) &&
       (r.reconciliation === undefined || (
         typeof r.reconciliation === 'object' && r.reconciliation !== null &&
         ['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(r.reconciliation.disposition) &&
