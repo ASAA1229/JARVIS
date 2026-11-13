@@ -25,6 +25,8 @@ export interface AIProviderHealth {
   modelAvailable: boolean;
   model: string;
   version?: string;
+  embeddingModel?: string;
+  embeddingModelAvailable?: boolean;
 }
 
 export interface AIProvider {
