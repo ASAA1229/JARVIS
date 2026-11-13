@@ -478,7 +478,7 @@
       const editor = el('textarea', { class: 'op-input', rows: '2', 'aria-label': 'Correct memory ' + record.id, hidden: true });
       editor.value = record.content;
       recordList.appendChild(el('li', { class: 'op-item' }, [
-        el('span', { class: 'op-meta', text: record.category + (record.expiresAt ? ' · expires ' + new Date(record.expiresAt).toLocaleDateString() : '') + ' · ' }),
+        el('span', { class: 'op-meta', text: record.category + ' · ID ' + record.id + (record.expiresAt ? ' · expires ' + new Date(record.expiresAt).toLocaleDateString() : '') + ' · ' }),
         el('span', { text: record.content }),
         editor,
         el('div', { class: 'op-actions' }, [
@@ -517,6 +517,37 @@
     const learning = el('div', { class: 'op-item' });
     if (manager) {
       const s = manager.status || {};
+      const q = s.quality || {};
+      learning.append(
+        el('h4', { class: 'op-subhead', text: 'Measured learning quality' }),
+        note('Samples: ' + (q.sampleCount || 0) +
+          ' · Precision@K: ' + (q.precisionAtK === null || q.precisionAtK === undefined ? '—' : (q.precisionAtK * 100).toFixed(1) + '%') +
+          ' · Recall@K: ' + (q.recallAtK === null || q.recallAtK === undefined ? '—' : (q.recallAtK * 100).toFixed(1) + '%') +
+          ' · MRR: ' + (q.meanReciprocalRank === null || q.meanReciprocalRank === undefined ? '—' : q.meanReciprocalRank.toFixed(3)) +
+          ' · Helpful: ' + (q.helpfulRate === null || q.helpfulRate === undefined ? '—' : (q.helpfulRate * 100).toFixed(1) + '%') +
+          ' · Trend: ' + (q.trend || 'insufficient_data')),
+      );
+      const retrievedIds = el('input', { class: 'op-input', placeholder: 'Retrieved memory IDs (comma-separated)', 'aria-label': 'Retrieved memory IDs' });
+      const relevantIds = el('input', { class: 'op-input', placeholder: 'Relevant memory IDs (comma-separated)', 'aria-label': 'Relevant memory IDs' });
+      const rating = el('select', { class: 'op-input', 'aria-label': 'Was the retrieved context helpful?' }, [
+        el('option', { value: 'helpful', text: 'Helpful' }),
+        el('option', { value: 'not_helpful', text: 'Not helpful / needs correction' }),
+      ]);
+      const evaluate = button('Record quality judgement', async () => {
+        try {
+          const splitIds = (value) => value.split(',').map((item) => item.trim()).filter(Boolean);
+          const result = await api('/api/memory/evaluation', 'POST', {
+            retrievedIds: splitIds(retrievedIds.value),
+            relevantIds: splitIds(relevantIds.value),
+            rating: rating.value,
+          });
+          status.replaceChildren(note('Evaluation recorded. ' + result.quality.sampleCount + ' total samples; helpful rate ' +
+            (result.quality.helpfulRate * 100).toFixed(1) + '%.', 'ok'));
+          P.refresh && P.refresh();
+        } catch (error) { status.replaceChildren(note(error.message, 'bad')); }
+      });
+      learning.append(el('div', { class: 'op-meta', text: 'To score a retrieval, enter the ordered IDs JARVIS returned and the IDs you judge relevant. Only aggregate metrics are stored; queries, memory text and IDs are not retained.' }),
+        retrievedIds, relevantIds, el('div', { class: 'op-row' }, [rating, evaluate]));
       learning.append(
         el('div', { class: 'op-meta', text: 'Working memory: ' + ((s.working && s.working.entries) || 0) + ' entries in ' + ((s.working && s.working.scopes) || 0) + ' scopes (RAM only).' }),
         el('div', { class: 'op-row' }, [
