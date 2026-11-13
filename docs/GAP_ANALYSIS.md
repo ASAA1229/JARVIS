@@ -37,9 +37,9 @@ No gap is closed by documentation or source presence alone.
 
 | ID | Priority | Gap | Current status | Completion evidence |
 |---|---|---|---|---|
-| JARVIS-GAP-001 | P0 | Integrate DAG executor into live workflow/task service | PARTIAL | Parent workflow record, isolated child branch tasks, scoped approvals, encrypted journal, audit, independent verifier and route-level integration tests |
-| JARVIS-GAP-002 | P0 | Branch-level approval and policy lifecycle | PARTIAL | Approval bound to branch/task/device/operation/parameters; single-use; revalidated at dispatch; parallel-branch race tests |
-| JARVIS-GAP-003 | P0 | Crash/restart and partial-failure recovery for concurrent branches | PARTIAL | Process-kill tests; uncertain branch reconciliation; descendants blocked; unrelated safe branches continue; no unsafe replay |
+| JARVIS-GAP-001 | P0 | Integrate DAG executor into live workflow/task service | IMPLEMENTED — NEEDS TESTING | Live workflow expansion preserves dependency edges; isolated child task per branch; encrypted parent/child journal; bounded parallel execution and resource locks; exact-head integration tests and fault acceptance pending |
+| JARVIS-GAP-002 | P0 | Branch-level approval and policy lifecycle | IMPLEMENTED — NEEDS TESTING | Each branch uses a distinct child task and existing exact-scope, single-use Policy Gateway approval; approval/rejection/expiry updates and resumes the parent DAG; race/expiry/revocation tests pending |
+| JARVIS-GAP-003 | P0 | Crash/restart and partial-failure recovery for concurrent branches | PARTIAL | Encrypted DAG checkpoints and fail-closed restart are wired; in-flight branches become recovery-required and are not replayed; explicit owner-reconciled DAG resume and process-kill tests remain |
 | JARVIS-GAP-004 | P0 | Voice-to-command full-path reliability on actual MSI hardware | PARTIAL — browser scenarios expanded for network/no-speech/abort/permission/consent and duplicate dispatch | Microphone/wake/STT/intent/approval/execution/verification tests on Windows 11 with noise, timeout, mute, cancellation and error evidence |
 | JARVIS-GAP-005 | P0 | Exact-head CI and security regression gates | TEST-AUTHORED / NEEDS VERIFICATION | Build, lint, all tests, browser smoke/security, Ollama, Android and security scans green on same SHA |
 | JARVIS-GAP-006 | P0 | Voice false-accept/false-reject and duplicate command prevention | PARTIAL | Measured wake metrics, replay/duplicate suppression, interim/final transcript tests and one-task-per-utterance evidence |
@@ -74,7 +74,7 @@ No gap is closed by documentation or source presence alone.
 7. Enforce bounded concurrency and resource lock acquisition; never allow lock leaks on timeout/cancel/error.
 8. On dependency failure, block descendants while allowing unrelated safe branches to complete.
 9. On restart, mark in-flight external effects uncertain; never replay them automatically.
-10. Add unit, route integration, approval race, crash/restart and partial-failure tests.
+10. Add unit, route integration, approval race, crash/restart and partial-failure tests. Current live path is wired; exact-head CI evidence is pending. Explicit owner-reviewed resume after restart remains a separate closure item.
 
 ### P0-B — Voice end-to-end reliability
 Test each stage independently and as a full chain:
