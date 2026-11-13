@@ -528,7 +528,7 @@
           ' · Candidate acceptance: ' + (q.candidateAcceptanceRate === null || q.candidateAcceptanceRate === undefined ? '—' : (q.candidateAcceptanceRate * 100).toFixed(1) + '%') +
           ' · Trend: ' + (q.trend || 'insufficient_data')),
       );
-      const retrievedIds = el('input', { class: 'op-input', placeholder: 'Retrieved memory IDs (comma-separated)', 'aria-label': 'Retrieved memory IDs' });
+      const evaluationQuery = el('input', { class: 'op-input', placeholder: 'Query to evaluate against current memory', 'aria-label': 'Memory retrieval query' });
       const relevantIds = el('input', { class: 'op-input', placeholder: 'Relevant memory IDs (comma-separated)', 'aria-label': 'Relevant memory IDs' });
       const rating = el('select', { class: 'op-input', 'aria-label': 'Was the retrieved context helpful?' }, [
         el('option', { value: 'helpful', text: 'Helpful' }),
@@ -538,17 +538,17 @@
         try {
           const splitIds = (value) => value.split(',').map((item) => item.trim()).filter(Boolean);
           const result = await api('/api/memory/evaluation', 'POST', {
-            retrievedIds: splitIds(retrievedIds.value),
+            query: evaluationQuery.value,
             relevantIds: splitIds(relevantIds.value),
             rating: rating.value,
           });
-          status.replaceChildren(note('Evaluation recorded. ' + result.quality.sampleCount + ' total samples; helpful rate ' +
+          status.replaceChildren(note('Live retrieval evaluated (' + result.retrievedCount + ' result(s)). ' + result.quality.sampleCount + ' total samples; helpful rate ' +
             (result.quality.helpfulRate * 100).toFixed(1) + '%.', 'ok'));
           P.refresh && P.refresh();
         } catch (error) { status.replaceChildren(note(error.message, 'bad')); }
       });
-      learning.append(el('div', { class: 'op-meta', text: 'To score a retrieval, enter the ordered IDs JARVIS returned and the IDs you judge relevant. Only aggregate metrics are stored; queries, memory text and IDs are not retained.' }),
-        retrievedIds, relevantIds, el('div', { class: 'op-row' }, [rating, evaluate]));
+      learning.append(el('div', { class: 'op-meta', text: 'JARVIS runs its current ranked long-term retriever for this query. Enter the IDs of memories you judge relevant. Only aggregate metrics are stored; the query, memory text and IDs are not retained.' }),
+        evaluationQuery, relevantIds, el('div', { class: 'op-row' }, [rating, evaluate]));
       learning.append(
         el('div', { class: 'op-meta', text: 'Working memory: ' + ((s.working && s.working.entries) || 0) + ' entries in ' + ((s.working && s.working.scopes) || 0) + ' scopes (RAM only).' }),
         el('div', { class: 'op-row' }, [
