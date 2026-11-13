@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OllamaProvider } from '../src/ai/ollamaProvider.js';
 import { AIProviderError } from '../src/ai/aiProvider.js';
+import { chatCompletion } from '../src/ai/providerClient.js';
 
 test('uses native Ollama /api/chat and maps JSON mode and developer messages', async () => {
   let capturedUrl = '';
@@ -132,4 +133,32 @@ test('classifies Ollama rate limits in streaming mode', async () => {
   await assert.rejects(async () => {
     for await (const _chunk of provider.stream([{ role: 'user', content: 'Hello' }])) { /* consume */ }
   }, (error: unknown) => error instanceof AIProviderError && error.kind === 'rate_limited' && error.status === 429);
+});
+
+test('shared provider client sends first-party Ollama requests to native /api/chat', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  let requestBody: Record<string, unknown> = {};
+  globalThis.fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ message: { content: 'native response' } });
+  };
+  try {
+    const result = await chatCompletion({
+      id: 'local',
+      format: 'ollama',
+      baseUrl: 'http://localhost:11434',
+      model: 'llama3.2:latest',
+      local: true,
+      cost: 'free',
+      timeoutMs: 5000,
+    }, [{ role: 'user', content: 'Hello' }], { temperature: 0.1 }, AbortSignal.timeout(5000));
+    assert.equal(result, 'native response');
+    assert.equal(requestedUrl, 'http://localhost:11434/api/chat');
+    assert.equal(requestBody.model, 'llama3.2:latest');
+    assert.equal(requestBody.stream, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
