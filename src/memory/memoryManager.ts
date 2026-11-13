@@ -16,7 +16,7 @@ import { dirname } from 'node:path';
 import { PersonalMemoryStore, normalizeMemoryText, type MemoryCategory, type PersonalMemory } from './personalMemoryStore.js';
 import type { WorkingMemory, WorkingScopeKind } from './workingMemory.js';
 import { MemoryVersionHistory, type MemoryVersion } from './memoryVersions.js';
-import { LearningQualityEvaluator, type LearningQualityInput, type LearningQualitySummary } from './learningQualityEvaluator.js';
+import { LearningQualityEvaluator, type LearningQualitySummary } from './learningQualityEvaluator.js';
 import { OllamaEmbedder, SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, type RetrievalMethod } from './semanticIndex.js';
 
 /** Raised when proposed content duplicates an existing long-term memory. */
