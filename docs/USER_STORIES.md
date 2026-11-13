@@ -167,7 +167,7 @@ Acceptance:
 - Cancellation, timeout and restart preserve truthful outcomes.
 - Uncertain/non-idempotent branches never replay automatically.
 
-Status: **Implemented — needs testing.** Live `workflow:run` now preserves dependency edges and executes isolated child tasks through the core policy/approval/execution/verifier path. Branch approvals, encrypted checkpoints, audit and dependency blocking are wired; exact-head test pass and crash/restart acceptance remain pending.
+Status: **NEEDS TESTING.** Live `workflow:run` preserves dependency edges and executes isolated child tasks through the core policy/approval/execution/verifier path. Feature-branch CI at `156b575` passed 409/415 tests and exposed a malformed-checkpoint validation gap; a fix is committed on `fix-live-dag-ci-hardening` but awaits exact-head CI. Crash/restart acceptance remains pending.
 
 ### JARVIS-US-013 — Recover interrupted work
 As the owner, I want JARVIS to reconcile work after a crash or partial failure rather than blindly repeating it.
@@ -179,7 +179,7 @@ Acceptance:
 - Retry only with confirmed no-effect or verified idempotency.
 - Preserve audit and branch-level approval history.
 
-Status: **Partial —** encrypted parent/branch checkpoints, fail-closed restart and no automatic replay are implemented. Explicit owner-reviewed resume after restart, uncertain-branch reconciliation propagation and process-kill tests remain.
+Status: **NEEDS TESTING.** Encrypted parent/branch checkpoints, fail-closed restart and no automatic replay are implemented. CI exposed acceptance of an incompatible approval/outcome combination; validation has been tightened on `fix-live-dag-ci-hardening`, pending exact-head CI. Explicit owner-reviewed resume after restart, uncertain-branch reconciliation propagation and process-kill tests remain.
 
 ## Epic 6 — Memory, retrieval and learning
 
@@ -349,3 +349,8 @@ Status: **Not complete — budgets and repeatable performance baseline need to b
 7. P1: cross-device durable sync and recovery.
 8. P2: macOS/Linux/iOS native implementations, broader integrations and release automation.
 
+
+
+## CI verification note — 2026-11-13
+
+The latest Live DAG feature-branch run (`43415584498`, commit `156b575`) reported 409/415 automated tests passing and six failures. Four failures were caused by tests using synchronous `assert.throws` against the asynchronous `rejectTask` API; one exposed missing validation for an outcome on an approval-pending checkpoint; one exposed a benchmark mismatch between a single relevant label and a top-five precision calculation. Candidate test/validation corrections are on `fix-live-dag-ci-hardening`; they remain **NOT CI VERIFIED** until a fresh full run passes on that branch's exact head.
