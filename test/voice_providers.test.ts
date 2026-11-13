@@ -58,6 +58,31 @@ test('wake phrase matching requires a phrase boundary and returns only the follo
   assert.equal(matcher.match('Hey Jarvisian open Notepad'), undefined);
 });
 
+test('local STT selection never returns a cloud provider even when cloud speech is explicitly enabled', async () => {
+  const registry = new VoiceProviderRegistry({ allowCloudSpeech: true });
+  const cloud: SpeechToTextProvider = {
+    id: 'cloud-first', local: false,
+    isAvailable: async () => true,
+    transcribe: async () => ({ text: 'cloud', provider: 'cloud-first', local: false }),
+  };
+  const local: SpeechToTextProvider = {
+    id: 'local-whisper', local: true,
+    isAvailable: async () => true,
+    transcribe: async () => ({ text: 'local', provider: 'local-whisper', local: true }),
+  };
+  registry.register(cloud);
+  registry.register(local);
+  assert.equal((await registry.pickLocalStt())?.id, 'local-whisper');
+});
+
+test('voice diagnostics distinguish transcript matching from raw-audio wake detection', async () => {
+  const registry = new VoiceProviderRegistry({ allowCloudSpeech: false });
+  const status = await registry.describe();
+  assert.equal(status.wake.operatesOnAudio, false);
+  assert.match(status.browserRecognition, /may send audio to a vendor service/i);
+  assert.equal(status.cloudSpeechAllowed, false);
+});
+
 test('cloud speech providers are rejected unless explicitly enabled', () => {
   const registry = new VoiceProviderRegistry({ allowCloudSpeech: false });
   const cloudProvider: SpeechToTextProvider = {
