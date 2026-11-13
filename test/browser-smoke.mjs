@@ -381,6 +381,16 @@ try {
   const explicitSubmitRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
   await ptt.click();
   await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, explicitSubmitRecognizerIndex, { timeout: 3000 });
+  // Interim hypotheses are never executable and must not reach the signed API.
+  await hud.evaluate((index) => {
+    const interim = [{ transcript: 'open Notepad' }];
+    interim.isFinal = false;
+    window.__mockRecognizers[index].onresult({ resultIndex: 0, results: [interim] });
+  }, explicitSubmitRecognizerIndex);
+  await delay(150);
+  if (explicitVoiceRequestCount !== 0) {
+    throw new Error('An interim speech hypothesis was submitted before final recognition');
+  }
   await hud.evaluate((index) => {
     const recognizer = window.__mockRecognizers[index];
     recognizer.onresult({
