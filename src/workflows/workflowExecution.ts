@@ -127,7 +127,7 @@ export class WorkflowBranchExecutor {
               (branch.approvalRef !== undefined && (typeof branch.approvalRef !== 'string' || branch.approvalRef.length < 1 || branch.approvalRef.length > 256)) ||
               !validOutcomes.includes(branch.outcome) ||
               (branch.message !== undefined && (typeof branch.message !== 'string' || branch.message.length > 240)) ||
-              (branch.status === 'awaiting_approval' && !branch.approvalRef) ||
+              (branch.status === 'awaiting_approval' && (!branch.approvalRef || branch.outcome !== undefined)) ||
               (branch.status === 'completed' && branch.outcome !== 'verified_success') ||
               (branch.status === 'uncertain' && branch.outcome !== 'uncertain');
           })) {

@@ -180,6 +180,12 @@ Use synthetic fixtures and temporary output directories. AIX behavior must be te
 
 For the website gateway, configure the optional port, create a site key, test /v1/health and text chat locally, and keep the key server-side. The gateway's request limits include a 64 KiB body, 40 messages, 48,000 input characters, two concurrent requests per site and four overall. It refuses tool/function/response-format requests. See [Operations](OPERATIONS.md).
 
+## Exact-head CI and branch verification
+
+The current Live DAG remediation is developed on `fix-live-dag-ci-hardening`, based on `new-workflow-dag-integration`. The active exact-head CI run is [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) for commit `2b9613088d8f571459b16fa3390107837fca6630`; it was IN PROGRESS at the last status check. Do not describe the branch as green until every required job, including browser smoke and release-tooling/provenance jobs, completes successfully on the same SHA.
+
+Before proposing a merge, inspect the complete test output and compare the tested SHA with the current branch head. Keep `main` untouched; merge to `dev` only after CI and review pass and the owner authorizes integration. See [Project Status](PROJECT_STATUS.md) for the current evidence and [Release Readiness](RELEASE_READINESS.md) for release gates.
+
 ## 11. Agent and prompt contribution rules
 
 Prompts are versioned and role-separated. Add or modify prompt profiles only with corresponding structured response schemas and validation tests. Agent routing remains advisory; tool candidates must map to trusted registered capabilities. Do not widen a tool allowlist to satisfy a prompt or test.

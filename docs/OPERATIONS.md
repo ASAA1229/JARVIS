@@ -241,6 +241,12 @@ The Jenkins-to-manifest handoff and Nexus artifact-set contract are design/schem
 
 If approved later, publication must use a unique staging coordinate, verify every uploaded file by read-back SHA-256 and size, and mark the set complete only after every required object is verified. Existing coordinates are immutable; mismatched existing content is a conflict. Customer verification remains offline. Nexus publication remains disabled.
 
+## Current operational and release verification state
+
+The current Live DAG fix branch has not yet passed its exact-head CI gate. The latest run recorded in the project status is [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716), for commit `2b9613088d8f571459b16fa3390107837fca6630`; it was IN PROGRESS at the last check. Do not promote an artifact, publish to Nexus, or declare production readiness based on the earlier feature-branch build. Jenkins/Nexus live publication remains disabled pending explicit owner approval and validated endpoints/credentials. Backup/restore, device acceptance and rollback evidence are separate release gates.
+
+See [Project Status](PROJECT_STATUS.md) and [Release Readiness](RELEASE_READINESS.md) before any release operation.
+
 ## Local PDF and DOCX ingestion
 
 Use signed `POST /api/documents/ingest-file` with `sourceName`, canonical base64 `documentBase64`, optional `title`, and optional boolean `ocr`. The request body limit is 21 MiB; the decoded file limit is 15 MB. The response reports format and extraction method (`text`, `ocr`, or `text+ocr`).
