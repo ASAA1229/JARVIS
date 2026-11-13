@@ -107,6 +107,7 @@ export class TaskJournal {
           restored.updatedAt = Date.now();
           restored.error = 'Process restarted before this workflow reached a terminal state. Reconcile external state before any retry; automatic resume is disabled.';
           restored.approvalId = undefined;
+          this.markWorkflowBranchesForRestart(restored);
         }
         this.records.set(restored.id, restored);
       }
@@ -116,6 +117,33 @@ export class TaskJournal {
       this.records.clear();
       throw new Error('Task journal could not be decrypted or validated; writes are disabled to avoid overwriting checkpoints.');
     }
+  }
+
+  /**
+   * A restart while a DAG branch was dispatched leaves its external effect unknown:
+   * mark it uncertain (never replayed automatically). A branch that was only waiting
+   * for approval never dispatched, but its approval handle is invalidated by restart.
+   */
+  private markWorkflowBranchesForRestart(record: TaskLifecycleRecord): void {
+    const run = record.workflowRun;
+    if (!run || !Array.isArray(run.branches)) return;
+    const now = Date.now();
+    for (const branch of run.branches) {
+      if (branch.status === 'running') {
+        branch.status = 'uncertain';
+        branch.outcome = 'uncertain';
+        branch.message = 'Process restarted during branch execution. Reconcile before any new attempt.';
+        branch.updatedAt = now;
+      } else if (branch.status === 'awaiting_approval') {
+        branch.status = 'cancelled';
+        branch.outcome = undefined;
+        branch.approvalRef = undefined;
+        branch.message = 'Process restarted while awaiting approval; the approval was invalidated and nothing was dispatched.';
+        branch.updatedAt = now;
+      }
+    }
+    run.status = run.branches.some((branch) => branch.status === 'uncertain') ? 'uncertain' : 'partial';
+    run.updatedAt = now;
   }
 
   private isValidRecord(value: unknown): value is TaskLifecycleRecord {

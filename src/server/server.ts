@@ -1444,6 +1444,27 @@ export class JarvisServer {
         return this.jsonResponse(res, result.success ? 200 : 503, result);
       }
 
+      // Explicit owner-reconciled DAG resume. Only named uncertain branches are re-attempted, as
+      // fresh child tasks that pass through policy/approval again; nothing is replayed automatically.
+      if (req.method === 'POST' && url.pathname === '/api/workflow/resume') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.taskId !== 'string' || !body.taskId || typeof body.note !== 'string' ||
+            !Array.isArray(body.reconciledNoEffectSteps) || body.reconciledNoEffectSteps.some((id) => typeof id !== 'string')) {
+          return this.jsonResponse(res, 400, { error: 'taskId, reconciledNoEffectSteps and a recovery note are required' });
+        }
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!this.jarvis.hasDurableTaskJournal()) return this.jsonResponse(res, 503, { error: 'Durable task recovery is not configured', code: 'TASK_JOURNAL_NOT_CONFIGURED' });
+        try {
+          const result = await this.jarvis.resumeWorkflowRun(body.taskId, sessionId, body.reconciledNoEffectSteps as string[], body.note);
+          return this.jsonResponse(res, result.success ? 200 : 409, result);
+        } catch (error) {
+          return this.jsonResponse(res, 409, { error: error instanceof Error ? error.message : 'Workflow cannot be resumed' });
+        }
+      }
+
       // Cancel a waiting task (invalidating its approval) or interrupt a running one.
       if (req.method === 'POST' && url.pathname === '/api/task/cancel') {
         const sessionId = req.headers['x-session-id'];

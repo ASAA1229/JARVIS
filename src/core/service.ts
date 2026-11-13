@@ -1159,7 +1159,7 @@ export class JarvisCoreService {
    * Every child still passes through the normal policy, adapter, verifier and
    * audit pipeline. Parent checkpoints are encrypted by TaskJournal.
    */
-  async #runWorkflowDag(parent: TaskLifecycleRecord, steps: WorkflowStep[]): Promise<TaskResult> {
+  async #runWorkflowDag(parent: TaskLifecycleRecord, steps: WorkflowStep[], reconciledNoEffectSteps?: string[]): Promise<TaskResult> {
     const executor = new WorkflowBranchExecutor();
     const runId = `${parent.id}:workflow`;
     parent.workflowSteps = structuredClone(steps);
@@ -1174,6 +1174,7 @@ export class JarvisCoreService {
       runId,
       maxParallel: 4,
       ...(parent.workflowRun ? { resumeFrom: parent.workflowRun } : {}),
+      ...(reconciledNoEffectSteps?.length ? { reconciledNoEffectSteps } : {}),
       resourcesForStep: (step) => this.#executionResources(parent, { operation: step.operation, parameters: step.parameters }),
       checkpoint: async (snapshot) => {
         parent.workflowRun = snapshot;
@@ -1560,6 +1561,77 @@ export class JarvisCoreService {
       { taskId, deviceId: task.deviceId },
     );
     return { success: true, taskId, state: task.state, message: task.error || 'Recovery review recorded; no operation was replayed.' };
+  }
+
+  /**
+   * Explicit, owner-reconciled resume of a recovered workflow DAG (JARVIS-GAP-003).
+   * Nothing is replayed automatically: the reviewing device must name every
+   * uncertain branch it confirms had no external effect, and each re-attempted
+   * branch still passes through policy, approval, execution and verification as
+   * a fresh child task. Branches left uncertain keep blocking their descendants.
+   */
+  public async resumeWorkflowRun(
+    parentTaskId: TaskId,
+    sessionId: SessionId,
+    reconciledNoEffectSteps: string[],
+    note: string,
+  ): Promise<{ success: boolean; taskId: TaskId; state?: TaskState; message: string }> {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const reviewer = auth.device;
+    if (!auth.valid || !reviewer) {
+      this.audit.record('WORKFLOW_RESUME_DENIED', { reason: 'INVALID_SESSION' });
+      throw new Error('Session is not authenticated');
+    }
+    if (typeof note !== 'string' || note.trim().length < 8 || note.length > 500) {
+      throw new Error('Recovery note must be 8–500 characters');
+    }
+    if (!Array.isArray(reconciledNoEffectSteps) || reconciledNoEffectSteps.length > 20 ||
+        reconciledNoEffectSteps.some((id) => typeof id !== 'string' || !id || id.length > 40) ||
+        new Set(reconciledNoEffectSteps).size !== reconciledNoEffectSteps.length) {
+      throw new Error('reconciledNoEffectSteps must be a list of unique step identifiers');
+    }
+    const parent = this.tasks.get(parentTaskId);
+    if (!parent || !parent.workflowRun || !parent.workflowSteps || parent.workflowParentTaskId) throw new Error('Workflow run not found');
+    if (parent.deviceId !== reviewer.id && !reviewer.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('WORKFLOW_RESUME_DENIED', { reason: 'NOT_TASK_OWNER' }, reviewer.id, parentTaskId);
+      throw new Error('Only the requesting device or an owner device can resume this workflow');
+    }
+    if (parent.state !== TaskState.AWAITING_RECOVERY && parent.state !== TaskState.PARTIAL) {
+      throw new Error('Workflow is not awaiting recovery');
+    }
+    const checkpoint = parent.workflowRun;
+    for (const stepId of reconciledNoEffectSteps) {
+      if (checkpoint.branches.find((branch) => branch.stepId === stepId)?.status !== 'uncertain') {
+        throw new Error(`Branch ${stepId} is not awaiting uncertain-outcome reconciliation`);
+      }
+    }
+    if (reconciledNoEffectSteps.length === 0) {
+      return { success: false, taskId: parentTaskId, state: parent.state, message: 'No branches were confirmed as having no external effect; nothing was resumed.' };
+    }
+    // Reset each reconciled child to a fresh, un-dispatched task so it re-enters policy.
+    for (const stepId of reconciledNoEffectSteps) {
+      const child = this.tasks.get(`${parentTaskId}:${stepId}` as TaskId);
+      if (!child) continue;
+      child.reconciliation = { disposition: 'confirmed_no_effect', note: note.trim(), reviewedAt: Date.now(), reviewedBy: reviewer.id };
+      child.state = TaskState.CREATED;
+      child.error = undefined;
+      child.interrupted = undefined;
+      child.approvalId = undefined;
+      child.steps = [];
+      child.updatedAt = Date.now();
+      if (!this.#persistTask(child)) {
+        return { success: false, taskId: parentTaskId, state: parent.state, message: child.error || 'Recovery decision could not be durably checkpointed.' };
+      }
+    }
+    this.audit.record('WORKFLOW_RESUME_AUTHORIZED', {
+      reconciledSteps: reconciledNoEffectSteps,
+      noteLength: note.trim().length,
+      automaticReplay: false,
+    }, reviewer.id, parentTaskId);
+    parent.state = TaskState.EXECUTING;
+    parent.error = undefined;
+    const result = await this.#runWorkflowDag(parent, parent.workflowSteps, reconciledNoEffectSteps);
+    return { success: true, taskId: parentTaskId, state: result.state, message: result.message };
   }
 
   /**
