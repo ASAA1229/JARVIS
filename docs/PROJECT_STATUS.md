@@ -105,3 +105,5 @@ Source presence is not implementation acceptance. A test file is not a passed te
 Mean: **6.1/10**.
 
 - **2026-11-13 (later):** Reconciled with merged PRs #63/#64 and local verification results; recorded final gap statuses and measured performance. No physical-device, Jenkins/Nexus or owner acceptance was performed.
+
+- **2026-11-13 (final re-run on head):** after making a probabilistic ciphertext-substring assertion in `learning_quality_evaluator.test.ts` deterministic (it failed about 1 run in 10 by chance), a full re-run gave `npm test` 497/497 pass plus 3/3 script tests, lint and build clean. The earlier real-Notepad `E2E-LIVE-01` flake did not recur but remains environment-sensitive.

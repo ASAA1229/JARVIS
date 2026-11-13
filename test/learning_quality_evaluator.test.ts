@@ -18,8 +18,8 @@ test('learning quality records precision, recall, reciprocal rank and owner feed
   try {
     const evaluator = new LearningQualityEvaluator(path, token);
     const result = evaluator.record({
-      retrievedIds: ['m1', 'm2', 'm3'],
-      relevantIds: ['m2', 'm3'],
+      retrievedIds: ['memory-alpha-identifier', 'memory-beta-identifier', 'memory-gamma-identifier'],
+      relevantIds: ['memory-beta-identifier', 'memory-gamma-identifier'],
       rating: 'helpful',
     });
     assert.equal(result.sampleCount, 1);
@@ -30,8 +30,8 @@ test('learning quality records precision, recall, reciprocal rank and owner feed
     assert.equal(result.correctionRate, 0);
     assert.equal(result.trend, 'insufficient_data');
     const encrypted = readFileSync(path, 'utf8');
-    assert.equal(encrypted.includes('m1'), false);
-    assert.equal(encrypted.includes('m2'), false);
+    assert.equal(encrypted.includes('memory-alpha-identifier'), false);
+    assert.equal(encrypted.includes('memory-beta-identifier'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
