@@ -1278,6 +1278,13 @@ function handleTextSubmit() {
   void submitDirective(val);
 }
 
+function nextUtteranceId() {
+  // One id per transcript submission; the server drops re-delivered duplicates (GAP-006).
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return 'utt-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function submitDirective(text) {
   if (!currentSession) {
     const message = 'Secure device enrollment is required before I can submit or execute directives. No action was sent.';
@@ -1310,7 +1317,7 @@ async function submitDirective(text) {
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      body: { text, ...(activeConversationId ? { conversationId: activeConversationId } : {}) },
+      body: { text, ...(activeConversationId ? { conversationId: activeConversationId } : {}), ...(sourceWasTranscript ? { voice: { utteranceId: nextUtteranceId() } } : {}) },
       signal: controller.signal,
     });
     const data = await readApiResponse(res);

@@ -13,6 +13,7 @@ import { JarvisPlatform, getCapability, listCapabilities, listCapabilitiesForPla
 import { PersonalMemoryStore, type MemoryCategory } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
 import { VoiceProviderRegistry } from '../voice/providers.js';
+import { VoiceUtteranceGuard, WakeMetrics, isValidUtteranceId } from '../voice/utteranceGuard.js';
 import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
 import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
@@ -46,6 +47,8 @@ export class JarvisServer {
   private readonly peerDiscovery: PeerDiscoveryService | undefined;
   private readonly personalMemory?: PersonalMemoryStore;
   private readonly voiceProviders = new VoiceProviderRegistry();
+  private readonly utteranceGuard = new VoiceUtteranceGuard();
+  private readonly wakeMetrics = new WakeMetrics();
   private readonly androidCommands = new AndroidCommandQueue();
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
@@ -786,6 +789,25 @@ export class JarvisServer {
         try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
         return this.jsonResponse(res, 200, { localTts, localStt });
       }
+      // Wake metrics: privacy-preserving counters only (no audio, no transcript text).
+      if (req.method === 'POST' && url.pathname === '/api/voice/wake-event') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || !WakeMetrics.isWakeEvent(body.event)) return this.jsonResponse(res, 400, { error: 'A valid wake event is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        this.wakeMetrics.record(body.event);
+        return this.jsonResponse(res, 202, { recorded: true });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/voice/metrics') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view voice metrics' });
+        return this.jsonResponse(res, 200, this.wakeMetrics.snapshot());
+      }
       if (req.method === 'POST' && url.pathname === '/api/voice/synthesize') {
         const sessionId = req.headers['x-session-id'] as string;
         if (!sessionId) return this.jsonResponse(res, 401, { error: 'Missing x-session-id header' });
@@ -1033,6 +1055,22 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) {
           return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         }
+        // One spoken utterance may create at most one task: browser recognizers can re-emit the
+        // same final transcript, so voice-origin requests carry an utterance id (GAP-006).
+        const voiceMeta = (body as { voice?: unknown }).voice;
+        let utteranceId: string | undefined;
+        if (voiceMeta !== undefined) {
+          const candidate = this.isJsonObject(voiceMeta) ? voiceMeta.utteranceId : undefined;
+          if (!isValidUtteranceId(candidate)) return this.jsonResponse(res, 400, { error: 'voice.utteranceId must be 8-64 URL-safe characters' });
+          utteranceId = candidate;
+          const claim = this.utteranceGuard.claim(auth.device.id, utteranceId, text);
+          if (!claim.accepted) {
+            this.wakeMetrics.record('duplicate_suppressed');
+            this.jarvis.audit.record('VOICE_DUPLICATE_SUPPRESSED', { reason: claim.reason }, auth.device.id);
+            return this.jsonResponse(res, 409, { duplicate: true, reason: claim.reason, ...(claim.taskId ? { taskId: claim.taskId } : {}), error: 'This utterance was already submitted; no new task was created.' });
+          }
+          this.wakeMetrics.record('command_dispatched');
+        }
         // Conversation requests are handled only after signed-session authentication.
         // Action-like directives continue through the existing planner and PolicyGateway.
         // Supply only request-relevant memories to the conversational prompt.
@@ -1072,6 +1110,7 @@ export class JarvisServer {
         // Do not allocate conversation state for commands routed to the execution planner.
         if (isActionRequest(text.trim())) {
           const result = await this.jarvis.submitRequest(sessionId, text.trim());
+          if (utteranceId && result?.taskId) this.utteranceGuard.bindTask(auth.device.id, utteranceId, result.taskId);
           return this.jsonResponse(res, 200, result);
         }
         const authDevice = auth.device;
