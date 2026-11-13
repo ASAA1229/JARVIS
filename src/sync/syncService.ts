@@ -56,6 +56,8 @@ export class SyncError extends Error {
 
 export class SyncService {
   private readonly now: () => number;
+  /** Serializes pushes per device so a retried/duplicated batch cannot interleave with itself. */
+  private readonly pushLocks = new Map<string, Promise<unknown>>();
 
   constructor(private readonly deps: SyncServiceDeps) {
     this.now = deps.now ?? Date.now;
@@ -135,6 +137,15 @@ export class SyncService {
    */
   async push(device: DeviceRecord, sessionId: string, body: unknown): Promise<{ results: ChangeResult[]; lastDeviceSeq: number }> {
     this.assertActive(device);
+    const previous = this.pushLocks.get(device.id) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.pushUnlocked(device, sessionId, body));
+    const tail = run.catch(() => undefined);
+    this.pushLocks.set(device.id, tail);
+    try { return await run; } finally { if (this.pushLocks.get(device.id) === tail) this.pushLocks.delete(device.id); }
+  }
+
+  private async pushUnlocked(device: DeviceRecord, sessionId: string, body: unknown): Promise<{ results: ChangeResult[]; lastDeviceSeq: number }> {
+    this.assertActive(device);
     const changes = (body as { changes?: unknown })?.changes;
     if (!Array.isArray(changes) || changes.length === 0 || changes.length > MAX_CHANGES_PER_PUSH) {
       throw new SyncError(400, `changes must be an array of 1-${MAX_CHANGES_PER_PUSH} items.`);
@@ -171,6 +182,9 @@ export class SyncService {
       cursor.lastDeviceSeq = Math.max(cursor.lastDeviceSeq, change.deviceSeq);
       cursor.recentChangeIds.push(change.changeId);
       if (cursor.recentChangeIds.length > RECENT_CHANGE_WINDOW) cursor.recentChangeIds.splice(0, cursor.recentChangeIds.length - RECENT_CHANGE_WINDOW);
+      // Durable per-change checkpoint: after a crash mid-batch, changes that already
+      // created tasks/conflicts are recognized as duplicates on retry instead of re-applied.
+      this.deps.store.save(state);
     }
     cursor.lastPushAt = now;
     this.deps.store.save(state);
@@ -410,8 +424,25 @@ export class SyncService {
     }
     let result: SubmitResult | undefined;
     if (decision === 'run') {
-      result = await this.deps.submitRequest(resolverSessionId, command.text);
+      // Claim before awaiting: a concurrent or replayed decision sees 'submitted' and cannot run it twice.
+      const originalText = command.text;
       command.status = 'submitted';
+      command.decidedAt = this.now();
+      command.decidedBy = resolver.id;
+      this.deps.store.save(state);
+      try {
+        result = await this.deps.submitRequest(resolverSessionId, originalText);
+      } catch (error) {
+        const fresh = this.deps.store.load();
+        const claimed = fresh.commands.find((item) => item.id === command.id);
+        if (claimed && claimed.status === 'submitted' && !claimed.taskId) {
+          claimed.status = 'pending';
+          claimed.decidedAt = undefined;
+          claimed.decidedBy = undefined;
+          this.deps.store.save(fresh);
+        }
+        throw error;
+      }
       command.taskId = result.taskId;
     } else {
       command.status = 'discarded';

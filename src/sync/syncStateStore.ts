@@ -4,7 +4,8 @@
  * control token (same scheme as personal memory). Writes are atomic.
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { renameWithRetry } from '../core/atomicRename.js';
 import { dirname } from 'node:path';
 import type { SyncStateFile } from './syncTypes.js';
 
@@ -48,6 +49,6 @@ export class SyncStateStore {
       version: 1, salt: salt.toString('base64'), iv: iv.toString('base64'),
       tag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64'),
     }), { mode: 0o600 });
-    renameSync(temporary, this.filePath);
+    renameWithRetry(temporary, this.filePath);
   }
 }
