@@ -1168,7 +1168,9 @@ export class JarvisCoreService {
       return { taskId: parent.id, state: parent.state, message: parent.error || 'Workflow DAG checkpoint failed before dispatch.', verified: false };
     }
     this.audit.record('WORKFLOW_DAG_STARTED', { stepCount: steps.length, maxParallel: 4 }, parent.deviceId, parent.id);
-    const checkpoint = await executor.run(steps, {
+    let checkpoint: WorkflowRunCheckpoint;
+    try {
+      checkpoint = await executor.run(steps, {
       runId,
       maxParallel: 4,
       ...(parent.workflowRun ? { resumeFrom: parent.workflowRun } : {}),
@@ -1181,7 +1183,7 @@ export class JarvisCoreService {
           branches: snapshot.branches.map((branch) => ({ stepId: branch.stepId, operation: branch.operation, status: branch.status, outcome: branch.outcome })),
         }, parent.deviceId, parent.id);
       },
-      executeStep: async (step, context) => {
+      executeStep: async (step, _context) => {
         const childId = `${parent.id}:${step.id}` as TaskId;
         let child = this.tasks.get(childId);
         if (!child) {
@@ -1223,7 +1225,19 @@ export class JarvisCoreService {
         if (result.state === TaskState.CANCELLED) return { status: 'cancelled', message: result.message };
         return { status: 'failed', message: result.message };
       },
-    });
+      });
+    } catch (error) {
+      parent.state = TaskState.AWAITING_RECOVERY;
+      parent.error = 'Workflow DAG execution or checkpoint persistence failed; inspect branch tasks and reconcile before retrying.';
+      this.#persistTask(parent);
+      try {
+        this.audit.record('WORKFLOW_DAG_FAILED_CLOSED', {
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          automaticReplay: false,
+        }, parent.deviceId, parent.id);
+      } catch { /* The encrypted checkpoint remains the recovery source if audit is unavailable. */ }
+      return { taskId: parent.id, state: parent.state, message: parent.error, outcome: VerificationOutcome.UNCERTAIN, verified: false };
+    }
     parent.workflowRun = checkpoint;
     parent.state = checkpoint.status === 'completed' ? TaskState.COMPLETED
       : checkpoint.status === 'awaiting_approval' ? TaskState.AWAITING_APPROVAL
