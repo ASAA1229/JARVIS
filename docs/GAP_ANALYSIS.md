@@ -27,7 +27,7 @@ Current documentation and source review show the largest delivery risks are live
 Statuses:
 - **IMPLEMENTED — NEEDS TESTING**
 - **PARTIAL**
-- **TEST-AUTHORED — NOT YET VERIFIED**
+- **NEEDS TESTING — tests authored, execution not implied**
 - **NOT IMPLEMENTED**
 - **BLOCKED / OWNER ACCEPTANCE PENDING**
 
@@ -151,4 +151,4 @@ Evidence: [GitHub Actions run 43415584498](https://github.com/ASAA1229/JARVIS/ac
 - Four approval/rejection failures used synchronous assertions against the asynchronous `rejectTask` method. Test assertions now await the returned promise on `fix-live-dag-ci-hardening`.
 - One checkpoint test showed an approval-pending branch could carry a terminal outcome. Validation now rejects any outcome while `status === awaiting_approval` on `fix-live-dag-ci-hardening`.
 - One retrieval benchmark asserted Precision@K = 1.0 for one relevant item while requesting up to five results. The benchmark now evaluates at `limit: 1`, matching the single-label top-one assertion.
-- Candidate code and test changes are committed on the isolated fix branch. Status remains **NOT CI VERIFIED** until all tests and skipped downstream jobs execute successfully on its exact head.
+- Candidate code and test changes are committed on the isolated fix branch. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) is IN PROGRESS for `2b9613088d8f571459b16fa3390107837fca6630`. Status remains **NEEDS TESTING** until all tests and downstream jobs pass on that exact head.
