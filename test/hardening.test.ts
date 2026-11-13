@@ -133,8 +133,8 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
     await assert.rejects(async () => {
       await jarvis.approveTask(approvalId, 'dev-unknown-attacker');
     }, /Approver session is not authenticated/);
-    assert.throws(() => {
-      jarvis.rejectTask(approvalId, 'dev-unknown-attacker');
+    await assert.rejects(async () => {
+      await jarvis.rejectTask(approvalId, 'dev-unknown-attacker');
     }, /Approver session is not authenticated/);
     assert.strictEqual(jarvis.getTask(res.taskId)?.state, TaskState.AWAITING_APPROVAL);
 
