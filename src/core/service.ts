@@ -1253,6 +1253,31 @@ export class JarvisCoreService {
     };
   }
 
+  async #settleWorkflowBranchChild(child: TaskLifecycleRecord, succeeded: boolean): Promise<void> {
+    if (!child.workflowParentTaskId || !child.workflowStepId) return;
+    const parent = this.tasks.get(child.workflowParentTaskId);
+    const checkpoint = parent?.workflowRun;
+    if (!parent || !checkpoint || !parent.workflowSteps) return;
+    const branch = checkpoint.branches.find((item) => item.stepId === child.workflowStepId);
+    if (!branch || branch.status !== 'awaiting_approval') return;
+    branch.status = succeeded ? 'completed' : 'failed';
+    branch.outcome = succeeded ? 'verified_success' : 'verified_failure';
+    branch.approvalRef = undefined;
+    branch.message = succeeded ? 'Branch-specific approval was granted and the child task completed with verified success.'
+      : 'Branch-specific approval was rejected; dependent branches will not run.';
+    branch.updatedAt = Date.now();
+    checkpoint.status = 'running';
+    parent.state = TaskState.EXECUTING;
+    parent.error = undefined;
+    if (!this.#persistTask(parent)) return;
+    this.audit.record('WORKFLOW_BRANCH_APPROVAL_RESOLVED', {
+      stepId: child.workflowStepId,
+      childTaskId: child.id,
+      outcome: branch.outcome,
+    }, child.deviceId, parent.id);
+    await this.#runWorkflowDag(parent, parent.workflowSteps);
+  }
+
   #assertApproverPermission(
     approval: { operation: string; taskId: string },
     approver: DeviceRecord,
@@ -1366,6 +1391,9 @@ export class JarvisCoreService {
     };
 
     const res = await this.#evaluateAndProceed(task.id, opRequest, task.deviceId, approvalId);
+    if (task.workflowParentTaskId && res.state === TaskState.COMPLETED && res.verified) {
+      await this.#settleWorkflowBranchChild(task, true);
+    }
     return {
       taskId: res.taskId,
       success: res.state === TaskState.COMPLETED,
@@ -1426,6 +1454,7 @@ export class JarvisCoreService {
       }
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
+    if (task?.workflowParentTaskId) await this.#settleWorkflowBranchChild(task, false);
     return { success: true, message: 'Task rejected' };
   }
 
