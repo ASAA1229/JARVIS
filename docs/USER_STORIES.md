@@ -5,12 +5,7 @@
 
 ## Status convention
 
-- **Implemented — needs testing:** code is present; acceptance not demonstrated.
-- **Test-authored:** automated test exists; execution is not implied.
-- **Partial:** only part of the story is implemented or validated.
-- **Not implemented:** no accepted implementation.
-- **Blocked / owner acceptance:** needs hardware, credentials, approved external dependency or owner action.
-- **Accepted:** all stated criteria and evidence are satisfied for the relevant platform and exact commit.
+Use the authoritative lifecycle vocabulary from [Project Status](PROJECT_STATUS.md): **PLANNED, NOT STARTED, IN DEVELOPMENT, IMPLEMENTED, NEEDS TESTING, TEST FAILED, TEST PASSED, CI VERIFIED, DEVICE VERIFIED, OWNER ACCEPTANCE PENDING, ACCEPTED**. A status must not imply validation that has not occurred. `TEST PASSED` identifies the exact tested commit; `CI VERIFIED` requires all applicable CI jobs to pass on that same SHA; `DEVICE VERIFIED` names the physical device, OS and scenario. `ACCEPTED` requires applicable evidence and owner approval.
 
 Stories are deliberately outcome-based. An API route, UI control or source file alone does not satisfy a story.
 
@@ -336,7 +331,7 @@ Acceptance:
 - Test resource exhaustion, queue saturation and provider outage.
 - Publish measurements with hardware/software configuration.
 
-Status: **Not complete — budgets and repeatable performance baseline need to be established.**
+Status: **NOT STARTED** — budgets and repeatable performance baseline need to be established.
 
 ## Delivery order
 
@@ -353,4 +348,4 @@ Status: **Not complete — budgets and repeatable performance baseline need to b
 
 ## CI verification note — 2026-11-13
 
-The latest Live DAG feature-branch run (`43415584498`, commit `156b575`) reported 409/415 automated tests passing and six failures. Four failures were caused by tests using synchronous `assert.throws` against the asynchronous `rejectTask` API; one exposed missing validation for an outcome on an approval-pending checkpoint; one exposed a benchmark mismatch between a single relevant label and a top-five precision calculation. Candidate test/validation corrections are on `fix-live-dag-ci-hardening`; they remain **NOT CI VERIFIED** until a fresh full run passes on that branch's exact head.
+The baseline Live DAG feature-branch run (`43415584498`, commit `156b5750ef99e10a8d33c43ad5dc873a183d57cd`) reported 409/415 automated tests passing and six failures. Candidate corrections are committed on `fix-live-dag-ci-hardening`. Exact-head CI run `43419769716` is currently **IN PROGRESS** for commit `2b9613088d8f571459b16fa3390107837fca6630`; no pass is claimed until it completes, including all downstream jobs.
