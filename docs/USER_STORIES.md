@@ -167,7 +167,7 @@ Acceptance:
 - Cancellation, timeout and restart preserve truthful outcomes.
 - Uncertain/non-idempotent branches never replay automatically.
 
-Status: **Partial — standalone DAG executor/checkpoint safeguards exist; live service integration is not complete.**
+Status: **Implemented — needs testing.** Live `workflow:run` now preserves dependency edges and executes isolated child tasks through the core policy/approval/execution/verifier path. Branch approvals, encrypted checkpoints, audit and dependency blocking are wired; exact-head test pass and crash/restart acceptance remain pending.
 
 ### JARVIS-US-013 — Recover interrupted work
 As the owner, I want JARVIS to reconcile work after a crash or partial failure rather than blindly repeating it.
@@ -179,7 +179,7 @@ Acceptance:
 - Retry only with confirmed no-effect or verified idempotency.
 - Preserve audit and branch-level approval history.
 
-Status: **Partial — foundations exist; live DAG recovery and process-kill tests pending.**
+Status: **Partial —** encrypted parent/branch checkpoints, fail-closed restart and no automatic replay are implemented. Explicit owner-reviewed resume after restart, uncertain-branch reconciliation propagation and process-kill tests remain.
 
 ## Epic 6 — Memory, retrieval and learning
 
