@@ -63,7 +63,7 @@ JARVIS must not:
 
 ## 6. AI, prompts and injection resistance
 
-- Ollama is the primary local inference provider. Routing enforces task privacy and authorization.
+- First-party conversation and advisory agents use local Ollama only; they do not automatically fall back to cloud inference. The separate website gateway has its own explicit cloud authorization boundary.
 - Cloud providers remain disabled unless credentials, model and allowed task configuration are explicitly set.
 - Never send personal memory/history remotely without applicable authorization and data minimization.
 - No silent cloud fallback when local inference fails.
