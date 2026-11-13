@@ -48,7 +48,7 @@ Changes committed:
 2. Correct async rejection tests to await the promise returned by `rejectTask`.
 3. Configure the single-label retrieval benchmark to measure Precision@1 consistently with its top-one relevance assertion.
 
-These changes are **IN DEVELOPMENT / NEEDS TESTING**. Exact-head CI run `43419769716` is currently IN PROGRESS for commit `2b9613088d8f571fa3390107837fca6630` (head SHA: `2b9613088d8f571fa3390107837fca6630`). Do not mark these gaps TEST PASSED or CI VERIFIED until the full exact-head run passes.
+These changes are **IN DEVELOPMENT / NEEDS TESTING**. Exact-head CI run `43419769716` is currently IN PROGRESS for commit `2b9613088d8f571459b16fa3390107837fca6630` (head SHA: `2b9613088d8f571459b16fa3390107837fca6630`). Do not mark these gaps TEST PASSED or CI VERIFIED until the full exact-head run passes.
 
 ## Priority gap register
 
@@ -98,4 +98,4 @@ Source presence is not implementation acceptance. A test file is not a passed te
 
 ## Change history
 
-- **2026-11-13:** Created evidence-led status baseline; recorded feature-branch CI failure and isolated remediation branch. Exact-head run `43419769716` started for `2b9613088d8f571fa3390107837fca6630` and was IN PROGRESS at last check. No main-branch changes, release deployment, physical-device acceptance or owner acceptance were performed in this increment.
+- **2026-11-13:** Created evidence-led status baseline; recorded feature-branch CI failure and isolated remediation branch. Exact-head run `43419769716` started for `2b9613088d8f571459b16fa3390107837fca6630` and was IN PROGRESS at last check. No main-branch changes, release deployment, physical-device acceptance or owner acceptance were performed in this increment.
