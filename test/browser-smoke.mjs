@@ -456,8 +456,19 @@ try {
     });
   });
   const wakeRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
-  await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
-  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 3000 });
+  // A wake event can legitimately be ignored while JARVIS is speaking or inside
+  // its post-speech feedback guard. Model repeated detector frames until the
+  // guard clears; the first accepted event must still start exactly one capture.
+  let wakeCaptureStarted = false;
+  for (let attempt = 0; attempt < 8 && !wakeCaptureStarted; attempt++) {
+    await hud.evaluate(() => window.__wakeCallback('hey_jarvis', 0.99));
+    try {
+      await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, wakeRecognizerIndex, { timeout: 500 });
+      wakeCaptureStarted = true;
+    } catch {
+      if (attempt === 7) throw new Error('Local wake detection did not start speech capture after the speech feedback guard cleared');
+    }
+  }
   await hud.evaluate((index) => {
     const recognizer = window.__mockRecognizers[index];
     const result = [{ transcript: 'Hey Jarvis, open Notepad' }];
