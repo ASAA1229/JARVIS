@@ -26,7 +26,7 @@
 
 The Live DAG feature branch CI run `43415584498` on commit `156b5750ef99e10a8d33c43ad5dc873a183d57cd` reported 409 passing and six failing tests. Dependency installation, SBOM generation, dependency audit, TypeScript check/build and Android debug APK assembly passed. Browser smoke, Python release tests and manifest/provenance steps were skipped after the automated test job failed.
 
-A candidate remediation exists on `fix-live-dag-ci-hardening`: asynchronous rejection assertions now await `rejectTask`; persisted approval-pending checkpoints reject incompatible terminal outcomes; the single-label synthetic benchmark measures Precision@1 consistently. This remediation is not yet verified. A new exact-head CI run is mandatory.
+A candidate remediation exists on `fix-live-dag-ci-hardening`: asynchronous rejection assertions now await `rejectTask`; persisted approval-pending checkpoints reject incompatible terminal outcomes; the single-label synthetic benchmark measures Precision@1 consistently. Exact-head CI run `43419769716` for commit `2b9613088d8f571fa3390107837fca6630` is currently IN PROGRESS. The remediation is not yet verified; the full run, including downstream jobs, must pass.
 
 ## GO criteria
 
