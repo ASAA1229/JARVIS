@@ -92,7 +92,7 @@ test('scanned PDF OCR is opt-in and invokes only local rasterizer and Tesseract'
 test('PDF OCR is never silently enabled and invalid/unsupported files are rejected', async () => {
   const unavailable: LocalCommandRunner = async () => { throw new Error('tool missing'); };
   await assert.rejects(new DocumentParser(unavailable).parse('scan.pdf', pdf), /Install Poppler or enable local OCR/);
-  await assert.rejects(new DocumentParser(unavailable).parse('scan.pdf', pdf, { ocr: true }), /tool missing|rasterizer/i);
+  await assert.rejects(new DocumentParser(unavailable).parse('scan.pdf', pdf, { ocr: true }), /Poppler [(]pdftoppm[)] failed/i);
   await assert.rejects(new DocumentParser().parse('bad.pdf', Buffer.from('not pdf')), /signature is invalid/);
   await assert.rejects(new DocumentParser().parse('archive.zip', Buffer.from('PK')), /Only PDF and DOCX/);
   await assert.rejects(new DocumentParser().parse('../escape.pdf', pdf), /plain filename/);

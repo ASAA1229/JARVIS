@@ -29,11 +29,17 @@ const runLocalCommand: LocalCommandRunner = async (command, args, timeoutMs, max
   return result.stdout;
 };
 
+/** Hostile numeric entities (huge, surrogate or NUL code points) become U+FFFD instead of throwing. */
+function safeCodePoint(code: number): string {
+  if (!Number.isInteger(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '�';
+  return String.fromCodePoint(code);
+}
+
 function decodeXml(value: string): string {
   return value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'").replace(/&amp;/g, '&')
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)));
+    .replace(/&#(\d{1,8});/g, (_, code: string) => safeCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]{1,8});/gi, (_, code: string) => safeCodePoint(parseInt(code, 16)));
 }
 
 function extractDocxXml(xml: string): string {
@@ -57,6 +63,7 @@ function readDocxMainXml(buffer: Buffer): string {
   if (entries > 10_000 || cursor + directorySize > eocd) throw new Error('DOCX archive exceeds safe structural limits.');
   for (let index = 0; index < entries; index++) {
     if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('DOCX archive entry is malformed.');
+    const flags = buffer.readUInt16LE(cursor + 8);
     const method = buffer.readUInt16LE(cursor + 10);
     const compressedSize = buffer.readUInt32LE(cursor + 20);
     const uncompressedSize = buffer.readUInt32LE(cursor + 24);
@@ -67,6 +74,7 @@ function readDocxMainXml(buffer: Buffer): string {
     const name = buffer.toString('utf8', cursor + 46, cursor + 46 + nameLength);
     cursor += 46 + nameLength + extraLength + commentLength;
     if (name !== 'word/document.xml') continue;
+    if ((flags & 0x1) !== 0) throw new Error('Encrypted DOCX archives are not supported.');
     if (uncompressedSize > 5 * 1024 * 1024 || compressedSize === 0 || uncompressedSize > compressedSize * 100) {
       throw new Error('DOCX main document exceeds safe decompression limits.');
     }
@@ -78,7 +86,10 @@ function readDocxMainXml(buffer: Buffer): string {
     const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
     let xml: Buffer;
     if (method === 0) xml = Buffer.from(compressed);
-    else if (method === 8) xml = inflateRawSync(compressed, { maxOutputLength: 5 * 1024 * 1024 });
+    else if (method === 8) {
+      try { xml = inflateRawSync(compressed, { maxOutputLength: 5 * 1024 * 1024 }); }
+      catch { throw new Error('DOCX main document is corrupt, encrypted or exceeds safe decompression limits.'); }
+    }
     else throw new Error('DOCX uses an unsupported compression method.');
     if (xml.length !== uncompressedSize) throw new Error('DOCX main document size validation failed.');
     return xml.toString('utf8');
@@ -109,6 +120,22 @@ export class DocumentParser {
     return this.parsePdf(bytes, options.ocr === true);
   }
 
+  /**
+   * Runs a required local OCR tool. Missing binaries and timeouts become clear, safe messages:
+   * no cloud fallback exists, and raw process errors (which can contain paths) are not exposed.
+   */
+  private async runTool(label: string, command: string, args: string[], timeoutMs: number, maxBuffer: number): Promise<string> {
+    try {
+      return await this.runCommand(command, args, timeoutMs, maxBuffer);
+    } catch (error) {
+      const failure = error as { code?: unknown; killed?: unknown; signal?: unknown };
+      if (failure?.code === 'ENOENT') throw new Error(`Local OCR requires ${label}, which is not installed. No cloud fallback is used; install it locally or disable OCR.`);
+      if (failure?.killed === true || failure?.code === 'ETIMEDOUT' || failure?.signal === 'SIGTERM') throw new Error(`${label} exceeded its processing time limit and was stopped.`);
+      if (failure?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw new Error(`${label} output exceeded the safe size limit.`);
+      throw new Error(`${label} failed to process this document.`);
+    }
+  }
+
   private async parsePdf(bytes: Buffer, allowOcr: boolean): Promise<ParsedDocument> {
     const directory = await mkdtemp(join(tmpdir(), 'jarvis-document-'));
     const path = join(directory, 'input.pdf');
@@ -118,7 +145,8 @@ export class DocumentParser {
       let text = '';
       let textError: unknown;
       try {
-        text = await this.runCommand('pdftotext', ['-layout', '-enc', 'UTF-8', path, '-'], 30_000, 4 * 1024 * 1024);
+        // Bound work to one page beyond the limit so oversize PDFs are detected without full extraction.
+        text = await this.runCommand('pdftotext', ['-l', String(MAX_PDF_PAGES + 1), '-layout', '-enc', 'UTF-8', path, '-'], 30_000, 4 * 1024 * 1024);
       } catch (error) { textError = error; }
       const pageBreakCount = (text.match(/\f/g) ?? []).length;
       const pages = Math.max(1, pageBreakCount);
@@ -131,7 +159,7 @@ export class DocumentParser {
         if (textError) throw new Error('PDF text extraction requires local Poppler (pdftotext). Install Poppler or enable local OCR.');
         throw new Error('PDF has no usable text layer. Enable OCR to process scanned pages.');
       }
-      await this.runCommand('pdftoppm', ['-f', '1', '-l', String(MAX_OCR_PAGES), '-scale-to', '1600', '-png', path, prefix], 60_000, 1024 * 1024);
+      await this.runTool('Poppler (pdftoppm)', 'pdftoppm', ['-f', '1', '-l', String(MAX_OCR_PAGES), '-scale-to', '1600', '-png', path, prefix], 60_000, 1024 * 1024);
       const images = (await readdir(directory)).filter((name) => /^page-\d+\.png$/i.test(name))
         .sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
       if (!images.length) throw new Error('Local PDF rasterizer produced no OCR pages.');
@@ -146,7 +174,7 @@ export class DocumentParser {
         if (imageBytes > 8 * 1024 * 1024 || totalImageBytes > 100 * 1024 * 1024) throw new Error('OCR raster output exceeds the safe image storage limit.');
         const remainingMs = ocrDeadline - Date.now();
         if (remainingMs <= 0) throw new Error('OCR exceeded its 3-minute processing limit.');
-        const pageText = await this.runCommand('tesseract', [imagePath, 'stdout', '-l', 'eng', '--psm', '3'], Math.min(30_000, remainingMs), 1024 * 1024);
+        const pageText = await this.runTool('Tesseract OCR', 'tesseract', [imagePath, 'stdout', '-l', 'eng', '--psm', '3'], Math.min(30_000, remainingMs), 1024 * 1024);
         recognized.push(pageText.trim());
       }
       const ocrText = recognized.filter(Boolean).join('\n\n').trim();
