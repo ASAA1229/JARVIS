@@ -38,7 +38,7 @@ Ollama:
 - Confirm service reachability at OLLAMA_URL and configured model availability.
 - Run `npm run test:ollama` for provider smoke testing.
 - Monitor CPU/RAM, model load and inference latency; CPU-only inference may be slow.
-- A health check is not proof that chat, agents or complete workflows are accepted.
+- The signed `GET /api/ai/health` checks the chat model and reports optional `embeddingModelAvailable`; `npm run test:ollama` performs actual native chat and, when installed, embedding inference. `GET /api/ai/providers` reports configured/circuit-breaker state, not a live network probe. A health check is not proof that agents or complete workflows are accepted.
 
 JARVIS signed-device diagnostics:
 - `GET /api/ai/health`
@@ -103,7 +103,7 @@ Runtime state is stored in local files under configured paths (commonly `data/`)
 - In-app deletion cannot erase independent OneDrive/cloud-sync/version-history copies. Exclude sensitive runtime state from consumer sync or manage that retention separately.
 - When `JARVIS_OWNER_CONTROL_TOKEN` is configured, conversation sessions are stored in `./data/conversations.enc` (or alongside the configured device state path as `.conversations`), encrypted with AES-256-GCM and restored after restart. Sessions expire after about 30 minutes. Without owner control, history is process-local. Back up the encrypted file only as part of the protected local-state backup set.
 
-Document RAG is enabled only when `JARVIS_OWNER_CONTROL_TOKEN` is configured. Signed endpoints are `POST /api/documents/ingest`, `/api/documents/search`, `/api/documents/list` and `/api/documents/delete`. Ingestion accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text; PDFs, DOCX and image OCR are not supported. Each document is limited to 2 MB, 1 million characters, 500 chunks and the library to 20 million stored chunk characters. Documents are isolated to the authenticated device. Embeddings use the configured loopback Ollama endpoint when available; lexical search remains the fallback.
+Document RAG is enabled only when `JARVIS_OWNER_CONTROL_TOKEN` is configured. Signed endpoints are `POST /api/documents/ingest`, `/api/documents/search`, `/api/documents/list` and `/api/documents/delete`. Ingestion accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text; PDFs, DOCX and image OCR are not supported. Each document is limited to 2 MB, 1 million characters, 500 chunks and the library to 20 million stored chunk characters. Documents are isolated to the authenticated device. Embeddings use the configured loopback Ollama endpoint via `POST /api/embed` and `JARVIS_EMBED_MODEL` (default `nomic-embed-text`); lexical search remains the fallback.
 
 Never edit encrypted state files manually. Corrupt or unauthenticated document source state must fail closed. The derived embedding index may be rebuilt from the encrypted source library.
 
