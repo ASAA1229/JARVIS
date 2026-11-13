@@ -392,6 +392,29 @@ try {
   }
   await hud.unroute('**/api/request');
 
+  // No-speech and aborted recognizer events must recover without leaving a stale capture.
+  const noSpeechRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, noSpeechRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'no-speech' }), noSpeechRecognizerIndex);
+  await hud.getByText(/NO SPEECH DETECTED|VOICE INPUT INTERRUPTED|VOICE CAPTURE INTERRUPTED/).waitFor({ state: 'visible', timeout: 5000 });
+  if (await ptt.getAttribute('aria-pressed') !== 'false') {
+    throw new Error('No-speech failure did not release the push-to-talk capture state');
+  }
+
+  const abortedRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, abortedRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const recognizer = window.__mockRecognizers[index];
+    recognizer.onerror({ error: 'aborted' });
+    recognizer.onend();
+  }, abortedRecognizerIndex);
+  await delay(100);
+  if (await ptt.getAttribute('aria-pressed') !== 'false' || await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('Aborted voice capture retained stale transcript or active capture state');
+  }
+
   // Finalized speech must be reviewed and explicitly submitted; recognition
   // ending alone must not transmit a directive.
   let explicitVoiceRequestCount = 0;
