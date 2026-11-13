@@ -281,6 +281,7 @@ test('rejects invalid run metadata before attempting checkpoint writes', async (
     checkpoint: async () => { writes += 1; },
     executeStep: async () => ({ status: 'completed' }),
   });
+  const writesBeforeResume = writes;
   const malformed = structuredClone(first);
   malformed.maxParallel = 0;
   await assert.rejects(() => new WorkflowBranchExecutor().run([step('a')], {
@@ -289,5 +290,5 @@ test('rejects invalid run metadata before attempting checkpoint writes', async (
     checkpoint: async () => { writes += 1; },
     executeStep: async () => ({ status: 'completed' }),
   }), /exact workflow definition/);
-  assert.equal(writes, 2);
+  assert.equal(writes, writesBeforeResume);
 });
