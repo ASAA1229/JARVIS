@@ -1262,18 +1262,25 @@ export class JarvisCoreService {
     };
   }
 
-  async #settleWorkflowBranchChild(child: TaskLifecycleRecord, succeeded: boolean): Promise<void> {
+  async #settleWorkflowBranchChild(
+    child: TaskLifecycleRecord,
+    outcome: 'verified_success' | 'verified_failure' | 'partial' | 'uncertain',
+  ): Promise<void> {
     if (!child.workflowParentTaskId || !child.workflowStepId) return;
     const parent = this.tasks.get(child.workflowParentTaskId);
     const checkpoint = parent?.workflowRun;
     if (!parent || !checkpoint || !parent.workflowSteps) return;
     const branch = checkpoint.branches.find((item) => item.stepId === child.workflowStepId);
     if (!branch || branch.status !== 'awaiting_approval') return;
-    branch.status = succeeded ? 'completed' : 'failed';
-    branch.outcome = succeeded ? 'verified_success' : 'verified_failure';
+    branch.status = outcome === 'verified_success' ? 'completed'
+      : outcome === 'partial' ? 'partial'
+      : outcome === 'uncertain' ? 'uncertain' : 'failed';
+    branch.outcome = outcome;
     branch.approvalRef = undefined;
-    branch.message = succeeded ? 'Branch-specific approval was granted and the child task completed with verified success.'
-      : 'Branch-specific approval was rejected; dependent branches will not run.';
+    branch.message = outcome === 'verified_success' ? 'Branch-specific approval was granted and the child task completed with verified success.'
+      : outcome === 'verified_failure' ? 'Branch-specific approval was rejected or the approved operation failed; dependent branches will not run.'
+      : outcome === 'partial' ? 'The approved branch produced a partial result; dependent branches will not run.'
+      : 'The approved branch outcome is uncertain; reconcile before retrying or running dependent branches.';
     branch.updatedAt = Date.now();
     checkpoint.status = 'running';
     parent.state = TaskState.EXECUTING;
@@ -1359,7 +1366,7 @@ export class JarvisCoreService {
             verified: false,
           };
         }
-        if (pendingTask.workflowParentTaskId) await this.#settleWorkflowBranchChild(pendingTask, false);
+        if (pendingTask.workflowParentTaskId) await this.#settleWorkflowBranchChild(pendingTask, 'verified_failure');
       }
       this.audit.record('APPROVAL_FAILED_EXPIRED', { approvalId }, approver.id, pendingTask.id);
       return {
@@ -1401,8 +1408,16 @@ export class JarvisCoreService {
     };
 
     const res = await this.#evaluateAndProceed(task.id, opRequest, task.deviceId, approvalId);
-    if (task.workflowParentTaskId && res.state === TaskState.COMPLETED && res.verified) {
-      await this.#settleWorkflowBranchChild(task, true);
+    if (task.workflowParentTaskId) {
+      if (res.state === TaskState.COMPLETED && res.verified) {
+        await this.#settleWorkflowBranchChild(task, 'verified_success');
+      } else if ([TaskState.FAILED, TaskState.REJECTED, TaskState.CANCELLED].includes(res.state)) {
+        await this.#settleWorkflowBranchChild(task, 'verified_failure');
+      } else if (res.state === TaskState.PARTIAL) {
+        await this.#settleWorkflowBranchChild(task, 'partial');
+      } else if ([TaskState.AWAITING_RECOVERY, TaskState.INTERRUPTED].includes(res.state)) {
+        await this.#settleWorkflowBranchChild(task, 'uncertain');
+      }
     }
     return {
       taskId: res.taskId,
@@ -1464,7 +1479,7 @@ export class JarvisCoreService {
       }
     }
     this.audit.record('TASK_REJECTED', { approvalId, approverDeviceId: approver.id }, approver.id, approval.taskId);
-    if (task?.workflowParentTaskId) await this.#settleWorkflowBranchChild(task, false);
+    if (task?.workflowParentTaskId) await this.#settleWorkflowBranchChild(task, 'verified_failure');
     return { success: true, message: 'Task rejected' };
   }
 
