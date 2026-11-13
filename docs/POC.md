@@ -49,8 +49,8 @@ Status terms:
 | Speech-to-command authorization and explicit submission | TEST-AUTHORED / IMPLEMENTED — NEEDS TESTING | Full live path with real microphone/STT and authorized/denied actions |
 | Piper/browser speech output | PARTIAL | Confirm local Piper setup and distinguish remote browser speech fallback |
 | Task planning, task lifecycle and policy approvals | IMPLEMENTED — NEEDS TESTING | End-to-end side-effect, idempotency, cancellation and recovery tests |
-| Concurrent workflow DAG executor | PARTIAL | Wire into live workflow route, isolated branch tasks, journal, policy, audit and verifier |
-| Checkpoint integrity and cancellation uncertainty handling | TEST-AUTHORED / IMPLEMENTED — NEEDS TESTING | Execute new tests on exact head; crash/restart and race testing |
+| Concurrent workflow DAG executor | IMPLEMENTED — NEEDS TESTING | Live workflow route preserves dependencies; isolated child tasks run through policy, branch approvals, encrypted journal, audit, verifier, bounded concurrency and resource locks; exact-head integration tests pending |
+| Checkpoint integrity and cancellation uncertainty handling | IMPLEMENTED — NEEDS TESTING | Encrypted DAG checkpoints and fail-closed restart are wired; exact-head tests, process-kill recovery and explicit owner-resume acceptance remain |
 | Encrypted memory and owner-reviewed learning candidates | IMPLEMENTED — NEEDS TESTING | Lifecycle, deletion, corruption, cross-device isolation and quality validation |
 | Learning quality measurement | PARTIAL — live ranked retrieval hook and versioned synthetic benchmark authored | Run exact-head benchmark; add owner-labelled real retrieval set and regression gates |
 | Text-document RAG | IMPLEMENTED — NEEDS TESTING | Adversarial corpus, retrieval relevance, isolation, deletion and index rebuild tests |
