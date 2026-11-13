@@ -43,11 +43,12 @@ test('owner allowlist authorizes cloud per task type and format filters apply', 
 });
 
 test('first-party Ollama-only routes never fall back to configured cloud providers', () => {
-  const router = new ProviderRouter(() => cloudEnv);
+  const router = new ProviderRouter(() => ({ ...cloudEnv, JARVIS_CLOUD_ALLOWED_TASKS: 'conversation' }));
   router.reportFailure('local');
   const decision = router.route({
     taskType: 'conversation',
     containsPrivateData: false,
+    cloudAuthorized: true,
     formats: ['ollama'],
   });
   assert.equal(decision.provider, null);
