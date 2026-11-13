@@ -31,7 +31,7 @@ The POC is incremental: it does not require every future platform or capability 
 
 Status terms:
 - **IMPLEMENTED — NEEDS TESTING:** implementation is present; this does not mean tests passed.
-- **TEST-AUTHORED:** automated test source exists; execution/pass is not implied.
+- **NEEDS TESTING:** automated test source exists; execution/pass is not implied.
 - **AUTOMATED PASS — EXACT SHA:** CI or local execution passed for the named exact commit.
 - **DEVICE VERIFIED:** tested on the named physical device/OS and scenario.
 - **PARTIAL:** some paths exist; stated acceptance is incomplete.
@@ -114,5 +114,5 @@ The POC succeeds when:
 - GitHub Actions run: [43415584498](https://github.com/ASAA1229/JARVIS/actions/runs/43415584498).
 - Results: dependency installation, SBOM generation, dependency audit, TypeScript check/build and Android debug APK build passed. Automated tests: **409 passed, 6 failed of 415**. Browser smoke, Python release tests and release-manifest/provenance steps were skipped after the test failure.
 - Failure groups: async rejection assertions in approval authorization tests; checkpoint validation accepting an `awaiting_approval` branch with `verified_success` outcome; synthetic retrieval benchmark measuring precision across up to five results while asserting a single-label Precision@K of 1.0.
-- Candidate corrections are committed to `fix-live-dag-ci-hardening`; they are **not yet CI-verified**. No release gate is considered passed from these changes until a fresh run on the branch head completes.
+- Candidate corrections are committed to `fix-live-dag-ci-hardening`. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) is IN PROGRESS for `2b9613088d8f571459b16fa3390107837fca6630`; no release gate is considered passed until the full run completes successfully.
 - The branch creation and file updates do not constitute device acceptance, production deployment or owner acceptance.
