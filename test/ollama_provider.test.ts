@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OllamaProvider } from '../src/ai/ollamaProvider.js';
+import { AIProviderError } from '../src/ai/aiProvider.js';
 
 test('uses native Ollama /api/chat and maps JSON mode and developer messages', async () => {
   let capturedUrl = '';
@@ -35,8 +36,9 @@ test('checks Ollama health and installed model availability', async () => {
   const provider = new OllamaProvider({
     baseUrl: 'http://localhost:11434',
     model: 'llama3.2:latest',
+    embeddingModel: 'nomic-embed-text',
   }, async () => Response.json({
-    models: [{ name: 'llama3.2:latest' }],
+    models: [{ name: 'llama3.2:latest' }, { name: 'nomic-embed-text:latest' }],
     version: '0.5.0',
   }));
 
@@ -45,6 +47,8 @@ test('checks Ollama health and installed model availability', async () => {
     modelAvailable: true,
     model: 'llama3.2:latest',
     version: '0.5.0',
+    embeddingModel: 'nomic-embed-text',
+    embeddingModelAvailable: true,
   });
 });
 
@@ -96,4 +100,36 @@ test('streams newline-delimited Ollama chat chunks', async () => {
   const chunks: string[] = [];
   for await (const chunk of provider.stream([{ role: 'user', content: 'Hello' }])) chunks.push(chunk);
   assert.deepEqual(chunks, ['Hello', ' there']);
+});
+
+test('rejects oversized non-streaming responses before JSON parsing', async () => {
+  const provider = new OllamaProvider({
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.2:latest',
+  }, async () => new Response('x'.repeat(300 * 1024)));
+  await assert.rejects(
+    () => provider.chat([{ role: 'user', content: 'Hello' }]),
+    (error: unknown) => error instanceof AIProviderError && error.kind === 'invalid_response',
+  );
+});
+
+test('stream requires an explicit Ollama done event', async () => {
+  const body = JSON.stringify({ message: { content: 'partial' }, done: false }) + '\\n';
+  const provider = new OllamaProvider({
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.2:latest',
+  }, async () => new Response(body, { status: 200 }));
+  await assert.rejects(async () => {
+    for await (const _chunk of provider.stream([{ role: 'user', content: 'Hello' }])) { /* consume */ }
+  }, (error: unknown) => error instanceof AIProviderError && error.kind === 'invalid_response');
+});
+
+test('classifies Ollama rate limits in streaming mode', async () => {
+  const provider = new OllamaProvider({
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.2:latest',
+  }, async () => new Response('', { status: 429 }));
+  await assert.rejects(async () => {
+    for await (const _chunk of provider.stream([{ role: 'user', content: 'Hello' }])) { /* consume */ }
+  }, (error: unknown) => error instanceof AIProviderError && error.kind === 'rate_limited' && error.status === 429);
 });
