@@ -8,6 +8,7 @@ import { WorkingMemory } from '../src/memory/workingMemory.ts';
 import { MemoryManager } from '../src/memory/memoryManager.ts';
 import { SemanticMemoryIndex } from '../src/memory/semanticIndex.ts';
 import { LearningQualityEvaluator } from '../src/memory/learningQualityEvaluator.ts';
+import { LEARNING_RETRIEVAL_BENCHMARK, LEARNING_RETRIEVAL_BENCHMARK_VERSION } from './fixtures/learning-retrieval-benchmark.ts';
 
 const token = 'learning-quality-test-owner-token-0123456789';
 
@@ -93,6 +94,35 @@ test('learning quality evaluates the live ranked memory retriever without persis
     const persistedQuality = readFileSync(candidatesPath + '.quality', 'utf8');
     assert.equal(persistedQuality.includes('JARVIS local wake phrase microphone consent'), false);
     assert.equal(persistedQuality.includes(memory.id), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('versioned synthetic retrieval benchmark scores the actual ranked retriever', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-learning-benchmark-'));
+  try {
+    const store = new PersonalMemoryStore(join(dir, 'memories.enc'), token);
+    const expected = new Map<string, string>();
+    for (const item of LEARNING_RETRIEVAL_BENCHMARK) {
+      const saved = store.save(item.category, item.content);
+      expected.set(item.key, saved.id);
+    }
+    const manager = new MemoryManager(store, new WorkingMemory(), join(dir, 'candidates.enc'), token, {
+      index: new SemanticMemoryIndex(join(dir, 'index.enc'), token, null),
+    });
+    for (const item of LEARNING_RETRIEVAL_BENCHMARK) {
+      const relevantId = expected.get(item.key)!;
+      const ranked = await manager.rankLongTerm(item.query, 5);
+      assert.equal(ranked[0]?.memory.id, relevantId, 'benchmark ' + item.key + ' (' + LEARNING_RETRIEVAL_BENCHMARK_VERSION + ')');
+      await manager.evaluateRetrieval({ query: item.query, relevantIds: [relevantId], rating: 'helpful', limit: 5 });
+    }
+    const quality = manager.status().quality;
+    assert.equal(quality.sampleCount, LEARNING_RETRIEVAL_BENCHMARK.length);
+    assert.equal(quality.precisionAtK, 1);
+    assert.equal(quality.recallAtK, 1);
+    assert.equal(quality.meanReciprocalRank, 1);
+    assert.equal(quality.helpfulRate, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
