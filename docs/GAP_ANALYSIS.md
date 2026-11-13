@@ -2,7 +2,7 @@
 
 **Status date:** 2026-11-13  
 **Repository:** ASAA1229/JARVIS  
-**Active working branch:** `new-workflow-dag-integration`
+**Active working branch:** `fix-live-dag-ci-hardening` (based on `new-workflow-dag-integration`)
 
 ## 1. Executive assessment
 
@@ -37,13 +37,13 @@ No gap is closed by documentation or source presence alone.
 
 | ID | Priority | Gap | Current status | Completion evidence |
 |---|---|---|---|---|
-| JARVIS-GAP-001 | P0 | Integrate DAG executor into live workflow/task service | IMPLEMENTED — NEEDS TESTING | Live workflow expansion preserves dependency edges; isolated child task per branch; encrypted parent/child journal; bounded parallel execution and resource locks; exact-head integration tests and fault acceptance pending |
-| JARVIS-GAP-002 | P0 | Branch-level approval and policy lifecycle | IMPLEMENTED — NEEDS TESTING | Each branch uses a distinct child task and existing exact-scope, single-use Policy Gateway approval; approval/rejection/expiry updates and resumes the parent DAG; race/expiry/revocation tests pending |
-| JARVIS-GAP-003 | P0 | Crash/restart and partial-failure recovery for concurrent branches | PARTIAL | Encrypted DAG checkpoints and fail-closed restart are wired; in-flight branches become recovery-required and are not replayed; explicit owner-reconciled DAG resume and process-kill tests remain |
+| JARVIS-GAP-001 | P0 | Integrate DAG executor into live workflow/task service | NEEDS TESTING — CI FAILED on base feature commit; candidate fixes pending verification | Live workflow expansion preserves dependency edges; isolated child task per branch; encrypted parent/child journal; bounded parallel execution and resource locks; exact-head integration tests and fault acceptance pending |
+| JARVIS-GAP-002 | P0 | Branch-level approval and policy lifecycle | NEEDS TESTING — async rejection assertions and authenticated approver coverage being corrected/verified | Each branch uses a distinct child task and existing exact-scope, single-use Policy Gateway approval; approval/rejection/expiry updates and resumes the parent DAG; race/expiry/revocation tests pending |
+| JARVIS-GAP-003 | P0 | Crash/restart and partial-failure recovery for concurrent branches | NEEDS TESTING — malformed persisted approval/outcome state was accepted; validation tightened, pending CI/fault verification | Encrypted DAG checkpoints and fail-closed restart are wired; in-flight branches become recovery-required and are not replayed; explicit owner-reconciled DAG resume and process-kill tests remain |
 | JARVIS-GAP-004 | P0 | Voice-to-command full-path reliability on actual MSI hardware | PARTIAL — browser scenarios expanded for network/no-speech/abort/permission/consent and duplicate dispatch | Microphone/wake/STT/intent/approval/execution/verification tests on Windows 11 with noise, timeout, mute, cancellation and error evidence |
-| JARVIS-GAP-005 | P0 | Exact-head CI and security regression gates | TEST-AUTHORED / NEEDS VERIFICATION | Build, lint, all tests, browser smoke/security, Ollama, Android and security scans green on same SHA |
+| JARVIS-GAP-005 | P0 | Exact-head CI and security regression gates | TEST FAILED on `156b575`; candidate remediation pending exact-head rerun | Build, lint, all tests, browser smoke/security, Ollama, Android and security scans green on same SHA |
 | JARVIS-GAP-006 | P0 | Voice false-accept/false-reject and duplicate command prevention | PARTIAL | Measured wake metrics, replay/duplicate suppression, interim/final transcript tests and one-task-per-utterance evidence |
-| JARVIS-GAP-007 | P1 | Learning evaluation is not yet tied to representative real retrieval outcomes | PARTIAL — actual ranked retriever can now be evaluated; synthetic benchmark v1 authored | Exact-head benchmark pass; owner-labelled corpus, baseline and regression thresholds |
+| JARVIS-GAP-007 | P1 | Learning evaluation is not yet tied to representative real retrieval outcomes | NEEDS TESTING — benchmark precision assertion corrected to measure P@1 for a single relevant label; exact-head run pending | Exact-head benchmark pass; owner-labelled corpus, baseline and regression thresholds |
 | JARVIS-GAP-008 | P1 | Learning candidate acceptance and correction telemetry completeness | PARTIAL | Atomic/reliable counters, correction attribution, provenance, deduplication and lifecycle tests |
 | JARVIS-GAP-009 | P1 | Document RAG relevance, adversarial and deletion acceptance | IMPLEMENTED — NEEDS TESTING | Ground-truth retrieval corpus, injection tests, per-device isolation, index rebuild and verified deletion |
 | JARVIS-GAP-010 | P1 | PDF/DOCX/OCR parser hostile-input validation | IMPLEMENTED — NEEDS TESTING | Malformed PDF/ZIP, decompression bomb, path traversal, timeout, tool absence and OCR-limit tests |
@@ -141,3 +141,14 @@ A gap is closed only when:
 - no existing security, privacy, API or regression boundary is weakened;
 - owner acceptance is recorded for owner-only actions.
 
+
+
+## 7. Latest CI failure and remediation tracking (2026-11-13)
+
+Evidence: [GitHub Actions run 43415584498](https://github.com/ASAA1229/JARVIS/actions/runs/43415584498), branch `new-workflow-dag-integration`, commit `156b5750ef99e10a8d33c43ad5dc873a183d57cd`.
+
+- Automated tests: 409 passed, 6 failed, 415 total.
+- Four approval/rejection failures used synchronous assertions against the asynchronous `rejectTask` method. Test assertions now await the returned promise on `fix-live-dag-ci-hardening`.
+- One checkpoint test showed an approval-pending branch could carry a terminal outcome. Validation now rejects any outcome while `status === awaiting_approval` on `fix-live-dag-ci-hardening`.
+- One retrieval benchmark asserted Precision@K = 1.0 for one relevant item while requesting up to five results. The benchmark now evaluates at `limit: 1`, matching the single-label top-one assertion.
+- Candidate code and test changes are committed on the isolated fix branch. Status remains **NOT CI VERIFIED** until all tests and skipped downstream jobs execute successfully on its exact head.
