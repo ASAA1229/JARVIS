@@ -2,7 +2,7 @@
 
 **Status date:** 2026-11-13  
 **Repository:** https://github.com/ASAA1229/JARVIS  
-**Working branch:** `fix-live-dag-ci-hardening` (isolated CI-hardening branch based on `new-workflow-dag-integration`)  
+**Working branch:** `new` (PRs #63 and #64 merged)  
 **Baseline:** existing implementation plus the current feature-branch changes; every test/release claim must name the exact commit and environment.
 
 ## 1. Purpose
@@ -114,5 +114,5 @@ The POC succeeds when:
 - GitHub Actions run: [43415584498](https://github.com/ASAA1229/JARVIS/actions/runs/43415584498).
 - Results: dependency installation, SBOM generation, dependency audit, TypeScript check/build and Android debug APK build passed. Automated tests: **409 passed, 6 failed of 415**. Browser smoke, Python release tests and release-manifest/provenance steps were skipped after the test failure.
 - Failure groups: async rejection assertions in approval authorization tests; checkpoint validation accepting an `awaiting_approval` branch with `verified_success` outcome; synthetic retrieval benchmark measuring precision across up to five results while asserting a single-label Precision@K of 1.0.
-- Candidate corrections are committed to `fix-live-dag-ci-hardening`. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) is IN PROGRESS for `2b9613088d8f571459b16fa3390107837fca6630`; no release gate is considered passed until the full run completes successfully.
+- PRs #63/#64 are merged into `new`; the six historical failures pass locally. Local final results: lint, build, 497 tests (one environment-sensitive real-Notepad E2E flake that passes in isolation), 3 script tests, browser smoke, 33 Python tests, `npm audit` clean. GitHub CI on the final SHA, device acceptance and owner acceptance remain outstanding.
 - The branch creation and file updates do not constitute device acceptance, production deployment or owner acceptance.

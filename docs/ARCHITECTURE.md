@@ -213,9 +213,9 @@ Model suggestions never apply/commit/push themselves. Applying, branch creation,
 
 ## Workflow DAG execution and verification
 
-The Live DAG path is implemented on `new-workflow-dag-integration` and is under CI hardening on `fix-live-dag-ci-hardening`. It creates independently tracked child branches, preserves dependency ordering, applies bounded concurrency/resource locks, routes actions through policy and approval controls, persists encrypted checkpoints, emits audit events and requires outcome verification. A branch is not considered successful merely because its task returned; terminal outcomes must be reconciled against the verifier and dependency state.
+The Live DAG path is merged into `new`. It creates independently tracked child branches, preserves dependency ordering, applies bounded concurrency/resource locks (released on throw, timeout and cancel), routes actions through policy and approval controls, persists encrypted checkpoints, emits audit events and requires outcome verification. On restart the task journal marks dispatched branches `uncertain` and invalidates pending branch approvals; nothing is replayed automatically. `JarvisCoreService.resumeWorkflowRun` (`POST /api/workflow/resume`) lets an owner or the requesting device re-attempt only named branches confirmed to have had no external effect, each as a fresh child task through policy and approval.
 
-The baseline feature CI exposed a checkpoint-validation defect: an `awaiting_approval` branch could carry a terminal outcome. The fix branch now rejects that incompatible persisted state. This change remains unverified until exact-head CI and crash/restart/fault-injection tests pass. See [Project Status](PROJECT_STATUS.md), [Gap Analysis](GAP_ANALYSIS.md) and [Release Readiness](RELEASE_READINESS.md).
+Additional modules: `src/voice/utteranceGuard.ts` (duplicate transcript suppression, wake counters), `src/ops/stateBackup.ts` (authenticated backup/restore), `src/capabilities/appCatalogue.ts` (supported-app contracts and drift detection), `src/platform/platformAdapters.ts` (fail-closed macOS/Linux adapters), `src/release/artifactRepository.ts` (disabled Jenkins/Nexus providers and trust policy), `scripts/sbom-verify.mjs` and `scripts/perf-soak.ts`.
 
 ## 13. Voice and hand-landmark components
 

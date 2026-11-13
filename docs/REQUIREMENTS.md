@@ -164,7 +164,7 @@ Never infer a pass from source presence, authored tests, historical runs or a su
 
 Project status uses the canonical lifecycle vocabulary in [Project Status](PROJECT_STATUS.md): **PLANNED, NOT STARTED, IN DEVELOPMENT, IMPLEMENTED, NEEDS TESTING, TEST FAILED, TEST PASSED, CI VERIFIED, DEVICE VERIFIED, OWNER ACCEPTANCE PENDING, ACCEPTED**. Requirements are not considered accepted because a module or test file exists. Automated acceptance must identify the exact SHA and command/job; device acceptance must identify the physical device, OS and scenario; owner-only decisions require explicit approval.
 
-The current Live DAG hardening candidate is not accepted yet. Its exact-head CI run is [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716), commit `2b9613088d8f571459b16fa3390107837fca6630`, IN PROGRESS at the last recorded check. The baseline run failed six of 415 tests; see [Gap Analysis](GAP_ANALYSIS.md).
+PRs #63/#64 (Live DAG hardening and integration) are merged into `new`. Local automated verification passes (see [Project Status](PROJECT_STATUS.md)); CI on the pushed head, device acceptance and owner acceptance are still required before any requirement is ACCEPTED. New requirement coverage: owner-reconciled DAG resume, duplicate-transcript suppression with wake counters, integrity-protected backup/restore, SBOM-vs-lockfile verification, supported-app contracts. See [Gap Analysis](GAP_ANALYSIS.md).
 
 ## PDF, DOCX and OCR requirements
 

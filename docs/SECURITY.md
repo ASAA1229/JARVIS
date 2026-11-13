@@ -141,9 +141,11 @@ Security acceptance requires negative tests for authentication, replay, authoriz
 - Optional Piper TTS runs with shell execution disabled, bounded input and timeout; use only a trusted executable and appropriately licensed model.
 - Website gateway keys are per-site hashes and must never be exposed in browser bundles, logs or source control.
 
-## Current approval/checkpoint regression gate
+## Approval/checkpoint regression gate
 
-The Live DAG baseline CI run `43415584498` exposed failures in asynchronous approval-rejection assertions and a persisted-state validation defect: an approval-pending branch could carry a terminal outcome. The isolated fix branch `fix-live-dag-ci-hardening` now awaits asynchronous rejection assertions and rejects this incompatible checkpoint state. This is a candidate remediation, not a security acceptance result. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) for `2b9613088d8f571459b16fa3390107837fca6630` was IN PROGRESS at the last check. Authenticated approval, permission boundaries, replay/race cases and crash/restart recovery still require passing adversarial tests. Do not mark approval/checkpoint security as accepted until those results are recorded.
+The checkpoint validation defect from CI run 43415584498 is fixed and merged (PRs #63/#64). Local adversarial tests now cover branch approval expiry, replay after rejection, concurrent resolution (exactly one wins), approvers lacking permission, revoked approvers, restart invalidation of pending approvals, and restart marking dispatched branches uncertain. This is local test evidence, not independent security certification.
+
+Fixes from this increment: developer repo path containment now resolves symlinks/junctions before allowing access; DOCX numeric entities and corrupt/encrypted archives no longer throw raw errors; OCR tool failures return safe messages without paths and never fall back to a cloud service; sync pushes are serialized per device and checkpointed per change; queued command decisions are claimed before running so a race or replay runs them once; voice utterance ids prevent one utterance from creating multiple tasks.
 
 ## Document parser security boundaries
 

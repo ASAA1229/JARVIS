@@ -2,23 +2,23 @@
 
 **Status date:** 2026-11-13  
 **Decision:** **NO-GO**  
-**Candidate branch:** `fix-live-dag-ci-hardening`  
+**Candidate branch:** `new` (PRs #63/#64 merged)  
 **Baseline feature CI:** https://github.com/ASAA1229/JARVIS/actions/runs/43415584498
 
 ## Release gate summary
 
 | Gate | Current status | Evidence required to pass |
 |---|---|---|
-| Build and type safety | NEEDS TESTING | Re-run build/type checks on the exact release candidate SHA |
-| Automated correctness | TEST FAILED | Full suite passes; baseline feature run had 409/415 tests pass |
-| Approval and authorization | NEEDS TESTING | Authenticated session, permission, scope, expiry, replay and race tests pass |
-| DAG checkpoint/recovery | NEEDS TESTING | Malformed-state rejection, crash/restart, uncertain-effect and owner-reconciliation tests pass |
-| Browser smoke/security | NEEDS TESTING | Browser security smoke executes and passes on exact SHA |
+| Build and type safety | TEST PASSED (local) | Re-run build/type checks on the exact release candidate SHA |
+| Automated correctness | TEST PASSED (local; one environment-sensitive E2E flake, passes in isolation) | Full suite passes; baseline feature run had 409/415 tests pass |
+| Approval and authorization | TEST PASSED (local) | Authenticated session, permission, scope, expiry, replay and race tests pass |
+| DAG checkpoint/recovery | TEST PASSED (local; kill simulated at journal level) | Malformed-state rejection, crash/restart, uncertain-effect and owner-reconciliation tests pass |
+| Browser smoke/security | TEST PASSED (local) | Browser security smoke executes and passes on exact SHA |
 | Android package | NEEDS TESTING | CI build plus install/runtime tests on both owner phones |
 | Windows voice/desktop | OWNER ACCEPTANCE PENDING | Real microphone, wake/STT, application interaction and verified outcomes on target MSI |
-| Dependency security/SBOM | NEEDS TESTING | Audit and SBOM regenerated for exact candidate SHA |
-| Artifact integrity/provenance | NEEDS TESTING | Manifest, checksums, signing/trust and clean-room verification pass |
-| Backup/restore/DR | NEEDS TESTING | Successful restore and recovery drill with recorded evidence |
+| Dependency security/SBOM | TEST PASSED (local audit 0 vulnerabilities; SBOM verified against lockfile) | Audit and SBOM regenerated for exact candidate SHA |
+| Artifact integrity/provenance | PARTIAL (tests pass; signing keys and clean-room CI pending) | Manifest, checksums, signing/trust and clean-room verification pass |
+| Backup/restore/DR | TEST PASSED (local drills); real DR exercise pending | Successful restore and recovery drill with recorded evidence |
 | Jenkins/Nexus | OWNER ACCEPTANCE PENDING | Approved live endpoints, credentials and publish/retrieve evidence |
 | Owner acceptance | OWNER ACCEPTANCE PENDING | Owner signs off all applicable product, privacy and device scenarios |
 
@@ -40,3 +40,8 @@ Release may move from NO-GO only when:
 7. Owner acceptance is explicitly recorded.
 
 A green unit-test job alone is insufficient. A conditional release, if ever considered, must document non-P0 exclusions, mitigations, expiry and owner approval. No such exception is currently approved.
+
+
+## Update 2026-11-13: post-merge local evidence
+
+PRs #63/#64 are merged into `new`; the historical six failures pass. Local final results: lint, build, 497 tests (one environment-sensitive Notepad E2E flake that passes alone), 3 script tests, browser smoke, 33 Python tests and a clean `npm audit`. Decision remains **NO-GO**: GitHub exact-head CI, physical MSI voice/desktop acceptance, two-phone acceptance, Jenkins/Nexus live evidence and owner sign-off are outstanding.

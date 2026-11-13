@@ -103,7 +103,7 @@ Runtime state is stored in local files under configured paths (commonly `data/`)
 - In-app deletion cannot erase independent OneDrive/cloud-sync/version-history copies. Exclude sensitive runtime state from consumer sync or manage that retention separately.
 - When `JARVIS_OWNER_CONTROL_TOKEN` is configured, conversation sessions are stored in `./data/conversations.enc` (or alongside the configured device state path as `.conversations`), encrypted with AES-256-GCM and restored after restart. Sessions expire after about 30 minutes. Without owner control, history is process-local. Back up the encrypted file only as part of the protected local-state backup set.
 
-Document RAG is enabled only when `JARVIS_OWNER_CONTROL_TOKEN` is configured. Signed endpoints are `POST /api/documents/ingest`, `/api/documents/search`, `/api/documents/list` and `/api/documents/delete`. Ingestion accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text; PDFs, DOCX and image OCR are not supported. Each document is limited to 2 MB, 1 million characters, 500 chunks and the library to 20 million stored chunk characters. Documents are isolated to the authenticated device. Embeddings use the configured loopback Ollama endpoint via `POST /api/embed` and `JARVIS_EMBED_MODEL` (default `nomic-embed-text`); lexical search remains the fallback.
+Document RAG is enabled only when `JARVIS_OWNER_CONTROL_TOKEN` is configured. Signed endpoints are `POST /api/documents/ingest`, `/api/documents/search`, `/api/documents/list` and `/api/documents/delete`. Ingestion accepts UTF-8 TXT, Markdown, CSV, JSON, LOG, YAML, XML and HTML text; PDF and DOCX files (and opt-in local OCR) are accepted only through `POST /api/documents/ingest-file`; the plain `ingest` endpoint takes text. Each document is limited to 2 MB, 1 million characters, 500 chunks and the library to 20 million stored chunk characters. Documents are isolated to the authenticated device. Embeddings use the configured loopback Ollama endpoint via `POST /api/embed` and `JARVIS_EMBED_MODEL` (default `nomic-embed-text`); lexical search remains the fallback.
 
 Never edit encrypted state files manually. Corrupt or unauthenticated document source state must fail closed. The derived embedding index may be rebuilt from the encrypted source library.
 
@@ -243,9 +243,27 @@ If approved later, publication must use a unique staging coordinate, verify ever
 
 ## Current operational and release verification state
 
-The current Live DAG fix branch has not yet passed its exact-head CI gate. The latest run recorded in the project status is [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716), for commit `2b9613088d8f571459b16fa3390107837fca6630`; it was IN PROGRESS at the last check. Do not promote an artifact, publish to Nexus, or declare production readiness based on the earlier feature-branch build. Jenkins/Nexus live publication remains disabled pending explicit owner approval and validated endpoints/credentials. Backup/restore, device acceptance and rollback evidence are separate release gates.
+PRs #63/#64 are merged into `new`; local lint, build, tests, browser smoke, Python release tests and dependency audit pass (see [Project Status](PROJECT_STATUS.md) for exact counts). GitHub exact-head CI on the pushed SHA must be confirmed before any promotion. Jenkins/Nexus live publication remains disabled: `src/release/artifactRepository.ts` refuses every call until the owner supplies approved configuration.
 
-See [Project Status](PROJECT_STATUS.md) and [Release Readiness](RELEASE_READINESS.md) before any release operation.
+### External configuration still required (owner/ACI)
+
+- Jenkins: approved controller/agent, pipeline definition, credentials, immutable build-identity inputs (customer/product/version/release coordinates).
+- Nexus: repository key/format, canonical path hierarchy, auth contract, trust-anchor distribution, retention/immutability policy and explicit publish authorization for each digest.
+- Devices: the MSI Windows 11 microphone/STT/wake acceptance run and two physical Android phones (build, install, enroll, revoke, offline/reconnect).
+- Signing: `MANIFEST_IGNORE_PRIVATE_KEY` / `MANIFEST_IGNORE_PUBLIC_KEY` repository secrets for release signatures.
+- Owner acceptance of performance budgets (provisional values live in `scripts/perf-soak.ts`).
+
+### Backup and restore tool
+
+`scripts/state-backup.ts` (module `src/ops/stateBackup.ts`) creates an HMAC-authenticated archive of the already-encrypted state files (per-file SHA-256, name/traversal validation, no overwrite without `--force`). Set `JARVIS_OWNER_CONTROL_TOKEN` in the environment; never pass it on the command line. A backup is point-in-time: deleting a memory later does not reach older backups, so delete superseded backups yourself. Restore drills are covered by `test/state_backup_restore.test.ts`.
+
+### Voice reliability counters
+
+HUD transcript submissions carry a `voice.utteranceId`; the server suppresses a repeated id or an identical transcript within 5 seconds (HTTP 409, no new task). `POST /api/voice/wake-event` records counter-only wake events and `GET /api/voice/metrics` (owner permission) reports false-accept, false-reject and duplicate-suppression rates. Counters hold no transcripts or audio and reset on restart.
+
+### DAG recovery
+
+After a restart, branches that were dispatched become `uncertain` and are never replayed. An owner or the requesting device resumes with `POST /api/workflow/resume` (`taskId`, `reconciledNoEffectSteps`, `note`), naming only the branches confirmed to have had no external effect; each becomes a fresh child task that passes policy and approval again.
 
 ## Local PDF and DOCX ingestion
 

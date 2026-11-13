@@ -182,9 +182,17 @@ For the website gateway, configure the optional port, create a site key, test /v
 
 ## Exact-head CI and branch verification
 
-The current Live DAG remediation is developed on `fix-live-dag-ci-hardening`, based on `new-workflow-dag-integration`. The active exact-head CI run is [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) for commit `2b9613088d8f571459b16fa3390107837fca6630`; it was IN PROGRESS at the last status check. Do not describe the branch as green until every required job, including browser smoke and release-tooling/provenance jobs, completes successfully on the same SHA.
+Work is delivered on branch `new`; PRs #63 and #64 (Live DAG hardening and integration) are merged. Do not describe the branch as green until every required job, including browser smoke and release-tooling/provenance jobs, completes successfully on the same SHA. Keep `main` untouched; merge to `dev` only after CI and review pass and the owner authorizes integration. See [Project Status](PROJECT_STATUS.md) and [Release Readiness](RELEASE_READINESS.md).
 
-Before proposing a merge, inspect the complete test output and compare the tested SHA with the current branch head. Keep `main` untouched; merge to `dev` only after CI and review pass and the owner authorizes integration. See [Project Status](PROJECT_STATUS.md) for the current evidence and [Release Readiness](RELEASE_READINESS.md) for release gates.
+### Additional local commands
+
+~~~powershell
+npm run perf -- --iterations 200 --soak-seconds 20 --json perf-report.json   # latency/CPU/RAM harness (GAP-015)
+npm sbom --sbom-format=cyclonedx > sbom.cdx.json; node scripts/sbom-verify.mjs sbom.cdx.json package-lock.json
+npx tsx scripts/state-backup.ts create|verify|restore ...   # owner token from JARVIS_OWNER_CONTROL_TOKEN
+~~~
+
+`e2e_recovery.test.ts` launches real Notepad on Windows; run it without other foreground-focus activity or it can fail focus verification.
 
 ## 11. Agent and prompt contribution rules
 

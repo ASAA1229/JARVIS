@@ -346,6 +346,6 @@ Status: **NOT STARTED** — budgets and repeatable performance baseline need to 
 
 
 
-## CI verification note — 2026-11-13
+## Verification note - 2026-11-13 (branch `new`, PRs #63/#64 merged)
 
-The baseline Live DAG feature-branch run (`43415584498`, commit `156b5750ef99e10a8d33c43ad5dc873a183d57cd`) reported 409/415 automated tests passing and six failures. Candidate corrections are committed on `fix-live-dag-ci-hardening`. Exact-head CI run `43419769716` is currently **IN PROGRESS** for commit `2b9613088d8f571459b16fa3390107837fca6630`; no pass is claimed until it completes, including all downstream jobs.
+Local automated evidence now exists for these stories (no device or owner acceptance implied): US-002/012/013 (branch approval race/expiry/replay/revocation, restart recovery, owner-reconciled resume), US-007 (duplicate final transcript and one-task-per-utterance suppression), US-014/015/016 (learning telemetry lifecycle, RAG injection/isolation/deletion/rebuild, hostile PDF/DOCX/OCR input), US-018 (sync replay/crash/idempotency), US-020/021 (plugin and developer isolation), US-022 (SBOM verification, release tamper tests), US-023 (backup/restore drills), US-025 (performance harness). Voice hardware acceptance (US-006, US-008), US-017 and the physical parts of US-019 remain OWNER ACCEPTANCE PENDING; native macOS/Linux/iOS (US-019) are NOT IMPLEMENTED beyond fail-closed contracts. New code: owner-reconciled workflow resume, `VoiceUtteranceGuard`/`WakeMetrics`, state backup tool, app catalogue, SBOM verifier.
