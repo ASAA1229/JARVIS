@@ -8,7 +8,7 @@
 
 ## Executive status
 
-**Release decision: NO-GO.** The Live DAG feature branch has a failed automated test job. A focused remediation is committed to an isolated fix branch. Exact-head CI run `43419769716` is currently IN PROGRESS for `2b9613088d8f571459b16fa3390107837fca6630`. Physical Windows and Android acceptance, full recovery exercises, and operational release gates remain outstanding.
+**Release decision: NO-GO.** The Live DAG feature branch has a failed automated test job. A focused remediation is committed to an isolated fix branch. The code-remediation CI run `43419769716` was started for `2b9613088d8f571459b16fa3390107837fca6630`. Subsequent documentation-only commits triggered fresh CI runs; the latest recorded run before this status update was `43420203514` for `629be3cbbd18090b870deefeb087bea68565ebe0`, PENDING. Physical Windows and Android acceptance, full recovery exercises, and operational release gates remain outstanding.
 
 ## Maturity baseline
 
@@ -48,7 +48,7 @@ Changes committed:
 2. Correct async rejection tests to await the promise returned by `rejectTask`.
 3. Configure the single-label retrieval benchmark to measure Precision@1 consistently with its top-one relevance assertion.
 
-These changes are **IN DEVELOPMENT / NEEDS TESTING**. Exact-head CI run `43419769716` is currently IN PROGRESS for commit `2b9613088d8f571459b16fa3390107837fca6630` (head SHA: `2b9613088d8f571459b16fa3390107837fca6630`). Do not mark these gaps TEST PASSED or CI VERIFIED until the full exact-head run passes.
+These changes are **IN DEVELOPMENT / NEEDS TESTING**. The code-remediation CI run `43419769716` targets `2b9613088d8f571459b16fa3390107837fca6630`. Subsequent documentation-only commits triggered fresh runs; latest recorded before this update: `43420203514`, PENDING, on `629be3cbbd18090b870deefeb087bea68565ebe0`. The branch must be rechecked after the final documentation commit. Do not mark these gaps TEST PASSED or CI VERIFIED until the full exact-head run passes.
 
 ## Priority gap register
 
@@ -98,4 +98,4 @@ Source presence is not implementation acceptance. A test file is not a passed te
 
 ## Change history
 
-- **2026-11-13:** Created evidence-led status baseline; recorded feature-branch CI failure and isolated remediation branch. Exact-head run `43419769716` started for `2b9613088d8f571459b16fa3390107837fca6630` and was IN PROGRESS at last check. No main-branch changes, release deployment, physical-device acceptance or owner acceptance were performed in this increment.
+- **2026-11-13:** Created evidence-led status baseline; recorded feature-branch CI failure and isolated remediation branch. Code-remediation run `43419769716` and subsequent documentation-triggered runs were recorded; run `43420203514` was PENDING on `629be3cbbd18090b870deefeb087bea68565ebe0` before this status update. No main-branch changes, release deployment, physical-device acceptance or owner acceptance were performed in this increment.
