@@ -24,7 +24,7 @@ export class EmbeddingUnavailableError extends Error {}
 
 /** Resolve the local Ollama embedding endpoint; null when configuration is not loopback. */
 export function resolveLocalEmbeddingEndpoint(env: NodeJS.ProcessEnv = process.env): { url: string; model: string } | null {
-  const raw = (env.OLLAMA_URL || env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\\/+$/, '').replace(/\\/v1$/i, '');
+  const raw = (env.OLLAMA_URL || env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\/+$/, '').replace(/\/v1$/i, '');
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -43,7 +43,7 @@ const MAX_EMBEDDING_RESPONSE_BYTES = 128 * 1024;
 
 async function readEmbeddingResponse(response: Response): Promise<string> {
   const length = response.headers.get('content-length');
-  if (length !== null && /^\\d+$/.test(length) && Number(length) > MAX_EMBEDDING_RESPONSE_BYTES) {
+  if (length !== null && /^\d+$/.test(length) && Number(length) > MAX_EMBEDDING_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => undefined);
     throw new EmbeddingUnavailableError('Local embedding response exceeded its safe size limit.');
   }
