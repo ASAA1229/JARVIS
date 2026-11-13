@@ -26,6 +26,7 @@ interface LearningQualitySample {
 interface LearningQualityFile {
   version: 1;
   samples: LearningQualitySample[];
+  candidateDecisions?: { approved: number; rejected: number };
 }
 
 export interface LearningQualitySummary {
@@ -40,6 +41,9 @@ export interface LearningQualitySummary {
   trend: 'improving' | 'declining' | 'stable' | 'insufficient_data';
   minimumSamplesForTrend: number;
   lastEvaluatedAt: number | null;
+  candidateApprovals: number;
+  candidateRejections: number;
+  candidateAcceptanceRate: number | null;
 }
 
 const MAX_SAMPLES = 500;
@@ -64,8 +68,15 @@ export class LearningQualityEvaluator {
             !Number.isInteger(sample.k) || sample.k < 0)) {
         throw new Error('Learning quality history is invalid; refusing to overwrite it.');
       }
-      this.data = loaded;
+      this.data = { ...loaded, candidateDecisions: loaded.candidateDecisions ?? { approved: 0, rejected: 0 } };
     }
+  }
+
+  recordCandidateDecision(decision: 'approved' | 'rejected'): LearningQualitySummary {
+    this.data.candidateDecisions ??= { approved: 0, rejected: 0 };
+    this.data.candidateDecisions[decision] += 1;
+    this.file.write(this.data);
+    return this.summary();
   }
 
   record(input: LearningQualityInput): LearningQualitySummary {
@@ -118,6 +129,11 @@ export class LearningQualityEvaluator {
       trend,
       minimumSamplesForTrend: MIN_TREND_SAMPLES * 2,
       lastEvaluatedAt: samples.at(-1)?.at ?? null,
+      candidateApprovals: this.data.candidateDecisions?.approved ?? 0,
+      candidateRejections: this.data.candidateDecisions?.rejected ?? 0,
+      candidateAcceptanceRate: ((this.data.candidateDecisions?.approved ?? 0) + (this.data.candidateDecisions?.rejected ?? 0))
+        ? (this.data.candidateDecisions?.approved ?? 0) / ((this.data.candidateDecisions?.approved ?? 0) + (this.data.candidateDecisions?.rejected ?? 0))
+        : null,
     };
   }
 }
