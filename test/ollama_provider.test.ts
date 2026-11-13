@@ -114,7 +114,7 @@ test('rejects oversized non-streaming responses before JSON parsing', async () =
 });
 
 test('stream requires an explicit Ollama done event', async () => {
-  const body = JSON.stringify({ message: { content: 'partial' }, done: false }) + '\\n';
+  const body = JSON.stringify({ message: { content: 'partial' }, done: false }) + '\n';
   const provider = new OllamaProvider({
     baseUrl: 'http://localhost:11434',
     model: 'llama3.2:latest',
