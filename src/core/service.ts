@@ -1418,7 +1418,7 @@ export class JarvisCoreService {
   /**
    * Rejects a pending task.
    */
-  public rejectTask(approvalId: string, approverSessionId: SessionId): { success: boolean; message: string } {
+  public async rejectTask(approvalId: string, approverSessionId: SessionId): Promise<{ success: boolean; message: string }> {
     const approverAuth = this.identity.validateDeviceSession(approverSessionId);
     const approver = approverAuth.device;
     if (!approverAuth.valid || !approver) {
