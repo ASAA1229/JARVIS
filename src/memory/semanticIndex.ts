@@ -1,7 +1,7 @@
 /**
  * Local-first semantic retrieval for long-term memory (J-E06).
  *
- * Embeddings come only from a LOCAL Ollama instance (POST /api/embeddings). If
+ * Embeddings come only from a LOCAL Ollama instance (POST /api/embed). If
  * OLLAMA_URL points anywhere other than loopback, embeddings are disabled:
  * personal memory is never sent to a remote or cloud provider. When the model is
  * missing or unreachable, callers fall back to lexical scoring and the method used
