@@ -83,7 +83,7 @@ function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-const AGENT_ROUTE = { taskType: 'agent', containsPrivateData: true, formats: ['ollama', 'openai'] } as const;
+const AGENT_ROUTE = { taskType: 'agent', containsPrivateData: true, formats: ['ollama'] } as const;
 
 export function createConfiguredAgentModelAdapter(): AgentModelAdapter | null {
   const route = () => providerRouter.route({ ...AGENT_ROUTE, formats: [...AGENT_ROUTE.formats] });
