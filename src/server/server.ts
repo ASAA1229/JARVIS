@@ -666,6 +666,37 @@ export class JarvisServer {
         if (manager && req.method === 'GET' && url.pathname === '/api/memory/manager') {
           return this.jsonResponse(res, 200, { status: manager.status(), candidates: manager.listCandidates('pending') });
         }
+        if (manager && req.method === 'GET' && url.pathname === '/api/memory/evaluation') {
+          return this.jsonResponse(res, 200, { quality: manager.status().quality });
+        }
+        if (manager && req.method === 'POST' && url.pathname === '/api/memory/evaluation') {
+          const { retrievedIds, relevantIds, rating } = body as {
+            retrievedIds?: unknown; relevantIds?: unknown; rating?: unknown;
+          };
+          if (!Array.isArray(retrievedIds) || !Array.isArray(relevantIds) ||
+              !retrievedIds.every((id) => typeof id === 'string') ||
+              !relevantIds.every((id) => typeof id === 'string') ||
+              !['helpful', 'not_helpful'].includes(String(rating))) {
+            return this.jsonResponse(res, 400, { error: 'retrievedIds, relevantIds and rating (helpful|not_helpful) are required' });
+          }
+          try {
+            const quality = manager.recordRetrievalEvaluation({
+              retrievedIds: retrievedIds as string[],
+              relevantIds: relevantIds as string[],
+              rating: rating as 'helpful' | 'not_helpful',
+            });
+            this.jarvis.audit.record('MEMORY_RETRIEVAL_EVALUATED', {
+              sampleCount: quality.sampleCount,
+              precisionAtK: quality.precisionAtK,
+              recallAtK: quality.recallAtK,
+              helpfulRate: quality.helpfulRate,
+              trend: quality.trend,
+            }, auth.device.id);
+            return this.jsonResponse(res, 200, { quality });
+          } catch (error) {
+            return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Evaluation could not be recorded' });
+          }
+        }
         if (manager && req.method === 'POST' && url.pathname === '/api/memory/learning') {
           const enabled = (body as { enabled?: unknown }).enabled;
           if (typeof enabled !== 'boolean') return this.jsonResponse(res, 400, { error: 'enabled must be a boolean' });
