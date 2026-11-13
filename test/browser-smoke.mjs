@@ -361,6 +361,37 @@ try {
   await hud.getByText('MICROPHONE PERMISSION REQUIRED').waitFor({ state: 'visible' });
   await hud.getByText('Allow microphone access for this site in browser settings, then retry voice input.').waitFor({ state: 'visible' });
 
+  // Network/service failure must release capture and never dispatch a partial directive.
+  let failedVoiceRequestCount = 0;
+  await hud.route('**/api/request', async (route) => {
+    failedVoiceRequestCount++;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ taskId: 'unexpected-voice-dispatch', state: 'COMPLETED', message: 'unexpected' }) });
+  });
+  const networkFailureRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, networkFailureRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => window.__mockRecognizers[index].onerror({ error: 'network' }), networkFailureRecognizerIndex);
+  await hud.getByText('SPEECH SERVICE UNAVAILABLE').waitFor({ state: 'visible' });
+  if (await ptt.getAttribute('aria-pressed') !== 'false' || failedVoiceRequestCount !== 0) {
+    throw new Error('Speech service failure left capture active or dispatched a directive');
+  }
+
+  // Empty final recognition must not be interpreted as a command.
+  const emptyVoiceRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
+  await ptt.click();
+  await hud.waitForFunction((count) => window.__mockRecognizers.length === count + 1, emptyVoiceRecognizerIndex, { timeout: 3000 });
+  await hud.evaluate((index) => {
+    const empty = [];
+    empty.isFinal = true;
+    window.__mockRecognizers[index].onresult({ resultIndex: 0, results: [empty] });
+    window.__mockRecognizers[index].onend();
+  }, emptyVoiceRecognizerIndex);
+  await delay(150);
+  if (failedVoiceRequestCount !== 0 || await hud.locator('#transcript-input').inputValue() !== '') {
+    throw new Error('An empty finalized utterance created a command or transcript');
+  }
+  await hud.unroute('**/api/request');
+
   // Finalized speech must be reviewed and explicitly submitted; recognition
   // ending alone must not transmit a directive.
   let explicitVoiceRequestCount = 0;
