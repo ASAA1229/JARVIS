@@ -246,6 +246,7 @@ export class OllamaProvider implements AIProvider {
         while (newline >= 0) {
           const line = buffer.slice(0, newline).trim();
           buffer = buffer.slice(newline + 1);
+          if (line.length > MAX_STREAM_LINE_CHARS) throw new AIProviderError('invalid_response');
           if (line) {
             const item = parseLine(line);
             if (item.content) yield item.content;
