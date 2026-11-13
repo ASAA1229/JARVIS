@@ -8,7 +8,7 @@
  *   git-write – apply a draft to the working tree, branch, commit, push
  *   ci        – read CI run status
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 export type RepoScope = 'read' | 'suggest' | 'git-write' | 'ci';
@@ -53,6 +53,18 @@ export function resolveInsideRepo(repo: RepoConnection, requested: string): { ab
   const normalized = rel.split(sep).join('/') || '.';
   if (normalized !== '.' && isDeniedRepoPath(normalized)) {
     throw new Error('That path is protected (secrets, dependencies, git internals or runtime data) and cannot be accessed.');
+  }
+  // Symbolic links / junctions must not smuggle an outside or protected target into the repo.
+  let real: string | undefined;
+  try { real = realpathSync(absolute); } catch { /* A not-yet-existing path has no link to follow. */ }
+  if (real !== undefined) {
+    const realRoot = (() => { try { return realpathSync(repo.path); } catch { return repo.path; } })();
+    const realRel = relative(realRoot, real);
+    if (realRel === '..' || realRel.startsWith('..' + sep) || isAbsolute(realRel)) throw new Error('That path resolves outside the connected repository through a symbolic link.');
+    const realNormalized = realRel.split(sep).join('/') || '.';
+    if (realNormalized !== '.' && isDeniedRepoPath(realNormalized)) {
+      throw new Error('That path is protected (secrets, dependencies, git internals or runtime data) and cannot be accessed.');
+    }
   }
   return { absolute, relative: normalized };
 }
