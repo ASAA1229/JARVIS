@@ -137,8 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         temporary = Path(temporary_name)
         try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\\n") as stream:
-                stream.write(f"{digest}  {output.name}\\n")
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(f"{digest}  {output.name}\n")
             temporary.replace(sidecar)
         except Exception:
             temporary.unlink(missing_ok=True)
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Checksum sidecar: {sidecar}")
         return 0
     except (OSError, ValueError) as exc:
-        parser.exit(1, f"Bundle creation failed: {exc}\\n")
+        parser.exit(1, f"Bundle creation failed: {exc}\n")
 
 
 if __name__ == "__main__":
