@@ -16,6 +16,7 @@ import { dirname } from 'node:path';
 import { PersonalMemoryStore, normalizeMemoryText, type MemoryCategory, type PersonalMemory } from './personalMemoryStore.js';
 import type { WorkingMemory, WorkingScopeKind } from './workingMemory.js';
 import { MemoryVersionHistory, type MemoryVersion } from './memoryVersions.js';
+import { LearningQualityEvaluator, type LearningQualityInput, type LearningQualitySummary } from './learningQualityEvaluator.js';
 import { OllamaEmbedder, SemanticMemoryIndex, resolveLocalEmbeddingEndpoint, type RetrievalMethod } from './semanticIndex.js';
 
 /** Raised when proposed content duplicates an existing long-term memory. */
@@ -79,6 +80,7 @@ export class MemoryManager {
   private data: CandidateFile = { version: 1, learningEnabled: true, candidates: [] };
   readonly index: SemanticMemoryIndex;
   readonly versions: MemoryVersionHistory;
+  readonly quality: LearningQualityEvaluator;
   private lastRetrieval: { method: RetrievalMethod; at: number } | null = null;
 
   constructor(
@@ -94,6 +96,7 @@ export class MemoryManager {
     const endpoint = resolveLocalEmbeddingEndpoint();
     this.index = options.index ?? new SemanticMemoryIndex(`${candidatesPath}.embeddings`, ownerControlToken, endpoint ? new OllamaEmbedder(endpoint) : null);
     this.versions = options.versions ?? new MemoryVersionHistory(`${candidatesPath}.versions`, ownerControlToken);
+    this.quality = new LearningQualityEvaluator(`${candidatesPath}.quality`, ownerControlToken);
     longTerm.attachVersionHistory(this.versions);
     // Drop history for memories that expired or were removed while JARVIS was offline.
     this.versions.reconcile(new Set(longTerm.active().map((record) => record.id)));
@@ -378,7 +381,12 @@ export class MemoryManager {
     return { workingRemoved, candidatesScrubbed, indexRemoved, versionsPurged, derivedVerified };
   }
 
+  recordRetrievalEvaluation(input: LearningQualityInput): LearningQualitySummary {
+    return this.quality.record(input);
+  }
+
   status(): {
+    quality: LearningQualitySummary;
     longTerm: ReturnType<PersonalMemoryStore['status']>;
     working: ReturnType<WorkingMemory['stats']>;
     learningEnabled: boolean;
@@ -386,6 +394,7 @@ export class MemoryManager {
     retrieval: ReturnType<SemanticMemoryIndex['status']> & { lastUsedAt: number | null };
   } {
     return {
+      quality: this.quality.summary(),
       longTerm: this.longTerm.status(),
       working: this.working.stats(),
       learningEnabled: this.data.learningEnabled,
