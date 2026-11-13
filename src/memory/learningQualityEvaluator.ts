@@ -61,18 +61,23 @@ export class LearningQualityEvaluator {
     this.file = new EncryptedJsonFile<LearningQualityFile>(filePath, ownerControlToken, 'JARVIS-LEARNING-QUALITY-V1');
     const loaded = this.file.read();
     if (loaded) {
-      if (loaded.version !== 1 || !Array.isArray(loaded.samples) ||
+      const decisions = loaded.candidateDecisions ?? { approved: 0, rejected: 0 };
+      if (loaded.version !== 1 || !Array.isArray(loaded.samples) || loaded.samples.length > MAX_SAMPLES ||
           loaded.samples.some((sample) => !sample || !Number.isFinite(sample.at) ||
-            !Number.isFinite(sample.precisionAtK) || !Number.isFinite(sample.recallAtK) ||
-            !Number.isFinite(sample.reciprocalRank) || typeof sample.helpful !== 'boolean' ||
-            !Number.isInteger(sample.k) || sample.k < 0)) {
+            !Number.isFinite(sample.precisionAtK) || sample.precisionAtK < 0 || sample.precisionAtK > 1 ||
+            !Number.isFinite(sample.recallAtK) || sample.recallAtK < 0 || sample.recallAtK > 1 ||
+            !Number.isFinite(sample.reciprocalRank) || sample.reciprocalRank < 0 || sample.reciprocalRank > 1 ||
+            typeof sample.helpful !== 'boolean' || !Number.isInteger(sample.k) || sample.k < 0 || sample.k > 100) ||
+          !decisions || !Number.isSafeInteger(decisions.approved) || decisions.approved < 0 ||
+          !Number.isSafeInteger(decisions.rejected) || decisions.rejected < 0) {
         throw new Error('Learning quality history is invalid; refusing to overwrite it.');
       }
-      this.data = { ...loaded, candidateDecisions: loaded.candidateDecisions ?? { approved: 0, rejected: 0 } };
+      this.data = { ...loaded, candidateDecisions: decisions };
     }
   }
 
   recordCandidateDecision(decision: 'approved' | 'rejected'): LearningQualitySummary {
+    if (decision !== 'approved' && decision !== 'rejected') throw new Error('Candidate decision must be approved or rejected.');
     this.data.candidateDecisions ??= { approved: 0, rejected: 0 };
     this.data.candidateDecisions[decision] += 1;
     this.file.write(this.data);
