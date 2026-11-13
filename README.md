@@ -63,7 +63,8 @@ See `.env.example` for all settings.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — components, AI providers, Ollama, agents, memory, retrieval, concurrency and platform strategy.
-- [POC](docs/POC.md) — current capability baseline, constraints and acceptance gates.\n- [User Stories](docs/USER_STORIES.md) — outcome-based stories and acceptance criteria.\n- [Gap Analysis](docs/GAP_ANALYSIS.md) — prioritized delivery gaps and closure sequence.
+- [POC](docs/POC.md) — current capability baseline, constraints and acceptance gates.
+- [User Stories](docs/USER_STORIES.md) — outcome-based stories and acceptance criteria.\n- [Gap Analysis](docs/GAP_ANALYSIS.md) — prioritized delivery gaps and closure sequence.
 - [Project Status](docs/PROJECT_STATUS.md) — authoritative maturity scores, gap register and current evidence.
 - [Release Readiness](docs/RELEASE_READINESS.md) — release gates and current GO/NO-GO decision.\n- [Requirements](docs/REQUIREMENTS.md) — consolidated product scope, constraints and acceptance criteria.
 - [Development](docs/DEVELOPMENT.md) — workstation setup, commands, branch policy and testing.
