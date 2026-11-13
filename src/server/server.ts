@@ -587,10 +587,12 @@ export class JarvisServer {
         if (req.method === 'GET' && url.pathname === '/api/ai/health') {
           const ollama = providerRouter.providers().find((item) => item.id === 'local' && item.format === 'ollama');
           if (!ollama) return this.jsonResponse(res, 503, { available: false, modelAvailable: false, error: 'Ollama is not configured' });
+          const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
           const health = await new OllamaProvider({
             baseUrl: ollama.baseUrl,
             model: ollama.model,
             timeoutMs: ollama.timeoutMs,
+            ...(embeddingEndpoint ? { embeddingModel: embeddingEndpoint.model } : {}),
           }).healthCheck();
           return this.jsonResponse(res, health.available && health.modelAvailable ? 200 : 503, health);
         }
