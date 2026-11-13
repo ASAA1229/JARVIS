@@ -56,6 +56,27 @@ test('live workflow run creates isolated child tasks and checkpoints independent
     assert.ok([TaskState.COMPLETED, TaskState.PARTIAL, TaskState.FAILED, TaskState.AWAITING_RECOVERY].includes(parent.state));
     assert.ok(service.audit.getRecords().some((entry) => entry.eventType === 'WORKFLOW_DAG_STARTED'));
     assert.ok(service.audit.getRecords().some((entry) => entry.eventType === 'WORKFLOW_BRANCH_TASK_CREATED'));
+
+    // A state-changing branch must receive its own child-task approval.
+    const gatedResult = await service.submitOperations(session.sessionId!, 'Open the development workspace', [
+      { operation: 'workflow:run', parameters: { name: 'open-dev-workspace' } },
+    ]);
+    const gatedParent = service.getTask(gatedResult.taskId);
+    assert.ok(gatedParent?.workflowRun);
+    const explorer = service.listTasks().find((task) =>
+      task.workflowParentTaskId === gatedParent!.id && task.workflowStepId === 'explorer',
+    );
+    assert.ok(explorer?.approvalId, 'state-changing branch should own its approval reference');
+    assert.notEqual(explorer.id, gatedParent.id);
+    assert.equal(gatedParent.workflowRun!.branches.find((branch) => branch.stepId === 'explorer')?.status, 'awaiting_approval');
+
+    const rejected = await service.rejectTask(explorer.approvalId!, session.sessionId!);
+    assert.equal(rejected.success, true);
+    const resolvedParent = service.getTask(gatedParent.id);
+    assert.equal(resolvedParent?.workflowRun?.branches.find((branch) => branch.stepId === 'explorer')?.status, 'failed');
+    assert.equal(resolvedParent?.workflowRun?.branches.find((branch) => branch.stepId === 'editor')?.status, 'blocked');
+    assert.equal(resolvedParent?.workflowRun?.branches.find((branch) => branch.stepId === 'repos')?.status, 'blocked');
+    assert.ok(service.audit.getRecords().some((entry) => entry.eventType === 'WORKFLOW_BRANCH_APPROVAL_RESOLVED'));
   } finally {
     service.stopBackgroundServices();
     rmSync(directory, { recursive: true, force: true });
