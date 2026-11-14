@@ -35,3 +35,20 @@ No unrestricted sensitive actions, payment-app automation, always-on cloud audio
 
 ## Current status summary
 Recent repository history through 2026-11-14 includes merged workflow-DAG integration and CI hardening, capability-catalogue work, fail-closed platform adapters, disabled Jenkins/Nexus providers and release/test documentation. These are repository changes, not proof of physical-device, voice, Android or production acceptance. Preserve existing work; do not restart from basics.
+
+
+---
+
+# JARVIS Project Scope — 2026-11-14
+
+Purpose: personal AI assistant, developer assistant and automation platform evolving toward a personal AI operating system.
+
+Initial user/devices: owner; Windows 11 MSI laptop and two Android phones, with per-device sessions.
+
+In scope: agent/runtime; task/workflow orchestration; voice/wake word; Windows/Android capabilities; developer assistance; authorized automation; local/cloud AI routing; device/session management; trust/safety; observability; CI/release; future Jenkins/Nexus integration.
+
+Exclusions: payment-app automation; unrestricted sensitive actions; continuous cloud audio upload. Zero ongoing cost target; paid services require explicit approval. Wake phrase “Hey Jarvis”; response “Hi sir, I am ready to work”; QR plus authenticator preferred.
+
+Architecture: hybrid local/cloud, local-first privacy where possible, modular agents/tools and fail-closed capability adapters.
+
+Current evidence: active repository development through 2026-11-14 with recent workflow DAG/CI hardening and test/docs changes. This does not prove voice, wake word, Android, end-user acceptance or production operation. User reports most of JARVIS is already developed; continue existing work, do not restart.
