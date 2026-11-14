@@ -5,8 +5,8 @@ import { AuditLogger } from '../src/audit/audit.js';
 import { PolicyGateway } from '../src/policy/gateway.js';
 import { DeviceRecord, Permission, RiskTier } from '../src/core/types.js';
 
-const grantPath = './data/test-remembered-approvals.json';
-const auditPath = './data/test-remembered-approvals.log';
+const grantPath = `./data/test-remembered-approvals_${process.pid}.json`;
+const auditPath = `./data/test-remembered-approvals_${process.pid}.log`;
 const ownerToken = 'test-owner-control-token-that-is-long-enough-0123456789';
 const device: DeviceRecord = {
   id: 'dev-test-owner',

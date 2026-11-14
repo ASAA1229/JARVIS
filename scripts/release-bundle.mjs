@@ -76,7 +76,7 @@ function tarEntriesAreSafe(archivePath) {
 }
 
 /** Clean-room verification: returns { ok:true, ... } or throws. */
-export function verifyBundle(bundle, trustedPublicKeyPem, { lockfile } = {}) {
+export function verifyBundle(bundle, trustedPublicKeyPem, { lockfile, tempRoot } = {}) {
   if (!trustedPublicKeyPem) fail('A trusted public key is required (set JARVIS_RELEASE_PUBLIC_KEY); the embedded key is never trusted.');
   if (!bundle || bundle.version !== 1 || !bundle.meta || !bundle.artifact || !bundle.sbom || typeof bundle.signature !== 'string') fail('Bundle structure is invalid.');
   for (const part of [bundle.artifact, bundle.sbom]) {
@@ -87,7 +87,7 @@ export function verifyBundle(bundle, trustedPublicKeyPem, { lockfile } = {}) {
   if (trusted.asymmetricKeyType !== 'ed25519') fail('Trusted verification key must be Ed25519.');
   const signature = Buffer.from(bundle.signature, 'base64');
   if (signature.length !== 64 || !verify(null, signedStatement(bundle), trusted, signature)) fail('Signature verification failed: wrong key or the bundle was modified.');
-  const workdir = mkdtempSync(join(tmpdir(), 'jarvis-cleanroom-'));
+  const workdir = mkdtempSync(join(tempRoot ?? tmpdir(), 'jarvis-cleanroom-'));
   try {
     const extracted = {};
     for (const part of [bundle.artifact, bundle.sbom]) {

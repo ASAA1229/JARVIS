@@ -1,11 +1,12 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { freePort } from './helpers/freePort.js';
 import assert from 'node:assert';
 import { VoiceManager, SpeechState } from '../src/voice/voiceManager.ts';
 import { JarvisServer } from '../src/server/server.ts';
 import { rmSync, existsSync, readFileSync } from 'node:fs';
 
-const TEST_AUDIT_LOG = './data/test_voice_audit.log';
-const TEST_PORT = 3988;
+const TEST_AUDIT_LOG = `./data/test_voice_audit_${process.pid}.log`;
+const TEST_PORT = await freePort();
 
 describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routing', () => {
   let voiceManager: VoiceManager;

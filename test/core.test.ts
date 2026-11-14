@@ -1,4 +1,5 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { acquireDesktopLock } from './helpers/desktopLock.js';
 import assert from 'node:assert';
 import { JarvisCoreService } from '../src/core/service.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
@@ -6,7 +7,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { TaskState, Permission, VerificationOutcome } from '../src/core/types.js';
 import { rmSync, existsSync } from 'node:fs';
 
-const TEST_AUDIT_LOG = './data/test_audit.log';
+const TEST_AUDIT_LOG = `./data/test_audit_${process.pid}.log`;
 
 describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }, () => {
   let jarvis: JarvisCoreService;
@@ -14,7 +15,10 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
   let companionDeviceId: string;
   let companionSessionId: string;
 
-  beforeEach(() => {
+  let releaseDesktop: (() => void) | undefined;
+
+  beforeEach(async () => {
+    releaseDesktop = await acquireDesktopLock();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }
@@ -45,6 +49,7 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
   });
 
   afterEach(() => {
+    releaseDesktop?.();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }

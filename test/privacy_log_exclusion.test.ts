@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { freePort } from './helpers/freePort.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,7 +14,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
  */
 const TOKEN = 'privacy-log-owner-token-0123456789abcdef';
 process.env.JARVIS_OWNER_CONTROL_TOKEN = TOKEN;
-const PORT = 3896;
+const PORT = await freePort();
 
 test('sentinel request, transcript and document text never reach the audit log or plaintext state files', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-privacy-'));

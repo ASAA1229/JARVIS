@@ -1,4 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { freePort } from './helpers/freePort.js';
+import { acquireDesktopLock } from './helpers/desktopLock.js';
 import assert from 'node:assert';
 import { JarvisServer } from '../src/server/server.js';
 import { JarvisCoreService } from '../src/core/service.js';
@@ -9,9 +11,13 @@ import { rmSync, existsSync, writeFileSync } from 'node:fs';
 
 process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token-0123456789abcdef';
 
-const TEST_AUDIT_LOG = './data/test_audit_e2e_recovery.log';
-const TEST_STATE_FILE = './data/test_state_e2e_recovery.json';
-const TEST_PORT = 3899;
+const TEST_AUDIT_LOG = `./data/test_audit_e2e_recovery_${process.pid}.log`;
+const TEST_STATE_FILE = `./data/test_state_e2e_recovery_${process.pid}.json`;
+const TEST_PORT = await freePort();
+const PORT_RESTART = await freePort();
+const PORT_PLACEHOLDER = await freePort();
+const PORT_PROBE = await freePort();
+const PORT_RESTART2 = await freePort();
 
 function signedHeaders(
   sessionId: string,
@@ -185,7 +191,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
 
   test('SEC-API-00: Enrollment challenge rejects requests without owner control authorization', async () => {
-    const probePort = TEST_PORT + 20;
+    const probePort = PORT_PROBE;
     const probeServer = new JarvisServer(probePort, TEST_AUDIT_LOG + '.owner-auth', TEST_STATE_FILE + '.owner-auth');
     await probeServer.start();
     try {
@@ -202,14 +208,14 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
   test('SEC-API-CONFIG-01: Placeholder owner token disables enrollment fail-closed', async () => {
     const previousToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;
-    const placeholderAuditPath = './data/test_placeholder_owner_audit.log';
-    const placeholderStatePath = './data/test_placeholder_owner_state.json';
+    const placeholderAuditPath = `./data/test_placeholder_owner_audit_${process.pid}.log`;
+    const placeholderStatePath = `./data/test_placeholder_owner_state_${process.pid}.json`;
     let placeholderServer: JarvisServer | undefined;
     try {
       process.env.JARVIS_OWNER_CONTROL_TOKEN = 'REPLACE_WITH_A_RANDOM_SECRET';
-      placeholderServer = new JarvisServer(TEST_PORT + 10, placeholderAuditPath, placeholderStatePath);
+      placeholderServer = new JarvisServer(PORT_PLACEHOLDER, placeholderAuditPath, placeholderStatePath);
       await placeholderServer.start();
-      const response = await fetch(`http://127.0.0.1:${TEST_PORT + 10}/api/enrollment/challenge`, {
+      const response = await fetch(`http://127.0.0.1:${PORT_PLACEHOLDER}/api/enrollment/challenge`, {
         method: 'POST',
         headers: { 'x-owner-control-token': 'REPLACE_WITH_A_RANDOM_SECRET' },
       });
@@ -523,7 +529,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     // 2. Simulate Host Restart: Stop server and instantiate fresh server pointing to same state file
     await server.stop();
 
-    const restartedServer = new JarvisServer(TEST_PORT + 1, TEST_AUDIT_LOG, TEST_STATE_FILE);
+    const restartedServer = new JarvisServer(PORT_RESTART, TEST_AUDIT_LOG, TEST_STATE_FILE);
     await restartedServer.start();
 
     try {
@@ -547,7 +553,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
   test('RECOVER-03: Corrupt persisted device state blocks enrollment and session creation', async () => {
     await server.stop();
     writeFileSync(TEST_STATE_FILE, '{ invalid-json', 'utf-8');
-    server = new JarvisServer(TEST_PORT + 2, TEST_AUDIT_LOG, TEST_STATE_FILE);
+    server = new JarvisServer(PORT_RESTART2, TEST_AUDIT_LOG, TEST_STATE_FILE);
     await server.start();
 
     const challenge = server.getService().identity.createEnrollmentChallenge();
@@ -558,7 +564,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     );
     assert.strictEqual(enroll.success, false);
     assert.match(enroll.error || '', /state is unhealthy/i);
-    const health = await fetch(`http://127.0.0.1:${TEST_PORT + 2}/api/status`);
+    const health = await fetch(`http://127.0.0.1:${PORT_RESTART2}/api/status`);
     assert.strictEqual(health.status, 200);
     assert.strictEqual((await health.json()).status, 'DEGRADED');
   });

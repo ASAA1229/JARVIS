@@ -2,8 +2,15 @@ import { spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
+import { createServer } from 'node:net';
 
-const port = 3998;
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once('error', reject);
+  probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+
+const port = await freePort();
 const ownerToken = 'browser-e2e-owner-token-2026-0123456789abcdef';
 const stamp = String(Date.now());
 const statePath = `./data/browser-smoke-devices-${stamp}.json`;

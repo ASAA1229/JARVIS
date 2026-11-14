@@ -1,4 +1,8 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { acquireDesktopLock } from './helpers/desktopLock.js';
+import { freePort } from './helpers/freePort.js';
+
+const HARDENING_PORT = await freePort();
 import assert from 'node:assert';
 import { JarvisCoreService } from '../src/core/service.js';
 import { LocalHeuristicPlanner, IAIPlannerProvider, MinimizedContext, PlanProposal } from '../src/planner/planner.js';
@@ -7,7 +11,7 @@ import { TaskState, Permission, RiskTier, VerificationOutcome } from '../src/cor
 import { JarvisServer } from '../src/server/server.js';
 import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-const TEST_AUDIT_LOG = './data/test_audit_hardening.log';
+const TEST_AUDIT_LOG = `./data/test_audit_hardening_${process.pid}.log`;
 
 describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verification', { concurrency: false }, () => {
   let jarvis: JarvisCoreService;
@@ -18,7 +22,10 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
   let phoneASessionId: string;
   let phoneBSessionId: string;
 
-  beforeEach(() => {
+  let releaseDesktop: (() => void) | undefined;
+
+  beforeEach(async () => {
+    releaseDesktop = await acquireDesktopLock();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }
@@ -60,6 +67,7 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
   });
 
   afterEach(() => {
+    releaseDesktop?.();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }
@@ -203,12 +211,12 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
   });
 
   test('SEC-HARD-07: HTTP Server enforces session authentication on approval and revocation routes', async () => {
-    const server = new JarvisServer(3456, TEST_AUDIT_LOG);
+    const server = new JarvisServer(HARDENING_PORT, TEST_AUDIT_LOG);
     await server.start();
 
     try {
       // 1. Unauthenticated request to /api/request (missing header)
-      const res1 = await fetch('http://127.0.0.1:3456/api/request', {
+      const res1 = await fetch(`http://127.0.0.1:${HARDENING_PORT}/api/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'What is the OS?' }),
@@ -216,7 +224,7 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
       assert.strictEqual(res1.status, 401);
 
       // 2. Unauthenticated approval (missing header)
-      const res2 = await fetch('http://127.0.0.1:3456/api/approval/approve', {
+      const res2 = await fetch(`http://127.0.0.1:${HARDENING_PORT}/api/approval/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approvalId: 'appr-fake' }),
@@ -224,7 +232,7 @@ describe('JARVIS Milestone 5: Security Hardening, Multi-Device & Negative Verifi
       assert.strictEqual(res2.status, 401);
 
       // 3. Unauthenticated device revocation (missing header)
-      const res3 = await fetch('http://127.0.0.1:3456/api/device/revoke', {
+      const res3 = await fetch(`http://127.0.0.1:${HARDENING_PORT}/api/device/revoke`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: 'dev-fake' }),

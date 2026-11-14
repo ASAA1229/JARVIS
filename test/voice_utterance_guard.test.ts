@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { freePort } from './helpers/freePort.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -69,7 +70,7 @@ test('GAP-006 wake metrics count events and compute false-accept / false-reject 
 
 test('GAP-006 HTTP: a duplicate final transcript creates one task, and wake metrics are owner-only', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-voice-guard-'));
-  const port = 3897;
+  const port = await freePort();
   const server = new JarvisServer(port, join(directory, 'audit.log'), join(directory, 'state.json'));
   await server.start();
   const base = `http://127.0.0.1:${port}`;

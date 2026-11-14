@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { freePort } from './helpers/freePort.js';
 import { after, before, test } from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { Permission } from '../src/core/types.js';
 import { AndroidCommandQueue } from '../src/android/commandQueue.js';
 
-const PORT = 3986;
+const PORT = await freePort();
 const OWNER_TOKEN = 'owner-recovery-test-token-0123456789abcdef';
 const base = `http://127.0.0.1:${PORT}`;
 let server: JarvisServer;
