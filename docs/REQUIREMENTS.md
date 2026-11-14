@@ -173,3 +173,8 @@ PRs #63/#64 (Live DAG hardening and integration) are merged into `new`. Local au
 - PDF text extraction requires Poppler (`pdftotext`). Scanned-page OCR is opt-in and additionally requires Poppler (`pdftoppm`) and local Tesseract.
 - PDF extraction is limited to 30 pages; OCR is limited to 20 pages with a 1600-pixel maximum raster dimension and a 3-minute OCR budget. OCR language is currently English.
 - OCR is never silently enabled. Missing local tools produce an explicit error; no cloud OCR fallback exists.
+
+
+## Baseline alignment — 2026-11-14
+
+This document is subordinate to ASAA Master Requirements Baseline v1.0. Detailed requirement population, applicability, ownership, dependencies, evidence-based gap scoring and delivery estimates remain pending. See PROJECT_SCOPE and EPIC_REGISTER added in this branch. No implementation/test/deployment/paid-service/merge/release authorization is implied.

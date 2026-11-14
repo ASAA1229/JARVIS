@@ -1,0 +1,16 @@
+# JARVIS Epic Register — 2026-11-14
+
+| ID | Epic | Development | Testing | Integration | Acceptance/release |
+|---|---|---|---|---|---|
+| JAR-E01 | Core runtime and agent architecture | Partial | Repo tests exist; full suite not asserted | Tool integrations partial | Not accepted |
+| JAR-E02 | Workflow orchestration/DAG | Implemented/recent merge evidence | CI/regression evidence; exact run inspect | PRs #61/#65 merged | Operational acceptance pending |
+| JAR-E03 | Capability catalogue/safe tools | Partial | Contract/drift tests present | Allowlist-derived catalogue integrated | Device acceptance pending |
+| JAR-E04 | Windows desktop/developer automation | Partial | Compatibility/release tests present | Platform adapters present | Physical device acceptance pending |
+| JAR-E05 | Android/per-device sessions | Not assessed/planned | Not assessed | Not assessed | Not accepted |
+| JAR-E06 | Voice/wake word/audio privacy | Not assessed/planned | Not assessed | Not assessed | Not accepted |
+| JAR-E07 | Local/cloud AI/provider integration | Partial | Tests/docs; provider matrix not audited | Hybrid routing unverified | Cost/privacy acceptance pending |
+| JAR-E08 | Security/trust/human approval | Partial | Trust-policy tests reported | Fail-closed; external providers disabled | Sensitive-action acceptance pending |
+| JAR-E09 | CI/CD/Jenkins/Nexus | Partial | Recent CI hardening/release tests | External providers disabled/not active | Not accepted |
+| JAR-E10 | Monitoring/audit/recovery/operations | Partial | Tests/docs; runtime evidence incomplete | Cross-module telemetry unverified | Not accepted |
+
+Recent repo history shows ongoing engineering, not full device/voice/user acceptance or production readiness.

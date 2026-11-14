@@ -107,3 +107,12 @@ Mean: **6.1/10**.
 - **2026-11-13 (later):** Reconciled with merged PRs #63/#64 and local verification results; recorded final gap statuses and measured performance. No physical-device, Jenkins/Nexus or owner acceptance was performed.
 
 - **2026-11-13 (final re-run on head):** after making a probabilistic ciphertext-substring assertion in `learning_quality_evaluator.test.ts` deterministic (it failed about 1 run in 10 by chance), a full re-run gave `npm test` 497/497 pass plus 3/3 script tests, lint and build clean. The earlier real-Notepad `E2E-LIVE-01` flake did not recur but remains environment-sensitive.
+
+
+---
+
+## ASAA Master Requirements Baseline v1.0 — 2026-11-14
+
+Approved planning/governance reference for ASAA, Portfolio, JARVIS, Templates and shared ecosystem capabilities. Round 6 (12 consolidation stages) is complete at framework/consolidation level. Individual requirement mapping, reconciliation of the 1,000 discovery answers, repository/runtime evidence, named owners, dependency validation, acceptance criteria, evidence-based gaps and delivery estimates remain pending. Approval does not authorize implementation, testing, deployment, paid services or merges.
+
+See `docs/ASAA_MASTER_REQUIREMENTS_BASELINE.md`, `docs/PROJECT_SCOPE.md` and `docs/EPIC_STATUS.md` for the approved baseline, project scope and epic status register.

@@ -349,3 +349,12 @@ Status: **NOT STARTED** — budgets and repeatable performance baseline need to 
 ## Verification note - 2026-11-13 (branch `new`, PRs #63/#64 merged)
 
 Local automated evidence now exists for these stories (no device or owner acceptance implied): US-002/012/013 (branch approval race/expiry/replay/revocation, restart recovery, owner-reconciled resume), US-007 (duplicate final transcript and one-task-per-utterance suppression), US-014/015/016 (learning telemetry lifecycle, RAG injection/isolation/deletion/rebuild, hostile PDF/DOCX/OCR input), US-018 (sync replay/crash/idempotency), US-020/021 (plugin and developer isolation), US-022 (SBOM verification, release tamper tests), US-023 (backup/restore drills), US-025 (performance harness). Voice hardware acceptance (US-006, US-008), US-017 and the physical parts of US-019 remain OWNER ACCEPTANCE PENDING; native macOS/Linux/iOS (US-019) are NOT IMPLEMENTED beyond fail-closed contracts. New code: owner-reconciled workflow resume, `VoiceUtteranceGuard`/`WakeMetrics`, state backup tool, app catalogue, SBOM verifier.
+
+
+---
+
+## ASAA Master Requirements Baseline v1.0 — 2026-11-14
+
+Approved planning/governance reference for ASAA, Portfolio, JARVIS, Templates and shared ecosystem capabilities. Round 6 (12 consolidation stages) is complete at framework/consolidation level. Individual requirement mapping, reconciliation of the 1,000 discovery answers, repository/runtime evidence, named owners, dependency validation, acceptance criteria, evidence-based gaps and delivery estimates remain pending. Approval does not authorize implementation, testing, deployment, paid services or merges.
+
+See `docs/ASAA_MASTER_REQUIREMENTS_BASELINE.md`, `docs/PROJECT_SCOPE.md` and `docs/EPIC_STATUS.md` for the approved baseline, project scope and epic status register.
