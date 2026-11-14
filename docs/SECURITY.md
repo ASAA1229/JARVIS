@@ -141,6 +141,10 @@ Security acceptance requires negative tests for authentication, replay, authoriz
 - Optional Piper TTS runs with shell execution disabled, bounded input and timeout; use only a trusted executable and appropriately licensed model.
 - Website gateway keys are per-site hashes and must never be exposed in browser bundles, logs or source control.
 
+## Current approval/checkpoint regression gate
+
+The Live DAG baseline CI run `43415584498` exposed failures in asynchronous approval-rejection assertions and a persisted-state validation defect: an approval-pending branch could carry a terminal outcome. The isolated fix branch `fix-live-dag-ci-hardening` now awaits asynchronous rejection assertions and rejects this incompatible checkpoint state. This is a candidate remediation, not a security acceptance result. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) for `2b9613088d8f571459b16fa3390107837fca6630` was IN PROGRESS at the last check. Authenticated approval, permission boundaries, replay/race cases and crash/restart recovery still require passing adversarial tests. Do not mark approval/checkpoint security as accepted until those results are recorded.
+
 ## Document parser security boundaries
 
 - Binary uploads use the signed device session and canonical base64 validation before parsing.

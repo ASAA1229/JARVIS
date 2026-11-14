@@ -2,7 +2,7 @@
 
 **Status date:** 2026-11-13  
 **Repository:** https://github.com/ASAA1229/JARVIS  
-**Working branch:** `new-workflow-dag-integration`  
+**Working branch:** `fix-live-dag-ci-hardening` (isolated CI-hardening branch based on `new-workflow-dag-integration`)  
 **Baseline:** existing implementation plus the current feature-branch changes; every test/release claim must name the exact commit and environment.
 
 ## 1. Purpose
@@ -31,7 +31,7 @@ The POC is incremental: it does not require every future platform or capability 
 
 Status terms:
 - **IMPLEMENTED — NEEDS TESTING:** implementation is present; this does not mean tests passed.
-- **TEST-AUTHORED:** automated test source exists; execution/pass is not implied.
+- **NEEDS TESTING:** automated test source exists; execution/pass is not implied.
 - **AUTOMATED PASS — EXACT SHA:** CI or local execution passed for the named exact commit.
 - **DEVICE VERIFIED:** tested on the named physical device/OS and scenario.
 - **PARTIAL:** some paths exist; stated acceptance is incomplete.
@@ -50,7 +50,7 @@ Status terms:
 | Piper/browser speech output | PARTIAL | Confirm local Piper setup and distinguish remote browser speech fallback |
 | Task planning, task lifecycle and policy approvals | IMPLEMENTED — NEEDS TESTING | End-to-end side-effect, idempotency, cancellation and recovery tests |
 | Concurrent workflow DAG executor | IMPLEMENTED — NEEDS TESTING | Live workflow route preserves dependencies; isolated child tasks run through policy, branch approvals, encrypted journal, audit, verifier, bounded concurrency and resource locks; exact-head integration tests pending |
-| Checkpoint integrity and cancellation uncertainty handling | IMPLEMENTED — NEEDS TESTING | Encrypted DAG checkpoints and fail-closed restart are wired; exact-head tests, process-kill recovery and explicit owner-resume acceptance remain |
+| Checkpoint integrity and cancellation uncertainty handling | NEEDS TESTING — validation defect found | Checkpoint validation did not reject an approval-pending branch carrying a terminal outcome; a fail-closed validation fix is on `fix-live-dag-ci-hardening`, pending CI and restart/fault tests |
 | Encrypted memory and owner-reviewed learning candidates | IMPLEMENTED — NEEDS TESTING | Lifecycle, deletion, corruption, cross-device isolation and quality validation |
 | Learning quality measurement | PARTIAL — live ranked retrieval hook and versioned synthetic benchmark authored | Run exact-head benchmark; add owner-labelled real retrieval set and regression gates |
 | Text-document RAG | IMPLEMENTED — NEEDS TESTING | Adversarial corpus, retrieval relevance, isolation, deletion and index rebuild tests |
@@ -107,3 +107,12 @@ The POC succeeds when:
 - Automatic model fine-tuning.
 - Mandatory cloud AI, paid hosted services or continuous cloud audio.
 - Production release based solely on source presence or a green build.
+
+## 7. Exact-head CI evidence and current delivery state
+
+- Baseline feature commit: `156b5750ef99e10a8d33c43ad5dc873a183d57cd` on `new-workflow-dag-integration`.
+- GitHub Actions run: [43415584498](https://github.com/ASAA1229/JARVIS/actions/runs/43415584498).
+- Results: dependency installation, SBOM generation, dependency audit, TypeScript check/build and Android debug APK build passed. Automated tests: **409 passed, 6 failed of 415**. Browser smoke, Python release tests and release-manifest/provenance steps were skipped after the test failure.
+- Failure groups: async rejection assertions in approval authorization tests; checkpoint validation accepting an `awaiting_approval` branch with `verified_success` outcome; synthetic retrieval benchmark measuring precision across up to five results while asserting a single-label Precision@K of 1.0.
+- Candidate corrections are committed to `fix-live-dag-ci-hardening`. Exact-head CI run [43419769716](https://github.com/ASAA1229/JARVIS/actions/runs/43419769716) is IN PROGRESS for `2b9613088d8f571459b16fa3390107837fca6630`; no release gate is considered passed until the full run completes successfully.
+- The branch creation and file updates do not constitute device acceptance, production deployment or owner acceptance.

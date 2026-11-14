@@ -19,7 +19,7 @@ The project is intended to evolve into a cross-platform personal AI operating sy
 
 The shared core is a Node.js 24 / TypeScript modular monolith. The primary host adapter is Windows-focused and an Android companion exists. macOS, Linux desktop adapters and iOS are target platforms, not currently accepted implementations. Android build/two-phone acceptance, target-Windows voice/automation acceptance and exact-head release validation require separate evidence.
 
-The concurrent workflow DAG executor is not yet fully integrated with the live workflow route, task journal, policy approvals, audit and outcome verification. Learning quality metrics have an initial encrypted evaluator and owner-feedback surface, but are not yet connected to a versioned retrieval benchmark or regression gate. Document RAG and PDF/DOCX/local OCR parser sources exist; their adversarial, relevance, deletion and real-environment acceptance remain separate gates.
+The concurrent workflow DAG executor is integrated with the live workflow route, isolated child tasks, policy approvals, encrypted checkpoints, audit and outcome verification; exact-head CI and crash/restart acceptance are still required. Learning quality metrics are connected to the ranked retriever and a versioned synthetic benchmark; representative owner-labelled evaluation and regression thresholds remain outstanding. Document RAG and PDF/DOCX/local OCR parser sources exist; their adversarial, relevance, deletion and real-environment acceptance remain separate gates.
 
 **Source presence is not release readiness.**
 
@@ -63,7 +63,12 @@ See `.env.example` for all settings.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — components, AI providers, Ollama, agents, memory, retrieval, concurrency and platform strategy.
-- [POC](docs/POC.md) — current capability baseline, constraints and acceptance gates.\n- [User Stories](docs/USER_STORIES.md) — outcome-based stories and acceptance criteria.\n- [Gap Analysis](docs/GAP_ANALYSIS.md) — prioritized delivery gaps and closure sequence.\n- [Requirements](docs/REQUIREMENTS.md) — consolidated product scope, constraints and acceptance criteria.
+- [POC](docs/POC.md) — current capability baseline, constraints and acceptance gates.
+- [User Stories](docs/USER_STORIES.md) — outcome-based stories and acceptance criteria.
+- [Gap Analysis](docs/GAP_ANALYSIS.md) — prioritized delivery gaps and closure sequence.
+- [Project Status](docs/PROJECT_STATUS.md) — authoritative maturity scores, gap register and current evidence.
+- [Release Readiness](docs/RELEASE_READINESS.md) — release gates and current GO/NO-GO decision.
+- [Requirements](docs/REQUIREMENTS.md) — consolidated product scope, constraints and acceptance criteria.
 - [Development](docs/DEVELOPMENT.md) — workstation setup, commands, branch policy and testing.
 - [Operations](docs/OPERATIONS.md) — startup, monitoring, backup, recovery, connectivity and release procedures.
 - [Security](docs/SECURITY.md) — trust model, authorization, privacy, cryptography and prohibited operations.

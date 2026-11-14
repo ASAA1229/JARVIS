@@ -115,7 +115,7 @@ test('versioned synthetic retrieval benchmark scores the actual ranked retriever
       const relevantId = expected.get(item.key)!;
       const ranked = await manager.rankLongTerm(item.query, 5);
       assert.equal(ranked[0]?.memory.id, relevantId, 'benchmark ' + item.key + ' (' + LEARNING_RETRIEVAL_BENCHMARK_VERSION + ')');
-      await manager.evaluateRetrieval({ query: item.query, relevantIds: [relevantId], rating: 'helpful', limit: 5 });
+      await manager.evaluateRetrieval({ query: item.query, relevantIds: [relevantId], rating: 'helpful', limit: 1 });
     }
     const quality = manager.status().quality;
     assert.equal(quality.sampleCount, LEARNING_RETRIEVAL_BENCHMARK.length);
