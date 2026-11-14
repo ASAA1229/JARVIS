@@ -250,7 +250,7 @@ PRs #63/#64 are merged into `new`; local lint, build, tests, browser smoke, Pyth
 - Jenkins: approved controller/agent, pipeline definition, credentials, immutable build-identity inputs (customer/product/version/release coordinates).
 - Nexus: repository key/format, canonical path hierarchy, auth contract, trust-anchor distribution, retention/immutability policy and explicit publish authorization for each digest.
 - Devices: the MSI Windows 11 microphone/STT/wake acceptance run and two physical Android phones (build, install, enroll, revoke, offline/reconnect).
-- Signing: `MANIFEST_IGNORE_PRIVATE_KEY` / `MANIFEST_IGNORE_PUBLIC_KEY` repository secrets for release signatures.
+- Signing: `JARVIS_RELEASE_SIGNING_KEY` (private PEM, environment only) and `JARVIS_RELEASE_PUBLIC_KEY` for `scripts/release-bundle.mjs`; `MANIFEST_IGNORE_PRIVATE_KEY` / `MANIFEST_IGNORE_PUBLIC_KEY` repository secrets for release signatures.
 - Owner acceptance of performance budgets (provisional values live in `scripts/perf-soak.ts`).
 
 ### Backup and restore tool

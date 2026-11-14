@@ -158,8 +158,8 @@ Approving, rejecting or expiring a branch approval updates that branch and resum
 | Platform | Intended implementation | Current boundary |
 |---|---|---|
 | Windows desktop | Shared core + native process/window/UI Automation adapters | Primary host |
-| macOS desktop | Shared core + native accessibility adapters | Not implemented/validated |
-| Linux desktop | Shared core + accessibility/portal adapters | Not implemented/validated |
+| macOS desktop | Shared core + native accessibility adapters | Adapter implemented behind the fail-closed contract; not tested on hardware (mocked runner only) |
+| Linux desktop | Shared core + accessibility/portal adapters | Adapter implemented behind the fail-closed contract; not tested on hardware (mocked runner only) |
 | Android | Kotlin client, Android Keystore and native adapters | Source exists; build/device acceptance required |
 | iOS | Swift/SwiftUI, Keychain/Secure Enclave where available | Not implemented |
 

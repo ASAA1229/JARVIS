@@ -1,6 +1,6 @@
 # JARVIS — Authoritative Project Status
 
-**Status date:** 2026-11-13  
+**Status date:** 2026-11-14 (reconciled with the 2026-11-14 engineering batch; earlier dated records preserved)  
 **Repository:** https://github.com/ASAA1229/JARVIS  
 **Active delivery branch:** `new` (contains merged PRs #63 and #64)  
 **Main branch:** unchanged by this delivery increment
@@ -45,8 +45,8 @@ Scores are provisional and must be revised when source audit, exact-head CI, phy
 | JARVIS-GAP-003 | P0 | COMPLETE AND VERIFIED (locally) - restart marks dispatched branches uncertain (never replayed); explicit owner-reconciled resume implemented (`resumeWorkflowRun`, `POST /api/workflow/resume`) and tested; kill is simulated at journal level, not a real SIGKILL |
 | JARVIS-GAP-004 | P0 | BLOCKED BY EXTERNAL DEPENDENCY - physical MSI microphone/STT/wake acceptance; OWNER ACCEPTANCE PENDING |
 | JARVIS-GAP-005 | P0 | PARTIALLY COMPLETE - local lint/build/497+3 tests/browser smoke/33 Python tests pass; `e2e_recovery` launches real Notepad and failed once under concurrent load but passes in isolation; GitHub exact-head CI not yet confirmed |
-| JARVIS-GAP-006 | P0 | PARTIALLY COMPLETE - duplicate-final-transcript/one-task-per-utterance suppression and wake metric counters implemented and tested (software level); hardware false-accept/false-reject rates need physical measurement |
-| JARVIS-GAP-007 | P1 | PARTIALLY COMPLETE - synthetic versioned benchmark passes; owner-labelled real corpus and thresholds still required |
+| JARVIS-GAP-006 | P0 | PARTIALLY COMPLETE - duplicate-final-transcript/one-task-per-utterance suppression and wake metric counters implemented and tested (software level); offline voice evaluation harness (`npm run eval`, commit 2323df3) with synthetic fixtures added; hardware false-accept/false-reject rates need physical measurement |
+| JARVIS-GAP-007 | P1 | PARTIALLY COMPLETE - synthetic versioned benchmark passes and an offline retrieval evaluation harness (`npm run eval`, commit 2323df3, synthetic fixtures) exists; owner-labelled real corpus and thresholds still required |
 | JARVIS-GAP-008 | P1 | COMPLETE AND VERIFIED (locally) - atomic quality counters with rollback and visible write failures; candidate lifecycle, dedup, provenance, privacy and no-auto-promotion tests pass |
 | JARVIS-GAP-009 | P1 | COMPLETE AND VERIFIED (locally) - injection across all document types, delimiter forgery, per-device isolation (lexical and semantic), verified deletion and index rebuild tests pass |
 | JARVIS-GAP-010 | P1 | COMPLETE AND VERIFIED (locally; Poppler/Tesseract mocked, Tesseract absent on this host) - hostile ZIP/XML/PDF inputs, bombs, traversal, timeouts, missing tools and temp-file cleanup tested; defects fixed |
@@ -54,14 +54,14 @@ Scores are provisional and must be revised when source audit, exact-head CI, phy
 | JARVIS-GAP-012 | P1 | BLOCKED BY EXTERNAL DEPENDENCY - two physical Android phones required; OWNER ACCEPTANCE PENDING |
 | JARVIS-GAP-013 | P1 | COMPLETE AND VERIFIED (locally) - per-change durable checkpoints, per-device push lock, claim-before-run command decisions, replay/conflict/revocation/crash tests pass |
 | JARVIS-GAP-014 | P1 | COMPLETE AND VERIFIED (locally) - canonical path, encryption, restart, 30-minute idle expiry and bounds reconciled in code (`describe()`) and tested; documentation aligned |
-| JARVIS-GAP-015 | P1 | PARTIALLY COMPLETE - `npm run perf` harness implemented and run (numbers in Project Status); budgets are provisional until the owner agrees targets |
+| JARVIS-GAP-015 | P1 | PARTIALLY COMPLETE - `npm run perf` harness implemented and run (numbers in Project Status); stored baseline `perf/baseline.i5-1235U.json` and regression-threshold trend comparison added (commit 66b3411); budgets are provisional until the owner agrees targets and no long soak exists |
 | JARVIS-GAP-016 | P1 | COMPLETE AND VERIFIED (locally) - malformed manifest, injection, scope-escalation, tampered-state and protected-path tests pass; symlink-escape defect fixed |
 | JARVIS-GAP-017 | P1 | COMPLETE AND VERIFIED (locally) - integrity-protected backup/restore tool, restore drills, tamper/traversal refusal and derived-deletion verification tested; external/older backups remain outside JARVIS control |
-| JARVIS-GAP-018 | P1 | PARTIALLY COMPLETE - local SBOM-vs-lockfile verifier (CI step added), checksum/provenance/tamper tests pass; signing keys and clean-room CI evidence pending |
-| JARVIS-GAP-019 | P2 | NOT IMPLEMENTED - native adapter; fail-closed platform contract and stub implemented and tested |
-| JARVIS-GAP-020 | P2 | NOT IMPLEMENTED - native adapter; fail-closed platform contract and stub implemented and tested |
+| JARVIS-GAP-018 | P1 | COMPLETE AND VERIFIED (locally) - Ed25519 signed release bundle (`scripts/release-bundle.mjs`, commit aa05317) with clean-room verification and tamper tests (`test/release_bundle_signing.test.ts`), plus the SBOM-vs-lockfile verifier; tested with locally generated keys only; the production signing key and a GitHub run remain owner/infrastructure actions |
+| JARVIS-GAP-019 | P2 | IMPLEMENTED — NOT TESTED - macOS adapter behind the fail-closed contract (`src/platform/nativeAdapters.ts`, commit c97ee83); unit-tested with a mocked process runner only; no macOS hardware |
+| JARVIS-GAP-020 | P2 | IMPLEMENTED — NOT TESTED - Linux adapter behind the fail-closed contract (same module, commit c97ee83); mocked runner only; no Linux desktop hardware |
 | JARVIS-GAP-021 | P2 | NOT IMPLEMENTED - no iOS client built (out of scope) |
-| JARVIS-GAP-022 | P2 | PARTIALLY COMPLETE - supported-app catalogue derived from the launcher allowlist with contract and drift tests; live API/UI adapter and version-drift evidence per app pending |
+| JARVIS-GAP-022 | P2 | COMPLETE AND VERIFIED (locally, synthetic) - supported-app catalogue derived from the launcher allowlist with contract and drift tests plus a generated adapter-contract suite for every catalogued app (commit aee9167); no live app or physical-device evidence |
 | JARVIS-GAP-023 | P2 | BLOCKED BY EXTERNAL DEPENDENCY - disabled provider contract implemented; live Jenkins needs approved pipeline/credentials |
 | JARVIS-GAP-024 | P2 | BLOCKED BY EXTERNAL DEPENDENCY - disabled provider and local trust-policy mock implemented; live Nexus needs approved coordinates/credentials/owner authorization |
 
@@ -116,3 +116,15 @@ Mean: **6.1/10**.
 Approved planning/governance reference for ASAA, Portfolio, JARVIS, Templates and shared ecosystem capabilities. Round 6 (12 consolidation stages) is complete at framework/consolidation level. Individual requirement mapping, reconciliation of the 1,000 discovery answers, repository/runtime evidence, named owners, dependency validation, acceptance criteria, evidence-based gaps and delivery estimates remain pending. Approval does not authorize implementation, testing, deployment, paid services or merges.
 
 See `docs/ASAA_MASTER_REQUIREMENTS_BASELINE.md`, `docs/PROJECT_SCOPE.md` and `docs/EPIC_STATUS.md` for the approved baseline, project scope and epic status register.
+
+## 2026-11-14 batch reconciliation (documentation owner)
+
+Head at time of writing: `3e4b9d1`. The earlier text above (2026-11-13) is preserved; the gap table above is current.
+
+| Check | Result |
+|---|---|
+| Coordinator rerun at `66b3411` | lint pass, `npm test` 546/546 node tests, 3/3 script tests |
+| Documentation-owner rerun at `3e4b9d1` | `npm run lint` pass; `npm test` 547 tests, 543 passed, 4 failed. All 4 failures are in `test/e2e_recovery.test.ts` (`E2E-LIVE-01`, `SEC-API-08`, `SEC-API-12`, `RECOVER-01`) with `EADDRINUSE` on fixed port 3899 (and one shared-audit-log mismatch) because another agent's test process was using the same port and data directory at the same time. This is an environment collision, not a product failure, but it was not rerun cleanly here and is not claimed as a pass. |
+| GitHub Actions | Not observed (`gh` is unauthenticated). Nothing is CI VERIFIED. |
+
+Gap tally (24): COMPLETE AND VERIFIED 12 (001, 002, 003, 008, 009, 010, 013, 014, 016, 017, 018, 022); PARTIALLY COMPLETE 5 (005, 006, 007, 011, 015); BLOCKED BY EXTERNAL DEPENDENCY 4 (004, 012, 023, 024); IMPLEMENTED — NOT TESTED 2 (019, 020); NOT IMPLEMENTED 1 (021). Maturity remains 6.1/10 (baseline 5.7); it was not re-scored for this batch. Also added: `test/privacy_log_exclusion.test.ts` (commit 3e4b9d1), a sentinel scan showing request, transcript and document text stay out of the audit log and plaintext state. Decision remains NO-GO.
