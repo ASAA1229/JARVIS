@@ -13,7 +13,8 @@
     "test:ollama": "node scripts/test-ollama.mjs",
     "owner-recovery": "node scripts/owner-recovery.mjs",
     "lint": "tsc --noEmit",
-    "perf": "tsx scripts/perf-soak.ts"
+    "perf": "tsx scripts/perf-soak.ts",
+    "eval": "tsx scripts/eval-offline.ts"
   },
   "keywords": [
     "jarvis",

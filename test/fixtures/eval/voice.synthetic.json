@@ -1,0 +1,23 @@
+{
+  "name": "synthetic-voice-v1",
+  "version": "1.0.0",
+  "synthetic": true,
+  "utterances": [
+    { "atMs": 0, "deviceId": "hud", "utteranceId": "utt-aaaaaaaa", "transcript": "open notepad", "expect": "accept" },
+    { "atMs": 400, "deviceId": "hud", "utteranceId": "utt-aaaaaaaa", "transcript": "open notepad", "expect": "suppress" },
+    { "atMs": 900, "deviceId": "hud", "utteranceId": "utt-bbbbbbbb", "transcript": "Open Notepad.", "expect": "suppress" },
+    { "atMs": 9000, "deviceId": "hud", "utteranceId": "utt-cccccccc", "transcript": "open notepad", "expect": "accept" },
+    { "atMs": 9500, "deviceId": "hud", "utteranceId": "utt-dddddddd", "transcript": "what is the battery level", "expect": "accept" },
+    { "atMs": 9600, "deviceId": "phone", "utteranceId": "utt-eeeeeeee", "transcript": "what is the battery level", "expect": "accept" },
+    { "atMs": 30000, "deviceId": "hud", "utteranceId": "utt-ffffffff", "transcript": "list my repositories", "expect": "accept" },
+    { "atMs": 30010, "deviceId": "hud", "utteranceId": "utt-ffffffff", "transcript": "list my repositories", "expect": "suppress" }
+  ],
+  "wakeAttempts": [
+    { "intended": true, "fired": true },
+    { "intended": true, "fired": true },
+    { "intended": true, "fired": true },
+    { "intended": true, "fired": false },
+    { "intended": false, "fired": true },
+    { "intended": false, "fired": false }
+  ]
+}
