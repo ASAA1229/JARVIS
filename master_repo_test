@@ -1,0 +1,231 @@
+# JARVIS Master Test & Acceptance Register
+
+**Updated:** 2026-10-24. **Overall acceptance:** BLOCKED — NOT READY FOR RELEASE.
+
+## Current device-security worktree verification (2026-10-24)
+
+Worktree: branch `new`, dirty task changes (no new commit SHA). This evidence is local and is not hosted CI.
+
+| Check | Result | Notes |
+|---|---|---|
+| `npm run build` | PASS | TypeScript build completed. |
+| `npm run lint` | PASS | Project script is `tsc --noEmit`. |
+| `npm test` | PASS — 75 passed, 0 failed, 0 skipped | Required a temporary process-only `os.userInfo()` shim for sandbox `uv_os_get_passwd … ENOMEM`; shim removed afterward. |
+| `npm run test:browser` | FAIL | After legacy bootstrap enrollment and earlier HUD checks, timed out twice at `test/browser-smoke.mjs:290` while waiting for the simulated recognizer lifecycle. The new QR/TOTP workflow is not covered by this harness. |
+| `npm audit --audit-level=low` | UNAVAILABLE | npm registry advisory endpoint errored. Dependency installation reported zero issues, but no final audit result is claimed. |
+| `npm ls --depth=0` | PASS | Direct dependencies resolved. |
+| `node --check src/companion/app.js` / `deviceCrypto.js` | PASS | Browser JavaScript syntax. |
+
+### New enrollment/TOTP test coverage
+
+- `test/device_security.test.ts`: provisioning URI and SVG QR, server verification, encrypted secret-at-rest/no audit leak, proof-of-possession, pending owner review, exact-hash/TOTP approval, least-privilege grant, one-time code replay rejection, failed-code lockout, cancellation/expiry invalidation, unauthorized management denial, and HTTP create → exchange → approve → session → revoke flow with revoked-session denial.
+- Existing `test/e2e_recovery.test.ts` full API regression remains passing; its expired-approval test now uses an isolated key to avoid test-order-dependent duplicate identity state.
+- Automated exchange tests use synthetic Ed25519 keys and test TOTP seed values. They do not prove Google Authenticator camera scanning, physical Android enrollment, second-device network transport, or UI browser acceptance.
+
+## Reported local checks
+Reported on a dirty `fix` working tree based on `9ead85cdacb7e9dedf855605a6d0942760ea3a6f`:
+
+| Check | Result | Limit |
+|---|---|---|
+| `npm ci` | PASS | Reported lockfile install; rerun on exact final commit. |
+| `npm run build` | PASS | Does not prove real OS behavior. |
+| `npm run lint` | PASS | Existing script reportedly runs TypeScript no-emit checking. |
+| `npm test` | PASS — 51 passed, 0 failed, 0 skipped | Automated unit/integration only; no physical microphone or Android proof. |
+| `npm run test:browser` | PASS | Speech recognition simulated; harness timeout correction was reported uncommitted. |
+| `npm audit --audit-level=low` | PASS — 0 reported vulnerabilities | Rerun before release. |
+| `npm ls --depth=0` | PASS | Top-level dependencies resolved. |
+| Exact-commit hosted CI | UNVERIFIED | No authenticated run verified. |
+| Android build/physical devices | BLOCKED | SDK/tooling and devices unavailable in report. |
+| Real microphone/vendor voice | UNVERIFIED | Simulated browser recognition is not physical acceptance. |
+| Visible Notepad launch on target MSI | UNVERIFIED | Mocks/process tests do not prove the real visible window opened. |
+| Two-phone acceptance | UNVERIFIED | Physical two-device enrollment/revocation not performed. |
+
+## Automated regression areas reported
+
+- Device/session authentication, expiry, revocation, malformed Ed25519 keys and replay protection.
+- Default-deny policy and no public adapter dispatcher bypass.
+- Task-scoped single-use approvals and cross-device permission checks.
+- AI planner schema validation and rejection of prohibited/injected operations.
+- Outcome truthfulness for partial/interrupted execution and audit-persistence failure.
+- Hash-chained audit integrity, redaction, tamper/truncation detection, and fail-closed recovery.
+- Live HTTP lifecycle and persistent revocation recovery.
+- Voice privacy defaults, push-to-talk, mute, cancellation, and transcript disposal (automated/simulated as applicable).
+- HUD route/assets and browser keyboard/reduced-motion/error smoke checks.
+
+## Hands-free voice and spoken-response acceptance (fix branch)
+
+Implementation added on `fix`: opt-in hands-free wake detection for “Hey/Hello/Hi JARVIS” and “I'm here”; stop phrases; command capture for wake phrase plus command in one utterance or separate utterances; browser speech synthesis for verified outcomes, failures, and approval messages; and recognition-error recovery. **Not yet tested or accepted in the target environment.**
+
+| Check | Current result | Required evidence |
+|---|---|---|
+| TypeScript/build/lint on updated branch | NOT RUN from this connected editing session | Run `npm run build` and `npm run lint` on the exact commit. |
+| Automated unit/browser tests | NOT RUN from this connected editing session | Run `npm test` and `npm run test:browser`; add mock-event coverage for wake, command, stop, TTS and duplicate suppression. |
+| Real wake phrase + Notepad launch | UNVERIFIED | On target Windows, say “Hey JARVIS, open Notepad”; prove actual app launch, policy decision, audit record, and truthful result. |
+| Spoken response audibility | UNVERIFIED | Verify browser voice output is audible, voice availability/autoplay behavior, and no microphone feedback loop. |
+| Separate wake then command | UNVERIFIED | Say “Hey JARVIS”, wait for acknowledgment, then “Open Notepad”. |
+| Hands-free stop and disable | UNVERIFIED | Test stop phrase returns to wake standby; disable releases microphone; mute stops capture. |
+| Offline/background behavior | NOT CLAIMED | Determine browser vendor/service behavior; no offline guarantee without evidence. |
+
+## M12 local-only gesture foundation
+
+The `new` branch adds `test/gesture.test.ts` for strict schema/version/allowlist/staleness checks, confidence bounds, synthetic landmark pose rules, dwell/rearm/duplicate suppression, tracking loss, and a source boundary check that gesture modules cannot call backend routes, shells, or adapters. All **7/7** passed. The Edge browser smoke passed with a fake camera: default-off state, local model/WASM initialization and CPU inference, video-only stream, explicit stop/release, simulated camera loss/permission denial, and cross-origin request monitoring. These are mocked/synthetic checks, not physical webcam acceptance.
+
+The most recent full `npm test` attempt (69 total) reported **67 passed, 2 failed** under default test-file concurrency: `FLOW-SYSTEM-FACTS` expected a completed memory query but received `FAILED`; `SEC-HARD-03` expected a completed battery query but received `PARTIAL`. A serial retry (`npm test -- --test-concurrency=1`) reported **66 passed, 3 failed**: the same two plus `RECOVER-02`, whose setup session was inactive when the request ran. The full regression suite is not green; these existing system-fact/environment and timing/setup failures are outside gesture code and remain unresolved.
+
+The test launcher required a temporary process-only shim for Node's `os.userInfo()` (`uv_os_get_passwd … ENOMEM`); no application source was changed for it. A final `npm audit --audit-level=low` could not reach the npm registry advisory endpoint. The install command that added the reviewed MediaPipe package reported zero vulnerabilities, which is not a replacement for a successful final audit query.
+
+## Required real-runtime acceptance
+
+### Windows commands / Notepad
+Run the backend on the actual Windows host and issue the command through the real JARVIS UI/text/voice path. Record the request, policy and approval decision, adapter invocation, OS process evidence, visible-window observation, audit entry, and user-facing result. Test denial, expired session, missing approval, spawn error, cancellation, timeout, and restart. Distinguish requested, awaiting approval, denied, failed, started, and verified. A mock or PID alone is not proof that a visible window is ready.
+
+### Voice/audio
+Test permission granted/denied, missing/disconnected microphone, explicit start/stop, mute, cancel, late/empty transcript, timeout, duplicate activation, page/session close, actual recognition engine and its local/remote data behavior, real TTS playback, unavailable voice, autoplay restriction, and stop/cancel. Confirm no capture at startup, wake word disabled by default, visible listening indicator, and no false speaking/listening status.
+
+### Android / two phones
+Build/install on physical devices. Verify enrollment proof-of-possession, TLS trust, signed requests, replay protection, independent identities/sessions/permissions, revocation, reconnect, notifications, approval expiry, and critical-action step-up. Revoke one phone and prove the other remains independent.
+
+## Release blockers
+
+1. Exact-commit hosted CI.
+2. Owner acceptance on target Windows 11.
+3. Physical microphone and real browser/vendor voice behavior.
+4. Enrollment abuse controls, rate limiting, owner permission controls.
+5. Persistence write-failure/recovery evidence and exhaustive API contracts/error redaction.
+6. Android build and secure backend integration.
+7. Two-phone physical acceptance.
+8. Approved M8 scope and authoritative M10/M11 specifications.
+9. Full all-branch Markdown/test inventory before destructive consolidation.
+
+## Rules
+
+Never remove tests just to make a suite green. Never replace real behavior with production mocks. Label simulated tests honestly. Run all checks against the exact commit being accepted. Preserve unique acceptance criteria and source tests until the complete inventory is reviewed. Do not release or promote to `main` automatically.
+
+
+## Hosted CI on the consolidated baseline (2026-10-24)
+
+Exact source commit: `1add4dd60da8bfdfdbdf4db6966b2460fd088bf5`.
+
+| Branch/event | Hosted run | Result |
+|---|---|---|
+| `fix` push | [40086575134](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086575134) | PASS |
+| `fix` pull request to `dev` | [40086577025](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577025) | PASS |
+| `new` push | [40086577872](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086577872) | PASS |
+| `test` push | [40086580489](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40086580489) | PASS |
+
+The configured workflow passes clean dependency installation, build, TypeScript checking, automated tests, and browser smoke tests on this exact commit. The earlier local browser smoke timeout recorded above is historical evidence from a dirty worktree and does not describe the current hosted run. The current pass is still a browser harness result, not physical microphone/voice acceptance.
+
+## Branch inventory and source-test preservation
+
+A non-truncated recursive tree inventory was retrieved for `main`, `dev`, `new`, `fix`, `test`, `lovable`, `enhancement`, and `Jarvis-Abhi`. The `new`, `fix`, `test`, and `enhancement` test files are aligned on the consolidated baseline. Older `dev`/`lovable` variants of tests (including core, hardening, browser smoke, voice HUD, audit and recovery tests) differ from the consolidated versions; they were not blindly copied over newer regression coverage. Their different assertions should be reviewed if future regressions indicate a missing case. The `feature/local-neural-tts` branch was not included in this tree query because the connected GitHub fetch wrapper rejected its slash-containing ref name.
+
+The Lovable branch's older POC and master documentation refer to a dirty 2026-10-23 tree and are superseded for current status by the consolidated `POC.md`, `POC2.md`, `master_repo_md.md`, and this register. Its ADRs and milestone audit documents remain historical design/evidence references, not proof of current runtime acceptance.
+
+## Still requiring target-environment evidence
+
+- [ ] Real visible Notepad/app launch through the actual Windows backend and JARVIS UI/voice/text request path.
+- [ ] Windows UI Automation target selection, content entry, cancellation and independent persisted-result verification.
+- [ ] Physical microphone permission, wake-word lifecycle, stop/mute/cancel, recognition recovery, and audible TTS.
+- [ ] Android enrollment and revocation with two physical phones, independent keys/sessions/permissions, and secure transport review.
+- [ ] Security adversarial tests for persistence/audit failure, approval binding and policy non-bypass.
+- [ ] Native iOS agent and universal application-control acceptance remain incomplete.
+
+
+## UI Automation control-target regression (2026-10-24)
+
+- Source commit with fix and regression tests: `220e002f8759d1631a032ff1bf7e67e6bf362273`.
+- Fixed a second instance of the same variable-binding defect: click now validates and indexes `$foundControls`; set-value validates and indexes `$matches`.
+- Added `test/windows_desktop_agent.test.ts` to verify collection consistency for both operations and escaping of single quotes in PowerShell control names and text values.
+- Hosted CI passed for `fix` push, `fix` PR, `new` push, `test` push, and `enhancement` PR on that commit.
+- This is script-generation regression coverage. Actual UI Automation execution, unique control matching, and post-action behavior still require supervised Windows 11 acceptance.
+
+
+## Final consolidated hosted CI — 2026-10-24
+
+Final source/test commit `9a40f95528d32aaed63626a1c48ae1ef4e1cda51` passed all configured workflow stages (locked dependency install, TypeScript build, TypeScript check, automated suite, browser security smoke test):
+
+| Event | Run | Result |
+|---|---|---|
+| `fix` push | [40089155846](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089155846) | PASS |
+| `fix` PR | [40089159050](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159050) | PASS |
+| `new` push | [40089159384](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089159384) | PASS |
+| `test` push | [40089168551](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089168551) | PASS |
+| `enhancement` PR | [40089122755](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40089122755) | PASS |
+
+The new Windows adapter tests verify the generated PowerShell control lookup uses the same collection for uniqueness checking and indexing, escapes single-quoted control/text values, includes password/financial-like field guards, compares the resulting value independently, and rejects missing text or invalid control names. These are code/script-generation tests, not live UI Automation acceptance.
+
+Historical dirty-worktree results above are retained as historical evidence and are not superseded silently: exact-commit hosted CI is green now, while real Windows interactive session, physical audio, Android/two-phone, native iOS, and independent security review remain release blockers. `npm audit` was not part of the configured workflow and remains unverified.
+
+## Approval-binding regression suite — 2026-10-24
+
+New test file: `test/policy_gateway_binding.test.ts` on branch `gap-closure` / [PR #11](https://github.com/Guda-Abhishek/JARVIS/pull/11).
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Cross-task approval replay | Same parameters cannot authorize a different task | Test added; CI pending |
+| Cross-device approval replay | Approval cannot be consumed by a different requesting device | Test added; CI pending |
+| Operation substitution | Approval for app launch cannot authorize desktop text entry | Test added; CI pending |
+| Malformed parameter container | Null, array, primitive values are denied without throwing | Test added; CI pending |
+| Disallowed parameter | Unexpected `shell` parameter is denied before approval | Test added; CI pending |
+
+Source changes additionally enforce permission checks when rejecting approvals, matching the checks already performed when approving. Do not mark these tests PASS until the exact PR commit's hosted CI has completed successfully. The broader approval HTTP contract and physical-device acceptance are still open.
+
+## Adapter exception redaction regression — 2026-10-24
+
+New test file: `test/adapter_error_redaction.test.ts` on `gap-closure` / [PR #11](https://github.com/Guda-Abhishek/JARVIS/pull/11).
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Adapter throws private path-like diagnostic | User-facing task result contains generic failure only | Test added; CI pending |
+| Audit disclosure | Public audit records do not contain the injected diagnostic | Test added; CI pending |
+| Diagnostic usefulness | Completion audit records exception class only | Test added; CI pending |
+
+The core catches adapter exceptions and emits a bounded failure message plus the non-sensitive error class. Adapter-authored errors returned normally by other code paths still need a comprehensive disclosure review. Do not mark this test PASS until the exact PR commit CI completes.
+
+## CI feedback for approval-binding tests — 2026-10-24
+
+- Initial hosted run on the earlier test commit: build PASS, TypeScript check PASS, automated suite FAIL (100 passed, 1 failed); browser smoke was skipped because the test stage failed.
+- Failing case: operation-substitution fixture passed `appId` to `desktop:type_text`, so the correct parameter allowlist rejection happened before the binding check. This did not test the intended branch.
+- Corrected the fixture to use `desktop:launch_and_type` with its allowed parameters while reusing an `app:launch` approval. Corrected commit: `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
+- Current disposition: corrected CI rerun required; PASS is not claimed yet.
+
+## Corrected approval-binding and error-redaction CI — 2026-10-24
+
+- [GitHub Actions run 40091754717](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40091754717): PASS for source/test commit `191f1eefcfc1d171c3bd8ebc8731e83cdea2f85d`.
+- Locked dependency installation: PASS.
+- TypeScript build: PASS.
+- TypeScript check: PASS.
+- Automated suite: **101 passed, 0 failed, 0 skipped**.
+- Browser security smoke: PASS (`BROWSER_E2E_PASS`).
+- The initial operation-substitution fixture failure was corrected; the corrected task/device/operation binding test passes.
+- Documentation-only commits followed this source/test commit; source and tests were unchanged after the passing run. Physical target-device acceptance and independent security review remain open.
+
+## Approval-rejection permission tests — 2026-10-24
+
+New file: `test/rejection_permissions.test.ts` on `gap-closure` / PR #11.
+
+| Case | Intended assertion | Evidence status |
+|---|---|---|
+| Desktop approval rejection | Read-only approver without `APP_LAUNCH` is denied | Test added; CI pending |
+| Memory approval rejection | Approver without `DEVICE_MANAGE` is denied | Test added; CI pending |
+| Approval state | Unauthorized rejection leaves approval pending | Test added; CI pending |
+
+The prior passing CI run predates this test file. A new run is required to mark these cases PASS.
+
+## Rejection test assertion correction — 2026-10-24
+
+- First CI run with `test/rejection_permissions.test.ts`: build/typecheck PASS, test suite FAIL on two cases because synchronous throws were asserted with `assert.rejects`.
+- Expected permission checks were reached; test harness changed to `assert.throws` in commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- Corrected CI rerun required; do not mark these cases PASS before it completes.
+
+## Final gap-closure CI evidence — 2026-10-24
+
+- [GitHub Actions run 40092026438](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40092026438): PASS for source/test commit `f8f49920d15048dc6bebb85a3c22a2066777bfa4`.
+- Locked dependency installation: PASS.
+- TypeScript build: PASS.
+- TypeScript check: PASS.
+- Automated suite: **103 passed, 0 failed, 0 skipped**.
+- Browser security smoke: PASS (`BROWSER_E2E_PASS`).
+- Coverage added: approval replay binding (task/device/operation), malformed parameters, adapter error disclosure, and permission-restricted approval rejection.
+- Documentation-only updates followed the passing source/test commit; no source or test changes were made afterward.
+- Physical target-device acceptance, full API/error review, dependency audit status, and independent security review remain open.

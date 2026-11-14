@@ -1,0 +1,43 @@
+{
+  "name": "jarvis-core",
+  "version": "0.1.0",
+  "description": "Secure Personal AI Assistant POC - Windows Host and Android Companion",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "test": "node --test --import tsx test/**/*.test.ts && node --test scripts/on-site-change-detection.test.mjs",
+    "test:browser": "node test/browser-smoke.mjs",
+    "site-key": "tsx src/gateway/siteKeysCli.ts",
+    "test:ollama": "node scripts/test-ollama.mjs",
+    "owner-recovery": "node scripts/owner-recovery.mjs",
+    "lint": "tsc --noEmit",
+    "perf": "tsx scripts/perf-soak.ts"
+  },
+  "keywords": [
+    "jarvis",
+    "security-first",
+    "personal-assistant",
+    "zero-trust",
+    "windows",
+    "companion"
+  ],
+  "author": "JARVIS Team",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/qrcode": "1.5.5",
+    "playwright-core": "^1.64.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.1.1",
+    "otpauth": "9.5.2",
+    "qrcode": "1.5.4"
+  }
+}

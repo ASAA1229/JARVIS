@@ -1,0 +1,7 @@
+{
+  "type": "customer-release-verification",
+  "status": "FAILED",
+  "stage": "POLICY_AUTHENTICATION",
+  "code": "POLICY_AUTHENTICATION_FAILED",
+  "message": "Manifest-ignore checksum/trusted-digest verification failed."
+}

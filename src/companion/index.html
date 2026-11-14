@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>JARVIS Companion & Control Center</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-link="connecting">
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="app-container">
+    <!-- Title plate -->
+    <header class="header">
+      <div class="header-side">
+        <div class="pulse-indicator connecting" id="status-dot" role="img" aria-label="Laptop link status"></div>
+        <span id="link-label" class="link-label" role="status" aria-live="polite">LINKING…</span>
+      </div>
+      <div class="plate">
+        <h1>J.A.R.V.I.S.</h1>
+        <p class="plate-sub">// SECURE POC · DEVICE ENROLLMENT & KEYS</p>
+        <div class="ruler" aria-hidden="true"></div>
+      </div>
+      <div class="header-side header-side-right">
+        <a class="btn btn-secondary" href="/" aria-label="Open the JARVIS voice HUD">Open Voice HUD</a>
+        <div id="btn-device-status" class="device-chip" role="status" title="Device connection status">
+          <span id="header-device-name">No Device</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Laptop availability banner: reflects the real /api/status poll -->
+    <div id="link-banner" class="link-banner" role="status" aria-live="polite">Connecting to the JARVIS laptop core…</div>
+
+    <main class="main-content">
+      <!-- Request intake -->
+      <section class="card frame" id="card-requests">
+        <div class="card-header">
+          <h2>Request Intake</h2>
+          <span class="status-pill">Local Heuristic Planner</span>
+        </div>
+        <div class="card-body">
+          <div class="quick-prompts">
+            <button class="chip" data-prompt="What is the OS version?">OS Specs</button>
+            <button class="chip" data-prompt="Check system memory and RAM">Memory/RAM</button>
+            <button class="chip" data-prompt="What is the battery status?">Battery</button>
+            <button class="chip" data-prompt="Check C: drive disk space">C: Disk Space</button>
+            <button class="chip chip-warn" data-prompt="Please launch Notepad">Launch Notepad</button>
+            <button class="chip chip-warn" data-prompt="Launch Calculator">Launch Calc</button>
+            <button class="chip chip-danger" data-prompt="Format C: drive and delete files">Adversarial Test</button>
+          </div>
+          <div class="input-group mt-12">
+            <label class="sr-only" for="input-request">Request for JARVIS</label>
+            <input type="text" id="input-request" placeholder="Ask JARVIS (e.g., 'What is the OS version?')..." autocomplete="off">
+            <button id="btn-send-request" class="btn btn-primary">Send Request</button>
+          </div>
+          <ol class="pipeline" id="task-pipeline" aria-label="Request pipeline stages">
+            <li data-stage="sent" data-state="idle"><span class="pl-dot"></span><span class="pl-name">SENT</span></li>
+            <li data-stage="policy" data-state="idle"><span class="pl-dot"></span><span class="pl-name">POLICY</span></li>
+            <li data-stage="approval" data-state="idle"><span class="pl-dot"></span><span class="pl-name">CONSENT</span></li>
+            <li data-stage="verify" data-state="idle"><span class="pl-dot"></span><span class="pl-name">VERIFIED</span></li>
+          </ol>
+          <p class="muted" id="pipeline-note">No request submitted yet.</p>
+        </div>
+      </section>
+
+      <!-- Pending approvals -->
+      <section class="card frame" id="card-approvals">
+        <div class="card-header">
+          <h2>Task Governance · Approvals</h2>
+          <span class="badge badge-accent" id="approval-count">0 Pending</span>
+        </div>
+        <div class="card-body" id="approvals-container">
+          <p class="muted" id="no-approvals-msg">No actions currently require owner approval.</p>
+        </div>
+      </section>
+
+      <!-- Task evidence -->
+      <section class="card frame" id="card-tasks">
+        <div class="card-header">
+          <h2>Execution & Verified Outcomes</h2>
+        </div>
+        <div class="card-body">
+          <div id="tasks-feed" class="tasks-feed">
+            <p class="muted">Requests and verified host outcomes will appear here.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Manual review of uncertain/interrupted workflows. This never resumes a task automatically. -->
+      <section class="card frame" id="card-recovery" aria-labelledby="recovery-title">
+        <div class="card-header">
+          <h2 id="recovery-title">Recovery Review</h2>
+          <button id="btn-refresh-recovery" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted">Interrupted or uncertain tasks are never replayed automatically. Review the actual application state before choosing a disposition. A manual note is not proof that an action was saved or submitted.</p>
+          <p id="recovery-status" class="muted" role="status" aria-live="polite">Authenticate this device to review recovery tasks.</p>
+          <div id="recovery-feed" class="tasks-feed" aria-label="Tasks awaiting manual recovery review">
+            <p class="muted">No recovery tasks loaded.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Personal memory review; mutations are submitted through the signed policy-gated request path -->
+      <section class="card frame" id="card-memory" aria-labelledby="memory-title">
+        <div class="card-header">
+          <h2 id="memory-title">Personal Memory</h2>
+          <button id="btn-refresh-memories" class="icon-btn small" type="button">↻ Review memories</button>
+          <button id="btn-export-memories" class="icon-btn small" type="button">⤓ Export memories</button>
+        </div>
+        <div class="card-body">
+          <p class="muted">Memories are stored locally encrypted. Save, correction, and deletion requests use JARVIS's normal policy gateway and may require owner approval.</p>
+          <form id="memory-form" class="schedule-form">
+            <label for="memory-content">Save a memory</label>
+            <textarea id="memory-content" maxlength="4000" required rows="3" placeholder="Write a preference, project fact, or routine"></textarea>
+            <label for="memory-category">Category</label>
+            <select id="memory-category">
+              <option value="general">General</option>
+              <option value="preference">Preference</option>
+              <option value="project">Project</option>
+              <option value="routine">Routine</option>
+            </select>
+            <button class="btn btn-primary" type="submit">Save memory</button>
+          </form>
+          <p class="muted" id="memories-status" role="status" aria-live="polite">Authenticate this device to review personal memories.</p>
+          <div id="memories-feed" class="tasks-feed" aria-label="Saved personal memories">
+            <p class="muted">No memories loaded.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Owner-scoped scheduler controls; all requests still pass through the normal policy gateway -->
+      <section class="card frame" id="card-schedules" aria-labelledby="schedules-title">
+        <div class="card-header">
+          <h2 id="schedules-title">Scheduled Tasks</h2>
+          <button id="btn-refresh-schedules" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted">Schedules store the request, not an approval. Each run is re-planned and re-authorized; state-changing steps require fresh approval.</p>
+          <form id="schedule-form" class="schedule-form">
+            <label for="schedule-request">What should JARVIS do?</label>
+            <input id="schedule-request" type="text" maxlength="400" required placeholder="e.g., check system memory">
+            <div class="schedule-grid">
+              <div>
+                <label for="schedule-delay">Run after</label>
+                <input id="schedule-delay" type="number" min="1" max="720" value="5" required>
+              </div>
+              <div>
+                <label for="schedule-delay-unit">Delay unit</label>
+                <select id="schedule-delay-unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select>
+              </div>
+              <div>
+                <label for="schedule-repeat">Repeat every (optional)</label>
+                <input id="schedule-repeat" type="number" min="5" max="10080" placeholder="One-time">
+              </div>
+              <div>
+                <label for="schedule-repeat-unit">Repeat unit</label>
+                <select id="schedule-repeat-unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select>
+              </div>
+            </div>
+            <p class="muted">Recurring interval must be at least 5 minutes. Schedules run only while the JARVIS service is available.</p>
+            <div class="action-row">
+              <button class="btn btn-primary" id="btn-create-schedule" type="submit">Create Schedule</button>
+            </div>
+          </form>
+          <p class="muted" id="schedules-status" role="status" aria-live="polite">Authenticate this device to manage its schedules.</p>
+          <div id="schedules-feed" class="tasks-feed" aria-label="Schedules owned by this device">
+            <p class="muted">No schedules loaded.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Device-scoped notifications from the authenticated JARVIS core -->
+      <section class="card frame" id="card-notifications" aria-labelledby="notifications-title">
+        <div class="card-header">
+          <h2 id="notifications-title">Notifications & Alerts</h2>
+          <button id="btn-refresh-notifications" class="icon-btn small" type="button">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <p class="muted" id="notifications-status" role="status" aria-live="polite">Notifications appear after the device is authenticated.</p>
+          <div id="notifications-feed" class="tasks-feed" aria-label="Recent JARVIS notifications">
+            <p class="muted">No notifications loaded.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Device identity, security, enrollment -->
+      <section class="card frame" id="card-enrollment">
+        <div class="card-header">
+          <h2>Device Enrollment & Keys</h2>
+          <span class="status-pill" id="device-pill">Unenrolled</span>
+        </div>
+        <div class="card-body">
+          <div id="enrollment-unregistered">
+            <p class="muted">No enrolled browser companion. Authorize a one-time challenge, then enroll this browser with a device-bound Ed25519 key. Android network enrollment remains a separate integration step.</p>
+            <div class="action-row">
+              <button id="btn-create-challenge" class="btn btn-primary">Generate Enrollment Challenge</button>
+              <button id="btn-enroll-browser" class="btn btn-secondary">Enroll This Browser (WebCrypto)</button>
+            </div>
+            <div id="challenge-box" class="challenge-box hidden">
+              <div class="token-title">Single-Use Enrollment QR / Token (120s TTL)</div>
+              <img id="challenge-qr" class="security-qr hidden" alt="Enrollment challenge QR code">
+              <p id="challenge-status" class="muted">Scan with another device or enter the token manually. Approval remains required from an already-authorized owner device.</p>
+              <code id="challenge-token" class="code-token">--</code>
+              <code id="challenge-uri" class="code-token muted-code">--</code>
+              <div class="countdown" id="challenge-timer">Expires in: 120s</div>
+            </div>
+          </div>
+          <div id="enrollment-registered" class="hidden">
+            <div class="device-info-grid">
+              <div><span class="label">Device ID</span> <span id="info-device-id" class="val">--</span></div>
+              <div><span class="label">Device Name</span> <span id="info-device-name" class="val">--</span></div>
+              <div><span class="label">Session</span> <span id="info-session-id" class="val">--</span></div>
+              <div><span class="label">Audit Chain</span> <span id="info-audit-integrity" class="val">CHECKING</span></div>
+            </div>
+            <section id="owner-security" class="security-panel hidden" aria-labelledby="security-title">
+              <h3 id="security-title" class="hazard-title"><span>Security · Devices</span></h3>
+              <p class="muted">Owner controls require this enrolled device and an authenticator step-up.</p>
+              <div class="action-row">
+                <button id="btn-totp-setup" class="btn btn-secondary">Set up Google Authenticator</button>
+                <button id="btn-totp-disable" class="btn btn-danger hidden">Disable authenticator</button>
+                <span id="totp-status" class="status-pill">Authenticator: DISABLED</span>
+              </div>
+              <div id="totp-setup-panel" class="hidden">
+                <img id="totp-qr" class="security-qr" alt="Authenticator setup QR code">
+                <p>Scan with Google Authenticator, then enter the six-digit code to enable.</p>
+                <code id="totp-secret" class="code-token"></code>
+                <div class="input-group"><input id="totp-setup-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" aria-label="Authenticator setup code"><button id="btn-totp-verify" class="btn btn-primary">Verify setup</button></div>
+              </div>
+              <div class="action-row mt-12">
+                <input id="enrollment-totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Authenticator code" aria-label="Authenticator code">
+                <button id="btn-create-transaction" class="btn btn-primary">Enroll a new device</button>
+              </div>
+              <div class="permission-options"><label><input type="checkbox" id="permission-app-launch"> Allow selected application launching</label><label><input type="checkbox" id="permission-device-manage"> Allow device management (owner approval + authenticator required)</label></div>
+              <div id="transaction-panel" class="challenge-box hidden">
+                <strong>Enrollment QR · expires in <span id="transaction-countdown">120s</span></strong>
+                <img id="enrollment-qr" class="security-qr" alt="Expiring device enrollment QR code">
+                <p>On the new device, open the companion and enter this code.</p>
+                <code id="enrollment-code" class="code-token"></code>
+                <button id="btn-cancel-transaction" class="btn btn-danger">Cancel enrollment</button>
+              </div>
+              <h4>Pending enrollment requests</h4><div id="pending-enrollments"><p class="muted">No pending requests.</p></div>
+              <h4 class="hazard-title"><span>Authorized devices</span></h4><div id="authorized-devices"><p class="muted">Loading devices…</p></div>
+            </section>
+            <div class="action-row mt-12">
+              <button id="btn-revoke-device" class="btn btn-danger btn-revoke">Revoke Device Immediately</button>
+            </div>
+          </div>
+          <div class="security-panel" id="enroll-on-this-device">
+            <h3>Enroll this device</h3>
+            <p class="muted">Enter the transaction reference and code from an owner-generated QR. Scanning only creates a request; an owner must approve it.</p>
+            <div class="input-group"><input id="enrollment-transaction-id" autocomplete="off" placeholder="Transaction reference" aria-label="Transaction reference"><input id="enrollment-entry-code" autocomplete="off" placeholder="One-time enrollment code" aria-label="One-time enrollment code"><button id="btn-submit-enrollment" class="btn btn-secondary">Request enrollment</button></div>
+            <p id="enrollment-request-status" class="muted" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Audit trail -->
+      <section class="card frame" id="card-audit">
+        <div class="card-header">
+          <h2>Tamper-Evident Audit Log</h2>
+          <button id="btn-refresh-audit" class="icon-btn small">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="audit-log-stream" class="audit-stream" tabindex="0" aria-label="Recent audit events"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>Host: <strong id="foot-host">CHECKING</strong> | Architecture: <strong>Modular Monolith</strong> | Auth: <strong>Ed25519</strong></div>
+    </footer>
+  </div>
+
+  <script src="/deviceCrypto.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
