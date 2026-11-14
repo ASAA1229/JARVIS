@@ -1,167 +1,78 @@
 # JARVIS
 
-**Security-first personal AI assistant POC — Windows host, browser HUD/companion, and an initial native Android companion vertical slice.**
+**JARVIS is a local-first personal AI operating assistant** combining conversational AI, voice interaction, a desktop HUD, guarded application control, multi-step workflows, encrypted personal memory and separately enrolled companion devices.
 
-> **Current status (2026-10-30): NOT RELEASE-READY.** The repository has a security-oriented backend foundation, bounded Windows UI Automation, an initial Android Keystore-backed client, and an encrypted task journal/recovery review path. Universal app control, full two-phone operation, local voice acceptance, end-to-end communications integrations, and exact-head CI/device acceptance remain incomplete. See [POC](POC.md), [POC2 gap register](POC2.md), [personalized requirements](docs/PERSONALIZED_JARVIS_REQUIREMENTS.md), [cross-device status](docs/CROSS_DEVICE_IMPLEMENTATION_STATUS.md), and [repository audit](docs/repository-audit-2026-10-24.md).
+The project is intended to evolve into a cross-platform personal AI operating system. It is not an unrestricted remote-control tool: capabilities depend on the operating system, available APIs, permissions and owner authorization.
 
-## Branch and PR status
+## What it does
 
-- main: production/release branch; automated work must not commit, push, or merge to it.
-- dev: integration branch. PR #12 from new was merged on 2026-10-24.
-- new: feature/gap-closure branch. Its documentation reconciliation was integrated through PR #13.
-- fix, test, enhancement: recreated from dev on 2026-10-24 because they were absent from the remote branch list; all three were fast-forwarded to the current dev integration commit.
-- PRs from non-main branches target dev. The owner performs any eventual dev → main merge manually.
+- **Chat and agents:** local-first conversational AI using Ollama and `llama3.2:latest`, versioned prompts, structured agent responses and replaceable provider interfaces.
+- **Voice and HUD:** browser-based desktop HUD, text input, push-to-talk and consent-aware voice lifecycle; optional local wake-word, speech recognition and Piper speech output.
+- **Desktop automation:** discover and launch supported applications, interact with selected UI controls and verify outcomes where platform adapters permit.
+- **Tasks and workflows:** plan work, enforce dependencies, request scoped approvals, checkpoint progress, cancel work and expose uncertain outcomes for owner reconciliation.
+- **Memory and learning:** bounded conversation context, encrypted long-term personal memory, semantic/lexical retrieval, owner-reviewed learning candidates and feedback.
+- **Companion devices:** native Android foundation for independent enrollment, approvals, notifications and bounded synchronization.
+- **Owner tools:** data-only plugins, versioned workflows, workflow composition, developer-assistant drafts, memory management and an isolated website AI gateway.
+- **Release integrity:** build provenance, SHA-256 inventories and offline customer verification utilities.
 
-## Product goal
+## Current implementation boundary
 
-JARVIS should become a voice-driven personal AI operating assistant for the user's Windows 11 laptop and two Android phones. It should handle work end-to-end across supported applications: Windows desktop control, email, WhatsApp and other messaging, SMS, normal and supported online calls, Microsoft Teams, Microsoft 365, documents, calendars, reminders, and scheduled multi-step workflows.
+The shared core is a Node.js 24 / TypeScript modular monolith. The primary host adapter is Windows-focused and an Android companion exists. macOS, Linux desktop adapters and iOS are target platforms, not currently accepted implementations. Android build/two-phone acceptance, target-Windows voice/automation acceptance and exact-head release validation require separate evidence.
 
-The universal goal is capability-based: discover installed/built-in applications, inspect available official APIs and accessible UI capabilities, select the safest authorized adapter, verify results, and clearly report unsupported operations. It is not a claim of unrestricted control over every app or OS.
+The concurrent workflow DAG executor is integrated with the live workflow route, isolated child tasks, policy approvals, encrypted checkpoints, audit and outcome verification; exact-head CI and crash/restart acceptance are still required. Learning quality metrics are connected to the ranked retriever and a versioned synthetic benchmark; representative owner-labelled evaluation and regression thresholds remain outstanding. Document RAG and PDF/DOCX/local OCR parser sources exist; their adversarial, relevance, deletion and real-environment acceptance remain separate gates.
 
-## Current implementation baseline
+**Source presence is not release readiness.**
 
-- Node.js 24 + TypeScript modular monolith.
-- Ed25519 device identity/session and signed-request foundation, replay protection, enrollment and TOTP owner step-up, revocation.
-- Default-deny policy gateway, bounded operation allowlist, task-scoped approval checks and hash-chained audit logging.
-- Selected read-only Windows system queries and limited Windows app launch.
-- Foreground-window UI Automation for selected text/control/clipboard/zoom interactions.
-- Browser companion/HUD with push-to-talk and text fallback.
-- Browser companion notification feed backed by signed, device-scoped `/api/notifications` polling.
-- Browser companion schedule manager for owner-scoped one-time/recurring requests, listing, and cancellation through the signed policy-gated request path.
-- Browser companion personal-memory review with category-aware save, record correction, and deletion requests through the signed policy-gated request path.
-- Optional local Piper TTS, with browser speech synthesis fallback.
-- Encrypted local personal-memory foundation and official-store search-link generation.
-- Capability registry with implemented/partial/planned/restricted status.
-- Automated test suite and browser smoke test.
+## Quick start — Windows PowerShell
 
-## Important limitations
+Prerequisites: Node.js 24, npm, Git, Ollama and Windows 11 for the current desktop adapter.
 
-- The Windows app launch and UI automation adapters are bounded; this is not universal control of every installed app.
-- Always-ready local wake-word listening is not yet accepted; voice manager defaults wake-word listening off. Browser recognition may use vendor/cloud processing.
-- Android native agents, Android Keystore integration, two-phone physical acceptance and secure remote laptop control are incomplete.
-- Complete email, WhatsApp, SMS, telephony, Teams, Microsoft 365 and calendar integrations are not present yet.
-- Scheduled recurring workflows, durable unattended execution, full memory lifecycle UI, semantic retrieval and verified deletion across backups remain incomplete.
-- Payment/financial application automation, credential entry, unrestricted shell execution, administrator elevation, security bypass, and voice-only high-risk authentication remain restricted.
+Install the model and configure:
 
-## Architecture and security
-
-- Planner output is advisory. It never receives execution authority.
-- Every action must pass the default-deny policy gateway and registered executor.
-- State-changing actions require the applicable risk-based approval; approval is bound to task, device, operation, parameters and expiry.
-- Verify actual outcomes; do not claim success from command acknowledgement alone.
-- Stop dependent steps after unexpected behavior and reconcile actual state before any safe retry/recovery.
-- Prefer local processing for private data. Disclose and minimize cloud data sharing and obtain authorization when required.
-- Do not run as administrator or silently install/sideload applications.
-
-## Run locally (Windows PowerShell)
-
-Create a private .env from the committed template. The file is ignored by Git.
-
-```powershell
+~~~powershell
+ollama pull llama3.2:latest
 Copy-Item .env.example .env
 node scripts/configure-owner-token.mjs
 npm ci
+~~~
+
+Run validation and start:
+
+~~~powershell
 npm run build
 npm run lint
 npm test
 npm run test:browser
+npm run test:ollama
 npm start
-```
+~~~
 
-Open http://127.0.0.1:3000/ for the local HUD. The companion enrollment page is at http://127.0.0.1:3000/companion. The server binds to loopback; this does not enable remote-device access.
+Open http://127.0.0.1:3000/. Keep the main JARVIS API bound to loopback. Protect .env, owner-control material, keys and runtime data; never commit them.
 
-WSL/Linux equivalent for copying the template: `cp .env.example .env`.
+## Configuration
 
-### Configuration notes
+~~~dotenv
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2:latest
+OLLAMA_TIMEOUT=120
+JARVIS_EMBED_MODEL=nomic-embed-text
+~~~
 
-- PORT defaults to 3000 and is validated as a port number.
-- JARVIS_DEVICE_STATE_PATH and JARVIS_AUDIT_PATH can configure local state paths.
-- JARVIS_OWNER_CONTROL_TOKEN is required for owner-controlled enrollment and encrypted memory features; generate it locally with the script.
-- OPENAI_API_KEY is not used by the current deterministic planner. Adding it does not enable cloud AI.
-- Optional Piper settings configure local TTS. If not configured, the companion can fall back to browser speech synthesis.
+See `.env.example` for all settings.
 
-## Validation
+## Documentation
 
-Verified hosted CI evidence for the gap-closure baseline:
-- [new documentation head 6dd9d8d6 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099231737)
-- [dev integration commit 29df6b86 — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099365008)
-- [fix branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099378785)
-- [test branch at the same integration commit — successful run](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40099381517)
-- Documentation PR #13 merged into dev: https://github.com/Guda-Abhishek/JARVIS/pull/13
+- [Architecture](docs/ARCHITECTURE.md) — components, AI providers, Ollama, agents, memory, retrieval, concurrency and platform strategy.
+- [POC](docs/POC.md) — current capability baseline, constraints and acceptance gates.
+- [User Stories](docs/USER_STORIES.md) — outcome-based stories and acceptance criteria.
+- [Gap Analysis](docs/GAP_ANALYSIS.md) — prioritized delivery gaps and closure sequence.
+- [Project Status](docs/PROJECT_STATUS.md) — authoritative maturity scores, gap register and current evidence.
+- [Release Readiness](docs/RELEASE_READINESS.md) — release gates and current GO/NO-GO decision.
+- [Requirements](docs/REQUIREMENTS.md) — consolidated product scope, constraints and acceptance criteria.
+- [Development](docs/DEVELOPMENT.md) — workstation setup, commands, branch policy and testing.
+- [Operations](docs/OPERATIONS.md) — startup, monitoring, backup, recovery, connectivity and release procedures.
+- [Security](docs/SECURITY.md) — trust model, authorization, privacy, cryptography and prohibited operations.
 
-These runs validate configured repository automation only. They do not prove physical Windows desktop interaction, real microphone/wake/TTS behavior, native Android control, WhatsApp/SMS/calls/Teams integration, or universal application coverage. npm audit remains unverified; see POC2.md for acceptance criteria.
+## Project status
 
-## Branch and release policy
-
-Use fix for debugging/regressions, test for test/audit work, new for features and staged development, enhancement for broader enhancements, and dev for integration. Create non-main PRs to dev. Do not automate changes to main; the owner performs the final dev → main merge manually.
-
-
-## Validation status refresh — 2026-10-26
-
-The latest reviewed hosted run, [40216510796](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40216510796), passed build and TypeScript checks but failed 3 of 130 automated tests (127 passed); browser smoke was skipped. The failures were stale assertions for the current measured `/api/status` schema and the intended terminal `EXPIRED` state after approval expiry. Those assertions have been corrected on `new`; the corrected commit still needs a completed CI run before it can be called green. Both remembered-approval tests passed in the reviewed run.
-
-Remembered app-launch approvals default to 30 minutes and are limited to the exact same app/device/parameters. Set `JARVIS_REMEMBER_LAUNCH_MINUTES=0` to disable them. Other state-changing operations still require fresh approval. Hosted CI is not physical-device acceptance, and `npm audit` remains unverified until run and recorded.
-
-
-## Validation refresh — 2026-10-29
-
-The initial CI run for Cursor's latest change (`033daffcb528432accbfc23a423db1001fa9d82d`) exposed one routing regression: the natural-language request `List installed apps` fell through to conversational-model fallback instead of reaching the policy-controlled planner. The action-request matcher was corrected on `new`.
-
-The same follow-up hardened scheduled execution: if the scheduler cannot durably persist the at-most-once state advance, it does not invoke the task runner; a scheduler whose persistence becomes unhealthy stops processing scheduled jobs, and cancellation reports failure if its state cannot be persisted. Added `test/scheduler_persistence_security.test.ts` to exercise a simulated persistence failure. The task journal now follows the same fail-closed principle: a failed checkpoint write rolls back its in-memory mutation and disables further writes, with regression coverage for filesystem persistence failure. The approval lifecycle now also rejects attempts to reject a task that has moved out of `AWAITING_APPROVAL`, auditing the denial before the approval can be consumed; a targeted regression test was added.
-
-Exact final code/test revision `405b2eb233f08dfa0dde022a781cc34c611acd97` passed hosted CI run [40926857275](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926857275): TypeScript build, TypeScript check, automated test suite, and browser security smoke. The PR-triggered run [40926865217](https://github.com/Guda-Abhishek/JARVIS/actions/runs/40926865217) also passed on that revision. These results do not establish physical Windows voice/UI acceptance or native Android acceptance. A separate `npm audit` command and real-device tests remain outstanding.
-
-## Windows launch verification hardening — 2026-10-30
-
-A launch-window matching defect was found during the next Windows desktop reliability pass: a title containing a familiar app name (for example, “Paint”) could be treated as proof of the launched app even when the window belonged to a different process. Launch verification now requires the expected process identity and, when configured, also checks the title. Regression tests cover title-only false positives, title mismatches, process-name normalization, and missing match rules.
-
-Hosted CI for this change is tracked on [PR #16](https://github.com/Guda-Abhishek/JARVIS/pull/16). Even after hosted tests pass, actual app launch/focus behavior must still be accepted on the target Windows laptop; this fix does not imply universal app control.
-
-## Dynamic Windows launch verification — 2026-10-30
-
-The Start-menu launcher no longer reports a dynamically discovered app as verified solely because a new window title or process text contains the first word of the requested name. Until JARVIS has a trusted Start-menu AppID-to-process identity mapping, this path reports partial success, preserves any observed-window evidence, and explicitly states that the target window was not independently verified. This is intentionally conservative and does not claim universal application control.
-
-<<<<<<< HEAD
-
-
-## Voice input hardening — 2026-10-31
-
-The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. New regression tests cover malformed/truncated WAV input and voice privacy boundaries. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted. HUD transcript wake/stop matching now requires whole normalized phrase boundaries; direct browser-level regression coverage remains outstanding.The optional local whisper.cpp path validates the RIFF container size and chunk boundaries before passing audio to the recognizer. The local Piper TTS path now limits captured output to 16 MiB, retains at most 8 KiB of process diagnostics, and validates the generated WAV structure before returning it. Regression coverage was added for malformed/truncated WAV data and size limits. These source changes still require exact-head CI and target-MSI acceptance; local wake-word and audible TTS are not marked accepted.
-=======
-## CI/CD artifact integrity and Nexus publication
-
-The Jenkins pipeline builds the project, creates a packaged release artifact, generates a SHA-256 file inventory manifest, and verifies both the manifest and the package checksum before archiving the release outputs.
-
-### Required build provenance
-
-The pipeline sets `REQUIRE_BUILD_PROVENANCE=true`. Manifest creation and verification therefore require a full Git commit SHA and build number. Verification also compares those values with the current Jenkins build environment; a manifest copied from a different build is rejected.
-
-### Optional Nexus Raw publication
-
-Nexus publication runs only when `NEXUS_RAW_REPOSITORY_URL` is configured in Jenkins. Configure it as an HTTPS URL for the target Raw repository **without** embedded credentials, query parameters, or fragments. Store the Nexus username/password in Jenkins Credentials under the ID `nexus-credentials` (Username with password); do not add credentials to source control or the URL.
-
-The release path uses the lower-case project name, Jenkins build number, and short Git commit; this aligns the Nexus coordinate with the manifest's project/build/commit identity. `verify-release` rejects a manifest whose project differs from `PROJECT_NAME`, and its successful verification output records the project, build number, full source commit, artifact name, size, and SHA-256. Jenkins also emits a concise release-traceability line naming the artifact, manifest, and checksum sidecar. Before upload, the pipeline checks each expected release asset using authenticated `HEAD` requests. It refuses to overwrite existing assets and stops if it cannot establish that an asset is absent. After upload, it downloads the files and compares SHA-256 digests with the local copies.
-
-**Repository compatibility note:** the configured Nexus Raw repository and its access policy must support authenticated `HEAD` requests and return HTTP 404 for absent paths. Validate this behavior with your Nexus administrator before enabling publication. The HEAD preflight is a guard against accidental overwrite, not an atomic immutability guarantee; use repository-side permissions or immutable storage controls where available.
-
-### Verify a downloaded release before extraction
-
-Before unpacking a downloaded release archive, verify its checksum sidecar and confirm the manifest's packaged-artifact name, size, and SHA-256 agree with the archive:
-
-```sh
-node scripts/artifact-integrity.mjs verify-release <artifact.tar.gz> <manifest.json> <artifact.tar.gz.sha256>
-```
-
-When `REQUIRE_BUILD_PROVENANCE=true`, set `GIT_COMMIT` (or `GIT_COMMIT_SHA`) and `BUILD_NUMBER` (or `GITHUB_RUN_NUMBER`) to the expected approved release values; the command rejects a manifest whose provenance differs. This pre-extraction check validates the archive against its sidecar and manifest metadata. After extraction, also run the existing `verify` command against the extracted directory and manifest to validate every packaged file.
-
-### Published build outputs
-
-- Packaged application archive
-- JSON manifest listing packaged files, sizes, and SHA-256 digests, with build provenance
-- SHA-256 checksum sidecar for the archive
-
-### Operational status
-
-Changes to the pipeline and integrity scripts must be validated in Jenkins before being treated as release-ready. A successful local commit or PR update alone does not prove that the configured Jenkins agent, Nexus permissions, or repository behavior works end to end.
-
->>>>>>> 2d829a4766d4a1dd354d9490fab1c93d536688b5
+JARVIS is an evolving development project and is **not declared production-ready**. Every validation claim must identify the exact commit, environment, command/scenario, result and limitations. Automated CI, Windows host acceptance, Android physical-device acceptance and production release approval are distinct gates.

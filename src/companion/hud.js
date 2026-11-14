@@ -12,6 +12,15 @@ let voiceTimeoutId = null;
 let discardVoiceResult = false;
 let voiceCaptureGeneration = 0;
 let isSubmitting = false;
+// Keep one conversational thread active for this HUD page session.
+let activeConversationId = null;
+let activeVoiceCaptureMode = null;
+// Prevent duplicate submissions for a single-use approval.
+const approvalResolutionsInFlight = new Set();
+// Prevent duplicate manual reconciliation submissions for the same task.
+const recoveryReviewsInFlight = new Set();
+// Prevent duplicate cancellation requests while a task stop is being acknowledged.
+const taskCancellationsInFlight = new Set();
 let isHandsFreeEnabled = false;
 let isWaitingForWakeCommand = false;
 let isSpeaking = false;
@@ -24,6 +33,25 @@ let handsFreeRestartTimer = null;
 let browserWakeRetryCount = 0;
 const MAX_BROWSER_WAKE_RETRIES = 5;
 let localTtsUnavailable = false;
+// Voice pipeline (J-E02). The STT provider is an explicit owner choice: 'browser'
+// (SpeechRecognition, may be cloud-processed, consent-gated) or 'local' (Whisper on
+// this laptop via /api/voice/transcribe; audio never leaves the machine).
+let sttProvider = 'browser';
+let localSttAvailable = false;
+// Two-phase wake flow: a short same-utterance window ("Hey Jarvis, open Notepad"),
+// then, if nothing was said, the acknowledgement and a command window.
+let wakePhase = null;
+let wakeSpeechHeard = false;
+let wakeWindowTimer = null;
+// Feedback-loop guard: ignore wake/recognition events while JARVIS speaks and briefly after.
+let speechGuardUntil = 0;
+let localSttCapture = null;
+let currentResourceProfile = null;
+let onBatteryPower = false;
+const SAME_UTTERANCE_WINDOW_MS = 2500;
+const COMMAND_WINDOW_MS = 8000;
+const SPEECH_GUARD_MS = 700;
+const WAKE_ACKNOWLEDGEMENT = 'Hi sir, I am ready to work.';
 let activeSpeechAudio = null;
 let activeSpeechAudioUrl = null;
 let activeSpeechCleanup = null;
@@ -35,6 +63,8 @@ let localWakeLifecycleGeneration = 0;
 let wakeCaptureAwaitingReview = false;
 let wakeCommandRetryCount = 0;
 const MAX_WAKE_COMMAND_RETRIES = 1;
+// Keep browser transcripts bounded before they reach the signed request gateway.
+const MAX_VOICE_TRANSCRIPT_LENGTH = 240;
 
 const WAKE_PHRASES = ['hello jarvis', 'hi jarvis', 'hey jarvis', 'i am here', 'im here'];
 const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop jarvis', 'jarvis stop', 'goodbye jarvis', 'go to sleep jarvis'];
@@ -42,12 +72,32 @@ const STOP_PHRASES = ['jarvis you may leave', 'jarvis you may leave now', 'stop 
 document.addEventListener('DOMContentLoaded', async () => {
   try { isMicMuted = localStorage.getItem('jarvis.mic-muted') === 'true'; } catch { /* Privacy controls remain session-local if storage is blocked. */ }
   initSpeechRecognition();
+  // Use browser speech synthesis directly when local Piper TTS is not configured.
+  fetch('/api/voice/status', { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((status) => {
+      if (status && status.localTts === false) localTtsUnavailable = true;
+      localSttAvailable = status?.localStt === true;
+      updateSpeechEngineNotes();
+    })
+    .catch(() => { updateSpeechEngineNotes(); /* keep trying local TTS; it falls back on failure */ });
+  try {
+    const saved = localStorage.getItem('jarvis.stt-provider');
+    if (saved === 'local' || saved === 'browser') sttProvider = saved;
+  } catch { /* storage may be blocked; default to browser */ }
+  const sttSelect = document.getElementById('stt-provider');
+  if (sttSelect) sttSelect.value = sttProvider;
   setupEventListeners();
   updateHandsFreeButtons();
   updateMuteControl();
   initWaveformCanvas();
   await ensureEnrolledDevice();
   pollStatus();
+  refreshTaskHistory();
+  setInterval(refreshTaskHistory, 15000);
+  refreshResources();
+  refreshSync();
+  setInterval(refreshResources, 20000);
   setInterval(pollStatus, 3000);
   setInterval(pollAudit, 4000);
 });
@@ -55,6 +105,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
   const btnPtt = document.getElementById('btn-ptt');
   const btnSend = document.getElementById('btn-hud-send');
+  document.getElementById('btn-refresh-tasks')?.addEventListener('click', () => refreshTaskHistory());
+  document.getElementById('btn-refresh-resources')?.addEventListener('click', () => refreshResources());
+  document.getElementById('btn-refresh-sync')?.addEventListener('click', () => refreshSync());
+  document.getElementById('hud-resource-mode')?.addEventListener('change', (event) => setResourceMode(event.target.value));
+  document.getElementById('btn-stop-heavy-work')?.addEventListener('click', () => stopHeavyWork());
   const textInput = document.getElementById('hud-text-input');
   const btnMute = document.getElementById('btn-toggle-mic-mute');
   const btnHandsFreeToggle = document.getElementById('btn-hands-free-toggle');
@@ -62,6 +117,8 @@ function setupEventListeners() {
   const btnMotion = document.getElementById('btn-toggle-motion');
   const btnHandsFree = document.getElementById('btn-hands-free');
   const btnSpeech = document.getElementById('btn-speech-output');
+  const pushToTalkConsent = document.getElementById('allow-browser-speech');
+  const wakeSpeechConsent = document.getElementById('allow-wake-browser-speech');
   const reactorCore = document.getElementById('reactor-core');
 
   // Click-to-toggle voice capture: a normal click must not stop recognition immediately.
@@ -69,6 +126,20 @@ function setupEventListeners() {
     if (isListening) stopVoiceCapture();
     else startVoiceCapture();
   };
+  pushToTalkConsent?.addEventListener('change', () => {
+    if (!pushToTalkConsent.checked) revokeSpeechConsent('push-to-talk');
+  });
+  document.getElementById('stt-provider')?.addEventListener('change', (event) => {
+    const value = event.target.value === 'local' ? 'local' : 'browser';
+    if (isListening) cancelVoiceCapture();
+    sttProvider = value;
+    try { localStorage.setItem('jarvis.stt-provider', value); } catch { /* session-only choice */ }
+    updateSpeechEngineNotes();
+  });
+  wakeSpeechConsent?.addEventListener('change', () => {
+    if (!wakeSpeechConsent.checked) revokeSpeechConsent('wake');
+  });
+
   btnPtt.addEventListener('click', toggleVoiceCapture);
   reactorCore.addEventListener('click', toggleVoiceCapture);
   reactorCore.addEventListener('keydown', (e) => {
@@ -162,21 +233,6 @@ function setupEventListeners() {
     });
   });
 
-  // Revoking browser speech consent is immediate: discard the in-flight transcript and stop capture.
-  const browserSpeechConsent = document.getElementById('allow-browser-speech');
-  if (browserSpeechConsent) browserSpeechConsent.addEventListener('change', () => {
-    if (!browserSpeechConsent.checked && isListening && !wakeCaptureAwaitingReview) {
-      cancelVoiceCapture();
-      setAssistantState('VOICE CONSENT REVOKED', 'Microphone capture stopped and the pending transcript was discarded. Re-enable consent only when you want to use browser speech.');
-    }
-  });
-  const wakeSpeechConsent = document.getElementById('allow-wake-browser-speech');
-  if (wakeSpeechConsent) wakeSpeechConsent.addEventListener('change', () => {
-    if (!wakeSpeechConsent.checked && isListening && wakeCaptureAwaitingReview) {
-      cancelVoiceCapture();
-      setAssistantState('VOICE CONSENT REVOKED', 'Post-wake browser speech stopped and the pending transcript was discarded. Local wake detection can remain active.');
-    }
-  });
 
   // Never keep an active mic session alive after the HUD is backgrounded or hidden.
   document.addEventListener('visibilitychange', () => {
@@ -270,11 +326,13 @@ async function loadLocalWakeWordAssets() {
       script.addEventListener('error', onError, { once: true });
       if (!existing) { script.src = src; script.async = false; document.head.appendChild(script); }
     });
-    // Preflight script files with fetch so missing optional assets fail closed
-    // without injecting broken script tags or generating browser console errors.
-    for (const src of ['/hud/local-wakeword/ort.min.js', '/hud/local-wakeword/jszip.min.js', '/hud/local-wakeword/wakeword.js']) {
-      const response = await fetch(src, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Local wake-word runtime assets are missing. Run scripts/setup-local-wake-word.ps1.');
+    // Ask the server whether the optional assets are installed, so missing assets fail
+    // closed with setup guidance instead of 404 errors in the browser console.
+    const status = await fetch('/hud/local-wakeword/status', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null);
+    if (!status || status.installed !== true) {
+      throw new Error('Local wake-word runtime assets are not installed. Run scripts/setup-local-wake-word.ps1 once, then reload the HUD.');
     }
     await loadScript('/hud/local-wakeword/ort.min.js');
     await loadScript('/hud/local-wakeword/jszip.min.js');
@@ -311,6 +369,8 @@ async function startLocalWakeEngine() {
       localWakeEngine = engine;
       await engine.start((word, probability) => {
         if (lifecycleGeneration !== localWakeLifecycleGeneration || localWakeEngine !== engine || !handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+        // Never let JARVIS's own voice (or its echo) trigger a new wake event.
+        if (isSpeaking || Date.now() < speechGuardUntil) return;
         if (String(word || '').toLowerCase().includes('jarvis')) {
           void handleLocalWakeDetected(Number(probability) || 0);
         }
@@ -322,7 +382,13 @@ async function startLocalWakeEngine() {
       }
       handsFreeStandby = true;
       updateHandsFreeButtons();
-      setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded.');
+      setVoiceState('standby', 'Say “Hey Jarvis”.');
+      if (hasSpeechConsent('wake')) {
+        setAssistantState('LOCAL WAKE ACTIVE', '“Hey Jarvis” is detected locally on this device. No wake audio is uploaded. Say “Hey Jarvis, open Notepad”.');
+      } else {
+        highlightWakeConsent();
+        setAssistantState('LOCAL WAKE ACTIVE — VOICE COMMANDS OFF', '“Hey Jarvis” is detected locally, but spoken commands after it need the highlighted consent checkbox. Tick it to give commands by voice.');
+      }
     } catch (error) {
       try { engine.stop(); } catch { /* release best-effort */ }
       if (localWakeEngine === engine) localWakeEngine = null;
@@ -357,27 +423,73 @@ function stopHandsFreeStandby() {
   handsFreeStandby = false;
 }
 
+/** Draw attention to the post-wake speech consent checkbox the owner must tick. */
+function highlightWakeConsent() {
+  const box = document.getElementById('allow-wake-browser-speech');
+  const label = box?.closest('label');
+  if (!box || !label) return;
+  label.classList.add('consent-attention');
+  label.scrollIntoView({ block: 'nearest', behavior: document.body.classList.contains('reduced-motion') ? 'auto' : 'smooth' });
+  box.addEventListener('change', () => label.classList.remove('consent-attention'), { once: true });
+}
+
 async function handleLocalWakeDetected(probability) {
   if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
+  if (isSpeaking || Date.now() < speechGuardUntil) return;
   wakeCommandRetryCount = 0;
   handsFreeStandby = false;
   stopHandsFreeStandby();
   updateHandsFreeButtons();
   setAssistantState('WAKE PHRASE DETECTED', `Local “Hey Jarvis” detection succeeded (score ${Math.round(probability * 100)}%). Preparing command capture.`);
-  const wakeConsent = document.getElementById('allow-wake-browser-speech');
-  wakeCaptureAwaitingReview = Boolean(wakeConsent?.checked);
-  if (!wakeConsent?.checked) {
-    await speakResponse('Hi sir, I am ready to work.');
-    setAssistantState('WAKE PHRASE DETECTED', 'Wake detection is local, but spoken commands need the separate post-wake browser-speech consent checkbox. Enable it for this session, or use text input.');
+  const wakeConsentGiven = hasSpeechConsent('wake');
+  wakeCaptureAwaitingReview = wakeConsentGiven;
+  if (!wakeConsentGiven) {
+    // Do not claim readiness: without this consent no command can be captured, so
+    // say exactly what is missing and point at the control that fixes it.
+    highlightWakeConsent();
+    setAssistantState('VOICE COMMANDS ARE OFF — TICK THE CONSENT BOX', 'I heard “Hey Jarvis”, but spoken commands after the wake word are disabled. Tick “I separately allow browser speech recognition after local Hey Jarvis detection”, then say “Hey Jarvis, open Notepad” again — or type the command.');
+    await speakResponse('I heard you, but voice commands are switched off. Tick the box that allows speech after Hey Jarvis, then say it again.');
     scheduleHandsFreeRestart();
     return;
   }
 
-  // Start command recognition immediately after local wake detection so the
-  // remaining words in a single utterance such as “Hey Jarvis, open Notepad”
-  // are not lost while the greeting is playing. The greeting is spoken after
-  // capture; the recognized directive still passes through the policy gateway.
-  startVoiceCapture('wake');
+  // Phase 1, same utterance: listen immediately so "Hey Jarvis, open Notepad"
+  // is captured without waiting for the acknowledgement. If nothing follows the
+  // wake phrase within a short window, phase 2 speaks the acknowledgement and
+  // opens the command window (see completeWakeCapture).
+  wakeCaptureAwaitingReview = true;
+  wakePhase = 'same-utterance';
+  wakeCommandRetryCount = 0;
+  startWakeCapture(SAME_UTTERANCE_WINDOW_MS);
+}
+
+/**
+ * Start a post-wake capture with the selected STT provider. If no speech is
+ * heard within windowMs the capture is closed and treated as "nothing said".
+ */
+function startWakeCapture(windowMs) {
+  clearWakeWindow();
+  wakeSpeechHeard = false;
+  if (sttProvider === 'local') {
+    void startLocalSttCapture('wake', windowMs);
+    return;
+  }
+  startBrowserVoiceCapture('wake');
+  if (!isListening) return;
+  const generation = voiceCaptureGeneration;
+  wakeWindowTimer = setTimeout(() => {
+    wakeWindowTimer = null;
+    if (generation !== voiceCaptureGeneration || !isListening || wakeSpeechHeard) return;
+    // Nothing was said: close quietly (no partial dispatch) and continue the flow.
+    cancelVoiceCapture();
+    wakeCaptureAwaitingReview = true;
+    void completeWakeCapture('');
+  }, windowMs);
+}
+
+function clearWakeWindow() {
+  if (wakeWindowTimer) clearTimeout(wakeWindowTimer);
+  wakeWindowTimer = null;
 }
 
 function enableWakeDetection() {
@@ -486,7 +598,7 @@ function startHandsFreeStandby() {
         stopHandsFreeStandby();
         updateHandsFreeButtons();
         setAssistantState('COMMAND RECEIVED', command);
-        void submitDirective(command);
+        void acknowledgeWakeAndSubmit(command);
       } else {
         handleHandsFreeWake();
       }
@@ -545,11 +657,8 @@ function handleHandsFreeWake() {
   if (isSubmitting || isListening) return;
   handsFreeStandby = false;
   stopHandsFreeStandby();
-  setAssistantState('LISTENING...', 'Wake phrase detected. Speak your command.');
   updateHandsFreeButtons();
-  setTimeout(() => {
-    if (handsFreeEnabled && !isListening) startVoiceCapture();
-  }, 120);
+  void beginPostWakeCommandCapture();
 }
 
 function handleHandsFreeStop() {
@@ -596,20 +705,32 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
   };
 
   recognizer.onresult = (event) => {
-    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult || isMicMuted || isSpeaking) return;
+    if (captureGeneration !== voiceCaptureGeneration || discardVoiceResult) return;
+    if (!hasSpeechConsent(mode)) {
+      revokeSpeechConsent(mode);
+      return;
+    }
+    if (isMicMuted || isSpeaking) return;
     // Push-to-talk remains review-first; consented post-wake capture can dispatch
     // through the policy gateway. Keep finalized segments separate from interim
     // hypotheses to avoid duplicated words.
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
-      if (result.isFinal) finalTranscript += result[0].transcript + ' ';
+      if (result.isFinal) {
+        const segment = String(result[0]?.transcript || '').replace(/\s+/g, ' ').trim();
+        if (segment) finalTranscript = `${finalTranscript} ${segment}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+      }
     }
     const interimTranscript = Array.from(event.results)
       .filter((result) => !result.isFinal)
-      .map((result) => result[0].transcript)
-      .join(' ');
-    const transcript = `${finalTranscript} ${interimTranscript}`.trim();
+      .map((result) => String(result[0]?.transcript || ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+    const transcript = `${finalTranscript} ${interimTranscript}`.trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
     if (!transcript) return;
+    if (mode === 'wake' && normalizeRecognizedCommand(transcript)) wakeSpeechHeard = true;
     document.getElementById('transcript-input').value = transcript;
     document.getElementById('transcript-box').classList.remove('hidden');
   };
@@ -667,6 +788,11 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
     // a capture's final transcript at most once so a wake command is never double-submitted.
     if (captureGeneration !== voiceCaptureGeneration || captureFinished) return;
     captureFinished = true;
+    if (!hasSpeechConsent(mode)) {
+      revokeSpeechConsent(mode);
+      return;
+    }
+    activeVoiceCaptureMode = null;
     isListening = false;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     if (voiceTimeoutId) {
@@ -681,19 +807,15 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
       document.getElementById('transcript-box').classList.add('hidden');
       discardVoiceResult = false;
     } else if (!isMicMuted && finalTranscript.trim() && mode === 'wake') {
-      // Local wake detection plus the separate session consent authorizes
-      // capturing this spoken directive. Dispatch it to the existing policy
-      // gateway automatically; the gateway can still deny or require approval.
-      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ')
-        .replace(/^(?:hey|hello|hi)\s+jarvis\b[,.!?;: -]*/i, '').trim();
+      // Dispatch only a bounded, finalized transcript; interim hypotheses are never executable.
+      const recognizedCommand = normalizeRecognizedCommand(finalTranscript.slice(0, MAX_VOICE_TRANSCRIPT_LENGTH));
       wakeCaptureAwaitingReview = false;
       document.getElementById('transcript-input').value = '';
       document.getElementById('transcript-box').classList.add('hidden');
       void completeWakeCapture(recognizedCommand);
     } else if (!isMicMuted && finalTranscript.trim()) {
-      // Push-to-talk remains review-first; only post-wake commands are sent
-      // directly to the policy gateway after explicit session consent.
-      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ');
+      // Push-to-talk remains review-first and displays only finalized, bounded text.
+      const recognizedCommand = finalTranscript.trim().replace(/\s+/g, ' ').slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
       document.getElementById('transcript-input').value = recognizedCommand;
       document.getElementById('transcript-box').classList.remove('hidden');
       setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
@@ -713,30 +835,159 @@ function createSpeechRecognizer(captureGeneration, mode = 'push-to-talk') {
  * explicit second-command window after the acknowledgement. This remains
  * consent-gated and still submits only through the signed policy-gateway path.
  */
-async function completeWakeCapture(command) {
-  await speakResponse('Hi sir, I am ready to work.');
-  const speechDeadline = Date.now() + 8000;
-  while (isSpeaking && Date.now() < speechDeadline) {
+async function waitForSpeechOutput(maxWaitMs = 8000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (isSpeaking && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
 
+async function beginPostWakeCommandCapture() {
+  if (!handsFreeEnabled || isMicMuted || isSubmitting || isListening) return;
+  if (!hasSpeechConsent('wake')) {
+    await speakResponse('Hi sir, I am ready to work.');
+    setAssistantState('WAKE PHRASE DETECTED', 'Enable the separate post-wake browser-speech consent for spoken commands, or use text input.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+  wakeCaptureAwaitingReview = true;
+  setAssistantState('WAKE PHRASE DETECTED', 'Listening for the command now. The acknowledgement will play after capture so it cannot cover your words.');
+  startVoiceCapture('wake');
+}
+
+async function acknowledgeWakeAndSubmit(command) {
+  const normalizedCommand = normalizeRecognizedCommand(command);
+  if (!normalizedCommand) {
+    await beginPostWakeCommandCapture();
+    return;
+  }
+  if (!hasSpeechConsent('wake') || isMicMuted) {
+    setAssistantState('VOICE CONSENT REQUIRED — COMMAND NOT SENT', 'Post-wake browser-speech consent is required. No command was sent.');
+    await speakResponse('Please enable voice command consent before I can process that request.');
+    scheduleHandsFreeRestart();
+    return;
+  }
+  await speakResponse('Hi sir, I am ready to work.');
+  await waitForSpeechOutput(8000);
+  if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake')) {
+    setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Voice consent changed before dispatch. No command was sent.');
+    return;
+  }
+  await submitDirective(normalizedCommand);
+}
+
+function normalizeRecognizedCommand(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^(?:(?:(?:hey|hello|hi|ok|okay)\s+)?jarvis\b[,.!:]?\s*)+/i, '')
+    .replace(/^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)/i, '')
+    .replace(/^(?:please\s+)/i, '')
+    .replace(/^(open|launch|start|run)\s+up\s+/i, '$1 ')
+    // Capture starts just after the wake word, so the first syllable can be clipped.
+    .replace(/^pen\s+/i, 'open ')
+    .replace(/\s+(?:please|for me)[.!?]*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function completeWakeCapture(command) {
+  clearWakeWindow();
   if (command) {
+    if (!hasSpeechConsent('wake')) {
+      wakeCommandRetryCount = 0;
+      wakePhase = null;
+      setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Post-wake browser speech consent was withdrawn before dispatch. No command was sent.');
+      scheduleHandsFreeRestart();
+      return;
+    }
+    const normalizedCommand = normalizeRecognizedCommand(command);
+    if (!normalizedCommand) {
+      await completeWakeCapture('');
+      return;
+    }
+    if (isStopPhrase(command) || isStopPhrase(normalizedCommand)) {
+      await handleVoiceStopPhrase(normalizedCommand || command);
+      return;
+    }
     wakeCommandRetryCount = 0;
-    setAssistantState('COMMAND RECEIVED', command);
-    await submitDirective(command);
+    wakePhase = null;
+    if (!handsFreeEnabled || isMicMuted || document.visibilityState === 'hidden') {
+      setAssistantState('VOICE CONSENT REVOKED — COMMAND NOT SENT', 'Voice consent or listening state changed before dispatch. No command was sent.');
+      scheduleHandsFreeRestart();
+      return;
+    }
+    setAssistantState('COMMAND RECEIVED', normalizedCommand);
+    setVoiceState('processing', normalizedCommand);
+    // submitDirective speaks the verified outcome (or the approval instruction);
+    // speech completion then returns the wake engine to standby.
+    await submitDirective(normalizedCommand);
     return;
   }
 
-  if (handsFreeEnabled && !isMicMuted && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
+  if (wakePhase === 'same-utterance' && handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake')) {
+    // Phase 2: only the wake phrase was spoken. Acknowledge, then listen for the command.
+    wakePhase = 'command-window';
+    setAssistantState('READY FOR COMMAND', WAKE_ACKNOWLEDGEMENT + ' Say your command now.');
+    await speakResponse(WAKE_ACKNOWLEDGEMENT);
+    await waitForSpeechOutput(8000);
+    await waitForSpeechGuard();
+    if (!handsFreeEnabled || isMicMuted || !hasSpeechConsent('wake') || document.visibilityState === 'hidden') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+      return;
+    }
+    wakeCaptureAwaitingReview = true;
+    startWakeCapture(COMMAND_WINDOW_MS);
+    return;
+  }
+
+  if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && wakeCommandRetryCount < MAX_WAKE_COMMAND_RETRIES) {
     wakeCommandRetryCount += 1;
-    setAssistantState('READY FOR COMMAND', 'I heard the wake phrase. Please say your command now.');
-    startVoiceCapture('wake');
+    setAssistantState('READY FOR COMMAND', 'I did not catch that. Please say your command again.');
+    await speakResponse('I did not catch that. Please say your command again.');
+    await waitForSpeechOutput(6000);
+    await waitForSpeechGuard();
+    if (handsFreeEnabled && !isMicMuted && hasSpeechConsent('wake') && document.visibilityState !== 'hidden') {
+      wakeCaptureAwaitingReview = true;
+      wakePhase = 'command-window';
+      startWakeCapture(COMMAND_WINDOW_MS);
+    } else {
+      wakeCommandRetryCount = 0;
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+    }
     return;
   }
 
   wakeCommandRetryCount = 0;
-  setAssistantState('NO COMMAND RECOGNIZED', 'No command was captured. Wake detection is restarting; try again or use text input.');
+  wakePhase = null;
+  wakeCaptureAwaitingReview = false;
+  setAssistantState('NO COMMAND RECOGNIZED', 'No command was captured. Returning to standby; say “Hey Jarvis” again or use text input.');
+  setVoiceState('standby', 'No command heard.');
   scheduleHandsFreeRestart();
+}
+
+/** Stop phrases after a wake: "stop jarvis" returns to standby; "goodbye jarvis" ends hands-free. */
+async function handleVoiceStopPhrase(text) {
+  wakeCommandRetryCount = 0;
+  wakePhase = null;
+  wakeCaptureAwaitingReview = false;
+  const normalized = normalizeSpeechText(text);
+  if (/\b(leave|goodbye|sleep)\b/.test(normalized)) {
+    await speakResponse('Goodbye, sir. Hands-free listening is now off.');
+    disableWakeDetection();
+    return;
+  }
+  cancelSpeechOutput();
+  setAssistantState('STANDING BY', 'Stop phrase heard. Nothing was sent.');
+  scheduleHandsFreeRestart();
+}
+
+async function waitForSpeechGuard() {
+  const wait = speechGuardUntil - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(wait, SPEECH_GUARD_MS)));
 }
 
 /**
@@ -830,7 +1081,13 @@ function scheduleHandsFreeRestart() {
       setAssistantState('LOCAL WAKE WORD UNAVAILABLE', error instanceof Error ? error.message : 'Could not restart local wake detection.');
       disableWakeDetection();
     });
-  }, 700);
+  }, wakeRestartDelayMs());
+}
+
+/** Idle profile on battery: back off wake-engine restarts to save power (J-E12). */
+function wakeRestartDelayMs() {
+  const base = Math.max(700, speechGuardUntil - Date.now());
+  return currentResourceProfile === 'idle' && onBatteryPower ? Math.max(base, 4000) : base;
 }
 
 function enableHandsFree() {
@@ -853,21 +1110,53 @@ function disableHandsFree() {
   setAssistantState(isMicMuted ? 'PRIVACY MODE — MIC MUTED' : 'HANDS-FREE DISABLED', 'Local wake detection and microphone capture are stopped.');
 }
 
+function hasSpeechConsent(mode) {
+  // Local Whisper keeps audio on this laptop, so the browser/vendor consent does not apply.
+  if (sttProvider === 'local' && localSttAvailable) return true;
+  const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
+  return document.getElementById(consentId)?.checked === true;
+}
+
+function revokeSpeechConsent(mode) {
+  if (activeVoiceCaptureMode !== mode) return;
+  cancelVoiceCapture();
+  setAssistantState('VOICE CONSENT REVOKED — CAPTURE STOPPED', mode === 'wake'
+    ? 'Post-wake browser speech consent was withdrawn. Capture was cancelled and its transcript discarded; local wake detection may remain enabled.'
+    : 'Push-to-talk browser speech consent was withdrawn. Capture was cancelled and its transcript discarded.');
+}
+
 function startVoiceCapture(mode = 'push-to-talk') {
+  if (sttProvider === 'local') {
+    if (isMicMuted) {
+      setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute the microphone before starting voice capture.');
+      return;
+    }
+    if (isListening) return;
+    if (mode === 'wake') { startWakeCapture(COMMAND_WINDOW_MS); return; }
+    void startLocalSttCapture(mode, 12000);
+    return;
+  }
+  startBrowserVoiceCapture(mode);
+}
+
+function startBrowserVoiceCapture(mode = 'push-to-talk') {
   if (isMicMuted) {
     setAssistantState('PRIVACY MODE — MIC MUTED', 'Unmute the microphone before starting voice capture.');
     return;
   }
   if (isListening) return;
-  const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
-  const browserSpeechConsent = document.getElementById(consentId);
-  if (!browserSpeechConsent || !browserSpeechConsent.checked) {
+  if (!hasSpeechConsent(mode)) {
     setAssistantState('VOICE CONSENT REQUIRED', mode === 'wake'
       ? 'Local wake detection succeeded, but post-wake browser speech consent is not enabled. Use push-to-talk or text input.'
       : 'Browser speech recognition may send captured audio to a vendor service. Check the one-session consent box before using push-to-talk, or use text input.');
     return;
   }
   if (localWakeEngine) stopHandsFreeStandby();
+  // Barge-in: an explicit capture interrupts JARVIS's own speech output. Otherwise
+  // recognition results are ignored while isSpeaking is true (to avoid transcribing
+  // JARVIS itself), and a speech engine that never fires 'end' would leave voice
+  // input silently dead.
+  if (isSpeaking) cancelSpeechOutput();
   wakeCaptureAwaitingReview = mode === 'wake';
   if (!speechRecognitionConstructor) {
     setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED',
@@ -883,6 +1172,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
   document.getElementById('transcript-input').value = '';
   document.getElementById('transcript-box').classList.add('hidden');
   isListening = true;
+  activeVoiceCaptureMode = mode;
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
   const captureGeneration = ++voiceCaptureGeneration;
   try {
@@ -905,6 +1195,7 @@ function startVoiceCapture(mode = 'push-to-talk') {
     }, 15000);
   } catch (e) {
     isListening = false;
+    activeVoiceCaptureMode = null;
     document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
     document.getElementById('reactor-container').classList.remove('listening');
     document.getElementById('btn-ptt').classList.remove('active');
@@ -945,7 +1236,14 @@ function stopVoiceCapture(label = 'CONFIRM DIRECTIVE', detail = 'Verify or edit 
 }
 
 function cancelVoiceCapture() {
+  clearWakeWindow();
+  if (localSttCapture) {
+    const capture = localSttCapture;
+    localSttCapture = null;
+    capture.cancel();
+  }
   isListening = false;
+  activeVoiceCaptureMode = null;
   document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
   discardVoiceResult = true;
   voiceCaptureGeneration++;
@@ -980,14 +1278,25 @@ function handleTextSubmit() {
   void submitDirective(val);
 }
 
+function nextUtteranceId() {
+  // One id per transcript submission; the server drops re-delivered duplicates (GAP-006).
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return 'utt-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function submitDirective(text) {
   if (!currentSession) {
-    setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before submitting directives.');
-    addFeedItem('failed', 'Directive not sent: no authenticated session.');
+    const message = 'Secure device enrollment is required before I can submit or execute directives. No action was sent.';
+    setAssistantState('SESSION UNAVAILABLE — DIRECTIVE NOT SENT', message);
+    addFeedItem('failed', message);
+    setPipeline({ sent: 'bad' }, 'No authenticated device session; the request never reached the policy gateway.');
+    speakResponse(message);
     return;
   }
   if (isSubmitting) return;
   isSubmitting = true;
+  setVoiceState('processing', String(text).slice(0, 80));
   if (wakeCaptureAwaitingReview) wakeCaptureAwaitingReview = false;
   const sendButton = document.getElementById('btn-hud-send');
   const transcriptSubmit = document.getElementById('btn-transcript-submit');
@@ -1008,14 +1317,25 @@ async function submitDirective(text) {
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch('/api/request', {
       method: 'POST',
-      body: { text },
+      body: { text, ...(activeConversationId ? { conversationId: activeConversationId } : {}), ...(sourceWasTranscript ? { voice: { utteranceId: nextUtteranceId() } } : {}) },
       signal: controller.signal,
     });
     const data = await readApiResponse(res);
+    if (typeof data.data?.conversationId === 'string') {
+      activeConversationId = data.data.conversationId;
+    }
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
-    if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
+    refreshTaskHistory(); // Keep the task timeline aligned with the server's authoritative state.
+    if (data.state === 'ANSWERED') {
+      setAssistantState('JARVIS RESPONSE', data.message || 'I have a response for you.');
+      addFeedItem('success', data.message || 'I have a response for you.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'skip', verify: 'skip' }, 'Conversational response returned; no desktop action was requested.');
+      speakResponse(data.message || 'I have a response for you.');
+    } else if (data.approvalId && data.state === 'AWAITING_APPROVAL') {
       setAssistantState('AWAITING CONSENT', data.message);
-      speakResponse(data.message || 'I need your approval before performing that action.');
+      setVoiceState('approval', 'Press Confirm and Execute on screen.');
+      // Approval is a deliberate on-screen click (never voice-only), so say where to click.
+      speakResponse('Please confirm on screen: press Confirm and Execute to continue.');
       renderApprovalCard(data.approvalId, data.taskId, text, data.message);
       addFeedItem('pending', `Approval Required: ${data.message}`);
       setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Waiting for your explicit approval. It is single-use and bound to this exact action.');
@@ -1083,6 +1403,7 @@ function cancelSpeechOutput() {
     activeSpeechAudio = null;
   }
   if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  if (isSpeaking) speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
   isSpeaking = false;
 }
 
@@ -1121,6 +1442,8 @@ async function speakResponse(message) {
           }
           URL.revokeObjectURL(url);
           isSpeaking = false;
+          speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
+          onSpeechFinished();
           if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
         };
         activeSpeechAudio = audio;
@@ -1132,6 +1455,8 @@ async function speakResponse(message) {
         audio.addEventListener('error', finishPlayback, { once: true });
         try {
           isSpeaking = true;
+          setVoiceState('speaking', text.slice(0, 80));
+          setTtsEngineLabel('Speech output: local Piper voice (on this laptop)');
           await audio.play();
           return;
         } catch (playError) {
@@ -1151,12 +1476,16 @@ async function speakResponse(message) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     isSpeaking = true;
+    setVoiceState('speaking', text.slice(0, 80));
+    setTtsEngineLabel('Speech output: browser speech synthesis (system voice)');
     utterance.lang = 'en-GB';
     utterance.rate = 0.92;
     utterance.pitch = 0.9;
     const finishSpeech = () => {
       if (generation !== speechOutputGeneration) return;
       isSpeaking = false;
+      speechGuardUntil = Date.now() + SPEECH_GUARD_MS;
+      onSpeechFinished();
       if (isHandsFreeEnabled && !isMicMuted && speechOutputEnabled) scheduleHandsFreeRestart();
     };
     utterance.onend = finishSpeech;
@@ -1218,11 +1547,27 @@ function updateMuteControl() {
 
 function renderApprovalCard(approvalId, taskId, requestText, message) {
   const slot = document.getElementById('hud-approvals-slot');
-  document.getElementById('hud-no-approvals-hint').classList.add('hidden');
+  const emptyHint = document.getElementById('hud-no-approvals-hint');
+  if (!slot || !emptyHint || !approvalId) return;
 
-  const card = document.createElement('div');
+  // A retried response must not create duplicate controls for a single-use approval.
+  const existing = document.getElementById('hud-appr-' + approvalId);
+  if (existing) {
+    const directive = existing.querySelector('.hud-approval-directive');
+    const description = existing.querySelector('.hud-approval-description');
+    if (directive) directive.textContent = 'DIRECTIVE: ' + String(requestText);
+    if (description) description.textContent = String(message || '');
+    existing.focus();
+    return;
+  }
+
+  emptyHint.classList.add('hidden');
+  const card = document.createElement('section');
   card.className = 'hud-approval-card';
   card.id = 'hud-appr-' + approvalId;
+  card.tabIndex = -1;
+  card.setAttribute('role', 'region');
+  card.setAttribute('aria-label', 'Approval required for directive');
 
   const directive = document.createElement('div');
   directive.className = 'hud-approval-directive';
@@ -1238,27 +1583,41 @@ function renderApprovalCard(approvalId, taskId, requestText, message) {
   const approve = document.createElement('button');
   approve.className = 'hud-btn hud-btn-cyan';
   approve.textContent = 'CONFIRM & EXECUTE';
+  approve.setAttribute('aria-label', 'Confirm and execute this exact directive');
   approve.addEventListener('click', () => resolveHudApproval(approvalId, true));
 
   const reject = document.createElement('button');
   reject.className = 'hud-btn hud-btn-danger';
   reject.textContent = 'DENY';
+  reject.setAttribute('aria-label', 'Deny this exact directive');
   reject.addEventListener('click', () => resolveHudApproval(approvalId, false));
 
   actions.append(approve, reject);
   card.append(directive, description, actions);
   slot.appendChild(card);
   updateApprovalCountBadge();
+  card.focus();
 }
 
 async function resolveHudApproval(approvalId, approved) {
-  const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
-  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
-
+  // Approval records are single-use. Ignore rapid duplicate clicks while the
+  // signed request is in flight, rather than sending competing resolutions.
+  if (approvalResolutionsInFlight.has(approvalId)) return;
+  const card = document.getElementById('hud-appr-' + approvalId);
+  if (!card) return;
   if (!currentSession) {
     setAssistantState('SESSION UNAVAILABLE', 'Secure device enrollment is required before approvals can be submitted.');
     return;
   }
+
+  approvalResolutionsInFlight.add(approvalId);
+  const controls = Array.from(card.querySelectorAll('button'));
+  controls.forEach((button) => {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+  });
+  const endpoint = approved ? '/api/approval/approve' : '/api/approval/reject';
+  setAssistantState('RESOLVING APPROVAL...', 'Checking server authorization and task state...');
 
   try {
     const res = await window.JarvisDeviceCrypto.signedFetch(endpoint, {
@@ -1266,18 +1625,18 @@ async function resolveHudApproval(approvalId, approved) {
       body: { approvalId },
     });
     const result = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    // A conflict that carries a task state (for example EXPIRED) is a terminal
+    // outcome the card can reflect; any other failure remains an error.
+    if (!res.ok && !(res.status === 409 && typeof result.state === 'string')) {
       throw new Error(result.error || 'Approval request failed with HTTP ' + res.status);
-    }
-    if (!approved && result.success !== true) {
-      throw new Error(result.message || result.error || 'Server did not confirm the rejection');
     }
 
     if (!approved) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      if (result.success !== true) throw new Error(result.message || result.error || 'Server did not confirm the rejection');
+      card.remove();
       updateApprovalCountBadge();
-      setAssistantState('DIRECTIVE REJECTED', 'The server confirmed that the action was rejected.');
+      refreshTaskHistory();
+      setAssistantState('DIRECTIVE REJECTED', result.message || 'The server confirmed that the action was rejected.');
       addFeedItem('failed', 'Directive rejected by operator.');
       setPipeline({ sent: 'done', policy: 'done', approval: 'bad' }, 'You rejected the action. Nothing was executed.');
       speakResponse('The directive was rejected.');
@@ -1286,31 +1645,41 @@ async function resolveHudApproval(approvalId, approved) {
 
     if (result.state === 'COMPLETED' && result.success === true &&
         result.outcome === 'VERIFIED_SUCCESS' && result.verified === true) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      card.remove();
       updateApprovalCountBadge();
+      refreshTaskHistory();
       setAssistantState('TASK COMPLETED', result.message || 'The server reports the task completed; review evidence before relying on the result.');
       addFeedItem('success', 'Task state: COMPLETED — ' + (result.message || 'No result details supplied'), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'done' }, 'Approved, executed, and verified by the host.');
       speakResponse(result.message || 'The approved task completed and was verified.');
     } else if (['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL', 'AWAITING_RECOVERY'].includes(result.state)) {
-      const card = document.getElementById('hud-appr-' + approvalId);
-      if (card) card.remove();
+      card.remove();
       updateApprovalCountBadge();
+      refreshTaskHistory();
       setAssistantState('TASK DID NOT COMPLETE', result.message || String(result.state));
       addFeedItem('failed', 'Approval was processed but the task did not complete: ' + String(result.state), result.data);
       setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'bad' }, 'Approved, but the task did not complete: ' + String(result.state));
       speakResponse(result.message || 'The approved task did not complete.');
     } else {
+      // An accepted approval is not proof of execution. Keep the pending card
+      // available while the task's terminal state remains unknown.
       setAssistantState('APPROVAL PROCESSED — NOT COMPLETE', result.message || 'Approval was processed but execution is not verified complete.');
       addFeedItem('pending', 'Approval processed; task state: ' + String(result.state || 'UNKNOWN'));
-      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified.');
+      setPipeline({ sent: 'done', policy: 'done', approval: 'done', verify: 'warn' }, 'Approval processed, but completion is not verified. Refresh task status before relying on it.');
     }
   } catch (err) {
     setAssistantState('APPROVAL STATUS UNKNOWN', err instanceof Error ? err.message : 'Approval request failed');
-    addFeedItem('failed', 'Approval state could not be confirmed. Refresh status before retrying.');
-    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify before retrying.');
+    addFeedItem('failed', 'Approval state could not be confirmed. Refresh task status before retrying.');
+    setPipeline({ sent: 'done', policy: 'done', approval: 'warn' }, 'Approval state is unknown. Verify task status before retrying.');
     speakResponse(err instanceof Error ? err.message : 'Approval status could not be confirmed.');
+  } finally {
+    approvalResolutionsInFlight.delete(approvalId);
+    if (card.isConnected) {
+      controls.forEach((button) => {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      });
+    }
   }
 }
 
@@ -1369,6 +1738,270 @@ setInterval(() => {
   const speaking = String(isSpeaking);
   if (document.body.dataset.speaking !== speaking) document.body.dataset.speaking = speaking;
 }, 250);
+
+let taskHistoryRefreshInFlight = false;
+const RECOVERY_TASK_STATES = new Set(['AWAITING_RECOVERY', 'INTERRUPTED']);
+const TERMINAL_TASK_STATES = new Set(['COMPLETED', 'FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'PARTIAL']);
+
+async function refreshTaskHistory() {
+  const container = document.getElementById('hud-task-history');
+  const refreshButton = document.getElementById('btn-refresh-tasks');
+  if (!container || taskHistoryRefreshInFlight) return;
+  if (!currentSession || !window.JarvisDeviceCrypto?.signedFetch) {
+    container.textContent = 'Secure device session unavailable. Task history was not requested.';
+    return;
+  }
+
+  taskHistoryRefreshInFlight = true;
+  if (refreshButton) {
+    refreshButton.disabled = true;
+    refreshButton.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const response = await window.JarvisDeviceCrypto.signedFetch('/api/tasks', { method: 'GET' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Task history request failed (HTTP ' + response.status + ')');
+    const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    syncPendingApprovalCards(tasks);
+    renderTaskHistory(tasks);
+  } catch (error) {
+    container.textContent = 'Task history unavailable: ' + (error instanceof Error ? error.message : 'Request failed');
+  } finally {
+    taskHistoryRefreshInFlight = false;
+    if (refreshButton) {
+      refreshButton.disabled = false;
+      refreshButton.removeAttribute('aria-busy');
+    }
+  }
+}
+
+function syncPendingApprovalCards(tasks) {
+  const pending = tasks.filter((task) =>
+    task && task.state === 'AWAITING_APPROVAL' &&
+    typeof task.approvalId === 'string' && task.approvalId.length > 0 &&
+    typeof task.requestText === 'string' && task.requestText.length > 0
+  );
+  const activeIds = new Set(pending.map((task) => task.approvalId));
+  document.querySelectorAll('#hud-approvals-slot .hud-approval-card').forEach((card) => {
+    const id = card.id.startsWith('hud-appr-') ? card.id.slice('hud-appr-'.length) : '';
+    if (!activeIds.has(id)) card.remove();
+  });
+  for (const task of pending) {
+    renderApprovalCard(task.approvalId, task.id, task.requestText,
+      'This task is still awaiting your explicit approval. Review the exact directive before confirming.');
+  }
+  const emptyHint = document.getElementById('hud-no-approvals-hint');
+  if (emptyHint) emptyHint.classList.toggle('hidden', pending.length > 0);
+  updateApprovalCountBadge();
+}
+
+function renderTaskHistory(tasks) {
+  const container = document.getElementById('hud-task-history');
+  if (!container) return;
+  container.replaceChildren();
+  if (!tasks.length) {
+    const empty = document.createElement('div');
+    empty.className = 'task-history-empty';
+    empty.textContent = 'No recent tasks for this device.';
+    container.appendChild(empty);
+    return;
+  }
+
+  // API returns at most 30 records scoped to this device (or owner-managed devices).
+  for (const task of tasks.slice().reverse()) {
+    const card = document.createElement('article');
+    card.className = 'task-history-card';
+    const header = document.createElement('div');
+    header.className = 'task-history-card-header';
+    const operation = document.createElement('strong');
+    operation.textContent = String(task.operation || 'Task');
+    const rawState = String(task.state || 'UNKNOWN');
+    const state = document.createElement('span');
+    state.className = 'task-history-state state-' + rawState.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    state.textContent = rawState.replaceAll('_', ' ');
+    header.append(operation, state);
+
+    const meta = document.createElement('div');
+    meta.className = 'task-history-meta';
+    meta.textContent = String(task.origin || 'unknown origin');
+    card.append(header, meta);
+
+    // A dedicated, expandable detail view deliberately allowlists display fields.
+    const details = document.createElement('details');
+    details.className = 'task-history-detail';
+    const summary = document.createElement('summary');
+    summary.textContent = 'TASK DETAILS';
+    const detailGrid = document.createElement('dl');
+    detailGrid.className = 'task-history-detail-grid';
+    const addDetail = (label, value) => {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const description = document.createElement('dd');
+      description.textContent = value;
+      detailGrid.append(term, description);
+    };
+    const formatTaskTime = (value) => {
+      const timestamp = Number(value);
+      return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toLocaleString() : 'Unavailable';
+    };
+    addDetail('Task reference', String(task.id || 'Unavailable'));
+    addDetail('Operation', String(task.operation || 'Unavailable'));
+    addDetail('Current state', rawState.replaceAll('_', ' '));
+    addDetail('Origin', String(task.origin || 'Unknown'));
+    addDetail('Created', formatTaskTime(task.createdAt));
+    addDetail('Last updated', formatTaskTime(task.updatedAt));
+    details.append(summary, detailGrid);
+
+    if (Array.isArray(task.steps) && task.steps.length) {
+      const steps = document.createElement('ol');
+      steps.className = 'task-history-steps';
+      for (const step of task.steps) {
+        const item = document.createElement('li');
+        const statusText = String(step.status || 'unknown').replaceAll('_', ' ');
+        const messageText = typeof step.message === 'string' ? step.message : '';
+        item.textContent = statusText + (messageText ? ' — ' + messageText : '');
+        steps.appendChild(item);
+      }
+      const stepHeading = document.createElement('h4');
+      stepHeading.className = 'task-history-step-heading';
+      stepHeading.textContent = 'STEP TIMELINE';
+      details.append(stepHeading, steps);
+    }
+    card.appendChild(details);
+
+    if (['EXECUTING', 'AWAITING_APPROVAL', 'CREATED', 'APPROVED'].includes(rawState)) {
+      card.appendChild(createTaskCancellationControl(task.id, rawState));
+    }
+
+    if (RECOVERY_TASK_STATES.has(rawState)) {
+      card.appendChild(createTaskRecoveryControls(task.id));
+    }
+    container.appendChild(card);
+  }
+}
+
+function createTaskCancellationControl(taskId, taskState) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'task-cancel-control';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'hud-btn-mini task-cancel-button';
+  button.textContent = taskState === 'EXECUTING' ? 'STOP WORKFLOW' : 'CANCEL TASK';
+  const status = document.createElement('p');
+  status.className = 'task-recovery-status';
+  status.setAttribute('role', 'status');
+  button.addEventListener('click', async () => {
+    const key = String(taskId);
+    if (taskCancellationsInFlight.has(key)) return;
+    if (!window.JarvisDeviceCrypto?.signedFetch) {
+      status.textContent = 'Secure device session unavailable. No cancellation request was sent.';
+      return;
+    }
+    taskCancellationsInFlight.add(key);
+    button.disabled = true;
+    status.textContent = taskState === 'EXECUTING'
+      ? 'Requesting interruption. The current operation may have an external effect; remaining steps will be stopped.'
+      : 'Submitting authenticated cancellation…';
+    try {
+      const response = await window.JarvisDeviceCrypto.signedFetch('/api/task/cancel', {
+        method: 'POST',
+        body: { taskId },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.message || result.error || 'Cancellation was not confirmed');
+      }
+      const state = typeof result.state === 'string' ? result.state.replaceAll('_', ' ') : 'status pending refresh';
+      status.textContent = String(result.message || 'Cancellation accepted') + ' Current state: ' + state + '.';
+      addFeedItem('pending', 'Cancellation requested for task ' + key + '. ' + String(result.message || '') + ' No dependent workflow step should continue.');
+      await refreshTaskHistory();
+    } catch (error) {
+      status.textContent = 'Cancellation not confirmed: ' + (error instanceof Error ? error.message : 'Request failed') + '. Refresh task status before taking further action.';
+    } finally {
+      taskCancellationsInFlight.delete(key);
+      button.disabled = false;
+    }
+  });
+  wrapper.append(button, status);
+  return wrapper;
+}
+
+function createTaskRecoveryControls(taskId) {
+  const form = document.createElement('form');
+  form.className = 'task-recovery-form';
+  const label = document.createElement('label');
+  label.textContent = 'Manual recovery review (does not retry, resume, or replay the task)';
+  const disposition = document.createElement('select');
+  disposition.required = true;
+  disposition.setAttribute('aria-label', 'Recovery decision');
+  for (const [value, text] of [
+    ['confirmed_no_effect', 'Confirmed: no effect occurred'],
+    ['effect_observed', 'Effect observed'],
+    ['still_unknown', 'Still unknown'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    disposition.appendChild(option);
+  }
+  const note = document.createElement('textarea');
+  note.required = true;
+  note.minLength = 8;
+  note.maxLength = 500;
+  note.rows = 2;
+  note.placeholder = 'Add an 8–500 character note describing what you observed.';
+  note.setAttribute('aria-label', 'Recovery review note');
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'hud-btn-mini';
+  submit.textContent = 'SAVE REVIEW';
+  const status = document.createElement('p');
+  status.className = 'task-recovery-status';
+  status.setAttribute('role', 'status');
+  label.appendChild(disposition);
+  form.append(label, note, submit, status);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (submit.disabled || recoveryReviewsInFlight.has(String(taskId))) return;
+    const observation = note.value.trim();
+    if (observation.length < 8 || observation.length > 500) {
+      status.textContent = 'Please provide an observation between 8 and 500 characters.';
+      return;
+    }
+    recoveryReviewsInFlight.add(String(taskId));
+    submit.disabled = true;
+    disposition.disabled = true;
+    note.disabled = true;
+    status.textContent = 'Submitting authenticated recovery review…';
+    const selectedDisposition = disposition.value;
+    try {
+      const response = await window.JarvisDeviceCrypto.signedFetch('/api/task/reconcile', {
+        method: 'POST',
+        body: { taskId, disposition: selectedDisposition, note: observation },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.error || result.message || 'Recovery review was not confirmed');
+      }
+      const stateText = typeof result.state === 'string' ? result.state.replaceAll('_', ' ') : 'not returned by server';
+      const dispositionText = {
+        confirmed_no_effect: 'No effect was confirmed; the task was not replayed.',
+        effect_observed: 'An effect was observed; this is not independent verification of completion.',
+        still_unknown: 'The outcome remains unknown and requires further review.',
+      }[selectedDisposition];
+      await refreshTaskHistory();
+      addFeedItem('pending', 'Recovery review saved for task ' + String(taskId) + '. ' + dispositionText + ' Server state: ' + stateText + '. No action was retried or resumed.');
+    } catch (error) {
+      status.textContent = 'Review not confirmed: ' + (error instanceof Error ? error.message : 'Request failed');
+    } finally {
+      recoveryReviewsInFlight.delete(String(taskId));
+      submit.disabled = false;
+      disposition.disabled = false;
+      note.disabled = false;
+    }
+  });
+  return form;
+}
 
 function addFeedItem(type, message, details) {
   const feed = document.getElementById('hud-tasks-feed');
@@ -1601,4 +2234,433 @@ function initWaveformCanvas() {
     }
   }
   animationFrameId = requestAnimationFrame(draw);
+}
+
+// ---- Resource profile and AI provider panel (US-059 / US-061) ----
+// Owner-only signed endpoints; built with DOM APIs (no innerHTML).
+async function refreshResources() {
+  const summary = document.getElementById('hud-resources-summary');
+  if (!summary || !currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources', { method: 'GET' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      summary.textContent = res.status === 403
+        ? 'Resource controls need a device-management device.'
+        : (data.error || 'Resource status unavailable.');
+      return;
+    }
+    renderResources(data);
+  } catch {
+    summary.textContent = 'Resource status unavailable.';
+  }
+}
+
+function renderResources(data) {
+  const summary = document.getElementById('hud-resources-summary');
+  const readings = data.readings || {};
+  currentResourceProfile = typeof data.profile === 'string' ? data.profile : null;
+  onBatteryPower = Boolean(readings.battery && readings.battery.charging === false);
+  const battery = readings.battery
+    ? `battery ${readings.battery.percent}%${readings.battery.charging ? ' (AC)' : ' (on battery)'}`
+    : 'no battery reading';
+  const local = (data.ai?.providers || []).find((provider) => provider.id === 'local');
+  const cloud = (data.ai?.providers || []).filter((provider) => provider.id !== 'local' && provider.configured);
+  summary.textContent = `PROFILE ${String(data.profile || '').toUpperCase()} (${data.mode === 'auto' ? 'auto: ' + data.reason : 'pinned'}) · ` +
+    `CPU ${readings.cpuPercent ?? '?'}% · free RAM ${readings.freeMemPercent ?? '?'}% · ${battery} · ` +
+    `AI: local ${local?.available ? 'ready' : 'unavailable'}${cloud.length ? ', cloud configured: ' + cloud.map((p) => p.id).join(', ') : ', no cloud providers'}`;
+  const select = document.getElementById('hud-resource-mode');
+  if (select && data.mode) select.value = data.mode;
+  const list = document.getElementById('hud-heavy-work');
+  if (!list) return;
+  list.replaceChildren();
+  for (const item of data.heavyWork || []) {
+    const entry = document.createElement('li');
+    entry.textContent = `${item.label} · ${Math.round((Date.now() - item.startedAt) / 1000)} s`;
+    list.appendChild(entry);
+  }
+}
+
+async function setResourceMode(mode) {
+  if (!currentSession) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources/profile', { method: 'POST', body: { mode } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Profile change failed');
+    addFeedItem('success', `Resource profile set to ${String(mode).toUpperCase()}.`);
+    refreshResources();
+  } catch (error) {
+    addFeedItem('failed', error instanceof Error ? error.message : 'Profile change failed');
+  }
+}
+
+async function stopHeavyWork() {
+  if (!currentSession) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/resources/stop', { method: 'POST', body: {} });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Stop failed');
+    addFeedItem('success', `Stopped ${data.stopped} running heavy task(s).`);
+    refreshResources();
+  } catch (error) {
+    addFeedItem('failed', error instanceof Error ? error.message : 'Stop failed');
+  }
+}
+
+// ---- Device sync & conflicts (US-060 / US-027) ----
+// Owner-only signed endpoints; DOM APIs only (no innerHTML). Resolving a conflict
+// or running a queued offline command never applies changes directly: it submits
+// through the policy gateway, so an approval card follows where required.
+async function refreshSync() {
+  const summary = document.getElementById('hud-sync-summary');
+  if (!summary || !currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/overview', { method: 'GET' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      summary.textContent = res.status === 403 ? 'Sync review needs a device-management device.' : (data.error || 'Sync status unavailable.');
+      return;
+    }
+    renderSync(data);
+  } catch {
+    summary.textContent = 'Sync status unavailable.';
+  }
+}
+
+function syncTime(value) {
+  return value ? new Date(value).toLocaleString() : 'never';
+}
+
+function syncButton(label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'hud-btn-mini';
+  button.textContent = label;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try { await onClick(); } finally { button.disabled = false; }
+  });
+  return button;
+}
+
+function renderSync(data) {
+  const devices = data.devices || [];
+  const conflicts = data.conflicts || [];
+  const commands = data.commands || [];
+  document.getElementById('hud-sync-summary').textContent =
+    devices.length + ' synced device(s) · ' + conflicts.length + ' open conflict(s) · ' + commands.length + ' offline command(s) waiting';
+
+  const deviceList = document.getElementById('hud-sync-devices');
+  deviceList.replaceChildren();
+  for (const device of devices) {
+    const item = document.createElement('li');
+    item.textContent = device.name + ' (' + (device.platform || 'device') + ', ' + device.status + ') · last push ' + syncTime(device.lastPushAt) +
+      ' · last pull ' + syncTime(device.lastPullAt) + ' · ' + device.capabilities.join(', ');
+    deviceList.appendChild(item);
+  }
+
+  const conflictList = document.getElementById('hud-sync-conflicts');
+  conflictList.replaceChildren();
+  for (const conflict of conflicts) {
+    const item = document.createElement('li');
+    const text = document.createElement('p');
+    text.textContent = 'CONFLICT (' + conflict.kind + ') · memory ' + conflict.memoryId.slice(0, 8) + '… · hub: "' + (conflict.hubContent || '(deleted)') +
+      '" · device: "' + (conflict.deviceContent || '(deleted)') + '"';
+    item.appendChild(text);
+    item.appendChild(syncButton('KEEP HUB', () => resolveSyncConflict(conflict.id, 'keep_hub')));
+    item.appendChild(syncButton('KEEP DEVICE', () => resolveSyncConflict(conflict.id, 'keep_device')));
+    item.appendChild(syncButton('MERGE…', () => {
+      const merged = window.prompt('Merged memory text (submitted for approval):', [conflict.hubContent, conflict.deviceContent].filter(Boolean).join(' / '));
+      return merged ? resolveSyncConflict(conflict.id, 'merge', merged) : undefined;
+    }));
+    conflictList.appendChild(item);
+  }
+
+  const commandList = document.getElementById('hud-sync-commands');
+  commandList.replaceChildren();
+  for (const command of commands) {
+    const item = document.createElement('li');
+    const text = document.createElement('p');
+    text.textContent = 'OFFLINE COMMAND from ' + command.deviceId.slice(0, 8) + '… (queued ' + syncTime(command.createdAt) + ', expires ' +
+      syncTime(command.expiresAt) + '): "' + command.text + '"';
+    item.appendChild(text);
+    item.appendChild(syncButton('RUN (WITH APPROVAL)', () => decideSyncCommand(command.id, 'run')));
+    item.appendChild(syncButton('DISCARD', () => decideSyncCommand(command.id, 'discard')));
+    commandList.appendChild(item);
+  }
+}
+
+async function resolveSyncConflict(id, resolution, mergedContent) {
+  const body = mergedContent ? { id, resolution, mergedContent } : { id, resolution };
+  const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/conflicts/resolve', { method: 'POST', body });
+  const data = await res.json().catch(() => ({}));
+  setAssistantState(res.ok ? 'SYNC CONFLICT RESOLVED' : 'SYNC CONFLICT NOT RESOLVED',
+    res.ok ? (data.taskId ? 'The chosen text was submitted; approve it in the consent panel to apply it.' : 'The hub copy was kept.') : (data.error || 'Request failed.'));
+  refreshSync();
+  refreshTaskHistory();
+}
+
+async function decideSyncCommand(id, decision) {
+  const res = await window.JarvisDeviceCrypto.signedFetch('/api/sync/commands/decide', { method: 'POST', body: { id, decision } });
+  const data = await res.json().catch(() => ({}));
+  setAssistantState(res.ok ? (decision === 'run' ? 'OFFLINE COMMAND SUBMITTED' : 'OFFLINE COMMAND DISCARDED') : 'OFFLINE COMMAND NOT PROCESSED',
+    res.ok ? (decision === 'run' ? 'Task state: ' + (data.state || 'submitted') + '. Approve it if a consent card appears.' : 'Nothing was run.') : (data.error || 'Request failed.'));
+  refreshSync();
+  refreshTaskHistory();
+}
+
+// ---- Voice state, engine labels and local Whisper capture (J-E02) ----
+
+const VOICE_STATE_LABELS = {
+  idle: 'VOICE: IDLE',
+  standby: 'VOICE: STANDBY — SAY “HEY JARVIS”',
+  listening: 'VOICE: LISTENING',
+  processing: 'VOICE: PROCESSING',
+  speaking: 'VOICE: SPEAKING',
+  approval: 'VOICE: AWAITING APPROVAL',
+  error: 'VOICE: ERROR',
+};
+
+function setVoiceState(state, detail = '') {
+  const node = document.getElementById('hud-voice-state');
+  if (!node) return;
+  const label = VOICE_STATE_LABELS[state] || VOICE_STATE_LABELS.idle;
+  node.dataset.state = state;
+  node.textContent = detail ? label + ' — ' + detail : label;
+}
+
+function onSpeechFinished() {
+  if (isListening || isSubmitting) return;
+  setVoiceState(handsFreeEnabled ? 'standby' : 'idle');
+}
+
+function setTtsEngineLabel(text) {
+  const node = document.getElementById('tts-engine-label');
+  if (node) node.textContent = text;
+}
+
+function updateSpeechEngineNotes() {
+  const note = document.getElementById('stt-provider-note');
+  if (note) {
+    if (sttProvider === 'local') {
+      note.textContent = localSttAvailable
+        ? 'Local Whisper is installed: speech is transcribed on this laptop and never uploaded. No browser-speech consent is needed.'
+        : 'Local Whisper is not installed (set JARVIS_WHISPER_CLI and JARVIS_WHISPER_MODEL, then restart JARVIS). Voice commands are unavailable with this setting; switch to browser recognition or type.';
+    } else {
+      note.textContent = 'Browser speech recognition may send your audio to the browser vendor (for example Microsoft or Google). It is not local or offline and needs the session consent boxes above.';
+    }
+  }
+  setTtsEngineLabel(localTtsUnavailable
+    ? 'Speech output: browser speech synthesis (system voice). Local Piper TTS is not configured.'
+    : 'Speech output: local Piper voice when available, otherwise the browser voice.');
+}
+
+/**
+ * Capture microphone audio locally, stop on trailing silence (simple energy VAD),
+ * encode 16 kHz mono 16-bit WAV and transcribe it with the local Whisper engine.
+ * The text follows the same rules as browser recognition: push-to-talk goes to the
+ * review box (nothing is sent); post-wake text continues the wake flow.
+ */
+async function startLocalSttCapture(mode, windowMs) {
+  if (isMicMuted || isListening) return;
+  if (!localSttAvailable) {
+    setVoiceState('error', 'Local speech recognition is not installed.');
+    setAssistantState('LOCAL SPEECH RECOGNITION UNAVAILABLE', 'Local Whisper is not installed on this laptop. Switch the speech-to-text engine to browser recognition, or type the command. No audio was captured.');
+    if (mode === 'wake') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      scheduleHandsFreeRestart();
+    }
+    return;
+  }
+  if (!window.JarvisDeviceCrypto?.signedFetch || !currentSession) {
+    setVoiceState('error', 'No authenticated session.');
+    setAssistantState('SESSION UNAVAILABLE — NOTHING CAPTURED', 'Local transcription needs this device to be enrolled and signed in.');
+    if (mode === 'wake') { wakePhase = null; wakeCaptureAwaitingReview = false; scheduleHandsFreeRestart(); }
+    return;
+  }
+  if (localWakeEngine) stopHandsFreeStandby();
+  if (isSpeaking) cancelSpeechOutput();
+  isListening = true;
+  activeVoiceCaptureMode = mode;
+  wakeCaptureAwaitingReview = mode === 'wake';
+  const generation = ++voiceCaptureGeneration;
+  document.getElementById('btn-ptt').setAttribute('aria-pressed', 'true');
+  document.getElementById('reactor-container').classList.add('listening');
+  setVoiceState('listening', mode === 'wake' ? 'Speak your command.' : 'Speak, then pause to finish.');
+  setAssistantState('LISTENING...', 'Recording locally for on-device transcription.');
+
+  let stream = null;
+  let context = null;
+  let processor = null;
+  const chunks = [];
+  let speechStarted = false;
+  let lastVoiceAt = 0;
+  let finished = false;
+  let startedAt = 0;
+  const MAX_CAPTURE_MS = 12000;
+  const SILENCE_AFTER_SPEECH_MS = 900;
+  const SPEECH_RMS = 0.015;
+  let watchdog = null;
+
+  const release = () => {
+    try { processor?.disconnect(); } catch { /* already released */ }
+    try { stream?.getTracks().forEach((track) => track.stop()); } catch { /* already released */ }
+    try { void context?.close(); } catch { /* already released */ }
+  };
+  const controller = { cancel: () => { void finish(true); } };
+  const finish = async (cancelled) => {
+    if (finished) return;
+    finished = true;
+    if (watchdog) clearInterval(watchdog);
+    const sampleRate = context?.sampleRate || 48000;
+    release();
+    if (localSttCapture === controller) localSttCapture = null;
+    if (cancelled || generation !== voiceCaptureGeneration) return;
+    isListening = false;
+    activeVoiceCaptureMode = null;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    if (!speechStarted || chunks.length === 0) {
+      if (mode === 'wake') { void completeWakeCapture(''); return; }
+      setVoiceState('idle');
+      setAssistantState('NO SPEECH DETECTED', 'Nothing was heard. Try again or type the command.');
+      return;
+    }
+    setVoiceState('processing', 'Transcribing on this laptop…');
+    setAssistantState('TRANSCRIBING LOCALLY', 'Whisper is converting your speech to text on this laptop.');
+    let text = '';
+    try {
+      const wav = encodeWav16k(chunks, sampleRate);
+      const res = await window.JarvisDeviceCrypto.signedFetch('/api/voice/transcribe', {
+        method: 'POST',
+        body: { audioBase64: arrayBufferToBase64(wav) },
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || 'Local transcription failed with HTTP ' + res.status);
+      text = String(payload.text || '').replace(/\s+/g, ' ').trim().slice(0, MAX_VOICE_TRANSCRIPT_LENGTH);
+    } catch (error) {
+      setVoiceState('error', 'Local transcription failed.');
+      setAssistantState('LOCAL TRANSCRIPTION FAILED — NOTHING SENT', error instanceof Error ? error.message : 'Local transcription failed.');
+      if (mode === 'wake') {
+        wakePhase = null;
+        wakeCaptureAwaitingReview = false;
+        scheduleHandsFreeRestart();
+      }
+      return;
+    }
+    if (generation !== voiceCaptureGeneration) return;
+    if (mode === 'wake') {
+      if (text && normalizeRecognizedCommand(text)) wakeSpeechHeard = true;
+      void completeWakeCapture(text);
+      return;
+    }
+    // Push-to-talk stays review-first: show the transcript, send nothing yet.
+    setVoiceState('idle');
+    if (!text) {
+      setAssistantState('NO SPEECH RECOGNIZED', 'Whisper did not return any words. Try again or type the command.');
+      return;
+    }
+    document.getElementById('transcript-input').value = text;
+    document.getElementById('transcript-box').classList.remove('hidden');
+    setAssistantState('VOICE TRANSCRIPT READY', 'Review or edit the recognized command, then select EXECUTE DIRECTIVE. Nothing has been sent yet.');
+  };
+  localSttCapture = controller;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    if (finished) { release(); return; }
+    context = new AudioContext();
+    const source = context.createMediaStreamSource(stream);
+    processor = context.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (event) => {
+      if (finished) return;
+      const input = event.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < input.length; i += 1) sum += input[i] * input[i];
+      const rms = Math.sqrt(sum / input.length);
+      if (rms > SPEECH_RMS && !(isSpeaking || Date.now() < speechGuardUntil)) {
+        speechStarted = true;
+        lastVoiceAt = Date.now();
+      }
+      if (speechStarted) chunks.push(new Float32Array(input));
+    };
+    source.connect(processor);
+    processor.connect(context.destination);
+    // Start the wake window only after microphone permission and the audio graph
+    // are ready. Counting setup time here can expire the 2.5 s same-utterance
+    // window before a single microphone sample is captured.
+    startedAt = Date.now();
+  watchdog = setInterval(() => {
+    const now = Date.now();
+    if (!speechStarted && now - startedAt > windowMs) void finish(false);
+    else if (speechStarted && now - lastVoiceAt > SILENCE_AFTER_SPEECH_MS) void finish(false);
+    else if (now - startedAt > MAX_CAPTURE_MS) void finish(false);
+  }, 150);
+
+  } catch (error) {
+    finished = true;
+    if (watchdog) clearInterval(watchdog);
+    release();
+    if (localSttCapture === controller) localSttCapture = null;
+    isListening = false;
+    activeVoiceCaptureMode = null;
+    document.getElementById('btn-ptt').setAttribute('aria-pressed', 'false');
+    document.getElementById('reactor-container').classList.remove('listening');
+    const denied = Boolean(error && (error.name === 'NotAllowedError' || error.name === 'SecurityError'));
+    setVoiceState('error', denied ? 'Microphone permission denied.' : 'Microphone unavailable.');
+    setAssistantState(denied ? 'MICROPHONE PERMISSION REQUIRED' : 'MICROPHONE UNAVAILABLE', denied
+      ? 'Allow microphone access for this site in browser settings, then retry voice input.'
+      : 'No usable microphone was found. Use text input instead.');
+    if (mode === 'wake') {
+      wakePhase = null;
+      wakeCaptureAwaitingReview = false;
+      if (denied) disableWakeDetection(); else scheduleHandsFreeRestart();
+    }
+  }
+}
+
+/** Downsample Float32 chunks to 16 kHz mono PCM16 and wrap them in a RIFF/WAV container. */
+function encodeWav16k(chunks, inputRate) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const ratio = inputRate / 16000;
+  const outLength = Math.max(1, Math.floor(total / ratio));
+  const pcm = new Int16Array(outLength);
+  let chunkIndex = 0;
+  let consumed = 0;
+  for (let i = 0; i < outLength; i += 1) {
+    const target = Math.floor(i * ratio);
+    while (chunkIndex < chunks.length && consumed + chunks[chunkIndex].length <= target) {
+      consumed += chunks[chunkIndex].length;
+      chunkIndex += 1;
+    }
+    if (chunkIndex >= chunks.length) break;
+    const sample = Math.max(-1, Math.min(1, chunks[chunkIndex][target - consumed]));
+    pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset, text) => { for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 16000, true);
+  view.setUint32(28, 32000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buffer, 44).set(pcm);
+  return buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) binary += String.fromCharCode(...bytes.subarray(i, i + step));
+  return btoa(binary);
 }

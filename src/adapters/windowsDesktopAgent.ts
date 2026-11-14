@@ -11,16 +11,17 @@ const expectedProcessStore = new AsyncLocalStorage<string | undefined>();
 const execFileAsync = promisify(execFile);
 
 export type DesktopAction =
-  | { operation: 'desktop:type_text'; parameters: { text: string } }
-  | { operation: 'desktop:paste_text'; parameters: { text: string } }
-  | { operation: 'desktop:hotkey'; parameters: { keys: string[] } }
-  | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset' } }
-  | { operation: 'desktop:copy_selection'; parameters: Record<string, never> }
-  | { operation: 'desktop:paste_clipboard'; parameters: Record<string, never> }
-  | { operation: 'desktop:inspect_window'; parameters: Record<string, never> }
+  | { operation: 'desktop:type_text'; parameters: { text: string; expectProcess?: string } }
+  | { operation: 'desktop:paste_text'; parameters: { text: string; expectProcess?: string } }
+  | { operation: 'desktop:hotkey'; parameters: { keys: string[]; expectProcess?: string } }
+  | { operation: 'desktop:zoom'; parameters: { direction: 'in' | 'out' | 'reset'; expectProcess?: string } }
+  | { operation: 'desktop:copy_selection'; parameters: { expectProcess?: string } }
+  | { operation: 'desktop:paste_clipboard'; parameters: { expectProcess?: string } }
+  | { operation: 'desktop:inspect_window'; parameters: { expectProcess?: string } }
   | { operation: 'desktop:read_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:click_control'; parameters: { name?: string; automationId?: string; expectProcess?: string } }
   | { operation: 'desktop:set_value'; parameters: { name?: string; automationId?: string; text: string; expectProcess?: string } }
+  | { operation: 'desktop:set_toggle'; parameters: { name?: string; automationId?: string; state: boolean; expectProcess?: string } }
   | { operation: 'desktop:list_windows'; parameters: Record<string, never> }
   | { operation: 'desktop:focus_window'; parameters: WindowTarget };
 
@@ -55,6 +56,7 @@ function buildControlSelector(name?: string, automationId?: string): string {
 }
 
 function validateControlSelector(name?: unknown, automationId?: unknown): void {
+  if (name !== undefined && automationId !== undefined) throw new Error('Specify either a control name or automationId, not both.');
   if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 120)) throw new Error('Control name must contain 1–120 characters.');
   if (automationId !== undefined && (typeof automationId !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(automationId))) throw new Error('automationId must contain 1–160 safe identifier characters.');
   if ((typeof automationId !== 'string' || !automationId.trim()) && (typeof name !== 'string' || !name.trim())) throw new Error('Specify a control name or automationId.');
@@ -124,6 +126,138 @@ export function buildControlActionScript(
   ].join('; ');
 }
 
+export function buildControlToggleScript(name: string | undefined, state: boolean, automationId?: string): string {
+  const selector = buildControlSelector(name, automationId);
+  return [
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    selector,
+    '$root = [System.Windows.Automation.AutomationElement]::FromHandle($foregroundHwnd)',
+    '$matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)',
+    'if ($matches.Count -ne 1) { throw "Control selector must resolve to exactly one control." }',
+    '$element = $matches.Item(0)',
+    '$actualName = $element.Current.Name',
+    'if ($element.Current.IsPassword -or $actualName -match "(?i)password|passcode|pin|otp|one[- ]time password|recovery code|cvv|card number|credit card|debit card|card expiry|expiration date|bank account|account number|routing number|iban|swift code|sort code|security code") { throw "JARVIS policy blocks changing credential or financial controls." }',
+    '$pattern = $null',
+    'if (-not $element.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) { throw "Control does not expose a Toggle action." }',
+    '$desired = ' + (state ? '[System.Windows.Automation.ToggleState]::On' : '[System.Windows.Automation.ToggleState]::Off'),
+    'if ($pattern.Current.ToggleState -ne $desired) { $pattern.Toggle() }',
+    'if ($pattern.Current.ToggleState -ne $desired) { throw "Toggle state readback did not match the requested state." }',
+    '[Console]::Out.WriteLine("TOGGLE_VERIFIED")',
+  ].join('; ');
+}
+
+/**
+ * Readback of the focused control around a paste. Text never leaves the
+ * PowerShell process: only lengths and match flags are reported.
+ */
+export interface InsertionReadback {
+  /** Focused control exposed its text through ValuePattern or TextPattern. */
+  readable: boolean;
+  beforeLength: number;
+  afterLength: number;
+  payloadLength: number;
+  /** Control text after the paste contains the payload (newline-normalised). */
+  containsPayload: boolean;
+  /** Control text already contained the payload before the paste (ambiguous evidence). */
+  containedBefore: boolean;
+}
+
+const READBACK_FUNCTIONS = [
+  // Reads the focused control's text via ValuePattern, else TextPattern; $null if neither is exposed.
+  'function Get-JarvisFocusedText($element) { if ($null -eq $element) { return $null }; $p = $null; if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$p)) { return [string]$p.Current.Value }; $t = $null; if ($element.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$t)) { return [string]$t.DocumentRange.GetText(1000000) }; return $null }',
+].join('; ');
+
+/**
+ * Builds a script that pastes `$payload` (literal text, or the current clipboard
+ * text) into the focused control and reads the control back through UI
+ * Automation. Writing to password-like controls is refused before any input.
+ */
+export function buildVerifiedPasteScript(source: { text: string } | 'clipboard'): string {
+  return [
+    '$ErrorActionPreference = "Stop"',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    READBACK_FUNCTIONS,
+    buildForegroundFocusAssertionScript(),
+    source === 'clipboard'
+      ? "$payload = [System.Windows.Forms.Clipboard]::GetText(); if ([string]::IsNullOrEmpty($payload)) { throw 'CLIPBOARD_EMPTY' }"
+      : "$payload = '" + escapePowerShellSingleQuoted(source.text) + "'",
+    '$focused = [System.Windows.Automation.AutomationElement]::FocusedElement',
+    'if ($null -ne $focused -and $focused.Current.ProcessId -ne $foregroundPid) { $focused = $null }',
+    'if ($null -ne $focused -and ($focused.Current.IsPassword -or $focused.Current.Name -match "(?i)password|passcode|pin|otp|recovery code|cvv|card number|security code")) { throw "JARVIS policy blocks writing to credential or financial fields." }',
+    '$before = Get-JarvisFocusedText $focused',
+    ...(source === 'clipboard' ? [] : ['[System.Windows.Forms.Clipboard]::SetText($payload)', 'Start-Sleep -Milliseconds 120']),
+    buildForegroundFocusAssertionScript(),
+    '[System.Windows.Forms.SendKeys]::SendWait("^v")',
+    'Start-Sleep -Milliseconds 300',
+    '[Console]::Out.WriteLine("PASTE_SENT")',
+    '$after = Get-JarvisFocusedText $focused',
+    // Edit controls store newlines as CRLF; compare against both forms.
+    '$crlf = $payload -replace "(?<!`r)`n", "`r`n"',
+    '$readable = ($null -ne $before) -and ($null -ne $after)',
+    '$result = @{ readable = $readable; beforeLength = $(if ($null -ne $before) { $before.Length } else { 0 }); afterLength = $(if ($null -ne $after) { $after.Length } else { 0 }); payloadLength = $crlf.Length; containsPayload = [bool]($readable -and ($after.Contains($payload) -or $after.Contains($crlf))); containedBefore = [bool]($readable -and ($before.Contains($payload) -or $before.Contains($crlf))) }',
+    '[Console]::Out.WriteLine("READBACK=" + ($result | ConvertTo-Json -Compress))',
+  ].join('; ');
+}
+
+/**
+ * Maps a paste acknowledgement plus UI Automation readback to an honest outcome.
+ * Keystroke acknowledgement alone is never VERIFIED_SUCCESS.
+ */
+export function classifyInsertion(acknowledged: boolean, readback: InsertionReadback | null): Pick<ExecutionResult, 'success' | 'outcome' | 'error'> & { verification: string } {
+  if (!acknowledged) {
+    return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Paste acknowledgement missing; nothing was confirmed as sent.', verification: 'not_sent' };
+  }
+  if (!readback || !readback.readable) {
+    return {
+      success: true,
+      outcome: VerificationOutcome.PARTIAL_SUCCESS,
+      error: 'Input was sent, but the destination control does not expose its text, so the result could not be independently verified.',
+      verification: 'unsupported',
+    };
+  }
+  const grewByPayload = readback.afterLength - readback.beforeLength === readback.payloadLength;
+  if (readback.containsPayload && grewByPayload && !readback.containedBefore) {
+    return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, verification: 'readback_match' };
+  }
+  if (readback.containsPayload) {
+    // Text is present, but other content changed (selection replaced) or it was
+    // already there before: real evidence, but not proof of exactly this insertion.
+    return {
+      success: true,
+      outcome: VerificationOutcome.PARTIAL_SUCCESS,
+      error: 'The text is present in the destination, but the surrounding content changed or already contained it, so the insertion is only partially verified.',
+      verification: 'readback_ambiguous',
+    };
+  }
+  // Keys were sent but the focused control does not contain the text: it may have
+  // gone elsewhere in the window. Never report this as a clean failure.
+  return {
+    success: false,
+    outcome: VerificationOutcome.UNCERTAIN,
+    error: 'Input was sent, but the destination control does not contain the text. Check the window before retrying.',
+    verification: 'readback_mismatch',
+  };
+}
+
+export function parseReadback(output: string): InsertionReadback | null {
+  const line = output.split(/\r?\n/).find((entry) => entry.startsWith('READBACK='));
+  if (!line) return null;
+  try {
+    const value = JSON.parse(line.slice('READBACK='.length)) as Partial<InsertionReadback>;
+    const numbers = [value.beforeLength, value.afterLength, value.payloadLength];
+    if (typeof value.readable !== 'boolean' || typeof value.containsPayload !== 'boolean' ||
+        typeof value.containedBefore !== 'boolean' || !numbers.every((n) => Number.isSafeInteger(n) && (n as number) >= 0)) {
+      return null;
+    }
+    return value as InsertionReadback;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Windows-side interaction adapter. It acts on the current foreground window
  * only. The caller must authorize each action through PolicyGateway first.
@@ -131,8 +265,11 @@ export function buildControlActionScript(
 export class WindowsDesktopAgent {
   private readonly windows = new WindowsWindowManager();
 
+  /** `runScript` replaces PowerShell execution in tests; it receives the fully guarded script. */
+  constructor(private readonly runScript?: (script: string, signal?: AbortSignal) => Promise<string>) {}
+
   public isSupportedHost(): boolean {
-    return process.platform === 'win32';
+    return this.runScript !== undefined || process.platform === 'win32';
   }
 
   private assertWindows(): void {
@@ -157,6 +294,13 @@ export class WindowsDesktopAgent {
   private async runPowerShell(script: string, signal?: AbortSignal): Promise<string> {
     this.assertWindows();
     const guardedScript = this.foregroundWindowGuard(expectedProcessStore.getStore()) + '; ' + script;
+    if (this.runScript) {
+      try {
+        return (await this.runScript(guardedScript, signal)).trim();
+      } catch (error) {
+        throw classifyPowerShellError(error, signal);
+      }
+    }
     const encoded = encodePowerShell(guardedScript);
     try {
       const result = await execFileAsync(
@@ -179,29 +323,28 @@ export class WindowsDesktopAgent {
     if (text.includes('\u0000')) throw new Error('Text cannot contain NUL characters.');
   }
 
-  private async pasteText(text: string, signal?: AbortSignal): Promise<ExecutionResult> {
-    this.validateText(text);
-    const safeText = escapePowerShellSingleQuoted(text);
-    const script = [
-      '$ErrorActionPreference = "Stop"',
-      'Add-Type -AssemblyName System.Windows.Forms',
-      buildForegroundFocusAssertionScript(),
-      "$payload = '" + safeText + "'",
-      '[System.Windows.Forms.Clipboard]::SetText($payload)',
-      'Start-Sleep -Milliseconds 120',
-      buildForegroundFocusAssertionScript(),
-      '[System.Windows.Forms.SendKeys]::SendWait("^v")',
-      'Start-Sleep -Milliseconds 180',
-      '[Console]::Out.WriteLine("PASTE_SENT")',
-    ].join('; ');
-    const output = await this.runPowerShell(script, signal);
-    const confirmed = output.includes('PASTE_SENT');
+  /**
+   * Paste literal text (or the clipboard) and verify it independently by reading the
+   * focused control back through UI Automation. Only lengths are reported.
+   */
+  private async pasteAndVerify(source: { text: string } | 'clipboard', signal?: AbortSignal): Promise<ExecutionResult> {
+    if (source !== 'clipboard') this.validateText(source.text);
+    const output = await this.runPowerShell(buildVerifiedPasteScript(source), signal);
+    const acknowledged = output.includes('PASTE_SENT');
+    const readback = parseReadback(output);
+    const verdict = classifyInsertion(acknowledged, readback);
     return {
-      success: confirmed,
-      outcome: confirmed ? VerificationOutcome.PARTIAL_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
-      data: { action: 'paste-text', characters: text.length },
-      evidence: { host: 'windows', mechanism: 'PowerShell STA + SendKeys', acknowledgement: confirmed },
-      error: confirmed ? undefined : 'Paste acknowledgement missing; destination content was not verified.',
+      success: verdict.success,
+      outcome: verdict.outcome,
+      data: { action: source === 'clipboard' ? 'paste-clipboard' : 'paste-text', characters: readback?.payloadLength ?? (source === 'clipboard' ? undefined : source.text.length) },
+      evidence: {
+        host: 'windows',
+        mechanism: 'PowerShell STA + SendKeys, UI Automation focused-control readback',
+        acknowledgement: acknowledged,
+        verification: verdict.verification,
+        ...(readback ? { readable: readback.readable, beforeLength: readback.beforeLength, afterLength: readback.afterLength, payloadLength: readback.payloadLength, containsPayload: readback.containsPayload, containedBefore: readback.containedBefore } : { readable: false }),
+      },
+      ...(verdict.error ? { error: verdict.error } : {}),
     };
   }
 
@@ -234,7 +377,7 @@ export class WindowsDesktopAgent {
     try {
       if (signal?.aborted) throw new Error('Desktop action cancelled before execution.');
       if (action.operation === 'desktop:type_text' || action.operation === 'desktop:paste_text') {
-        return await this.pasteText(action.parameters.text, signal);
+        return await this.pasteAndVerify({ text: action.parameters.text }, signal);
       }
 
       if (action.operation === 'desktop:hotkey') {
@@ -244,7 +387,10 @@ export class WindowsDesktopAgent {
         }
         const normalized = keys.map((key) => String(key).trim().toUpperCase());
         const sequence = normalized.map((key) => {
-          const mapped = HOTKEYS[key];
+          // Permit only single ASCII letters/digits in addition to named keys and
+          // modifiers. This supports bounded shortcuts such as Ctrl+L without
+          // exposing arbitrary SendKeys syntax or shell input.
+          const mapped = HOTKEYS[key] ?? (/^[A-Z0-9]$/.test(key) ? key.toLowerCase() : undefined);
           if (!mapped) throw new Error("Hotkey '" + key + "' is not allowlisted.");
           return mapped;
         }).join('');
@@ -322,6 +468,21 @@ export class WindowsDesktopAgent {
         };
       }
 
+      if (action.operation === 'desktop:set_toggle') {
+        const { name, automationId, state } = action.parameters;
+        validateControlSelector(name, automationId);
+        if (typeof state !== 'boolean') throw new Error('Toggle state must be true or false.');
+        const output = await this.runPowerShell(buildControlToggleScript(name, state, automationId), signal);
+        const confirmed = output.includes('TOGGLE_VERIFIED');
+        return {
+          success: confirmed,
+          outcome: confirmed ? VerificationOutcome.VERIFIED_SUCCESS : VerificationOutcome.VERIFIED_FAILURE,
+          data: { controlName: name, automationId, state },
+          evidence: { host: 'windows', mechanism: 'UI Automation TogglePattern with state readback', selector: automationId ? 'AutomationId' : 'Name', stateVerified: confirmed },
+          error: confirmed ? undefined : 'The requested toggle state could not be verified.',
+        };
+      }
+
       if (action.operation === 'desktop:click_control') {
         const { name, automationId } = action.parameters;
         validateControlSelector(name, automationId);
@@ -354,22 +515,7 @@ export class WindowsDesktopAgent {
       }
 
       if (action.operation === 'desktop:paste_clipboard') {
-        const script = [
-          '$ErrorActionPreference = "Stop"',
-          'Add-Type -AssemblyName System.Windows.Forms',
-          buildForegroundFocusAssertionScript(),
-          '[System.Windows.Forms.SendKeys]::SendWait("^v")',
-          '[Console]::Out.WriteLine("CLIPBOARD_PASTE_SENT")',
-        ].join('; ');
-        const output = await this.runPowerShell(script, signal);
-        const confirmed = output.includes('CLIPBOARD_PASTE_SENT');
-        return {
-          success: confirmed,
-          outcome: VerificationOutcome.PARTIAL_SUCCESS,
-          data: { action: 'paste-clipboard' },
-          evidence: { host: 'windows', acknowledgement: confirmed },
-          error: confirmed ? undefined : 'Clipboard paste was not acknowledged; destination content was not verified.',
-        };
+        return await this.pasteAndVerify('clipboard', signal);
       }
 
       if (action.operation === 'desktop:copy_selection') {

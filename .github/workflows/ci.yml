@@ -1,11 +1,12 @@
 name: JARVIS CI
 
 on:
-  # Avoid an email-producing workflow run for every small implementation commit.
-  # Run manually during development, and automatically for reviewable PRs into dev.
+  # Test branch runs the comprehensive suite on every test-coverage increment.
+  push:
+    branches: [test, new, fix, 'fix/**', 'fix-*', enhancement/ollama-native, new-workflow-dag-integration]
   workflow_dispatch:
   pull_request:
-    branches: [dev]
+    branches: [dev, new-workflow-dag-integration]
 
 permissions:
   contents: read
@@ -22,9 +23,13 @@ jobs:
       PROJECT_NAME: JARVIS
       GIT_COMMIT: ${{ github.sha }}
       BUILD_NUMBER: ${{ github.run_number }}
+      BUILD_REPOSITORY: ${{ github.repository }}
+      BUILD_BRANCH: ${{ github.head_ref || github.ref_name }}
+      BUILD_WORKFLOW: ${{ github.workflow }}
+      BUILD_RUN_ID: ${{ github.run_id }}
+      BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       REQUIRE_BUILD_PROVENANCE: 'true'
-      MANIFEST_IGNORE_PRIVATE_KEY: ${{ secrets.MANIFEST_IGNORE_PRIVATE_KEY }}
-      MANIFEST_IGNORE_PUBLIC_KEY: ${{ secrets.MANIFEST_IGNORE_PUBLIC_KEY }}
+      CUSTOMER_RELEASE_REPORT_PATH: customer-release-report.json
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -35,55 +40,84 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Generate CycloneDX dependency SBOM
+        run: npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json
+      - name: Verify SBOM against lockfile
+        shell: bash
+        run: |
+          npm sbom --sbom-format=cyclonedx > sbom-verify-input.cdx.json
+          node scripts/sbom-verify.mjs sbom-verify-input.cdx.json package-lock.json
       - name: Dependency security audit
         run: npm audit --audit-level=moderate
-      - name: TypeScript build
-        run: npm run build
       - name: TypeScript check
         run: npm run lint
+      - name: TypeScript build
+        run: npm run build
       - name: Automated test suite
         run: npm test
       - name: Browser security smoke test
         run: npm run test:browser
+      - name: Python release-tooling tests
+        run: python -m unittest discover -s tests -t . -v
       - name: Create and verify SHA-256 build manifest
         shell: pwsh
+        env:
+          MANIFEST_IGNORE_PRIVATE_KEY: ${{ secrets.MANIFEST_IGNORE_PRIVATE_KEY }}
+          MANIFEST_IGNORE_PUBLIC_KEY: ${{ secrets.MANIFEST_IGNORE_PUBLIC_KEY }}
         run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-Node {
+            & node @args
+            if ($LASTEXITCODE -ne 0) { throw "Node command failed: node $($args -join ' ') (exit code $LASTEXITCODE)." }
+          }
           tar -czf jarvis-build.tar.gz -C dist .
-          node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'Package creation failed.' }
+          Invoke-Node scripts/artifact-integrity.mjs create dist jarvis-manifest.json jarvis-build.tar.gz
           if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
-          node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
+          Invoke-Node scripts/artifact-integrity.mjs verify dist jarvis-manifest.json jarvis-build.tar.gz
           if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
-          node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Package hashing failed.' }
-          node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs verify-hash jarvis-build.tar.gz jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Package checksum verification failed.' }
-          node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
+          Invoke-Node scripts/artifact-integrity.mjs verify-release jarvis-build.tar.gz jarvis-manifest.json jarvis-build.tar.gz.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
-          node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
+          Invoke-Node scripts/customer-release-verifier.mjs create jarvis-manifest.json jarvis-build.tar.gz jarvis-manifest-ignore.json
           if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy creation failed.' }
-          node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
+          Invoke-Node scripts/artifact-integrity.mjs hash jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256
           if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore policy hashing failed.' }
           $trustedPolicyHash = (Get-Content jarvis-manifest-ignore.json.sha256).Split(' ')[0]
-          node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist $trustedPolicyHash
+          Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz $trustedPolicyHash
           if ($LASTEXITCODE -ne 0) { throw 'Customer release verification failed.' }
           if (![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PRIVATE_KEY) -and ![string]::IsNullOrWhiteSpace($env:MANIFEST_IGNORE_PUBLIC_KEY)) {
-            $privatePath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-private.pem'
-            $publicPath = Join-Path $env:RUNNER_TEMP 'manifest-ignore-public.pem'
+            $keyId = [Guid]::NewGuid().ToString('N')
+            $privatePath = Join-Path $env:RUNNER_TEMP "manifest-ignore-private-$keyId.pem"
+            $publicPath = Join-Path $env:RUNNER_TEMP "manifest-ignore-public-$keyId.pem"
             try {
-              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY)
-              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY)
-              node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
+              [IO.File]::WriteAllText($privatePath, $env:MANIFEST_IGNORE_PRIVATE_KEY, [Text.Encoding]::ASCII)
+              [IO.File]::WriteAllText($publicPath, $env:MANIFEST_IGNORE_PUBLIC_KEY, [Text.Encoding]::ASCII)
+              Invoke-Node scripts/policy-signature.mjs sign jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $privatePath
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signing failed.' }
-              node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
+              Invoke-Node scripts/policy-signature.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Manifest-ignore signature self-verification failed.' }
-              node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz dist - jarvis-manifest-ignore.sig $publicPath
+              Invoke-Node scripts/customer-release-verifier.mjs verify jarvis-manifest-ignore.json jarvis-manifest-ignore.json.sha256 jarvis-manifest.json jarvis-build.tar.gz - jarvis-manifest-ignore.sig $publicPath
               if ($LASTEXITCODE -ne 0) { throw 'Signed customer release verification failed.' }
             } finally {
-              Remove-Item -Force $privatePath, $publicPath -ErrorAction SilentlyContinue
+              Remove-Item -Force -LiteralPath $privatePath, $publicPath -ErrorAction SilentlyContinue
+              $env:MANIFEST_IGNORE_PRIVATE_KEY = $null
+              $env:MANIFEST_IGNORE_PUBLIC_KEY = $null
             }
           } else {
             Write-Output 'Signing secrets are not configured; SHA-256 trusted-digest verification ran. Configure MANIFEST_IGNORE_PRIVATE_KEY and MANIFEST_IGNORE_PUBLIC_KEY to enable release signatures.'
           }
+      - name: Retain customer release failure report
+        if: always() && hashFiles('customer-release-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-release-failure-${{ github.run_number }}
+          path: customer-release-report.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload verified build package and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -94,6 +128,7 @@ jobs:
             jarvis-build.tar.gz.sha256
             jarvis-manifest-ignore.json
             jarvis-manifest-ignore.json.sha256
+            jarvis-dependencies.cdx.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload signed manifest-ignore policy

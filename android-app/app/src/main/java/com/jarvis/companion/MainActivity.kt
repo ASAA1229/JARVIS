@@ -23,11 +23,13 @@ class MainActivity : Activity() {
     private lateinit var column: LinearLayout
     private lateinit var appList: LinearLayout
     private lateinit var keys: DeviceKeyStore
+    private lateinit var session: CompanionSession
     private var client: JarvisApiClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        keys = DeviceKeyStore(this)
+        session = CompanionSession(this)
+        keys = session.keys
         val prefs = getSharedPreferences("jarvis_ui", MODE_PRIVATE)
         column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 28, 24, 24) }
         val scroll = ScrollView(this).apply { addView(column) }
@@ -45,6 +47,10 @@ class MainActivity : Activity() {
         }
         column.addView(status, params())
         column.addView(Button(this).apply {
+            text = "Use pasted enrollment link (jarvis://enroll...)"
+            setOnClickListener { applyEnrollmentLink(transactionId.text.toString().trim()) }
+        }, params())
+        column.addView(Button(this).apply {
             text = "Request enrollment"
             setOnClickListener { background {
                 val api = JarvisApiClient(server.text.toString(), keys)
@@ -59,18 +65,22 @@ class MainActivity : Activity() {
             text = "Check approval & connect"
             setOnClickListener { background {
                 val api = JarvisApiClient(server.text.toString(), keys)
-                val result = api.checkEnrollment(transactionId.text.toString().trim(),
-                    enrollmentCode.text.toString().trim())
+                session.serverUrl = server.text.toString()
+                val result = session.guard { api.checkEnrollment(transactionId.text.toString().trim(),
+                    enrollmentCode.text.toString().trim()) }
                 client = api
+                if (api.hasSession()) {
+                    session.enrolled = true
+                    runOnUiThread { status.text = "Phone enrolled. Approval notifications remain off until you enable them below." }
+                }
                 result
             } }
         }, params())
         column.addView(Button(this).apply {
             text = "Reconnect session"
             setOnClickListener { background {
-                val api = JarvisApiClient(server.text.toString(), keys)
-                api.openSession()
-                client = api
+                session.serverUrl = server.text.toString()
+                client = session.connect()
                 "Authenticated session established for " + keys.deviceId()
             } }
         }, params())
@@ -78,9 +88,23 @@ class MainActivity : Activity() {
             text = "Send request"
             setOnClickListener { background {
                 val api = client ?: error("Reconnect the authenticated session first.")
-                val reply = api.sendRequest(request.text.toString())
+                val reply = session.guard { api.sendRequest(request.text.toString()) }
                 reply.state + ": " + reply.message
             } }
+        }, params())
+        column.addView(TextView(this).apply {
+            text = "APPROVAL NOTIFICATIONS"; textSize = 18f
+        }, params())
+        column.addView(TextView(this).apply {
+            text = "Optional background polling checks for pending approvals at Android's minimum periodic interval (about 15 minutes). Notification text never includes the directive."
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Enable approval notifications"
+            setOnClickListener { requestApprovalAlerts() }
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Disable approval notifications"
+            setOnClickListener { disableApprovalAlerts() }
         }, params())
 
         column.addView(TextView(this).apply {
@@ -117,7 +141,82 @@ class MainActivity : Activity() {
         }, params())
         appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(appList, params())
+        OwnerPanels(this, session, { activeClient() }) { _, action -> background(action) }.attach(column)
         setContentView(scroll)
+        handleEnrollmentIntent(intent)
+        if (session.enrolled && session.notificationsEnabled) ApprovalPollWorker.schedule(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleEnrollmentIntent(intent)
+    }
+
+    /** Reuse the open session, or open one (wiping local state if the laptop reports revocation). */
+    private fun activeClient(): JarvisApiClient {
+        val existing = client
+        if (existing != null && existing.hasSession()) return existing
+        return session.connect().also { client = it }
+    }
+
+    /** A phone camera scanning the laptop's enrollment QR opens jarvis://enroll?transaction=..&code=.. */
+    private fun handleEnrollmentIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        applyEnrollmentLink(data.toString())
+    }
+
+    private fun applyEnrollmentLink(link: String) {
+        val uri = try { android.net.Uri.parse(link) } catch (_: Exception) { null }
+        if (uri == null || uri.scheme != "jarvis" || uri.host != "enroll") {
+            status.text = "Paste the full jarvis://enroll link from the laptop QR code into the transaction field first."
+            return
+        }
+        val transaction = uri.getQueryParameter("transaction").orEmpty()
+        val code = uri.getQueryParameter("code").orEmpty()
+        if (!transaction.matches(Regex("enr-[a-fA-F0-9]{32}")) || code.length !in 40..50) {
+            status.text = "That enrollment link is not valid."
+            return
+        }
+        transactionId.setText(transaction)
+        enrollmentCode.setText(code)
+        status.text = "Enrollment details filled from the QR link. Enter the laptop URL, then tap Request enrollment."
+    }
+
+    private fun requestApprovalAlerts() {
+        if (!session.enrolled || !keys.hasIdentity()) {
+            status.text = "Enroll this phone with owner approval before enabling notifications."
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 41)
+            return
+        }
+        session.notificationsEnabled = true
+        ApprovalPollWorker.schedule(this)
+        status.text = "Approval notifications enabled. Android checks periodically; delivery is not real-time."
+    }
+
+    private fun disableApprovalAlerts() {
+        session.notificationsEnabled = false
+        ApprovalPollWorker.cancel(this)
+        status.text = "Approval notifications disabled. No background approval polling will run."
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 41) return
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted && session.enrolled && keys.hasIdentity()) {
+            session.notificationsEnabled = true
+            ApprovalPollWorker.schedule(this)
+            status.text = "Approval notifications enabled. Android checks periodically; delivery is not real-time."
+        } else {
+            session.notificationsEnabled = false
+            ApprovalPollWorker.cancel(this)
+            status.text = "Notification permission was not granted. Background approval polling remains disabled."
+        }
     }
 
     private fun discoverPhoneApps() {
@@ -186,7 +285,13 @@ class MainActivity : Activity() {
     private fun background(action: () -> String) {
         status.text = "Working securely…"
         Thread {
-            val result = try { action() } catch (error: Exception) {
+            val result = try { action() } catch (revoked: SessionRevokedException) {
+                client = null
+                // Covers calls made outside CompanionSession.guard (wipe is idempotent).
+                session.wipe()
+                "This phone is no longer authorized (" + (revoked.message ?: "revoked") +
+                    "). Its local identity and offline queue were wiped; enroll it again from an owner device."
+            } catch (error: Exception) {
                 "Not completed: " + (error.message ?: "unexpected error")
             }
             runOnUiThread { status.text = result }

@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { TOTP, Secret } from 'otpauth';
 import QRCode from 'qrcode';
@@ -8,6 +8,7 @@ import { DeviceIdentityManager } from './identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
 import { DeviceRecord, Permission } from './types.js';
 import { CryptoUtil } from '../crypto/crypto.js';
+import { renameWithRetry } from './atomicRename.js';
 
 export type EnrollmentState = 'WAITING_FOR_SCAN' | 'AWAITING_OWNER_AUTHORIZATION' | 'ENROLLED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
 interface EnrollmentTransaction {
@@ -53,7 +54,7 @@ export class DeviceSecurityService {
     mkdirSync(dirname(this.statePath), { recursive: true });
     const temporary = `${this.statePath}.tmp-${CryptoUtil.randomToken(6)}`;
     writeFileSync(temporary, JSON.stringify({ iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') }), { mode: 0o600 });
-    renameSync(temporary, this.statePath);
+    renameWithRetry(temporary, this.statePath);
   }
 
   getTotpStatus(): 'DISABLED' | 'PENDING' | 'ENABLED' { return this.enabledSecret ? 'ENABLED' : this.pendingTotp ? 'PENDING' : 'DISABLED'; }
@@ -90,6 +91,39 @@ export class DeviceSecurityService {
     try { this.persist(); } catch (error) { this.enabledSecret = previousSecret; this.lastAcceptedStep = previousStep; throw error; }
     this.audit.record('TOTP_DISABLED', {}, device.id);
     return true;
+  }
+
+  /**
+   * Owner recovery after authenticator loss. Callers must already have proven the
+   * owner control token (never a device session). Clears the TOTP secret, replay and
+   * lockout state, and cancels open enrollment requests that were authorized with
+   * the lost authenticator. Persisted before reporting success; audited without secrets.
+   */
+  ownerResetAuthenticator(): { totpWasEnabled: boolean; cancelledEnrollments: number } {
+    const previous = { secret: this.enabledSecret, pending: this.pendingTotp, step: this.lastAcceptedStep, failures: [...this.failures] };
+    const totpWasEnabled = Boolean(this.enabledSecret);
+    this.enabledSecret = undefined;
+    this.pendingTotp = undefined;
+    this.lastAcceptedStep = -1;
+    this.failures.length = 0;
+    try {
+      this.persist();
+    } catch (error) {
+      this.enabledSecret = previous.secret;
+      this.pendingTotp = previous.pending;
+      this.lastAcceptedStep = previous.step;
+      this.failures.push(...previous.failures);
+      throw error;
+    }
+    let cancelledEnrollments = 0;
+    for (const tx of this.transactions.values()) {
+      if (tx.state === 'WAITING_FOR_SCAN' || tx.state === 'AWAITING_OWNER_AUTHORIZATION') {
+        tx.state = 'CANCELLED';
+        cancelledEnrollments++;
+      }
+    }
+    this.audit.record('OWNER_RECOVERY_AUTHENTICATOR_RESET', { totpWasEnabled, cancelledEnrollments });
+    return { totpWasEnabled, cancelledEnrollments };
   }
 
   verifyStepUp(device: DeviceRecord, code: string): boolean {

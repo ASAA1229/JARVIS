@@ -9,8 +9,9 @@ import {
 import { CryptoUtil } from '../crypto/crypto.js';
 import { AuditLogger } from '../audit/audit.js';
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { renameWithRetry } from './atomicRename.js';
 
 export interface EnrollmentChallenge {
   challengeToken: string;
@@ -81,7 +82,7 @@ export class DeviceIdentityManager {
         persistedAt: Date.now(),
       };
       writeFileSync(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
-      renameSync(temporaryPath, this.stateFilePath);
+      renameWithRetry(temporaryPath, this.stateFilePath);
       return true;
     } catch {
       this.stateHealthy = false;

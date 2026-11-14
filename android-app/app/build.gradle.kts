@@ -18,4 +18,9 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
-dependencies { implementation("net.i2p.crypto:eddsa:0.3.0") }
+dependencies {
+    implementation("net.i2p.crypto:eddsa:0.3.0")
+    // Free AndroidX libraries only: local approval notifications and periodic polling (no Firebase/paid push).
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+}

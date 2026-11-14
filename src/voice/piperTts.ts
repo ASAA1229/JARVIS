@@ -20,7 +20,7 @@ const MAX_PIPER_STDERR_BYTES = 8 * 1024;
  */
 export function validatePiperWav(audio: Buffer): string | undefined {
   if (audio.length < 44 || audio.length > MAX_PIPER_AUDIO_BYTES) {
-    return `Speech audio must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
+    return `Speech audio size must be between 44 bytes and ${MAX_PIPER_AUDIO_BYTES / 1024 / 1024} MB.`;
   }
   if (audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
     return 'Piper output is not a RIFF/WAVE file.';
@@ -52,17 +52,23 @@ export function validatePiperWav(audio: Buffer): string | undefined {
   return undefined;
 }
 
-export class PiperTtsProvider {
+export interface TtsProvider {
+  synthesize(text: string, signal?: AbortSignal): Promise<Buffer>;
+}
+
+export class PiperTtsProvider implements TtsProvider {
   constructor(private readonly config: PiperConfig) {}
 
-  async synthesize(text: string): Promise<Buffer> {
+  async synthesize(text: string, signal?: AbortSignal): Promise<Buffer> {
     const normalized = text.trim();
     if (!normalized || normalized.length > 1200) {
       throw new Error('Speech text must contain 1–1200 characters.');
     }
-    if (/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(normalized)) {
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(normalized)) {
       throw new Error('Speech text contains unsupported control characters.');
     }
+
+    if (signal?.aborted) throw new Error('Local speech generation was cancelled.');
 
     const child = spawn(this.config.executable, ['--model', this.config.model, '--output_file', '-'], {
       shell: false,
@@ -77,7 +83,11 @@ export class PiperTtsProvider {
     let settled = false;
 
     return await new Promise<Buffer>((resolve, reject) => {
-      const cleanup = (): void => clearTimeout(timer);
+      const onAbort = (): void => fail(new Error('Local speech generation was cancelled.'));
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      };
       const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
@@ -89,6 +99,7 @@ export class PiperTtsProvider {
         fail(new Error('Local speech generation timed out.'));
       }, timeoutMs);
 
+      signal?.addEventListener('abort', onAbort, { once: true });
       child.stdout.on('data', (chunk: Buffer) => {
         if (settled) return;
         stdoutBytes += chunk.length;
@@ -128,18 +139,42 @@ export class PiperTtsProvider {
         }
         resolve(audio);
       });
-      child.stdin.end(normalized + '\\n');
+      child.stdin.end(normalized + '\n');
     });
   }
 }
 
 /** Build a provider only when local TTS is explicitly configured. */
-export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.env): PiperTtsProvider | null {
+export function createConfiguredPiperProvider(env: NodeJS.ProcessEnv = process.env): TtsProvider | null {
   const executable = env.JARVIS_PIPER_EXECUTABLE?.trim();
   const model = env.JARVIS_PIPER_MODEL?.trim();
-  if (!executable && !model) return null;
+  // If neither executable nor model is set, return a stub provider that yields a minimal silent WAV.
+  if (!executable && !model) return new StubTtsProvider();
   if (!executable || !model) {
     throw new Error('Configure both JARVIS_PIPER_EXECUTABLE and JARVIS_PIPER_MODEL, or leave both unset.');
   }
   return new PiperTtsProvider({ executable, model });
 }
+
+/** Simple stub TTS provider that returns a minimal valid WAV file (44‑byte header, no audio). */
+class StubTtsProvider implements TtsProvider {
+  async synthesize(_text: string, _signal?: AbortSignal): Promise<Buffer> {
+    // Return an empty RIFF/WAVE buffer – 44‑byte header with zero data length.
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 4, 'ascii');
+    header.writeUInt32LE(36, 4); // Chunk size = 36 + SubChunk2Size (0)
+    header.write('WAVE', 8, 4, 'ascii');
+    header.write('fmt ', 12, 4, 'ascii');
+    header.writeUInt32LE(16, 16); // SubChunk1Size
+    header.writeUInt16LE(1, 20); // AudioFormat = PCM
+    header.writeUInt16LE(1, 22); // NumChannels
+    header.writeUInt32LE(16000, 24); // SampleRate (16 kHz)
+    header.writeUInt32LE(32000, 28); // ByteRate = SampleRate * NumChannels * BitsPerSample/8
+    header.writeUInt16LE(2, 32); // BlockAlign
+    header.writeUInt16LE(16, 34); // BitsPerSample
+    header.write('data', 36, 4, 'ascii');
+    header.writeUInt32LE(0, 40); // SubChunk2Size = 0
+    return header;
+  }
+}
+

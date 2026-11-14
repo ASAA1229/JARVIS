@@ -18,12 +18,26 @@ export interface AndroidInventoryCommand {
   claimedAt?: number;
   completedAt?: number;
   cancelledAt?: number;
+  /** Why a command ended without completing (never contains device data). */
+  cancelReason?: 'requester_cancelled' | 'device_revoked' | 'revalidation_failed';
   apps?: AndroidInventoryApp[];
 }
 
+export type AndroidCompletionResult = 'completed' | 'duplicate' | 'expired' | 'cancelled' | 'not_found' | 'invalid';
+export type AndroidCancelResult = 'cancelled' | 'already_cancelled' | 'not_cancellable' | 'not_found';
+
+/**
+ * Re-checks, at claim and completion time, that the requester and target are still
+ * active and permitted. A phone that reconnects later can never act on work whose
+ * authorization lapsed while it was offline.
+ */
+export type AndroidCommandAuthorization = (command: Readonly<AndroidInventoryCommand>) => boolean;
+
 /**
  * In-memory, bounded, expiring command channel. It intentionally supports only
- * read-only app inventory. Restart drops pending commands rather than replaying them.
+ * read-only app inventory: state-changing phone actions are never queued for later
+ * delivery and must be requested and approved live. Restart drops pending commands
+ * rather than replaying them, and queued work is revalidated at claim and completion.
  */
 export class AndroidCommandQueue {
   private readonly commands = new Map<string, AndroidInventoryCommand>();
@@ -48,32 +62,69 @@ export class AndroidCommandQueue {
     return { ...command };
   }
 
-  claimNext(targetDeviceId: string): AndroidInventoryCommand | undefined {
+  claimNext(targetDeviceId: string, isAuthorized?: AndroidCommandAuthorization): AndroidInventoryCommand | undefined {
     this.prune();
     if (!this.isDeviceId(targetDeviceId)) return undefined;
-    const command = Array.from(this.commands.values()).find((item) =>
-      item.targetDeviceId === targetDeviceId && item.state === 'PENDING');
-    if (!command) return undefined;
-    command.state = 'CLAIMED';
-    command.claimedAt = Date.now();
-    return { ...command };
+    for (const command of this.commands.values()) {
+      if (command.targetDeviceId !== targetDeviceId || command.state !== 'PENDING') continue;
+      // Revalidate queued work before handing it to a (possibly long-offline) phone.
+      if (isAuthorized && !isAuthorized(command)) {
+        this.markCancelled(command, 'revalidation_failed');
+        continue;
+      }
+      command.state = 'CLAIMED';
+      command.claimedAt = Date.now();
+      return { ...command };
+    }
+    return undefined;
   }
 
-  complete(targetDeviceId: string, commandId: string, apps: AndroidInventoryApp[]): boolean {
+  /** Backwards-compatible boolean form: true only for the first successful completion. */
+  complete(targetDeviceId: string, commandId: string, apps: AndroidInventoryApp[], isAuthorized?: AndroidCommandAuthorization): boolean {
+    return this.completeDetailed(targetDeviceId, commandId, apps, isAuthorized) === 'completed';
+  }
+
+  /**
+   * Idempotent completion: a repeated result for an already-completed command from
+   * the same phone is reported as a duplicate and never overwrites the stored result.
+   */
+  completeDetailed(targetDeviceId: string, commandId: string, apps: AndroidInventoryApp[], isAuthorized?: AndroidCommandAuthorization): AndroidCompletionResult {
     this.prune();
     const command = this.commands.get(commandId);
-    if (!command || !this.isDeviceId(targetDeviceId) || command.targetDeviceId !== targetDeviceId ||
-        command.state !== 'CLAIMED' || Date.now() >= command.expiresAt || !Array.isArray(apps)) return false;
-
+    if (!command || !this.isDeviceId(targetDeviceId) || command.targetDeviceId !== targetDeviceId) return 'not_found';
+    if (command.state === 'COMPLETED') return 'duplicate';
+    if (command.state === 'EXPIRED') return 'expired';
+    if (command.state === 'CANCELLED') return 'cancelled';
+    if (command.state !== 'CLAIMED') return 'invalid';
+    if (Date.now() >= command.expiresAt) {
+      command.state = 'EXPIRED';
+      delete command.apps;
+      return 'expired';
+    }
     // Reject malformed entries instead of storing partial or attacker-shaped inventory.
-    if (apps.length > this.maxAppsPerCommand || apps.some((app) => !this.isValidApp(app))) return false;
+    if (!Array.isArray(apps) || apps.length > this.maxAppsPerCommand || apps.some((app) => !this.isValidApp(app))) return 'invalid';
+    if (isAuthorized && !isAuthorized(command)) {
+      this.markCancelled(command, 'revalidation_failed');
+      return 'cancelled';
+    }
     command.apps = apps.map(({ label, packageName }) => ({
       label: label.trim().slice(0, 120),
       packageName: packageName.trim().slice(0, 240),
     }));
     command.state = 'COMPLETED';
     command.completedAt = Date.now();
-    return true;
+    return 'completed';
+  }
+
+  /** Requester cancellation; cancelling an already-cancelled command is a no-op success. */
+  cancel(requesterDeviceId: string, commandId: string): AndroidCancelResult {
+    this.prune();
+    const command = this.commands.get(commandId);
+    if (!command || !this.isDeviceId(requesterDeviceId) || command.requesterDeviceId !== requesterDeviceId) return 'not_found';
+    if (command.state === 'CANCELLED') return 'already_cancelled';
+    if (command.state !== 'PENDING' && command.state !== 'CLAIMED') return 'not_cancellable';
+    this.markCancelled(command, 'requester_cancelled');
+    return 'cancelled';
   }
 
   /** Cancel work involving a revoked device, whether it requested or was targeted by it. */
@@ -81,13 +132,10 @@ export class AndroidCommandQueue {
     this.prune();
     if (!this.isDeviceId(deviceId)) return 0;
     let cancelled = 0;
-    const now = Date.now();
     for (const command of this.commands.values()) {
       if ((command.targetDeviceId === deviceId || command.requesterDeviceId === deviceId) &&
           (command.state === 'PENDING' || command.state === 'CLAIMED')) {
-        command.state = 'CANCELLED';
-        command.cancelledAt = now;
-        delete command.apps;
+        this.markCancelled(command, 'device_revoked');
         cancelled++;
       }
     }
@@ -96,19 +144,28 @@ export class AndroidCommandQueue {
 
   resultsForRequester(requesterDeviceId: string): Array<{
     id: string; targetDeviceId: string; state: AndroidInventoryCommandState;
-    createdAt: number; expiresAt: number; completedAt?: number; cancelledAt?: number; apps?: AndroidInventoryApp[];
+    createdAt: number; expiresAt: number; completedAt?: number; cancelledAt?: number;
+    cancelReason?: AndroidInventoryCommand['cancelReason']; apps?: AndroidInventoryApp[];
   }> {
     this.prune();
     if (!this.isDeviceId(requesterDeviceId)) return [];
     return Array.from(this.commands.values())
       .filter((item) => item.requesterDeviceId === requesterDeviceId)
       .slice(-30)
-      .map(({ id, targetDeviceId, state, createdAt, expiresAt, completedAt, cancelledAt, apps }) => ({
+      .map(({ id, targetDeviceId, state, createdAt, expiresAt, completedAt, cancelledAt, cancelReason, apps }) => ({
         id, targetDeviceId, state, createdAt, expiresAt,
         ...(completedAt ? { completedAt } : {}),
         ...(cancelledAt ? { cancelledAt } : {}),
+        ...(cancelReason ? { cancelReason } : {}),
         ...(apps ? { apps: apps.map((app) => ({ ...app })) } : {}),
       }));
+  }
+
+  private markCancelled(command: AndroidInventoryCommand, reason: NonNullable<AndroidInventoryCommand['cancelReason']>): void {
+    command.state = 'CANCELLED';
+    command.cancelledAt = Date.now();
+    command.cancelReason = reason;
+    delete command.apps;
   }
 
   private isDeviceId(value: unknown): value is string {

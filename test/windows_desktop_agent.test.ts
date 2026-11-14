@@ -1,9 +1,36 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { buildControlActionScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
+import { buildControlActionScript, buildControlToggleScript, buildForegroundFocusAssertionScript, buildReadControlScript } from '../src/adapters/windowsDesktopAgent.js';
 import { matchesExpectedAppWindow } from '../src/adapters/windowsAppLauncher.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
+
+test('UI Automation toggle sets an explicit desired state and verifies readback', () => {
+  const onScript = buildControlToggleScript('Enable notifications', true);
+  const offScript = buildControlToggleScript(undefined, false, 'NotificationsToggle');
+  assert.match(onScript, /ToggleState\]::On/);
+  assert.match(onScript, /TogglePattern/);
+  assert.match(onScript, /Toggle state readback did not match/);
+  assert.match(offScript, /AutomationIdProperty, 'NotificationsToggle'/);
+  assert.match(offScript, /ToggleState\]::Off/);
+  assert.match(offScript, /credential or financial controls/);
+});
+
+test('UI Automation supports AutomationId selectors and rejects competing selectors', async () => {
+  const readScript = buildReadControlScript(undefined, 'MainDocumentTitle');
+  const clickScript = buildControlActionScript('desktop:click_control', undefined, undefined, 'SaveButton');
+  assert.match(readScript, /AutomationIdProperty, 'MainDocumentTitle'/);
+  assert.match(clickScript, /AutomationIdProperty, 'SaveButton'/);
+
+  const { WindowsDesktopAgent } = await import('../src/adapters/windowsDesktopAgent.js');
+  const agent = new WindowsDesktopAgent();
+  const ambiguous = await agent.execute({
+    operation: 'desktop:click_control',
+    parameters: { name: 'Save', automationId: 'SaveButton' },
+  });
+  assert.equal(ambiguous.success, false);
+  assert.match(ambiguous.error || '', /either a control name or automationId, not both/i);
+});
 
 test('desktop:read_control requires a unique control and redacts sensitive values', () => {
   const script = buildReadControlScript("Account name");

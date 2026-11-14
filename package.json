@@ -9,7 +9,11 @@
     "start": "tsx src/index.ts",
     "test": "node --test --import tsx test/**/*.test.ts && node --test scripts/on-site-change-detection.test.mjs",
     "test:browser": "node test/browser-smoke.mjs",
-    "lint": "tsc --noEmit"
+    "site-key": "tsx src/gateway/siteKeysCli.ts",
+    "test:ollama": "node scripts/test-ollama.mjs",
+    "owner-recovery": "node scripts/owner-recovery.mjs",
+    "lint": "tsc --noEmit",
+    "perf": "tsx scripts/perf-soak.ts"
   },
   "keywords": [
     "jarvis",

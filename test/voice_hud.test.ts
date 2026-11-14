@@ -124,6 +124,12 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const unapprovedWakeAsset = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/private.env`);
     assert.strictEqual(unapprovedWakeAsset.status, 404);
     assert.match(await unapprovedWakeAsset.text(), /asset not found/i);
+    // The HUD checks installation through this endpoint instead of probing files (no console 404s).
+    const wakeStatus = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/local-wakeword/status`);
+    assert.strictEqual(wakeStatus.status, 200);
+    const wakeStatusBody = await wakeStatus.json() as { installed: unknown; setup?: string };
+    assert.strictEqual(typeof wakeStatusBody.installed, 'boolean');
+    if (!wakeStatusBody.installed) assert.match(String(wakeStatusBody.setup), /setup-local-wake-word\.ps1/);
 
     // 2. Fetch HUD CSS
     const cssRes = await fetch(`http://127.0.0.1:${TEST_PORT}/hud/hud.css`);
@@ -137,19 +143,51 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
     const jsText = await jsRes.text();
     assert.match(jsText, /initSpeechRecognition/);
     assert.match(jsText, /NO SPEECH DETECTED/);
+    // Local wake timeout must not include browser microphone permission/audio-graph setup.
+    const audioGraphReady = jsText.indexOf('processor.connect(context.destination);');
+    const wakeWindowStart = jsText.indexOf('watchdog = setInterval', audioGraphReady);
+    assert.ok(audioGraphReady >= 0 && wakeWindowStart > audioGraphReady,
+      'local wake capture timeout starts only after the microphone audio graph is ready');
     assert.match(jsText, /MICROPHONE UNAVAILABLE/);
     assert.match(jsText, /SPEECH SERVICE UNAVAILABLE/);
     assert.match(jsText, /describeSpeechRecognitionError/);
-    assert.match(jsText, /finalized segments separate from interim hypotheses/);
+    // Finalized segments are appended and bounded before review/dispatch.
+    assert.match(jsText, /if \(result\.isFinal\) \{/);
+    assert.match(jsText, /finalTranscript = `\$\{finalTranscript\} \$\{segment\}`\.trim\(\)\.slice\(0, MAX_VOICE_TRANSCRIPT_LENGTH\)/);
+    assert.match(jsText, /filter\(\(result\) => !result\.isFinal\)/);
     assert.match(jsText, /Review or edit the recognized command, then select EXECUTE DIRECTIVE/);
     assert.match(jsText, /VOICE CONSENT REQUIRED/);
     assert.match(jsText, /LOCAL WAKE WORD UNAVAILABLE/);
     assert.match(jsText, /VoicuteWakeWord\.create/);
     assert.match(jsText, /multi_jarvis_v9\.3\.zip/);
-    assert.match(jsText, /All voice modes are review-first/);
+    // Push-to-talk is review-first; consented post-wake capture dispatches through the policy gateway.
+    assert.match(jsText, /Push-to-talk remains review-first/);
     assert.match(jsText, /JarvisDeviceCrypto\.signedFetch/);
+    assert.match(jsText, /SESSION UNAVAILABLE — DIRECTIVE NOT SENT/);
+    assert.match(jsText, /A retried response must not create duplicate controls/);
+    assert.match(jsText, /const directive = existing\.querySelector\('\.hud-approval-directive'\)/);
+    assert.match(jsText, /directive\.textContent = 'DIRECTIVE: ' \+ String\(requestText\)/);
+    assert.match(jsText, /card.setAttribute\('role', 'region'\)/);
+    assert.match(jsText, /card.focus\(\)/);
+    assert.match(jsText, /Confirm and execute this exact directive/);
+    assert.match(jsText, /function syncPendingApprovalCards\(tasks\)/);
+    assert.match(jsText, /syncPendingApprovalCards\(tasks\)/);
+    assert.match(jsText, /AWAITING_APPROVAL/);
+    assert.match(jsText, /This task is still awaiting your explicit approval/);
+    const serverSource = readFileSync('src/server/server.ts', 'utf8');
+    assert.match(serverSource, /task\.state === TaskState\.AWAITING_APPROVAL && task\.approvalId/);
+    assert.match(serverSource, /requestText: task\.requestText/);
+    assert.match(jsText, /No authenticated device session; the request never reached the policy gateway/);
+    assert.match(jsText, /speakResponse\(message\)/);
     assert.match(jsText, /15000/);
     assert.match(jsText, /discardVoiceResult/);
+    assert.match(jsText, /function hasSpeechConsent\(mode\)/);
+    assert.match(jsText, /function revokeSpeechConsent\(mode\)/);
+    assert.match(jsText, /if \(activeVoiceCaptureMode !== mode\) return;/);
+    assert.match(jsText, /pushToTalkConsent\?\.addEventListener\('change'/);
+    assert.match(jsText, /wakeSpeechConsent\?\.addEventListener\('change'/);
+    assert.match(jsText, /if \(!hasSpeechConsent\(mode\)\)\s*\{\s*revokeSpeechConsent\(mode\);/);
+    assert.match(jsText, /VOICE CONSENT REVOKED — COMMAND NOT SENT/);
     assert.doesNotMatch(jsText, /(?:card|item|entry)\.innerHTML\s*=/i);
     assert.doesNotMatch(jsText, /onclick=/i);
     const appRes = await fetch(`http://127.0.0.1:${TEST_PORT}/app.js`);

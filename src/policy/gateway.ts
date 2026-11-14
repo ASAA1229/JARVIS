@@ -102,10 +102,12 @@ export class PolicyGateway {
     ],
     ...[
       ['memory:save', ['category', 'content', 'ttlDays']],
-      ['memory:update', ['id', 'content']],
+      ['memory:update', ['id', 'content', 'expectedUpdatedAt']],
       ['memory:list', []],
       ['memory:delete', ['id']],
       ['desktop:launch_and_type', ['appId', 'text']],
+      ['desktop:browser_search', ['appId', 'query']],
+      ['desktop:save_and_verify', ['path', 'contains', 'expectProcess']],
       ['desktop:type_text', ['text', 'expectProcess']],
       ['desktop:paste_text', ['text', 'expectProcess']],
       ['desktop:hotkey', ['keys', 'expectProcess']],
@@ -113,9 +115,10 @@ export class PolicyGateway {
       ['desktop:copy_selection', ['expectProcess']],
       ['desktop:paste_clipboard', ['expectProcess']],
       ['desktop:inspect_window', ['expectProcess']],
-      ['desktop:read_control', ['name', 'expectProcess']],
-      ['desktop:click_control', ['name', 'expectProcess']],
-      ['desktop:set_value', ['name', 'text', 'expectProcess']],
+      ['desktop:read_control', ['name', 'automationId', 'expectProcess']],
+      ['desktop:click_control', ['name', 'automationId', 'expectProcess']],
+      ['desktop:set_value', ['name', 'automationId', 'text', 'expectProcess']],
+      ['desktop:set_toggle', ['name', 'automationId', 'state', 'expectProcess']],
     ].map(([operation, allowedParameters]) => [operation as string, {
       operation: operation as string,
       requiredPermission: (operation as string).startsWith('memory:') ? Permission.DEVICE_MANAGE : Permission.APP_LAUNCH,
@@ -132,6 +135,7 @@ export class PolicyGateway {
       ['file:list', Permission.APP_LAUNCH, RiskTier.LOW, false, ['path']],
       ['file:search', Permission.APP_LAUNCH, RiskTier.LOW, false, ['query', 'path']],
       ['file:read', Permission.APP_LAUNCH, RiskTier.MEDIUM, true, ['path']],
+      ['file:verify_saved', Permission.APP_LAUNCH, RiskTier.LOW, false, ['path', 'since', 'contains']],
       ['file:write', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'content']],
       ['file:edit', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path', 'find', 'replace']],
       ['file:delete', Permission.APP_LAUNCH, RiskTier.HIGH, true, ['path']],
@@ -146,6 +150,77 @@ export class PolicyGateway {
     ] as Array<[string, Permission, RiskTier, boolean, string[]]>).map(([operation, requiredPermission, riskTier, requiresApproval, allowedParameters]) => [operation, {
       operation,
       requiredPermission,
+      riskTier,
+      requiresApproval,
+      allowedParameters,
+    }] as [string, PolicyRule]),
+    // Plugins and workflows (JARVIS-US-062). Owner-only. Installing, granting, enabling,
+    // creating and approving need fresh approval; reducing access (disable/revoke) and
+    // read-only listing do not. Running a workflow only expands its steps: every
+    // expanded step is evaluated by this gateway and approved separately when required.
+    ...([
+      ['plugin:install', RiskTier.HIGH, true, ['path']],
+      ['plugin:list', RiskTier.LOW, false, []],
+      ['plugin:grant', RiskTier.HIGH, true, ['id', 'permissions']],
+      ['plugin:revoke', RiskTier.LOW, false, ['id', 'permissions']],
+      ['plugin:enable', RiskTier.MEDIUM, true, ['id']],
+      ['plugin:disable', RiskTier.LOW, false, ['id']],
+      ['plugin:uninstall', RiskTier.MEDIUM, true, ['id']],
+      ['workflow:list', RiskTier.LOW, false, []],
+      ['workflow:show', RiskTier.LOW, false, ['name']],
+      ['workflow:history', RiskTier.LOW, false, ['name']],
+      ['workflow:run', RiskTier.MEDIUM, false, ['name']],
+      ['workflow:create', RiskTier.HIGH, true, ['name', 'description', 'steps']],
+      ['workflow:draft_ai', RiskTier.LOW, false, ['name', 'goal']],
+      ['workflow:approve_draft', RiskTier.HIGH, true, ['name']],
+      ['workflow:archive', RiskTier.MEDIUM, true, ['name']],
+      // Visual composer: explicit steps with dependencies, saved as a new active version.
+      ['workflow:compose', RiskTier.HIGH, true, ['name', 'description', 'steps']],
+      // Personal AI gateway site clients (J-E09). Issuing a key or widening a site's
+      // limits/profile scope needs approval; listing and revoking (reducing access) do not.
+      ['gateway:site_list', RiskTier.LOW, false, []],
+      ['gateway:site_create', RiskTier.HIGH, true, ['name', 'limits', 'allowedProfiles']],
+      ['gateway:site_update', RiskTier.MEDIUM, true, ['id', 'limits', 'allowedProfiles']],
+      ['gateway:site_revoke', RiskTier.LOW, false, ['id']],
+    ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
+      operation,
+      requiredPermission: Permission.DEVICE_MANAGE,
+      riskTier,
+      requiresApproval,
+      allowedParameters,
+    }] as [string, PolicyRule]),
+    // Developer assistant (JARVIS-US-063). Owner-only. Read-only intelligence and draft
+    // suggestions run on repositories the owner explicitly connected with that scope;
+    // connecting, applying, branching, committing and pushing need fresh approval.
+    ...([
+      ['dev:repo_connect', RiskTier.HIGH, true, ['name', 'path', 'scopes']],
+      ['dev:repo_disconnect', RiskTier.MEDIUM, true, ['name']],
+      ['dev:repo_list', RiskTier.LOW, false, []],
+      ['dev:tree', RiskTier.LOW, false, ['repo', 'path']],
+      ['dev:read', RiskTier.LOW, false, ['repo', 'path']],
+      ['dev:grep', RiskTier.LOW, false, ['repo', 'query']],
+      ['dev:git_status', RiskTier.LOW, false, ['repo']],
+      ['dev:git_log', RiskTier.LOW, false, ['repo', 'count']],
+      ['dev:git_diff', RiskTier.LOW, false, ['repo', 'staged']],
+      ['dev:explain', RiskTier.LOW, false, ['repo', 'path', 'request']],
+      ['dev:suggest_change', RiskTier.MEDIUM, false, ['repo', 'path', 'request']],
+      ['dev:suggestion_list', RiskTier.LOW, false, ['repo']],
+      ['dev:apply_suggestion', RiskTier.HIGH, true, ['repo', 'suggestionId']],
+      ['dev:branch_create', RiskTier.HIGH, true, ['repo', 'branch']],
+      ['dev:commit', RiskTier.HIGH, true, ['repo', 'message', 'suggestionId']],
+      ['dev:push', RiskTier.HIGH, true, ['repo']],
+      ['dev:pr_draft', RiskTier.LOW, false, ['repo', 'title']],
+      ['dev:ci_status', RiskTier.LOW, false, ['repo']],
+      // Opens a PR on GitHub (remote side effect): base dev only, fresh approval.
+      ['dev:pr_create', RiskTier.HIGH, true, ['repo', 'title']],
+      // Executes the repository's own build/lint/test/typecheck script: approval each time.
+      ['dev:run_script', RiskTier.HIGH, true, ['repo', 'script']],
+      ['dev:history', RiskTier.LOW, false, ['repo', 'count']],
+      // Documentation drafts are stored as suggestions only, never written to files.
+      ['dev:doc_suggest', RiskTier.LOW, false, ['repo', 'path', 'request']],
+    ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
+      operation,
+      requiredPermission: Permission.DEVICE_MANAGE,
       riskTier,
       requiresApproval,
       allowedParameters,
@@ -571,5 +646,28 @@ export class PolicyGateway {
 
   public getApproval(approvalId: string): ApprovalRecord | undefined {
     return this.pendingApprovals.get(approvalId);
+  }
+
+  /**
+   * Read-only view of an allowlisted rule (used to validate plugin manifests and
+   * workflow templates). Returns undefined for unknown operations or when any
+   * parameter key falls outside the rule's allowlist.
+   */
+  /** Read-only list of allowlisted operations for owner UIs (workflow composer). */
+  public listRules(): Array<{ operation: string; riskTier: RiskTier; requiresApproval: boolean; allowedParameters: string[] }> {
+    return [...this.rules.values()].map((rule) => ({
+      operation: rule.operation,
+      riskTier: rule.riskTier,
+      requiresApproval: rule.requiresApproval,
+      allowedParameters: [...(rule.allowedParameters ?? [])],
+    }));
+  }
+
+  public describeOperation(operation: string, parameterKeys: string[] = []): { riskTier: RiskTier; requiresApproval: boolean; allowedParameters: string[] } | undefined {
+    const rule = this.rules.get(operation);
+    if (!rule) return undefined;
+    const allowed = rule.allowedParameters ?? [];
+    if (parameterKeys.some((key) => !allowed.includes(key))) return undefined;
+    return { riskTier: rule.riskTier, requiresApproval: rule.requiresApproval, allowedParameters: [...allowed] };
   }
 }

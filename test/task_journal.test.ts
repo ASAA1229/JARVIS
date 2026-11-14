@@ -8,6 +8,7 @@ import type { TaskLifecycleRecord } from '../src/core/service.js';
 import { TaskState, VerificationOutcome, Permission, RiskTier } from '../src/core/types.js';
 import { CryptoUtil } from '../src/crypto/crypto.js';
 import { JarvisCoreService } from '../src/core/service.js';
+import { WorkflowBranchExecutor } from '../src/workflows/workflowExecution.js';
 import type { IAIPlannerProvider } from '../src/planner/planner.js';
 
 const TOKEN = 'owner-control-token-for-task-journal-tests-01';
@@ -249,4 +250,42 @@ test('core service restores interrupted journal tasks without resuming them', ()
   assert.match(restored.error || '', /reconcile external state before any retry/i);
   assert.equal(service.listTasks().length, 1);
   service.stopBackgroundServices();
+}));
+
+
+test('encrypted task journal persists workflow DAG checkpoints and immutable branch definitions', async () => withTempDir((directory) => {
+  const path = join(directory, 'tasks.enc');
+  const steps = [
+    { id: 'os', operation: 'system:get_os_info', parameters: {}, dependsOn: [] },
+    { id: 'memory', operation: 'system:get_memory_info', parameters: {}, dependsOn: [] },
+  ];
+  let checkpoint: Awaited<ReturnType<WorkflowBranchExecutor['run']>> | undefined;
+  // A deterministic, no-side-effect snapshot fixture; the journal must encrypt it
+  // alongside the parent task rather than writing branch data to a plaintext file.
+  checkpoint = {
+    version: 2,
+    runId: 'task-test-001:workflow',
+    definitionHash: 'a'.repeat(64),
+    status: 'running',
+    maxParallel: 2,
+    branches: steps.map((step) => ({
+      runId: 'task-test-001:workflow',
+      stepId: step.id,
+      operation: step.operation,
+      dependsOn: [...step.dependsOn],
+      status: 'pending' as const,
+      attempts: 0,
+      updatedAt: 101,
+    })),
+    updatedAt: 101,
+  };
+  const journal = new TaskJournal(path, TOKEN);
+  journal.save(record({ workflowRun: checkpoint, workflowSteps: steps }));
+  const raw = readFileSync(path, 'utf8');
+  assert.equal(raw.includes('system:get_os_info'), false);
+  assert.equal(raw.includes('task-test-001:workflow'), false);
+  const restored = new TaskJournal(path, TOKEN).get('task-test-001');
+  assert.equal(restored?.state, TaskState.AWAITING_RECOVERY);
+  assert.equal(restored?.workflowRun?.branches.length, 2);
+  assert.equal(restored?.workflowSteps?.[1].dependsOn.length, 0);
 }));

@@ -206,4 +206,79 @@ describe('PolicyGateway approval lifecycle', () => {
       /Audit log is unhealthy/,
     );
   });
+  test('AutomationId control actions are allowlisted but approvals remain bound to the exact selector', () => {
+    const device = makeDevice('device-ui-automation');
+    const operation = 'desktop:click_control';
+    const parameters = { automationId: 'SaveButton', expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-ui-automation');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-ui-automation', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const changedSelector = gateway.evaluate(
+      { operation, parameters: { automationId: 'DeleteButton', expectProcess: 'notepad' } },
+      device,
+      'task-ui-automation',
+      approval.id,
+    );
+    assert.equal(changedSelector.allowed, false);
+    assert.match(changedSelector.reason || '', /scope was modified/i);
+
+    const exactSelector = gateway.evaluate({ operation, parameters }, device, 'task-ui-automation', approval.id);
+    assert.equal(exactSelector.allowed, true);
+  });
+
+
+  test('toggle approvals bind to the exact desired state and foreground process', () => {
+    const device = makeDevice('device-toggle');
+    const operation = 'desktop:set_toggle';
+    const parameters = { name: 'Enable notifications', state: true, expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-toggle');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-toggle', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const widened = gateway.evaluate(
+      { operation, parameters: { ...parameters, state: false } },
+      device,
+      'task-toggle',
+      approval.id,
+    );
+    assert.equal(widened.allowed, false);
+    assert.match(widened.reason || '', /scope was modified/i);
+
+    const exact = gateway.evaluate({ operation, parameters }, device, 'task-toggle', approval.id);
+    assert.equal(exact.allowed, true);
+  });
+
+
+  test('desktop save verification requires exact approval for path and target process', () => {
+    const device = makeDevice('device-save');
+    const operation = 'desktop:save_and_verify';
+    const parameters = { path: 'Documents/notes.txt', expectProcess: 'notepad' };
+    const initial = gateway.evaluate({ operation, parameters }, device, 'task-save');
+    assert.equal(initial.allowed, false);
+    assert.equal(initial.requiresApproval, true);
+
+    const approval = gateway.createApprovalRequest('task-save', device.id, operation, parameters, RiskTier.HIGH);
+    assert.equal(gateway.resolveApproval(approval.id, true, device.id).success, true);
+
+    const changedPath = gateway.evaluate(
+      { operation, parameters: { ...parameters, path: 'Documents/other.txt' } },
+      device,
+      'task-save',
+      approval.id,
+    );
+    assert.equal(changedPath.allowed, false);
+    assert.match(changedPath.reason || '', /scope was modified/i);
+
+    const exact = gateway.evaluate({ operation, parameters }, device, 'task-save', approval.id);
+    assert.equal(exact.allowed, true);
+  });
+
+
 });

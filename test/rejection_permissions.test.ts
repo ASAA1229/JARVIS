@@ -37,7 +37,7 @@ test('rejecting a desktop approval requires APP_LAUNCH permission', async () => 
 
   const pending = await jarvis.submitRequest(requester.sessionId, 'Please launch Notepad');
   assert.equal(pending.state, TaskState.AWAITING_APPROVAL);
-  assert.throws(
+  await assert.rejects(
     () => jarvis.rejectTask(pending.approvalId!, readOnlyApprover.sessionId),
     /lacks permission for this action/i,
   );
@@ -58,15 +58,16 @@ test('a stale approval cannot reject a task already awaiting recovery', async ()
 
   // Simulate an interruption/recovery transition after the approval was issued.
   task.state = TaskState.AWAITING_RECOVERY;
-  assert.throws(
+  await assert.rejects(
     () => jarvis.rejectTask(approvalId, approver.sessionId),
     /task is no longer awaiting approval/i,
   );
 
   const approval = jarvis.policy.getApproval(approvalId);
-  assert.equal(approval?.approved, undefined);
+  assert.equal(approval?.approved, false);
   assert.equal(approval?.rejected, undefined);
-  assert.equal(approval?.consumed, false);
+  assert.ok(approval, 'approval record must remain available');
+  assert.notEqual(approval.consumed, true);
   assert.equal(jarvis.getTask(pending.taskId)?.state, TaskState.AWAITING_RECOVERY);
   assert.equal(jarvis.audit.getRecords().filter((event) => event.eventType === 'REJECTION_FAILED_TASK_NOT_PENDING').length, 1);
 });
@@ -83,7 +84,7 @@ test('rejecting a personal-memory approval requires DEVICE_MANAGE permission', a
     RiskTier.HIGH,
   );
 
-  assert.throws(
+  await assert.rejects(
     () => jarvis.rejectTask(approval.id, readOnlyApprover.sessionId),
     /lacks DEVICE_MANAGE permission for personal memory/i,
   );

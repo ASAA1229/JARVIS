@@ -152,7 +152,7 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
       explanation: 'Two-step read-only workflow',
     });
     const result = await jarvis.submitRequest(companionSessionId, 'check system and memory');
-    assert.strictEqual(result.state, TaskState.COMPLETED);
+    assert.strictEqual(result.state, TaskState.COMPLETED, result.message);
     assert.strictEqual(result.outcome, VerificationOutcome.VERIFIED_SUCCESS);
     assert.ok(result.data);
     assert.ok(jarvis.audit.getPublicRecords().some((record) => record.eventType === 'WORKFLOW_STEP_VERIFIED'));
@@ -327,4 +327,38 @@ test('VOICE-INTENT: spoken "open note pad" resolves to the allowlisted Notepad a
   assert.strictEqual(plan.operations.length, 1);
   assert.strictEqual(plan.operations[0].operation, 'app:launch');
   assert.strictEqual(plan.operations[0].parameters.appId, 'notepad');
+});
+
+test('PLANNER-APP-INTENT: application names without an explicit launch verb do not launch apps', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'intent-test', timestamp: Date.now() };
+
+  for (const request of [
+    'What is Notepad?',
+    'Is Calculator installed?',
+    'Tell me about Paint',
+    'Close Notepad',
+  ]) {
+    const plan = await planner.generatePlan(request, context);
+    assert.equal(
+      plan.operations.some((operation) => operation.operation === 'app:launch'),
+      false,
+      request,
+    );
+  }
+});
+
+test('PLANNER-APP-INTENT: explicit launch verbs still map common apps to the allowlist', async () => {
+  const planner = new LocalHeuristicPlanner();
+  const context = { requesterName: 'intent-test', timestamp: Date.now() };
+
+  for (const [request, appId] of [
+    ['Hey Jarvis, open Notepad', 'notepad'],
+    ['Please launch Calculator', 'calc'],
+    ['Start Paint', 'mspaint'],
+  ]) {
+    const plan = await planner.generatePlan(request, context);
+    assert.equal(plan.operations[0]?.operation, 'app:launch', request);
+    assert.equal(plan.operations[0]?.parameters.appId, appId, request);
+  }
 });

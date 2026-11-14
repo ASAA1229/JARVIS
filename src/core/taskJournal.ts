@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TaskLifecycleRecord } from './service.js';
 import { TaskState } from './types.js';
+import { renameWithRetry } from './atomicRename.js';
 
 interface JournalPayload {
   version: 1;
@@ -106,6 +107,7 @@ export class TaskJournal {
           restored.updatedAt = Date.now();
           restored.error = 'Process restarted before this workflow reached a terminal state. Reconcile external state before any retry; automatic resume is disabled.';
           restored.approvalId = undefined;
+          this.markWorkflowBranchesForRestart(restored);
         }
         this.records.set(restored.id, restored);
       }
@@ -115,6 +117,33 @@ export class TaskJournal {
       this.records.clear();
       throw new Error('Task journal could not be decrypted or validated; writes are disabled to avoid overwriting checkpoints.');
     }
+  }
+
+  /**
+   * A restart while a DAG branch was dispatched leaves its external effect unknown:
+   * mark it uncertain (never replayed automatically). A branch that was only waiting
+   * for approval never dispatched, but its approval handle is invalidated by restart.
+   */
+  private markWorkflowBranchesForRestart(record: TaskLifecycleRecord): void {
+    const run = record.workflowRun;
+    if (!run || !Array.isArray(run.branches)) return;
+    const now = Date.now();
+    for (const branch of run.branches) {
+      if (branch.status === 'running') {
+        branch.status = 'uncertain';
+        branch.outcome = 'uncertain';
+        branch.message = 'Process restarted during branch execution. Reconcile before any new attempt.';
+        branch.updatedAt = now;
+      } else if (branch.status === 'awaiting_approval') {
+        branch.status = 'cancelled';
+        branch.outcome = undefined;
+        branch.approvalRef = undefined;
+        branch.message = 'Process restarted while awaiting approval; the approval was invalidated and nothing was dispatched.';
+        branch.updatedAt = now;
+      }
+    }
+    run.status = run.branches.some((branch) => branch.status === 'uncertain') ? 'uncertain' : 'partial';
+    run.updatedAt = now;
   }
 
   private isValidRecord(value: unknown): value is TaskLifecycleRecord {
@@ -128,6 +157,17 @@ export class TaskJournal {
       typeof r.updatedAt === 'number' && Number.isFinite(r.updatedAt) &&
       (r.steps === undefined || (Array.isArray(r.steps) && r.steps.length <= 500)) &&
       (r.operations === undefined || (Array.isArray(r.operations) && r.operations.length <= 100)) &&
+      (r.workflowSteps === undefined || (Array.isArray(r.workflowSteps) && r.workflowSteps.length <= 20 &&
+        r.workflowSteps.every((step) => step && typeof step.id === 'string' && typeof step.operation === 'string' &&
+          step.parameters && typeof step.parameters === 'object' && Array.isArray(step.dependsOn)))) &&
+      (r.workflowRun === undefined || (
+        typeof r.workflowRun === 'object' && r.workflowRun !== null &&
+        r.workflowRun.version === 2 && typeof r.workflowRun.runId === 'string' &&
+        typeof r.workflowRun.definitionHash === 'string' && r.workflowRun.definitionHash.length === 64 &&
+        Array.isArray(r.workflowRun.branches) && r.workflowRun.branches.length <= 20
+      )) &&
+      (r.workflowParentTaskId === undefined || (typeof r.workflowParentTaskId === 'string' && r.workflowParentTaskId.length <= 160)) &&
+      (r.workflowStepId === undefined || (typeof r.workflowStepId === 'string' && r.workflowStepId.length <= 40)) &&
       (r.reconciliation === undefined || (
         typeof r.reconciliation === 'object' && r.reconciliation !== null &&
         ['confirmed_no_effect', 'effect_observed', 'still_unknown'].includes(r.reconciliation.disposition) &&
@@ -164,7 +204,7 @@ export class TaskJournal {
     const temporary = this.filePath + '.tmp-' + randomBytes(6).toString('hex');
     try {
       writeFileSync(temporary, encoded, { mode: 0o600, flag: 'wx' });
-      renameSync(temporary, this.filePath);
+      renameWithRetry(temporary, this.filePath);
     } finally {
       try { unlinkSync(temporary); } catch { /* Atomic rename already consumed the temporary file. */ }
     }
