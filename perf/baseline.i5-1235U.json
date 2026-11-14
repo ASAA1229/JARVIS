@@ -1,0 +1,169 @@
+{
+  "generatedAt": "2026-11-14T11:38:14.601Z",
+  "machine": {
+    "platform": "win32",
+    "release": "10.0.26300",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-1235U",
+    "logicalCpus": 12,
+    "totalMemGb": 15.7,
+    "node": "v24.16.0"
+  },
+  "config": {
+    "iterations": 200,
+    "soakSeconds": 20
+  },
+  "latencyMs": [
+    {
+      "name": "planner.generatePlan",
+      "n": 200,
+      "p50": 0.032,
+      "p95": 0.085,
+      "p99": 0.142,
+      "max": 0.285,
+      "opsPerSec": 29125,
+      "budgetP95": 50,
+      "withinBudget": true
+    },
+    {
+      "name": "audit.record",
+      "n": 200,
+      "p50": 2.7,
+      "p95": 4.136,
+      "p99": 6.187,
+      "max": 7.043,
+      "opsPerSec": 356,
+      "budgetP95": 60,
+      "withinBudget": true
+    },
+    {
+      "name": "memory.save+search",
+      "n": 100,
+      "p50": 93.74,
+      "p95": 139.163,
+      "p99": 191.791,
+      "max": 191.791,
+      "opsPerSec": 11,
+      "budgetP95": 200,
+      "withinBudget": true
+    },
+    {
+      "name": "rag.search(50 docs)",
+      "n": 100,
+      "p50": 0.961,
+      "p95": 3.042,
+      "p99": 7.222,
+      "max": 7.222,
+      "opsPerSec": 966,
+      "budgetP95": 150,
+      "withinBudget": true
+    },
+    {
+      "name": "coordinator.run(noop)",
+      "n": 200,
+      "p50": 0.024,
+      "p95": 0.217,
+      "p99": 1.315,
+      "max": 1.48,
+      "opsPerSec": 16063,
+      "budgetP95": 10,
+      "withinBudget": true
+    },
+    {
+      "name": "dag.4-parallel(noop)",
+      "n": 100,
+      "p50": 1.094,
+      "p95": 2.923,
+      "p99": 5.056,
+      "max": 5.056,
+      "opsPerSec": 849,
+      "budgetP95": 40,
+      "withinBudget": true
+    },
+    {
+      "name": "voice.utteranceGuard.claim",
+      "n": 1000,
+      "p50": 0.031,
+      "p95": 0.203,
+      "p99": 1.239,
+      "max": 8.209,
+      "opsPerSec": 11352,
+      "budgetP95": 1,
+      "withinBudget": true
+    }
+  ],
+  "process": {
+    "wallSeconds": 39.48,
+    "cpuUserSeconds": 23.17,
+    "cpuSystemSeconds": 5.97,
+    "cpuUtilizationPct": 73.8,
+    "rssMbStart": 57.1,
+    "rssMbEnd": 107.8,
+    "heapUsedMbStart": 8.7,
+    "heapUsedMbEnd": 20.3
+  },
+  "soak": {
+    "seconds": 20,
+    "cycles": 1086,
+    "failures": 0,
+    "leakedActive": 0,
+    "leakedLocks": 0,
+    "memory": [
+      {
+        "t": 0,
+        "rssMb": 65.7,
+        "heapMb": 12.3
+      },
+      {
+        "t": 2,
+        "rssMb": 67.9,
+        "heapMb": 16.6
+      },
+      {
+        "t": 4,
+        "rssMb": 77.7,
+        "heapMb": 18.3
+      },
+      {
+        "t": 6,
+        "rssMb": 86.3,
+        "heapMb": 28.3
+      },
+      {
+        "t": 8,
+        "rssMb": 84.8,
+        "heapMb": 19.6
+      },
+      {
+        "t": 10,
+        "rssMb": 87,
+        "heapMb": 25
+      },
+      {
+        "t": 12,
+        "rssMb": 84.1,
+        "heapMb": 20
+      },
+      {
+        "t": 14,
+        "rssMb": 93.4,
+        "heapMb": 32.7
+      },
+      {
+        "t": 16,
+        "rssMb": 109.9,
+        "heapMb": 19.8
+      },
+      {
+        "t": 18,
+        "rssMb": 111.4,
+        "heapMb": 18.6
+      },
+      {
+        "t": 20,
+        "rssMb": 107.8,
+        "heapMb": 20.3
+      }
+    ]
+  },
+  "budgetsProvisional": true
+}
