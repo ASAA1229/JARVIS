@@ -82,6 +82,18 @@ pipeline {
         }
       }
     }
+    stage('Release tooling tests (Python)') {
+      steps {
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\jenkins\agent-prereqs.ps1 -Require "python" -ReportFile .jenkins-temp\python-prereqs.json'
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          $env:PYTHONDONTWRITEBYTECODE = "1"
+          $py = (Get-Command python3, python -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+          if ($py) { & $py -m unittest discover -s tests -t . } else { & py -3 -m unittest discover -s tests -t . }
+          if ($LASTEXITCODE -ne 0) { throw "Python release-tooling tests failed." }
+        '''
+      }
+    }
     stage('Browser E2E (required)') {
       environment {
         PLAYWRIGHT_BROWSERS_PATH = "${env.PLAYWRIGHT_BROWSERS_PATH ?: (env.WORKSPACE + '\\.playwright-browsers')}"

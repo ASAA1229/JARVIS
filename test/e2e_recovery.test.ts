@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import { freePort } from './helpers/freePort.js';
 import { acquireDesktopLock } from './helpers/desktopLock.js';
+import { desktopSkip } from './helpers/desktopSession.js';
 import assert from 'node:assert';
 import { JarvisServer } from '../src/server/server.js';
 import { JarvisCoreService } from '../src/core/service.js';
@@ -73,7 +74,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
     cleanFiles();
   });
 
-  test('E2E-LIVE-01: Full HTTP Lifecycle (Status -> Challenge -> Enroll -> Auth -> Request -> Approve -> Launch -> Revoke)', async () => {
+  test('E2E-LIVE-01: Full HTTP Lifecycle (Status -> Challenge -> Enroll -> Auth -> Request -> Approve -> Launch -> Revoke)', { skip: desktopSkip() }, async () => {
     // 1. Status Check
     const statusRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/status`);
     const statusData = await statusRes.json();

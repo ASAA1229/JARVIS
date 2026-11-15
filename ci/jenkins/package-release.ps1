@@ -12,7 +12,9 @@
 param(
   [Parameter(Mandatory = $true)][string]$ProjectName,
   [Parameter(Mandatory = $true)][string]$Prefix,
-  [string]$OutputDirs = 'dist'
+  [string]$OutputDirs = 'dist',
+  # Owner-run local builds have no CI provider; they are recorded honestly as provider "local" and stay hash- and signature-verified.
+  [switch]$LocalBuild
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -44,7 +46,7 @@ $env:BUILD_WORKFLOW = $env:JOB_NAME
 $env:BUILD_RUN_ID = $env:BUILD_TAG
 $env:BUILD_RUN_URL = $env:BUILD_URL
 $env:PROJECT_NAME = $ProjectName
-$env:REQUIRE_BUILD_PROVENANCE = 'true'
+$env:REQUIRE_BUILD_PROVENANCE = if ($LocalBuild) { 'false' } else { 'true' }
 if (-not $env:CUSTOMER_RELEASE_REPORT_PATH) { $env:CUSTOMER_RELEASE_REPORT_PATH = 'customer-release-report.json' }
 
 $artifact = "$Prefix-build.tar.gz"

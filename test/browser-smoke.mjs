@@ -636,8 +636,9 @@ try {
     throw new Error(`Local wake flow dispatched ${wakeRequestCount} requests with text "${wakeRequestText}" instead of one normalized "open Notepad" request`);
   }
   // The approval card renders asynchronously after the AWAITING CONSENT banner; wait for it instead of racing a count.
-  await hud.locator('#hud-approvals-slot .hud-approval-card').first().waitFor({ state: 'visible', timeout: 5000 });
-  const approvalCards = await hud.locator('#hud-approvals-slot .hud-approval-card').count();
+  await hud.locator('#hud-appr-local-wake-approval-test').waitFor({ state: 'visible', timeout: 5000 });
+  // Earlier mocked sections can leave their own cards until the next pending-approval sync, so assert on this command's card by id.
+  const approvalCards = await hud.locator('#hud-appr-local-wake-approval-test').count();
   if (approvalCards !== 1) {
     throw new Error(`The local-wake command did not remain behind the explicit on-screen approval gate (approval cards: ${approvalCards})`);
   }

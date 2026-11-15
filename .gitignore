@@ -73,3 +73,6 @@ jarvis-*.sha256
 .manifest-ignore-public.pem
 .playwright-browsers/
 jarvis-manifest-ignore.sig
+
+# Local release staging (deploy/local/build-local-bundle.ps1)
+.release-stage/
