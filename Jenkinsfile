@@ -60,9 +60,9 @@ pipeline {
     }
     stage('SBOM and dependency audit') {
       steps {
-        bat 'npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json'
-        bat 'npm sbom --sbom-format=cyclonedx --output-file=.jenkins-temp\\sbom-verify-input.cdx.json'
-        bat 'node scripts\\sbom-verify.mjs .jenkins-temp\\sbom-verify-input.cdx.json package-lock.json'
+        // npm sbom has no --output-file option (it prints to stdout), so redirect it and verify the written file.
+        bat 'npm sbom --sbom-format=cyclonedx > jarvis-dependencies.cdx.json'
+        bat 'node scripts\\sbom-verify.mjs jarvis-dependencies.cdx.json package-lock.json'
         bat 'npm audit --audit-level=moderate'
       }
     }
