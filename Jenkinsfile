@@ -4,6 +4,7 @@ pipeline {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    skipDefaultCheckout(true)
   }
   environment {
     PROJECT_NAME = 'JARVIS'
@@ -45,7 +46,17 @@ pipeline {
         bat 'npm run lint'
         bat 'npm run build'
         bat 'npm test'
-        bat 'npm run test:browser'
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          $browserTemp = Join-Path $env:WORKSPACE ".jenkins-temp"
+          New-Item -ItemType Directory -Force -Path $browserTemp | Out-Null
+          $env:TEMP = $browserTemp
+          $env:TMP = $browserTemp
+          npm run test:browser
+          if ($LASTEXITCODE -ne 0) {
+            throw "Browser smoke test failed. Confirm the Jenkins agent account can launch Microsoft Edge headlessly and write to its workspace."
+          }
+        '''
       }
     }
     stage('Package and verify integrity') {
@@ -244,7 +255,10 @@ pipeline {
     always {
       // Keep the structured customer-verification failure report when one was written.
       archiveArtifacts artifacts: 'customer-release-report.json', allowEmptyArchive: true
-      powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
+      powershell '''
+        Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force (Join-Path $env:WORKSPACE ".jenkins-temp") -ErrorAction SilentlyContinue
+      '''
     }
   }
 }

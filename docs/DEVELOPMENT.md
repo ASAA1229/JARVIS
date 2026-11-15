@@ -81,6 +81,8 @@ npm run test:browser
 npm run test:ollama
 ~~~
 
+The Jenkins browser smoke test launches Microsoft Edge in headless mode. The Jenkins agent account must be able to launch Edge and write temporary browser profiles; the pipeline sets `TEMP` and `TMP` to a workspace-local temporary directory for this stage.
+
 Direct Ollama test:
 
 ~~~powershell
