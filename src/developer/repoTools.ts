@@ -240,12 +240,29 @@ export async function draftPullRequest(repo: RepoConnection, title?: string): Pr
 }
 
 /** Read-only CI status via the GitHub CLI when available. */
-export async function ciStatus(repo: RepoConnection): Promise<{ available: boolean; runs: string }> {
+/** Reduces `gh run list --json` output to runs for exactly one commit; runs for other commits are never reported as this commit's CI. */
+export function runsForCommit(stdout: string, sha: string): { runs: string; matched: number; otherCommitRuns: number } {
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('A full 40-character commit SHA is required.');
+  let parsed: unknown;
+  try { parsed = JSON.parse(stdout); } catch { return { runs: 'GitHub CLI returned unreadable run data.', matched: 0, otherCommitRuns: 0 }; }
+  const list = Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : [];
+  const exact = list.filter((run) => run.headSha === sha);
+  const lines = exact.slice(0, 10).map((run) => `${String(run.status ?? 'unknown')}/${String(run.conclusion || 'pending')}  ${String(run.name ?? 'run').slice(0, 80)}  ${String(run.url ?? '').slice(0, 200)}`);
+  return { runs: lines.join('\n'), matched: exact.length, otherCommitRuns: list.length - exact.length };
+}
+
+/** CI evidence is bound to the exact HEAD commit: runs for earlier commits are counted but never presented as current. */
+export async function ciStatus(repo: RepoConnection): Promise<{ available: boolean; commit: string; runs: string; matchedCommit: boolean }> {
   const branch = await currentBranch(repo);
+  const head = await runGit(repo, ['rev-parse', 'HEAD']);
+  const sha = head.code === 0 ? head.stdout.trim() : '';
   return new Promise((resolvePromise) => {
-    execFile('gh', ['run', 'list', '--branch', branch, '--limit', '5'], { cwd: repo.path, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error) resolvePromise({ available: false, runs: redactSecrets(String(stderr || 'GitHub CLI (gh) is unavailable or not authenticated.').trim().slice(0, 400)) });
-      else resolvePromise({ available: true, runs: redactSecrets(String(stdout).trim().slice(0, 8000)) });
+    execFile('gh', ['run', 'list', '--branch', branch, '--limit', '30', '--json', 'headSha,status,conclusion,name,url'], { cwd: repo.path, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) return resolvePromise({ available: false, commit: sha, matchedCommit: false, runs: redactSecrets(String(stderr || 'GitHub CLI (gh) is unavailable or not authenticated.').trim().slice(0, 400)) });
+      if (!/^[0-9a-f]{40}$/.test(sha)) return resolvePromise({ available: true, commit: sha, matchedCommit: false, runs: 'The current commit could not be determined.' });
+      const result = runsForCommit(String(stdout), sha);
+      const note = result.matched === 0 ? `No CI run exists for commit ${sha.slice(0, 12)}${result.otherCommitRuns ? ` (${result.otherCommitRuns} run(s) for other commits were ignored)` : ''}.` : result.runs;
+      resolvePromise({ available: true, commit: sha, matchedCommit: result.matched > 0, runs: redactSecrets(note) });
     });
   });
 }
