@@ -2,17 +2,19 @@
 
 | ID | Epic | Development | Testing | Integration | Acceptance/release |
 |---|---|---|---|---|---|
-| JAR-E01 | Core runtime and agent architecture | Existing partial | Local node tests 546/546 and script tests 3/3 at 66b3411; CI not observed | Tool integration partial | Ongoing |
-| JAR-E02 | Workflow orchestration/DAG | Implemented increment (live DAG, branch approvals, owner-reconciled resume) | Local adversarial/crash tests pass; kill simulated at journal level; CI not observed | PRs #61/#63/#64/#65 merged | Operational acceptance pending |
-| JAR-E03 | Capability catalogue/safe tools | Implemented (catalogue + adapter-contract suite) | Contract/drift tests for every catalogued app pass locally (synthetic) | Allowlist catalogue integrated | Device acceptance pending |
-| JAR-E04 | Windows desktop/developer automation | Partial (Windows primary; macOS/Linux adapters IMPLEMENTED - NOT TESTED) | Mocked-runner tests only for macOS/Linux; no hardware | Adapters behind fail-closed contract | Physical device pending |
-| JAR-E05 | Android/per-device sessions | Target scope | Not assessed | Not assessed | Not accepted |
-| JAR-E06 | Voice/wake word/audio privacy | Partial (software-level utterance guard and offline evaluation harness) | Synthetic voice fixtures pass; no hardware | Not verified end to end | Not accepted |
-| JAR-E07 | Local/cloud AI/provider integration | Partial | Provider matrix not audited; offline retrieval harness synthetic only | E2E not verified | Cost/privacy pending |
-| JAR-E08 | Security/trust/human approval | Partial | Local adversarial, isolation and privacy-sentinel tests pass | Fail-closed; providers disabled | Sensitive action pending |
-| JAR-E09 | CI/CD/Jenkins/Nexus | Partial | Ed25519 signed bundle, clean-room verify and tamper tests pass locally (GAP-018) | Jenkins/Nexus disabled (GAP-023/024 BLOCKED) | External integration pending |
-| JAR-E10 | Monitoring/audit/recovery/operations | Partial | Backup/restore drills and perf baseline local; no real DR exercise | Cross-module not verified | Operational acceptance pending |
+| JAR-E01 | Core runtime and agent architecture | PARTIALLY COMPLETE (local; per-criterion classification) | test/agent_contracts.test.ts; test/conversation.test.ts; full suite 547 tests | Tool integration partial | Ongoing |
+| JAR-E02 | Workflow orchestration/DAG | COMPLETE AND VERIFIED (local; per-criterion classification) | test/workflow_execution.test.ts; test/workflow_live_dag.test.ts; test/workflow_dag_service_recovery.test.ts | PRs #61/#63/#64/#65 merged | Operational acceptance pending |
+| JAR-E03 | Capability catalogue/safe tools | COMPLETE AND VERIFIED (local; per-criterion classification) | test/app_catalogue_contract.test.ts; test/app_adapter_contracts.test.ts; test/policy_permission_matrix.test.ts | Allowlist catalogue integrated | Device acceptance pending |
+| JAR-E04 | Windows desktop/developer automation | PARTIALLY COMPLETE (local; per-criterion classification) | test/windows_desktop_agent.test.ts; test/native_platform_adapters.test.ts; test/plugin_isolation.test.ts; test/developer_ci_commit_binding.test.ts | Adapters behind fail-closed contract | Physical device pending |
+| JAR-E05 | Android/per-device sessions | BLOCKED BY EXTERNAL DEPENDENCY (local; per-criterion classification) | test/device_session_extra.test.ts; test/android_protocol.test.ts | Not assessed | Not accepted |
+| JAR-E06 | Voice/wake word/audio privacy | PARTIALLY COMPLETE (local; per-criterion classification) | test/voice_utterance_guard.test.ts; test/offline_evaluation.test.ts; test/local_cloud_separation.test.ts | Not verified end to end | Not accepted |
+| JAR-E07 | Local/cloud AI/provider integration | COMPLETE AND VERIFIED (local; per-criterion classification) | test/local_cloud_separation.test.ts; test/provider_router.test.ts; test/ollama_provider.test.ts | E2E not verified | Cost/privacy pending |
+| JAR-E08 | Security/trust/human approval | COMPLETE AND VERIFIED (local; per-criterion classification) | test/policy_permission_matrix.test.ts; test/device_session_extra.test.ts; test/privacy_log_exclusion.test.ts | Fail-closed; providers disabled | Sensitive action pending |
+| JAR-E09 | CI/CD/Jenkins/Nexus | PARTIALLY COMPLETE (local; per-criterion classification) | test/release_bundle_signing.test.ts; test/jenkins_boundary.test.ts; test/sbom_verification.test.ts | Jenkins/Nexus disabled (GAP-023/024 BLOCKED) | External integration pending |
+| JAR-E10 | Monitoring/audit/recovery/operations | PARTIALLY COMPLETE (local; per-criterion classification) | test/monitoring_endpoints.test.ts; test/state_backup_restore.test.ts; test/perf_trend.test.ts | Cross-module not verified | Operational acceptance pending |
 
 Recent repo history shows ongoing engineering, not full device/voice/user acceptance or production readiness.
 
 **Reconciled 2026-11-14 (documentation owner):** development, testing, integration and acceptance columns updated to the verified evidence in PROJECT_STATUS.md. Local evidence is not CI evidence (no GitHub Actions run observed; `gh` unauthenticated) and nothing here is CI VERIFIED.
+
+**Reconciled 2026-11-15 (documentation owner):** development, testing, integration and acceptance columns updated to the verified evidence in PROJECT_STATUS.md. Local evidence is not CI evidence (no GitHub Actions run observed; `gh` unauthenticated) and nothing here is CI VERIFIED.

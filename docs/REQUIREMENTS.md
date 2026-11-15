@@ -178,3 +178,22 @@ PRs #63/#64 (Live DAG hardening and integration) are merged into `new`. Local au
 ## Baseline alignment — 2026-11-14
 
 This document is subordinate to ASAA Master Requirements Baseline v1.0. Detailed requirement population, applicability, ownership, dependencies, evidence-based gap scoring and delivery estimates remain pending. See PROJECT_SCOPE and EPIC_REGISTER added in this branch. No implementation/test/deployment/paid-service/merge/release authorization is implied.
+
+## Requirement-level status rollup — 2026-11-15
+
+Source: `reports/epic-criteria.json` (commit 72965d7). Local verification only; CI not observed. Counts: complete and verified / partially complete / implemented not tested / blocked / not implemented.
+
+| Section | Requirements | C&V / Partial / Impl-not-tested / Blocked / Not impl |
+|---|---:|---|
+| 2.1 | 7 | 6 / 0 / 1 / 0 / 0 |
+| 2.2 | 6 | 1 / 3 / 1 / 1 / 0 |
+| 2.3 | 6 | 6 / 0 / 0 / 0 / 0 |
+| 2.4 | 9 | 9 / 0 / 0 / 0 / 0 |
+| 2.5 | 10 | 10 / 0 / 0 / 0 / 0 |
+| 2.6 | 13 | 10 / 3 / 0 / 0 / 0 |
+| 2.7 | 8 | 6 / 1 / 1 / 0 / 0 |
+| 2.8 | 8 | 7 / 0 / 1 / 0 / 0 |
+| 2.9 | 4 | 3 / 0 / 1 / 0 / 0 |
+| 2.10 | 5 | 5 / 0 / 0 / 0 / 0 |
+
+Total 76 requirements: 63 complete and verified, 7 partially complete, 5 implemented not tested, 1 blocked by external dependency, 0 not implemented. Exceptions are listed per requirement in the JSON file with evidence and notes.

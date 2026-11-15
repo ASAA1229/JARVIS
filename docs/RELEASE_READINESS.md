@@ -50,3 +50,8 @@ PRs #63/#64 are merged into `new`; the historical six failures pass. Local final
 ## Update 2026-11-14: batch reconciliation
 
 Coordinator rerun at `66b3411`: lint pass, 546/546 node tests, 3/3 script tests. Documentation-owner run at `3e4b9d1`: lint pass, 543 of 547 node tests, with 4 `e2e_recovery` failures caused by a fixed-port (3899) collision with a concurrent process. Not CI VERIFIED. New local evidence: signed release bundle (GAP-018), macOS/Linux adapters with mocked runner only (GAP-019/020, NOT TESTED on hardware), adapter-contract suite (GAP-022), offline evaluation harness and performance baseline (GAP-006/007/015). Decision remains **NO-GO**.
+
+
+## Update 2026-11-15
+
+Coordinator-verified at `031eb7e`: lint, 585/585 node tests, 3/3 script tests (concurrent-run flakes removed in 3c17702). CI not observed. Criteria rollup: 105 of 127 story criteria and 63 of 76 requirements are complete and verified locally; the remaining criteria are partial, not tested, or blocked on devices, Jenkins/Nexus and owner acceptance. Decision remains **NO-GO**.

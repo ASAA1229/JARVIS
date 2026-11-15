@@ -128,3 +128,25 @@ Head at time of writing: `3e4b9d1`. The earlier text above (2026-11-13) is prese
 | GitHub Actions | Not observed (`gh` is unauthenticated). Nothing is CI VERIFIED. |
 
 Gap tally (24): COMPLETE AND VERIFIED 12 (001, 002, 003, 008, 009, 010, 013, 014, 016, 017, 018, 022); PARTIALLY COMPLETE 5 (005, 006, 007, 011, 015); BLOCKED BY EXTERNAL DEPENDENCY 4 (004, 012, 023, 024); IMPLEMENTED — NOT TESTED 2 (019, 020); NOT IMPLEMENTED 1 (021). Maturity remains 6.1/10 (baseline 5.7); it was not re-scored for this batch. Also added: `test/privacy_log_exclusion.test.ts` (commit 3e4b9d1), a sentinel scan showing request, transcript and document text stay out of the audit log and plaintext state. Decision remains NO-GO.
+
+
+## 2026-11-15 reconciliation (documentation owner)
+
+Head at time of writing: `031eb7e`. Earlier sections are preserved.
+
+| Item | Status | Evidence class |
+|---|---|---|
+| lint, 585/585 node tests, 3/3 script tests at `031eb7e` | pass | coordinator-verified (my lint rerun at `031eb7e`: pass; I did not rerun the node suite) |
+| De-flake of concurrent runs (free port per run, per-process data paths, cross-process desktop lock; commit 3c17702) | implemented; explains the port-3899 collisions recorded in the 2026-11-14 section | coordinator-verified via the 585/585 run |
+| Privacy log exclusion sentinel test (3e4b9d1) | passes | coordinator-verified |
+| New local tests: local/cloud separation, agent contracts, policy permission matrix, device sessions, monitoring endpoints, Jenkins boundary (72965d7) | pass locally | coordinator-verified (in the 585) |
+| CI status bound to the exact commit (`src/release/ciProvider.ts`, `test/developer_ci_commit_binding.test.ts`) | implemented, tested locally | CI not observed; no GitHub Actions run seen |
+| Piper voice commits by the owner (bc7dd7a, 28e7ebb): report Piper unavailable when not configured, with a fallback test | implemented | owner-authored; included in the 585 |
+| `reports/epic-criteria.json`: 10 epics (4 complete and verified, 5 partial, 1 blocked), 127 story criteria (105 / 12 / 4 / 6 / 0), 76 requirements (63 / 7 / 5 / 1 / 0) | rendered into EPIC_STATUS, USER_STORIES and REQUIREMENTS | agent-classified from tests; local only |
+| US-003 revoke-all and US-025 metrics | IN DEVELOPMENT (uncommitted code in the tree) | not marked done |
+
+The 2026-11-14 record of four `e2e_recovery` failures from port 3899 collisions is superseded by the de-flake commit; it stays as dated history. GAP statuses are unchanged: 12 complete and verified, 5 partial, 4 blocked, 2 implemented not tested, 1 not implemented. Maturity remains 6.1/10; release decision NO-GO; nothing CI VERIFIED.
+
+## Delivery phase — 2026-11-15
+
+**Current phase: DEVELOPMENT** (owner direction: DEVELOPMENT, then TESTING, then DEPLOYMENT). Features added in this phase carry the status **IMPLEMENTED — NOT FULLY TESTED** until the testing phase runs. Test-phase and deployment-phase items that are not yet due (full-suite reruns, CI runs, hosted or staging verification, hosting, live providers, production rehearsal) are **deferred to test phase** or **deferred to deployment phase**; they are not failures. Evidence classes used in these documents: coordinator-verified, agent-reported, in progress, CI not observed.

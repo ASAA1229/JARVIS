@@ -358,3 +358,37 @@ Local automated evidence now exists for these stories (no device or owner accept
 Approved planning/governance reference for ASAA, Portfolio, JARVIS, Templates and shared ecosystem capabilities. Round 6 (12 consolidation stages) is complete at framework/consolidation level. Individual requirement mapping, reconciliation of the 1,000 discovery answers, repository/runtime evidence, named owners, dependency validation, acceptance criteria, evidence-based gaps and delivery estimates remain pending. Approval does not authorize implementation, testing, deployment, paid services or merges.
 
 See `docs/ASAA_MASTER_REQUIREMENTS_BASELINE.md`, `docs/PROJECT_SCOPE.md` and `docs/EPIC_STATUS.md` for the approved baseline, project scope and epic status register.
+
+## Criteria-level status rollup — 2026-11-15
+
+Source: `reports/epic-criteria.json` (commit 72965d7). Local automated verification only; no GitHub Actions run observed, no physical device or owner acceptance. Columns are counts of acceptance criteria: complete and verified / partially complete / implemented not tested / blocked by external dependency / not implemented. US-003 (revoke-all) and US-025 (metrics) are work in progress and are NOT marked done.
+
+| Story | Title | C&V / Partial / Impl-not-tested / Blocked / Not impl | Note |
+|---|---|---|---|
+| JARVIS-US-001 | Enroll independent devices | 3 / 1 / 0 / 1 / 0 |  |
+| JARVIS-US-002 | Approve exact state-changing work | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-003 | Revoke and recover a device | 3 / 0 / 1 / 0 / 0 | in progress (code agent still working) |
+| JARVIS-US-004 | Use local AI by default | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-005 | Use specialist agents safely | 4 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-006 | Wake JARVIS locally | 2 / 2 / 0 / 1 / 0 |  |
+| JARVIS-US-007 | Convert speech into a reviewed command | 5 / 2 / 0 / 0 / 0 |  |
+| JARVIS-US-008 | Receive spoken acknowledgement and results | 2 / 1 / 2 / 0 / 0 |  |
+| JARVIS-US-009 | Discover and launch approved applications | 4 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-010 | Interact with application controls | 4 / 1 / 0 / 0 / 0 |  |
+| JARVIS-US-011 | Plan and execute multi-step tasks | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-012 | Execute independent workflow branches safely | 7 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-013 | Recover interrupted work | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-014 | Manage personal memory | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-015 | Retrieve useful memories and documents | 6 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-016 | Measure learning quality | 5 / 1 / 0 / 0 / 0 |  |
+| JARVIS-US-017 | Use two independent Android companions | 1 / 0 / 1 / 3 / 0 |  |
+| JARVIS-US-018 | Synchronize safely across devices | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-019 | Use JARVIS across desktop and mobile platforms | 2 / 2 / 0 / 1 / 0 |  |
+| JARVIS-US-020 | Add integrations safely | 4 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-021 | Use JARVIS as a developer assistant | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-022 | Produce verifiable releases | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-023 | Operate and recover JARVIS | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-024 | Protect private data and consent | 5 / 0 / 0 / 0 / 0 |  |
+| JARVIS-US-025 | Meet reliability and performance targets | 3 / 2 / 0 / 0 / 0 | in progress (code agent still working) |
+
+Total 127 criteria: 105 complete and verified, 12 partially complete, 4 implemented not tested, 6 blocked by external dependency, 0 not implemented.

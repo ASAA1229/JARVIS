@@ -168,3 +168,8 @@ Not claimed: no physical voice, Android, Jenkins/Nexus or owner acceptance was p
 ## 9. Update 2026-11-14
 
 Statuses in section 3 now include the 2026-11-14 batch: GAP-018 and GAP-022 COMPLETE AND VERIFIED (local); GAP-019/020 IMPLEMENTED — NOT TESTED (mocked runner); GAP-006/007/015 remain PARTIALLY COMPLETE with an offline evaluation harness and a stored performance baseline. Verification: coordinator 546/546 node tests plus 3/3 script tests at `66b3411`; documentation-owner run at `3e4b9d1` had 543 of 547 passing, the 4 failures being port-3899 collisions with a concurrent process in `e2e_recovery.test.ts`. No CI run was observed. Tally of the 24 gaps: 12 complete and verified, 5 partial, 4 blocked, 2 implemented not tested, 1 not implemented.
+
+
+## 10. Update 2026-11-15
+
+Verification at `031eb7e`: lint pass, 585/585 node tests, 3/3 script tests (coordinator). GAP-005 stays PARTIALLY COMPLETE because no GitHub Actions run has been observed for the exact head; CI evidence is now bound to the exact commit in code (`src/release/ciProvider.ts`). Per-criterion classification lives in `reports/epic-criteria.json`. No gap status changed.
