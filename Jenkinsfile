@@ -84,11 +84,12 @@ pipeline {
     }
     stage('Release tooling tests (Python)') {
       steps {
-        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\jenkins\agent-prereqs.ps1 -Require "python" -ReportFile .jenkins-temp\python-prereqs.json'
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "python" -ReportFile .jenkins-temp\\python-prereqs.json'
         powershell '''
           $ErrorActionPreference = "Stop"
           $env:PYTHONDONTWRITEBYTECODE = "1"
-          $py = (Get-Command python3, python -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+          # Prefer a real interpreter; skip Microsoft Store "App execution alias" stubs in WindowsApps.
+          $py = (Get-Command python, python3 -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*WindowsApps*' } | Select-Object -First 1).Source
           if ($py) { & $py -m unittest discover -s tests -t . } else { & py -3 -m unittest discover -s tests -t . }
           if ($LASTEXITCODE -ne 0) { throw "Python release-tooling tests failed." }
         '''
