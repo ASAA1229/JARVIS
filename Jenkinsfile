@@ -26,7 +26,10 @@ pipeline {
     }
     stage('Agent prerequisites') {
       steps {
-        powershell -ExecutionPolicy Bypass -File scripts/devops-preflight.ps1
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          & "$env:WORKSPACE\\scripts\\devops-preflight.ps1"
+        '''
       }
     }
     stage('Install locked dependencies') {
