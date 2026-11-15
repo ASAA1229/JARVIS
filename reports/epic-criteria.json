@@ -194,8 +194,8 @@
           "n": 4,
           "text": "Other devices remain active unless revoke-all is explicitly selected.",
           "status": "COMPLETE AND VERIFIED",
-          "evidence": "test/device_session_extra.test.ts; test/hardening.test.ts SEC-HARD-03",
-          "note": "Explicit revoke-all option is not implemented; default behavior (other devices stay active) is verified."
+          "evidence": "test/device_session_extra.test.ts; test/hardening.test.ts SEC-HARD-03; test/revoke_all_and_reliability.test.ts (explicit owner-only revoke-all via identity.revokeAllDevices and POST /api/device/revoke-all, audited, survives restart)",
+          "note": "Other devices stay active by default; revoke-all requires the confirm phrase and signs out the caller unless keepCurrentSession is true."
         }
       ]
     },
@@ -1102,9 +1102,9 @@
         {
           "n": 3,
           "text": "Track crash-free task completion and verified outcome rate.",
-          "status": "PARTIALLY COMPLETE",
-          "evidence": "Task outcomes are recorded in the task journal",
-          "note": "Crash-free completion and verified-outcome rates are not computed as metrics."
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/revoke_all_and_reliability.test.ts (JarvisCoreService.reliabilityMetrics, exposed as tasks.reliability on the DEVICE_MANAGE-gated GET /api/health)",
+          "note": "Bounded aggregates over retained task records; no prompts or ids; rates are null when there is no data."
         },
         {
           "n": 4,
@@ -1740,8 +1740,8 @@
       "BLOCKED BY EXTERNAL DEPENDENCY": 1
     },
     "userStoryCriteria": {
-      "PARTIALLY COMPLETE": 12,
-      "COMPLETE AND VERIFIED": 105,
+      "PARTIALLY COMPLETE": 11,
+      "COMPLETE AND VERIFIED": 106,
       "BLOCKED BY EXTERNAL DEPENDENCY": 6,
       "IMPLEMENTED — NOT FULLY TESTED": 4
     },

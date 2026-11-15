@@ -1795,9 +1795,44 @@ export class JarvisCoreService {
         awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
+        reliability: this.reliabilityMetrics(),
       },
       schedules: { active: this.scheduler.activeCount },
       notifications: this.notifications.size,
+    };
+  }
+
+  /**
+   * Reliability aggregates derived from existing task/outcome records (JARVIS-US-025). Only counts
+   * and rates are returned: no prompts, parameters, ids or message text. The window is the retained
+   * task journal (bounded), not an unbounded history.
+   *
+   * Executed = reached an execution outcome (completed, partial, failed, interrupted, awaiting recovery).
+   * Owner-driven endings (rejected, expired, cancelled) are excluded from both rates.
+   * Crash-free completion rate = 1 - (interrupted or awaiting-recovery) / executed.
+   * Verified-outcome rate = executed tasks whose result is a definitive VERIFIED_SUCCESS or VERIFIED_FAILURE.
+   */
+  public reliabilityMetrics(): {
+    window: 'retained-task-records'; recordsConsidered: number; executedTasks: number; completed: number; interruptedOrRecovery: number;
+    crashFreeCompletionRate: number | null; verifiedDefinitive: number; verifiedSuccess: number; verifiedOutcomeRate: number | null; verifiedSuccessRate: number | null;
+  } {
+    const executedStates = new Set<TaskState>([TaskState.COMPLETED, TaskState.PARTIAL, TaskState.FAILED, TaskState.INTERRUPTED, TaskState.AWAITING_RECOVERY]);
+    let executed = 0, completed = 0, interrupted = 0, definitive = 0, success = 0, considered = 0;
+    for (const task of this.tasks.values()) {
+      considered += 1;
+      if (!executedStates.has(task.state)) continue;
+      executed += 1;
+      if (task.state === TaskState.COMPLETED) completed += 1;
+      if (task.state === TaskState.INTERRUPTED || task.state === TaskState.AWAITING_RECOVERY) interrupted += 1;
+      const outcome = task.result?.outcome;
+      if (outcome === VerificationOutcome.VERIFIED_SUCCESS) { definitive += 1; success += 1; }
+      else if (outcome === VerificationOutcome.VERIFIED_FAILURE) definitive += 1;
+    }
+    const rate = (n: number) => (executed > 0 ? Math.round((n / executed) * 10000) / 10000 : null);
+    return {
+      window: 'retained-task-records', recordsConsidered: considered, executedTasks: executed, completed, interruptedOrRecovery: interrupted,
+      crashFreeCompletionRate: rate(executed - interrupted), verifiedDefinitive: definitive, verifiedSuccess: success,
+      verifiedOutcomeRate: rate(definitive), verifiedSuccessRate: rate(success),
     };
   }
 

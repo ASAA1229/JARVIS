@@ -1376,6 +1376,31 @@ export class JarvisServer {
         return this.jsonResponse(res, 200, { results: this.androidCommands.resultsForRequester(auth.device.id) });
       }
 
+      // Owner-only emergency revoke-all (US-003). Revokes every active device and all live sessions;
+      // the caller survives only when keepCurrentSession is explicitly true.
+      if (req.method === 'POST' && url.pathname === '/api/device/revoke-all') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (body.confirm !== 'REVOKE_ALL_DEVICES') return this.jsonResponse(res, 400, { error: 'confirm must equal REVOKE_ALL_DEVICES' });
+        const decision = this.jarvis.policy.evaluate({ operation: 'device:revoke', parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
+        if (!decision.allowed) return this.jsonResponse(res, 403, { error: 'Device is not authorized to revoke devices' });
+        if (this.jarvis.deviceSecurity?.getTotpStatus() === 'ENABLED' && (typeof body.totpCode !== 'string' || !this.jarvis.deviceSecurity.verifyStepUp(auth.device, body.totpCode))) return this.jsonResponse(res, 401, { error: 'Fresh authenticator verification required' });
+        const result = this.jarvis.identity.revokeAllDevices(auth.device.id, {
+          ...(body.keepCurrentSession === true ? { keepSessionId: sessionId } : {}),
+          ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
+        });
+        if (!result.success) return this.jsonResponse(res, result.revokedDeviceIds.length ? 409 : 403, { success: false, error: result.error ?? 'Revoke-all failed' });
+        for (const deviceId of result.revokedDeviceIds) {
+          this.jarvis.onDeviceRevoked(deviceId);
+          this.androidCommands.cancelForDevice(deviceId);
+        }
+        return this.jsonResponse(res, 200, { success: true, revokedCount: result.revokedDeviceIds.length, sessionsInvalidated: result.sessionsInvalidated, callerKept: body.keepCurrentSession === true });
+      }
+
       // Revoke device
       if (req.method === 'POST' && url.pathname === '/api/device/revoke') {
         const body = await this.readJsonBody(req);

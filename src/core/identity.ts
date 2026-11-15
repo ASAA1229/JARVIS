@@ -391,6 +391,45 @@ export class DeviceIdentityManager {
     return persisted;
   }
 
+  /**
+   * Owner-only emergency revoke-all. Every ACTIVE device is revoked and every live session is
+   * invalidated, INCLUDING the caller's, unless `keepSessionId` explicitly names the caller's
+   * current session; then only that device and that single session survive (the caller's other
+   * sessions are still terminated). Persisted before returning; audited with counts only.
+   */
+  public revokeAllDevices(actorDeviceId: DeviceId, options: { keepSessionId?: SessionId; reason?: string } = {}): { success: boolean; revokedDeviceIds: DeviceId[]; sessionsInvalidated: number; error?: string } {
+    if (!this.stateHealthy) return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: 'Identity state is unhealthy.' };
+    const actor = this.devices.get(actorDeviceId);
+    if (!actor || actor.status !== DeviceStatus.ACTIVE || !actor.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('DEVICE_REVOKE_ALL_DENIED', { reason: 'NOT_OWNER_DEVICE' }, actorDeviceId);
+      return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: 'Only an active device-management (owner) device may revoke all devices.' };
+    }
+    const kept = options.keepSessionId ? this.sessions.get(options.keepSessionId) : undefined;
+    if (options.keepSessionId && (!kept || kept.deviceId !== actorDeviceId || !kept.active || kept.expiresAt <= Date.now())) {
+      return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: "keepSessionId must be the caller's own live session." };
+    }
+    const keepActor = Boolean(kept);
+    const now = Date.now();
+    const revoked: DeviceId[] = [];
+    for (const device of this.devices.values()) {
+      if (device.status !== DeviceStatus.ACTIVE) continue;
+      if (keepActor && device.id === actorDeviceId) continue;
+      device.status = DeviceStatus.REVOKED;
+      device.revokedAt = now;
+      revoked.push(device.id);
+    }
+    let invalidated = 0;
+    for (const session of this.sessions.values()) {
+      if (!session.active) continue;
+      if (keepActor && session.id === options.keepSessionId) continue;
+      session.active = false;
+      invalidated += 1;
+    }
+    const persisted = this.persistState();
+    this.audit.record('DEVICE_REVOKE_ALL', { revokedCount: revoked.length, loginsEnded: invalidated, callerKept: keepActor, reasonProvided: Boolean(options.reason), persisted }, actorDeviceId);
+    return { success: persisted, revokedDeviceIds: revoked, sessionsInvalidated: invalidated, ...(persisted ? {} : { error: 'Revocation could not be persisted.' }) };
+  }
+
   public getDevice(deviceId: DeviceId): DeviceRecord | undefined {
     return this.devices.get(deviceId);
   }
