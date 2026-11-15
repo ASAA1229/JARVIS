@@ -64,3 +64,12 @@ jarvis-dependencies.cdx.json
 customer-release-report.json
 perf-report*.json
 sbom-verify-input.cdx.json
+
+# Jenkins/CI scratch output
+.jenkins-temp/
+test-results/
+jarvis-*.sha256
+.nexus-verify/
+.manifest-ignore-public.pem
+.playwright-browsers/
+jarvis-manifest-ignore.sig

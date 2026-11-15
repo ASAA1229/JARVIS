@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "test": "node --test --import tsx test/**/*.test.ts && node --test scripts/on-site-change-detection.test.mjs",
     "test:browser": "node test/browser-smoke.mjs",
+    "test:ci": "node -e \"require('node:fs').mkdirSync('test-results',{recursive:true})\" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit-core.xml --import tsx test/**/*.test.ts && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit-scripts.xml scripts/on-site-change-detection.test.mjs",
     "site-key": "tsx src/gateway/siteKeysCli.ts",
     "test:ollama": "node scripts/test-ollama.mjs",
     "owner-recovery": "node scripts/owner-recovery.mjs",
