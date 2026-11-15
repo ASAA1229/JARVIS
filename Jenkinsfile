@@ -248,6 +248,14 @@ pipeline {
     success {
       echo 'JARVIS pipeline succeeded; artifact checksums and manifest were verified.'
       echo "Release traceability: project=${env.PROJECT_NAME}; build=${env.BUILD_NUMBER}; commit=${env.GIT_COMMIT}; artifact=${env.ARTIFACT_FILE}; manifest=${env.MANIFEST_FILE}; checksum=${env.CHECKSUM_FILE}."
+      script {
+        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+        if (branchName == 'new' || branchName.endsWith('/new')) {
+          build job: 'ASAA-Local-Stack',
+            parameters: [string(name: 'ACTION', value: 'DEPLOY')],
+            wait: false
+        }
+      }
     }
     failure {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
