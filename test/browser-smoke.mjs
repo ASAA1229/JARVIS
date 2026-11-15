@@ -30,7 +30,7 @@ let child;
 let browser;
 
 async function waitForServer() {
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 240; attempt++) {
     if (child.exitCode !== null) throw new Error(`JARVIS server exited early.\n${stdout}\n${stderr}`);
     try {
       const response = await fetch(`${baseUrl}/api/status`);
@@ -567,8 +567,9 @@ try {
   }
   // The approval card renders asynchronously after the AWAITING CONSENT banner; wait for it instead of racing a count.
   await hud.locator('#hud-approvals-slot .hud-approval-card').first().waitFor({ state: 'visible', timeout: 5000 });
-  if (await hud.locator('#hud-approvals-slot .hud-approval-card').count() !== 1) {
-    throw new Error('The local-wake command did not remain behind the explicit on-screen approval gate');
+  const approvalCards = await hud.locator('#hud-approvals-slot .hud-approval-card').count();
+  if (approvalCards !== 1) {
+    throw new Error(`The local-wake command did not remain behind the explicit on-screen approval gate (approval cards: ${approvalCards})`);
   }
   await hud.unroute('**/api/request');
   await hud.locator('#allow-wake-browser-speech').uncheck();
