@@ -596,6 +596,17 @@ try {
       }),
     });
   });
+  // The HUD reconciles approval cards with the server's pending tasks (GET /api/tasks) and drops cards the server does not
+  // know. This fixture mocks /api/request, so model the server-side pending approval for that exact task; otherwise the card
+  // is removed by the next reconciliation at a timing-dependent moment (seen as 0 cards under the headless shell).
+  let wakeApproveCalls = 0;
+  await hud.route('**/api/tasks', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tasks: [{
+      id: 'local-wake-same-utterance-test', approvalId: 'local-wake-approval-test', state: 'AWAITING_APPROVAL', requestText: 'open Notepad',
+    }] }) });
+  });
+  await hud.route('**/api/approval/approve', async (route) => { wakeApproveCalls += 1; await route.abort(); });
   const wakeRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
   // A wake event can legitimately be ignored while JARVIS is speaking or inside
   // its post-speech feedback guard. Model repeated detector frames until the
@@ -642,6 +653,14 @@ try {
   if (approvalCards !== 1) {
     throw new Error(`The local-wake command did not remain behind the explicit on-screen approval gate (approval cards: ${approvalCards})`);
   }
+  // Let reconciliation run; the pending card must survive it and nothing may have been approved or executed.
+  await hud.locator('#btn-refresh-tasks').click().catch(() => {});
+  await hud.waitForTimeout(1500);
+  if (wakeApproveCalls !== 0 || (await hud.locator('#hud-appr-local-wake-approval-test').count()) !== 1) {
+    throw new Error('Wake command left the approval gate (approve calls: ' + wakeApproveCalls + ')');
+  }
+  await hud.unroute('**/api/tasks');
+  await hud.unroute('**/api/approval/approve');
   await hud.unroute('**/api/request');
   await hud.locator('#allow-wake-browser-speech').uncheck();
   await hud.locator('#btn-hands-free-toggle').click();
