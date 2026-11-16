@@ -76,3 +76,6 @@ jarvis-manifest-ignore.sig
 
 # Local release staging (deploy/local/build-local-bundle.ps1)
 .release-stage/
+
+# npm dependency lockfile (repository policy)
+package-lock.json
