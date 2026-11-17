@@ -14,7 +14,9 @@ process.env.JARVIS_OWNER_CONTROL_TOKEN = 'test-owner-control-token-0123456789abc
 
 const TEST_AUDIT_LOG = `./data/test_audit_e2e_recovery_${process.pid}.log`;
 const TEST_STATE_FILE = `./data/test_state_e2e_recovery_${process.pid}.json`;
-const TEST_PORT = await freePort();
+// Re-allocated for every test (see beforeEach): fetch() pools keep-alive sockets per host:port, and a socket
+// pooled against a previous test's (already stopped) server on the same port is reset by the next request.
+let TEST_PORT = await freePort();
 const PORT_RESTART = await freePort();
 const PORT_PLACEHOLDER = await freePort();
 const PORT_PROBE = await freePort();
@@ -62,6 +64,7 @@ describe('JARVIS Milestone 6: Live HTTP Runtime, Recovery & Persistence Verifica
 
   beforeEach(async () => {
     cleanFiles();
+    TEST_PORT = await freePort();
 
     server = new JarvisServer(TEST_PORT, TEST_AUDIT_LOG, TEST_STATE_FILE);
     await server.start();
