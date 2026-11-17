@@ -56,14 +56,14 @@ test('resource, provider and audit monitoring require device management; unauthe
 
 test('monitoring responses are redacted: no credentials, host/user names, state paths or resource lock names', async () => {
   const saved = { key: process.env.JARVIS_CLOUD_OPENAI_API_KEY, model: process.env.JARVIS_CLOUD_OPENAI_MODEL };
-  process.env.JARVIS_CLOUD_OPENAI_API_KEY = 'sk-monitoring-sentinel-9f8e7d';
+  process.env.JARVIS_CLOUD_OPENAI_API_KEY = 'sk-TESTFIXTURE-monitoring-sentinel';
   process.env.JARVIS_CLOUD_OPENAI_MODEL = 'gpt-monitoring';
   const env = await boot();
   try {
     const owner = env.device([Permission.SYSTEM_INFO_READ, Permission.DEVICE_MANAGE]);
     const status = await env.get('/api/status', undefined);
     const bodies = [status.text, (await env.get('/api/resources', owner)).text, (await env.get('/api/ai/providers', owner)).text, (await env.get('/api/audit', owner)).text];
-    const forbidden = ['sk-monitoring-sentinel-9f8e7d', OWNER_TOKEN, env.dir, hostname(), userInfo().username];
+    const forbidden = ['sk-TESTFIXTURE-monitoring-sentinel', OWNER_TOKEN, env.dir, hostname(), userInfo().username];
     for (const body of bodies) for (const secret of forbidden) {
       if (secret.length < 4) continue;
       assert.equal(body.includes(secret), false, `monitoring output leaked ${secret.slice(0, 8)}…`);

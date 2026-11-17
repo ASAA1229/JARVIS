@@ -50,14 +50,14 @@ test('policy: reads need no approval, every git write needs owner approval', () 
 
 test('secret redaction covers common credential formats', () => {
   const input = [
-    'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456',
-    'token: ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    'OPENAI_API_KEY=sk-proj-TESTFIXTURE000000000000000000',
+    'token: ghp_TESTFIXTURE0000000000000000000000',
     'jrv_0123456789ab_' + 'A'.repeat(43),
     'password = "hunter2hunter2"',
     '-----BEGIN PRIVATE KEY-----\nMIIabc\n-----END PRIVATE KEY-----',
   ].join('\n');
   const output = redactSecrets(input);
-  for (const leaked of ['sk-proj-abc', 'ghp_abc', 'jrv_0123', 'hunter2', 'MIIabc']) assert.equal(output.includes(leaked), false, leaked);
+  for (const leaked of ['sk-proj-TESTFIX', 'ghp_TESTFIX', 'jrv_0123', 'hunter2', 'MIIabc']) assert.equal(output.includes(leaked), false, leaked);
   assert.equal(containsSecret('just a normal sentence'), false);
 });
 
