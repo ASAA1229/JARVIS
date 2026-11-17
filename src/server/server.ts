@@ -34,6 +34,7 @@ import { resourceManager, type ProfileMode } from '../resources/resourceManager.
 import { providerRouter } from '../ai/providerRouter.js';
 import { OllamaProvider } from '../ai/ollamaProvider.js';
 import { buildServiceManifest } from '../integration/serviceManifest.js';
+import { evaluateRuntimeBudgets, summarizeMeasurements } from '../evaluation/runtimeBudgets.js';
 import { AsaaEventProducer, categorizeAuditFailure } from '../integration/asaaEvents.js';
 import { OidcSso, SsoError, SSO_CALLBACK_PATH, SSO_LOGIN_PATH, readOidcConfig } from '../identity/ssoOidc.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
@@ -1570,6 +1571,23 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view health details' });
         return this.jsonResponse(res, 200, this.jarvis.getHealthSnapshot());
+      }
+
+      // Owner metrics (US-025): measured aggregates plus a provisional budget evaluation. Aggregates
+      // only; no task ids, prompts, paths or device identifiers. Local JSON; nothing is exported.
+      if (req.method === 'GET' && url.pathname === '/api/metrics') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view metrics' });
+        const snapshot = this.jarvis.getHealthSnapshot();
+        return this.jsonResponse(res, 200, {
+          generatedAt: snapshot.generatedAt,
+          measurements: summarizeMeasurements(snapshot),
+          budgets: evaluateRuntimeBudgets(snapshot),
+          note: 'Budgets are provisional placeholders, not owner-agreed targets. Latency percentiles are measured offline with npm run perf.',
+        });
       }
 
       // Task list with per-step status. Parameters and results are not exposed here.
