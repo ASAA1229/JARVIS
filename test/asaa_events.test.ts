@@ -117,6 +117,19 @@ describe('ASAA event producer (disabled by default; tested against a MOCK ingest
     assert.notEqual(envelopes[0].id, envelopes[1].id);
   });
 
+  test('task events carry the SSO subject as data.actor when known, and nothing else is added', () => {
+    const sub = 'f3a1c2d4-0000-4000-8000-00000000abcd';
+    const attributed = buildEnvelope({ orgId: ORG }, { type: 'jarvis.task.completed', data: { taskId: 'task-abc123', operation: 'app:launch', outcome: 'VERIFIED_SUCCESS', actor: sub, username: 'alice', deviceId: 'dev-1' } });
+    assert.deepEqual(attributed.data, { taskId: 'task-abc123', operation: 'app:launch', outcome: 'VERIFIED_SUCCESS', actor: sub });
+    assert.deepEqual(validateSchema(envelopeSchema, attributed), []);
+    const unattributed = buildEnvelope({ orgId: ORG }, { type: 'jarvis.task.failed', data: { taskId: 'task-abc123', operation: 'app:launch', outcome: 'VERIFIED_FAILURE' } });
+    assert.equal('actor' in unattributed.data, false);
+    for (const bad of ['has space', 'x'.repeat(129), 'a/b', '']) {
+      assert.equal('actor' in buildEnvelope({ orgId: ORG }, { type: 'jarvis.task.completed', data: { taskId: 'task-abc123', operation: 'x', outcome: 'x', actor: bad } }).data, false, `invalid actor ${bad}`);
+    }
+    assert.equal('actor' in buildEnvelope({ orgId: ORG }, { type: 'jarvis.security.device-revoked', data: { reason: 'revoke-all', actor: sub } }).data, false, 'only task events carry an actor');
+  });
+
   test('payloads contain only fixed validated fields: no paths, user content, ids of devices or secrets', () => {
     const hostile = buildEnvelope({ orgId: ORG }, {
       type: 'jarvis.task.failed',
@@ -360,6 +373,34 @@ describe('ASAA event producer (disabled by default; tested against a MOCK ingest
     assert.equal(JSON.stringify(mock.envelopes).includes('Hook test device'), false);
     assert.equal(JSON.stringify(mock.envelopes).includes('OS version'), false, 'request text never leaves JARVIS');
     for (const envelope of mock.envelopes) assert.deepEqual(validateSchema(envelopeSchema, envelope), []);
+  });
+
+  test('a task run by an SSO-attributed device is emitted with that person as actor (sub only)', async () => {
+    const service = new JarvisCoreService(new LocalHeuristicPlanner(), join(dir, 'audit-actor.log'));
+    const p = producer();
+    service.integrationSink = p;
+    const sub = 'f3a1c2d4-0000-4000-8000-00000000abcd';
+    const keys = CryptoUtil.generateEd25519KeyPair();
+    const challenge = service.identity.createEnrollmentChallenge([Permission.SYSTEM_INFO_READ], 120, { sub, username: 'alice' });
+    const enrolled = service.identity.enrollDevice(challenge.challengeToken, 'Alice device', keys.publicKey);
+    assert.equal(enrolled.success, true);
+    assert.equal(service.identity.getDevice(enrolled.deviceId!)?.ssoSub, sub);
+    const timestamp = Date.now();
+    const nonce = CryptoUtil.randomToken(16);
+    const session = service.identity.createSession(enrolled.deviceId!, CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, keys.privateKey), timestamp, nonce);
+    assert.equal(session.success, true);
+    await service.submitRequest(session.sessionId!, 'What is the OS version?');
+    await p.flush();
+    const completed = mock.envelopes.find((e) => e.type === 'jarvis.task.completed')!;
+    assert.equal(completed.data.actor, sub);
+    assert.deepEqual(Object.keys(completed.data).sort(), ['actor', 'operation', 'outcome', 'taskId']);
+    const wire = JSON.stringify(mock.envelopes);
+    assert.equal(wire.includes('alice'), false, 'the username never leaves JARVIS');
+    assert.equal(wire.includes(enrolled.deviceId!), false);
+    assert.deepEqual(validateSchema(envelopeSchema, completed), []);
+    // The attribution is also in the hash-chained audit log at enrollment time.
+    const logged = readFileSync(join(dir, 'audit-actor.log'), 'utf8');
+    assert.ok(logged.includes(sub) && logged.includes('DEVICE_ENROLLED'));
   });
 
   test('server wiring: enabled by the three env vars, surfaced as checks.asaaEvents, disabled otherwise', async () => {

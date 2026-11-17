@@ -47,7 +47,7 @@ export type AuditFailureCategory = 'log-integrity' | 'log-write-failed' | 'log-r
 
 /** Hooks the core service and audit log call; implemented by the producer. */
 export interface IntegrationEventSink {
-  taskFinished(info: { taskId: string; operation: string; outcome: string; failed: boolean }): void;
+  taskFinished(info: { taskId: string; operation: string; outcome: string; failed: boolean; actor?: string }): void;
   deviceRevoked(reason: DeviceRevokeReason): void;
 }
 
@@ -92,6 +92,8 @@ export function readAsaaEventsConfig(env: NodeJS.ProcessEnv = process.env): Asaa
 // ---------------------------------------------------------------- envelope building
 
 const TASK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** SSO subject identifiers (for example a UUID); never a username or device id. */
+const ACTOR_ID = /^[A-Za-z0-9._:@-]{1,128}$/;
 const OPERATION_ID = /^[a-z][a-z0-9:_-]{0,63}$/;
 const CORRELATION_ID = /^[A-Za-z0-9._-]{8,64}$/;
 const OUTCOMES = new Set(['VERIFIED_SUCCESS', 'VERIFIED_FAILURE', 'PARTIAL_SUCCESS', 'UNCERTAIN']);
@@ -135,6 +137,8 @@ export function buildEnvelope(config: Pick<AsaaEventsConfig, 'orgId'>, input: En
         taskId,
         operation: OPERATION_ID.test(operation) ? operation : 'unknown',
         outcome: OUTCOMES.has(outcome) ? outcome : 'UNCERTAIN',
+        // Attribution: the SSO subject of the person whose device ran the task (only when known).
+        ...(typeof input.data.actor === 'string' && ACTOR_ID.test(input.data.actor) ? { actor: input.data.actor } : {}),
       };
       subject = `task/${taskId}`;
       severity = input.severity ?? (input.type === 'jarvis.task.failed' ? 'warning' : 'info');
@@ -360,10 +364,10 @@ export class AsaaEventProducer implements IntegrationEventSink {
     }
   }
 
-  taskFinished(info: { taskId: string; operation: string; outcome: string; failed: boolean }): void {
+  taskFinished(info: { taskId: string; operation: string; outcome: string; failed: boolean; actor?: string }): void {
     this.emit({
       type: info.failed ? 'jarvis.task.failed' : 'jarvis.task.completed',
-      data: { taskId: info.taskId, operation: info.operation, outcome: info.outcome },
+      data: { taskId: info.taskId, operation: info.operation, outcome: info.outcome, ...(info.actor ? { actor: info.actor } : {}) },
     });
   }
 

@@ -1141,7 +1141,7 @@ export class JarvisCoreService {
     }
     if (taskRecord.state === TaskState.COMPLETED || taskRecord.state === TaskState.FAILED) {
       try {
-        this.integrationSink?.taskFinished({ taskId, operation: opRequest.operation, outcome: String(verification.honestOutcome), failed: taskRecord.state === TaskState.FAILED });
+        this.integrationSink?.taskFinished({ taskId, operation: opRequest.operation, outcome: String(verification.honestOutcome), failed: taskRecord.state === TaskState.FAILED, actor: this.identity.getDevice(taskRecord.deviceId)?.ssoSub });
       } catch { /* ecosystem events never affect task handling */ }
     }
     if (taskRecord.state === TaskState.COMPLETED) {
