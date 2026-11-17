@@ -34,6 +34,7 @@ import { resourceManager, type ProfileMode } from '../resources/resourceManager.
 import { providerRouter } from '../ai/providerRouter.js';
 import { OllamaProvider } from '../ai/ollamaProvider.js';
 import { buildServiceManifest } from '../integration/serviceManifest.js';
+import { AsaaEventProducer, categorizeAuditFailure } from '../integration/asaaEvents.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -102,6 +103,12 @@ export class JarvisServer {
         if (event.type === 'accepted') this.jarvis.audit.record('LAN_PEER_MESSAGE', { peerDeviceId: event.deviceId, type: event.message });
       });
     }
+    // ASAA ecosystem events: a disabled no-op unless ASAA_EVENTS_URL, ASAA_EVENTS_TOKEN and ASAA_ORG_ID are all set.
+    this.asaaEvents = AsaaEventProducer.fromEnvironment(process.env, { statePath, ownerToken: this.ownerControlToken });
+    if (this.asaaEvents.enabled) {
+      this.jarvis.integrationSink = this.asaaEvents;
+      this.jarvis.audit.onFailClosed = (reason) => this.asaaEvents.auditIntegrityFailed(categorizeAuditFailure(reason));
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -110,6 +117,10 @@ export class JarvisServer {
       const onListening = () => {
         this.server.off('error', onError);
         this.jarvis.startBackgroundServices();
+        this.asaaEvents.start();
+        // An audit failure that happened before the listener existed (startup verification) is still reported.
+        const startupAuditFailure = this.jarvis.audit.getFailureReason();
+        if (startupAuditFailure) this.asaaEvents.auditIntegrityFailed(categorizeAuditFailure(startupAuditFailure));
         // LAN discovery stays off unless JARVIS_PEER_DISCOVERY=true.
         this.peerDiscovery?.start();
         resolve(this.port);
@@ -133,6 +144,7 @@ export class JarvisServer {
 
   public stop(): Promise<void> {
     this.jarvis.stopBackgroundServices();
+    this.asaaEvents.stop();
     this.peerDiscovery?.stop();
     if (!this.server.listening) return Promise.resolve();
 
@@ -144,6 +156,7 @@ export class JarvisServer {
     });
   }
 
+  private readonly asaaEvents: AsaaEventProducer;
   private aiGatewayRunning = false;
 
   /** Called by the process entry point once the optional site AI gateway listener is up. */
@@ -153,7 +166,7 @@ export class JarvisServer {
 
   /** Manifest check value for the ASAA event producer; wired when the producer exists. */
   private asaaEventsCheck(): 'ok' | 'degraded' | 'down' | 'disabled' {
-    return 'disabled';
+    return this.asaaEvents.manifestCheck();
   }
 
   public getService(): JarvisCoreService {
@@ -343,7 +356,7 @@ export class JarvisServer {
         const revoke = (deviceId: string): boolean => {
           if (!this.jarvis.identity.revokeDevice(deviceId, 'Owner recovery')) return false;
           // Same effects as a normal revocation: approvals, schedules, tasks, phone commands.
-          this.jarvis.onDeviceRevoked(deviceId);
+          this.jarvis.onDeviceRevoked(deviceId, 'owner-recovery');
           this.androidCommands.cancelForDevice(deviceId);
           return true;
         };
@@ -1423,7 +1436,7 @@ export class JarvisServer {
         });
         if (!result.success) return this.jsonResponse(res, result.revokedDeviceIds.length ? 409 : 403, { success: false, error: result.error ?? 'Revoke-all failed' });
         for (const deviceId of result.revokedDeviceIds) {
-          this.jarvis.onDeviceRevoked(deviceId);
+          this.jarvis.onDeviceRevoked(deviceId, 'revoke-all');
           this.androidCommands.cancelForDevice(deviceId);
         }
         return this.jsonResponse(res, 200, { success: true, revokedCount: result.revokedDeviceIds.length, sessionsInvalidated: result.sessionsInvalidated, callerKept: body.keepCurrentSession === true });
@@ -1452,7 +1465,7 @@ export class JarvisServer {
           return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
         }
         // Immediately invalidate that device's approvals, schedules and running tasks.
-        this.jarvis.onDeviceRevoked(deviceId);
+        this.jarvis.onDeviceRevoked(deviceId, 'device-request');
         const cancelledAndroidCommands = this.androidCommands.cancelForDevice(deviceId);
         if (cancelledAndroidCommands > 0) {
           this.jarvis.audit.record('ANDROID_COMMANDS_CANCELLED_DEVICE_REVOKED', {

@@ -177,8 +177,20 @@ export class AuditLogger {
       typeof record.hash === 'string';
   }
 
+  /** Optional listener, called once when the log first fails closed (reason is an internal code). */
+  public onFailClosed?: (reason: string) => void;
+
+  /** Internal failure code when the audit log has failed closed, else undefined. */
+  public getFailureReason(): string | undefined {
+    return this.failureReason;
+  }
+
   private failClosed(reason: string): void {
+    const first = this.failureReason === undefined;
     this.failureReason ??= reason;
+    if (first && this.onFailClosed) {
+      try { this.onFailClosed(reason); } catch { /* a listener must never affect audit behaviour */ }
+    }
   }
 
   private redactSecrets(value: unknown, fieldName = ''): unknown {

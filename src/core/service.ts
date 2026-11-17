@@ -39,6 +39,7 @@ import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 import { TaskCoordinator } from './taskCoordinator.js';
+import type { DeviceRevokeReason, IntegrationEventSink } from '../integration/asaaEvents.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
 
@@ -127,6 +128,8 @@ const RETRYABLE_READ_ONLY = new Set([
 ]);
 
 export class JarvisCoreService {
+  /** Optional ecosystem event sink (ASAA events); undefined means standalone and nothing is emitted. */
+  public integrationSink?: IntegrationEventSink;
   public readonly audit: AuditLogger;
   public readonly identity: DeviceIdentityManager;
   public readonly deviceSecurity?: DeviceSecurityService;
@@ -1136,6 +1139,11 @@ export class JarvisCoreService {
         verified: false,
       };
     }
+    if (taskRecord.state === TaskState.COMPLETED || taskRecord.state === TaskState.FAILED) {
+      try {
+        this.integrationSink?.taskFinished({ taskId, operation: opRequest.operation, outcome: String(verification.honestOutcome), failed: taskRecord.state === TaskState.FAILED });
+      } catch { /* ecosystem events never affect task handling */ }
+    }
     if (taskRecord.state === TaskState.COMPLETED) {
       this.notifications.push('info', 'task_completed', `Completed and verified: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
     } else if (taskRecord.state === TaskState.FAILED) {
@@ -1713,7 +1721,8 @@ export class JarvisCoreService {
    * Must be called whenever a device is revoked. Pending approvals, remembered
    * grants, scheduled work and running tasks owned by that device stop immediately.
    */
-  public onDeviceRevoked(deviceId: DeviceId): void {
+  public onDeviceRevoked(deviceId: DeviceId, reason: DeviceRevokeReason = 'unspecified'): void {
+    try { this.integrationSink?.deviceRevoked(reason); } catch { /* ecosystem events never affect revocation */ }
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
     const schedules = this.scheduler.cancelForDevice(deviceId);
     // A revoked device's short-lived working context is discarded immediately.
