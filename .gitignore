@@ -79,3 +79,16 @@ jarvis-manifest-ignore.sig
 
 # npm dependency lockfile (repository policy)
 package-lock.json
+
+# Generated/local output and secrets
+dist-ssr/
+.output/
+playwright-report/
+*.db
+*.sqlite3
+.DS_Store
+Thumbs.db
+secrets/
+credentials/
+*.sha256
+*.cdx.json
