@@ -1724,6 +1724,7 @@ export class JarvisCoreService {
   public onDeviceRevoked(deviceId: DeviceId, reason: DeviceRevokeReason = 'unspecified'): void {
     try { this.integrationSink?.deviceRevoked(reason); } catch { /* ecosystem events never affect revocation */ }
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
+    this.deviceSecurity?.cancelPendingCreatedBy(deviceId);
     const schedules = this.scheduler.cancelForDevice(deviceId);
     // A revoked device's short-lived working context is discarded immediately.
     this.memoryManager?.working.clearDevice(deviceId);

@@ -134,7 +134,7 @@ export class DeviceIdentityManager {
     this.audit.record('ENROLLMENT_CHALLENGE_CREATED', {
       expiresAt,
       permissions,
-      ...(actor ? { authorizedBy: 'sso', ssoSub: actor.sub, ssoUsername: actor.username ?? null } : {}),
+      ...(actor ? { via: 'sso', ssoSub: actor.sub, ssoUsername: actor.username ?? null } : {}),
     });
 
     return { challengeToken, expiresAt, uri };
@@ -439,9 +439,27 @@ export class DeviceIdentityManager {
       session.active = false;
       invalidated += 1;
     }
+    const pendingEnrollmentsEnded = this.invalidatePendingChallenges('revoke-all');
     const persisted = this.persistState();
-    this.audit.record('DEVICE_REVOKE_ALL', { revokedCount: revoked.length, loginsEnded: invalidated, callerKept: keepActor, reasonProvided: Boolean(options.reason), persisted }, actorDeviceId);
+    this.audit.record('DEVICE_REVOKE_ALL', { pendingEnrollmentsEnded, revokedCount: revoked.length, loginsEnded: invalidated, callerKept: keepActor, reasonProvided: Boolean(options.reason), persisted }, actorDeviceId);
     return { success: persisted, revokedDeviceIds: revoked, sessionsInvalidated: invalidated, ...(persisted ? {} : { error: 'Revocation could not be persisted.' }) };
+  }
+
+  /**
+   * Consumes every unredeemed, unexpired enrollment challenge (owner-token or SSO issued). Used by
+   * revoke-all and owner recovery so a challenge that leaked before the emergency cannot enroll a
+   * new device afterwards. Returns how many challenges were invalidated.
+   */
+  public invalidatePendingChallenges(reason: string): number {
+    const now = Date.now();
+    let count = 0;
+    for (const challenge of this.challenges.values()) {
+      if (challenge.redeemed || challenge.expiresAt <= now) continue;
+      challenge.redeemed = true;
+      count += 1;
+    }
+    this.audit.record('ENROLLMENT_CHALLENGES_INVALIDATED', { count, reason });
+    return count;
   }
 
   public getDevice(deviceId: DeviceId): DeviceRecord | undefined {

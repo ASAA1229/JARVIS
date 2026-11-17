@@ -455,6 +455,9 @@ export class JarvisServer {
             next: 'Restore durable device-state storage and retry recovery before resetting the authenticator.',
           });
         }
+        // Anything that could still enroll a device (raw challenges, QR transactions) dies with the devices.
+        this.jarvis.identity.invalidatePendingChallenges('owner-recovery');
+        this.jarvis.deviceSecurity.cancelAllPending('owner-recovery');
         const authenticator = this.jarvis.deviceSecurity.ownerResetAuthenticator();
         this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: 0 });
         return this.jsonResponse(res, 200, {
@@ -1509,6 +1512,8 @@ export class JarvisServer {
           this.jarvis.onDeviceRevoked(deviceId, 'revoke-all');
           this.androidCommands.cancelForDevice(deviceId);
         }
+        // Pending enrollment (QR transactions); raw challenges were already invalidated by revokeAllDevices.
+        this.jarvis.deviceSecurity?.cancelAllPending('revoke-all');
         return this.jsonResponse(res, 200, { success: true, revokedCount: result.revokedDeviceIds.length, sessionsInvalidated: result.sessionsInvalidated, callerKept: body.keepCurrentSession === true });
       }
 
