@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 import { redactSecrets, containsSecret } from '../src/developer/secrets.js';
 import { RepoRegistry, isDeniedRepoPath, parseScopes, resolveInsideRepo } from '../src/developer/repoRegistry.js';
-import { assertSafeDiff, isValidBranchName, PROTECTED_BRANCHES } from '../src/developer/repoTools.js';
+import { assertSafeDiff, draftPullRequest, isValidBranchName, PROTECTED_BRANCHES, resolvePrBase } from '../src/developer/repoTools.js';
+import { execFileSync } from 'node:child_process';
 import { DeveloperAssistant } from '../src/developer/developerAssistant.js';
 import { PolicyGateway } from '../src/policy/gateway.js';
 
@@ -107,4 +108,50 @@ test('repositories must be connected with the needed scope', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('pull-request base defaults to new and promotion bases need the explicit flag', () => {
+  assert.equal(resolvePrBase({}), 'new');
+  assert.equal(resolvePrBase({ prBase: 'fix' }), 'fix');
+  assert.equal(resolvePrBase({ prBase: 'fix' }, { base: 'test' }), 'test');
+  for (const base of ['main', 'dev', 'master', 'production', 'release', 'DEV']) {
+    assert.throws(() => resolvePrBase({}, { base }), /promotion/i, base);
+    assert.throws(() => resolvePrBase({ prBase: base }), /promotion/i, `configured ${base}`);
+    assert.throws(() => resolvePrBase({}, { base, promotion: 'true' as unknown as boolean }), /promotion/i, `${base} with non-boolean flag`);
+    assert.equal(resolvePrBase({}, { base, promotion: true }), base);
+  }
+  assert.throws(() => resolvePrBase({}, { base: '../x' }), /valid/);
+});
+
+test('repository connections may configure a routine PR base but never main or dev', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dev-prbase-'));
+  try {
+    mkdirSync(join(dir, 'repo', '.git'), { recursive: true });
+    const registry = new RepoRegistry(join(dir, 'repos.json'));
+    assert.equal(registry.connect('site', join(dir, 'repo'), ['read']).prBase, undefined);
+    assert.equal(registry.connect('site', join(dir, 'repo'), ['read'], 'fix').prBase, 'fix');
+    for (const bad of ['main', 'dev', 'master', 'a..b']) assert.throws(() => registry.connect('site', join(dir, 'repo'), ['read'], bad), /cannot be a repository pull-request base/, bad);
+    assert.equal(new RepoRegistry(join(dir, 'repos.json')).get('site')?.prBase, 'fix', 'the configured base persists');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a pull-request draft targets new by default, refuses dev, and allows it only with the promotion flag', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dev-prdraft-'));
+  try {
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, stdio: 'pipe' });
+    git('init', '-q', '-b', 'new');
+    writeFileSync(join(dir, 'a.txt'), 'a');
+    git('add', '.'); git('commit', '-q', '-m', 'base');
+    git('checkout', '-q', '-b', 'feature/x');
+    writeFileSync(join(dir, 'b.txt'), 'b');
+    git('add', '.'); git('commit', '-q', '-m', 'add b');
+    const repo = { name: 'tmp', path: dir, scopes: ['read' as const], connectedAt: new Date().toISOString() };
+    const draft = await draftPullRequest(repo);
+    assert.equal(draft.base, 'new');
+    assert.match(draft.body, /Base: new/);
+    assert.match(draft.body, /add b/);
+    await assert.rejects(draftPullRequest(repo, undefined, { base: 'dev' }), /promotion/i);
+    await assert.rejects(draftPullRequest({ ...repo, prBase: 'main' }), /promotion/i);
+    assert.equal((await draftPullRequest(repo, undefined, { base: 'dev', promotion: true })).base, 'dev');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
