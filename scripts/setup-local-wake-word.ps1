@@ -12,7 +12,7 @@ Write-Host 'Installing pinned local inference runtime (isolated under the ignore
 $runtimeLock = Join-Path $runtimeRoot 'package-lock.json'
 if (Test-Path $runtimeLock) {
   # Reuse the local lockfile so transitive dependencies do not drift between runs.
-  npm ci --prefix $runtimeRoot
+  npm install --prefix $runtimeRoot --no-audit --no-fund
 } else {
   # First run: save exact top-level versions and generate a local lockfile.
   npm install --prefix $runtimeRoot --save-exact onnxruntime-web@1.20.1 jszip@3.10.1

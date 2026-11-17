@@ -24,9 +24,11 @@ Run 'build' 'npm' @('run', 'build')
 Copy-Item -Recurse -Force -LiteralPath (Join-Path $repo 'dist') -Destination (Join-Path $stage 'dist')
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'src') | Out-Null
 Copy-Item -Recurse -Force -LiteralPath (Join-Path $repo 'src\companion') -Destination (Join-Path $stage 'src\companion')
-Copy-Item -Force -LiteralPath (Join-Path $repo 'package.json'), (Join-Path $repo 'package-lock.json') -Destination $stage
+Copy-Item -Force -LiteralPath (Join-Path $repo 'package.json') -Destination $stage
+$repoLock = Join-Path $repo 'package-lock.json'
+if (Test-Path -LiteralPath $repoLock) { Copy-Item -Force -LiteralPath $repoLock -Destination $stage }
 Push-Location $stage
-try { Run 'production dependency install' 'npm' @('ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund') } finally { Pop-Location }
+try { Run 'production dependency install' 'npm' @('install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund') } finally { Pop-Location }
 
 $commit = (& git rev-parse HEAD).Trim()
 $branch = (& git rev-parse --abbrev-ref HEAD).Trim()

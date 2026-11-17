@@ -1,5 +1,5 @@
 // JARVIS CI/CD pipeline (Windows Jenkins agent). Windows PowerShell 5.1 and PowerShell 7 compatible helpers live in ci/jenkins.
-// Standard stage order: checkout + source verification, agent prerequisites, locked install, SBOM + dependency audit,
+// Standard stage order: checkout + source verification, agent prerequisites, install, SBOM + dependency audit,
 // static analysis + build, tests (JUnit), required browser E2E, package + integrity, archive, optional signing,
 // optional gated Nexus release. Ordinary new/dev/fix/test builds never publish; releases need main or release/*,
 // ENABLE_NEXUS_PUBLISH=true and an explicit input approval.
@@ -44,18 +44,18 @@ pipeline {
           $head = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0) { throw "git rev-parse failed." }
           if ($head -ne $env:GIT_COMMIT) { throw "Checked-out commit $head does not match the commit Jenkins resolved ($env:GIT_COMMIT)." }
-          if (-not (Test-Path package-lock.json -PathType Leaf)) { throw "package-lock.json is missing." }
         '''
       }
     }
     stage('Agent prerequisites') {
       steps {
-        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "node,npm,git,tar,lockfile,workspace" -NodeRange ">=24" -ReportFile .jenkins-temp\\agent-prereqs.json'
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "node,npm,git,tar,workspace" -NodeRange ">=24" -ReportFile .jenkins-temp\\agent-prereqs.json'
       }
     }
-    stage('Install locked dependencies') {
+    stage('Install dependencies') {
       steps {
-        bat 'npm ci'
+        // package-lock.json is intentionally not committed (repository policy); npm install generates it for the SBOM cross-check.
+        bat 'npm install --no-audit --no-fund'
       }
     }
     stage('SBOM and dependency audit') {
