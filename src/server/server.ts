@@ -33,6 +33,7 @@ import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
 import { OllamaProvider } from '../ai/ollamaProvider.js';
+import { buildServiceManifest } from '../integration/serviceManifest.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -141,6 +142,18 @@ export class JarvisServer {
         else resolve();
       });
     });
+  }
+
+  private aiGatewayRunning = false;
+
+  /** Called by the process entry point once the optional site AI gateway listener is up. */
+  public setAiGatewayRunning(running: boolean): void {
+    this.aiGatewayRunning = running;
+  }
+
+  /** Manifest check value for the ASAA event producer; wired when the producer exists. */
+  private asaaEventsCheck(): 'ok' | 'degraded' | 'down' | 'disabled' {
+    return 'disabled';
   }
 
   public getService(): JarvisCoreService {
@@ -271,6 +284,21 @@ export class JarvisServer {
       }
 
       // 2. API Routes
+      // ASAA ecosystem service manifest v1: public, secret-free, derived from cached state only
+      // (no network call per probe).
+      if (req.method === 'GET' && url.pathname === '/.well-known/asaa-service') {
+        const local = providerRouter.status().providers.find((item) => item.id === 'local');
+        const manifest = buildServiceManifest({
+          auditIntegrity: this.jarvis.audit.verifyIntegrity().valid,
+          identityState: this.jarvis.identity.isStateHealthy(),
+          ollama: local ? { configured: local.configured, available: local.available } : undefined,
+          aiGatewayRunning: this.aiGatewayRunning,
+          asaaEvents: this.asaaEventsCheck(),
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return this.jsonResponse(res, 200, manifest);
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/status') {
         // Public health response only; never disclose device records, public-key
         // material, task content, or audit internals without an authorized session.
