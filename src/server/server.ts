@@ -35,6 +35,7 @@ import { providerRouter } from '../ai/providerRouter.js';
 import { OllamaProvider } from '../ai/ollamaProvider.js';
 import { buildServiceManifest } from '../integration/serviceManifest.js';
 import { AsaaEventProducer, categorizeAuditFailure } from '../integration/asaaEvents.js';
+import { OidcSso, SsoError, SSO_CALLBACK_PATH, SSO_LOGIN_PATH, readOidcConfig } from '../identity/ssoOidc.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -103,6 +104,9 @@ export class JarvisServer {
         if (event.type === 'accepted') this.jarvis.audit.record('LAN_PEER_MESSAGE', { peerDeviceId: event.deviceId, type: event.message });
       });
     }
+    const oidc = readOidcConfig(process.env, port);
+    if (oidc.enabled) this.sso = new OidcSso(oidc.config);
+    else if (oidc.reason !== 'not-configured') console.warn(`[JARVIS] ASAA single sign-on disabled: ${oidc.reason}.`);
     // ASAA ecosystem events: a disabled no-op unless ASAA_EVENTS_URL, ASAA_EVENTS_TOKEN and ASAA_ORG_ID are all set.
     this.asaaEvents = AsaaEventProducer.fromEnvironment(process.env, { statePath, ownerToken: this.ownerControlToken });
     if (this.asaaEvents.enabled) {
@@ -157,6 +161,65 @@ export class JarvisServer {
   }
 
   private readonly asaaEvents: AsaaEventProducer;
+  /** Optional ASAA single sign-on for enrollment authorization (disabled unless JARVIS_OIDC_* is configured). */
+  private readonly sso?: OidcSso;
+  private ssoRedirect(res: ServerResponse, fragment: string, extraHeaders: Record<string, string> = {}): void {
+    res.writeHead(302, { Location: `/companion#${fragment}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...extraHeaders });
+    res.end();
+  }
+
+  private static readonly SSO_COOKIE = 'jarvis_sso';
+
+  /** Starts the OIDC login. The state is also bound to this browser by a short-lived HttpOnly cookie (login CSRF defence). */
+  private async handleSsoLogin(res: ServerResponse): Promise<void> {
+    if (!this.sso) return this.jsonResponse(res, 404, { error: 'Single sign-on is not configured' });
+    try {
+      const login = await this.sso.beginLogin();
+      res.writeHead(302, {
+        Location: login.url,
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${JarvisServer.SSO_COOKIE}=${login.state}; HttpOnly; SameSite=Lax; Path=${SSO_CALLBACK_PATH}; Max-Age=600`,
+      });
+      res.end();
+    } catch {
+      this.jarvis.audit.record('SSO_LOGIN_FAILED', { reason: 'unavailable', stage: 'begin' });
+      return this.jsonResponse(res, 503, { error: 'Single sign-on is currently unavailable' });
+    }
+  }
+
+  /**
+   * OIDC redirect target. On a fully verified sign-in (signature, claims, MFA evidence, required role)
+   * it issues the same single-use enrollment challenge the owner token would, attributed to the SSO
+   * identity, and hands it to the companion page in the URL fragment (never sent to a server).
+   */
+  private async handleSsoCallback(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const clearCookie = { 'Set-Cookie': `${JarvisServer.SSO_COOKIE}=; HttpOnly; SameSite=Lax; Path=${SSO_CALLBACK_PATH}; Max-Age=0` };
+    if (!this.sso) return this.jsonResponse(res, 404, { error: 'Single sign-on is not configured' });
+    const fail = (code: string, reason: string): void => {
+      try { this.jarvis.audit.record('SSO_LOGIN_FAILED', { reason, code }); } catch { /* audit failure already blocks other operations */ }
+      this.ssoRedirect(res, `sso_error=${code}`, clearCookie);
+    };
+    const state = url.searchParams.get('state') ?? '';
+    const code = url.searchParams.get('code') ?? '';
+    const cookie = /(?:^|;\s*)jarvis_sso=([A-Za-z0-9_-]{1,128})/.exec(String(req.headers.cookie ?? ''))?.[1];
+    if (!state || cookie !== state) return fail('invalid_state', 'state_cookie_mismatch');
+    if (url.searchParams.get('error')) {
+      this.sso.completeLogin('', state).catch(() => undefined); // consume the pending state
+      return fail('denied', 'idp_denied');
+    }
+    try {
+      const identity = await this.sso.completeLogin(code, state);
+      const challenge = this.jarvis.identity.createEnrollmentChallenge(
+        [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH, Permission.DEVICE_MANAGE], 120, identity,
+      );
+      this.jarvis.audit.record('SSO_LOGIN_SUCCEEDED', { ssoSub: identity.sub, ssoUsername: identity.username ?? null });
+      this.ssoRedirect(res, `sso_challenge=${encodeURIComponent(challenge.challengeToken)}&sso_expires=${challenge.expiresAt}`, clearCookie);
+    } catch (error) {
+      if (error instanceof SsoError) return fail(error.code, error.message.slice(0, 120));
+      return fail('unavailable', 'unexpected');
+    }
+  }
+
   private aiGatewayRunning = false;
 
   /** Called by the process entry point once the optional site AI gateway listener is up. */
@@ -399,6 +462,13 @@ export class JarvisServer {
           next: 'Enroll a new device with a NEW key via owner-token bootstrap enrollment (POST /api/enrollment/challenge).',
         });
       }
+
+      // ASAA single sign-on (optional). Whether it is available is public; nothing else is.
+      if (req.method === 'GET' && url.pathname === '/api/sso/status') {
+        return this.jsonResponse(res, 200, { enabled: Boolean(this.sso) });
+      }
+      if (req.method === 'GET' && url.pathname === SSO_LOGIN_PATH) return this.handleSsoLogin(res);
+      if (req.method === 'GET' && url.pathname === SSO_CALLBACK_PATH) return this.handleSsoCallback(req, res, url);
 
       // Create enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/challenge') {

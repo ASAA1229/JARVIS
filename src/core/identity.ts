@@ -18,6 +18,14 @@ export interface EnrollmentChallenge {
   expiresAt: number;
   redeemed: boolean;
   assignedPermissions: Permission[];
+  /** SSO identity that authorized this challenge (when issued through ASAA SSO); recorded on the enrolled device. */
+  actor?: EnrollmentActor;
+}
+
+/** Verified single sign-on identity attributed to an enrollment. */
+export interface EnrollmentActor {
+  sub: string;
+  username?: string;
 }
 
 export class DeviceIdentityManager {
@@ -105,7 +113,8 @@ export class DeviceIdentityManager {
    */
   public createEnrollmentChallenge(
     permissions: Permission[] = [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH],
-    ttlSeconds: number = 120
+    ttlSeconds: number = 120,
+    actor?: EnrollmentActor
   ): { challengeToken: string; expiresAt: number; uri: string } {
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 3600) {
       throw new Error('Enrollment challenge TTL must be an integer between 1 and 3600 seconds');
@@ -119,11 +128,13 @@ export class DeviceIdentityManager {
       expiresAt,
       redeemed: false,
       assignedPermissions: [...permissions],
+      ...(actor ? { actor: { sub: actor.sub, ...(actor.username ? { username: actor.username } : {}) } } : {}),
     });
 
     this.audit.record('ENROLLMENT_CHALLENGE_CREATED', {
       expiresAt,
       permissions,
+      ...(actor ? { authorizedBy: 'sso', ssoSub: actor.sub, ssoUsername: actor.username ?? null } : {}),
     });
 
     return { challengeToken, expiresAt, uri };
@@ -185,9 +196,12 @@ export class DeviceIdentityManager {
       permissions: [...challenge.assignedPermissions],
       enrolledAt: now,
       lastSeenAt: now,
+      // Attribution: every later action by this device is attributable to the SSO person who authorized it.
+      ...(challenge.actor ? { ssoSub: challenge.actor.sub, ...(challenge.actor.username ? { ssoUsername: challenge.actor.username } : {}) } : {}),
     };
+    const attribution = challenge.actor ? { ssoSub: challenge.actor.sub, ssoUsername: challenge.actor.username ?? null } : {};
 
-    this.audit.record('DEVICE_ENROLLMENT_COMMITTING', { deviceId, permissions: deviceRecord.permissions }, deviceId);
+    this.audit.record('DEVICE_ENROLLMENT_COMMITTING', { deviceId, permissions: deviceRecord.permissions, ...attribution }, deviceId);
     this.devices.set(deviceId, deviceRecord);
     if (!this.persistState()) {
       this.devices.delete(deviceId);
@@ -195,7 +209,7 @@ export class DeviceIdentityManager {
     }
 
     try {
-      this.audit.record('DEVICE_ENROLLED', { deviceId, permissions: deviceRecord.permissions }, deviceId);
+      this.audit.record('DEVICE_ENROLLED', { deviceId, permissions: deviceRecord.permissions, ...attribution }, deviceId);
     } catch {
       this.devices.delete(deviceId);
       this.persistState();

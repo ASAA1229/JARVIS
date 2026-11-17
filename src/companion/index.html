@@ -196,7 +196,9 @@
             <div class="action-row">
               <button id="btn-create-challenge" class="btn btn-primary">Generate Enrollment Challenge</button>
               <button id="btn-enroll-browser" class="btn btn-secondary">Enroll This Browser (WebCrypto)</button>
+              <a id="btn-sso-login" class="btn btn-secondary hidden" href="/auth/sso/login">Sign in with ASAA SSO</a>
             </div>
+            <p id="sso-status" class="muted" aria-live="polite"></p>
             <div id="challenge-box" class="challenge-box hidden">
               <div class="token-title">Single-Use Enrollment QR / Token (120s TTL)</div>
               <img id="challenge-qr" class="security-qr hidden" alt="Enrollment challenge QR code">
