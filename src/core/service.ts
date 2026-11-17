@@ -1591,7 +1591,7 @@ export class JarvisCoreService {
       throw new Error('Session is not authenticated');
     }
     if (typeof note !== 'string' || note.trim().length < 8 || note.length > 500) {
-      throw new Error('Recovery note must be 8–500 characters');
+      throw new Error('Recovery note must be 8â€“500 characters');
     }
     if (!Array.isArray(reconciledNoEffectSteps) || reconciledNoEffectSteps.length > 20 ||
         reconciledNoEffectSteps.some((id) => typeof id !== 'string' || !id || id.length > 40) ||
