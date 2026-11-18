@@ -53,16 +53,28 @@ export interface IntegrationEventSink {
 
 // ---------------------------------------------------------------- configuration
 
+/** OAuth2 client-credentials settings (Keycloak service account). The secret lives in memory only. */
+export interface ClientCredentialsConfig {
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+}
+
+export const DEFAULT_EVENTS_CLIENT_ID = 'jarvis-events';
+
 export interface AsaaEventsConfig {
   /** Base URL without a trailing slash; events are POSTed to `${baseUrl}/api/v1/integration/events`. */
   baseUrl: string;
-  token: string;
+  /** Static bearer token (fallback). Ignored when `clientCredentials` is set. */
+  token?: string;
+  /** Preferred: obtain short-lived access tokens with the client-credentials grant. */
+  clientCredentials?: ClientCredentialsConfig;
   orgId: string;
 }
 
 export type AsaaEventsConfigResult =
-  | { enabled: true; config: AsaaEventsConfig }
-  | { enabled: false; reason: 'not-configured' | 'incomplete' | 'invalid-url' | 'insecure-url' | 'invalid-org' | 'invalid-token' };
+  | { enabled: true; config: AsaaEventsConfig; warnings?: string[] }
+  | { enabled: false; reason: 'not-configured' | 'incomplete' | 'invalid-url' | 'insecure-url' | 'invalid-org' | 'invalid-token' | 'invalid-client-credentials' };
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -70,9 +82,15 @@ export function readAsaaEventsConfig(env: NodeJS.ProcessEnv = process.env): Asaa
   const url = env.ASAA_EVENTS_URL?.trim() ?? '';
   const token = env.ASAA_EVENTS_TOKEN?.trim() ?? '';
   const orgId = env.ASAA_ORG_ID?.trim() ?? '';
-  const present = [url, token, orgId].filter(Boolean).length;
-  if (present === 0) return { enabled: false, reason: 'not-configured' };
-  if (present < 3) return { enabled: false, reason: 'incomplete' };
+  const tokenUrl = env.ASAA_EVENTS_TOKEN_URL?.trim() ?? '';
+  const clientIdRaw = env.ASAA_EVENTS_CLIENT_ID?.trim() ?? '';
+  const clientSecret = env.ASAA_EVENTS_CLIENT_SECRET?.trim() ?? '';
+  const ccIntent = Boolean(tokenUrl || clientSecret || clientIdRaw);
+  if (!url && !token && !orgId && !ccIntent) return { enabled: false, reason: 'not-configured' };
+  // Credentials: client credentials (token URL + secret) or the static token. A half-configured
+  // client-credentials set never silently falls back to the static token.
+  if (ccIntent && !(tokenUrl && clientSecret)) return { enabled: false, reason: 'incomplete' };
+  if (!url || !orgId || !(ccIntent || token)) return { enabled: false, reason: 'incomplete' };
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -85,8 +103,113 @@ export function readAsaaEventsConfig(env: NodeJS.ProcessEnv = process.env): Asaa
   // HTTPS is required unless the target is this machine.
   if (parsed.protocol !== 'https:' && !LOOPBACK_HOSTS.has(parsed.hostname)) return { enabled: false, reason: 'insecure-url' };
   if (orgId.length > 128 || /[\u0000-\u001f\u007f]/.test(orgId)) return { enabled: false, reason: 'invalid-org' };
-  if (/[\s\u0000-\u001f\u007f]/.test(token)) return { enabled: false, reason: 'invalid-token' };
-  return { enabled: true, config: { baseUrl: parsed.toString().replace(/\/+$/, ''), token, orgId } };
+  const baseUrl = parsed.toString().replace(/\/+$/, '');
+  if (!ccIntent) {
+    if (/[\s\u0000-\u001f\u007f]/.test(token)) return { enabled: false, reason: 'invalid-token' };
+    return { enabled: true, config: { baseUrl, token, orgId } };
+  }
+  let tokenEndpoint: URL;
+  try {
+    tokenEndpoint = new URL(tokenUrl);
+  } catch {
+    return { enabled: false, reason: 'invalid-client-credentials' };
+  }
+  const clientId = clientIdRaw || DEFAULT_EVENTS_CLIENT_ID;
+  if (!['http:', 'https:'].includes(tokenEndpoint.protocol) || tokenEndpoint.username || tokenEndpoint.password || tokenEndpoint.search || tokenEndpoint.hash ||
+      (tokenEndpoint.protocol !== 'https:' && !LOOPBACK_HOSTS.has(tokenEndpoint.hostname)) ||
+      !/^[A-Za-z0-9._:-]{1,128}$/.test(clientId) || clientSecret.length > 512 || /[\s\u0000-\u001f\u007f]/.test(clientSecret)) {
+    return { enabled: false, reason: 'invalid-client-credentials' };
+  }
+  // Client credentials and a static token are mutually exclusive: client credentials win.
+  const warnings = token ? ['ASAA_EVENTS_TOKEN is ignored because client credentials are configured.'] : undefined;
+  return { enabled: true, config: { baseUrl, orgId, clientCredentials: { tokenUrl: tokenEndpoint.toString(), clientId, clientSecret } }, ...(warnings ? { warnings } : {}) };
+}
+
+// ---------------------------------------------------------------- access tokens
+
+/** A token could not be obtained. Treated as transient by the sender: never dead-letters events by itself. */
+export class TokenFetchError extends Error {
+  constructor(readonly category: 'network' | 'status' | 'response') {
+    super(`token fetch failed (${category})`);
+    this.name = 'TokenFetchError';
+  }
+}
+
+const TOKEN_REFRESH_MARGIN_MS = 30_000;
+const TOKEN_DEFAULT_TTL_SECONDS = 60;
+const TOKEN_MAX_RESPONSE_CHARS = 64 * 1024;
+
+/**
+ * OAuth2 client-credentials token source (client_secret_basic). Tokens are cached in memory until
+ * about 30 s before they expire (from `expires_in`; the JWT is not parsed) and concurrent requests
+ * share one fetch. The client secret and the token are never logged or persisted.
+ */
+export class ClientCredentialsTokenSource {
+  private cached: { token: string; refreshAt: number } | undefined;
+  private inFlight: Promise<string> | undefined;
+
+  constructor(
+    private readonly credentials: ClientCredentialsConfig,
+    private readonly options: { fetchImpl?: typeof fetch; now?: () => number; timeoutMs?: number } = {},
+  ) {}
+
+  invalidate(): void {
+    this.cached = undefined;
+  }
+
+  async get(forceRefresh = false): Promise<string> {
+    const now = (this.options.now ?? Date.now)();
+    if (!forceRefresh && this.cached && now < this.cached.refreshAt) return this.cached.token;
+    if (forceRefresh) this.cached = undefined;
+    if (!this.inFlight) {
+      this.inFlight = this.fetchToken().finally(() => { this.inFlight = undefined; });
+    }
+    return this.inFlight;
+  }
+
+  private async fetchToken(): Promise<string> {
+    const { tokenUrl, clientId, clientSecret } = this.credentials;
+    const basic = Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`, 'utf8').toString('base64');
+    let response: Response;
+    try {
+      response = await (this.options.fetchImpl ?? fetch)(tokenUrl, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Authorization: `Basic ${basic}` },
+        body: 'grant_type=client_credentials',
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 5_000),
+      });
+    } catch {
+      throw new TokenFetchError('network');
+    }
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new TokenFetchError('network');
+    }
+    if (!response.ok) throw new TokenFetchError('status');
+    let parsed: unknown;
+    try {
+      if (text.length > TOKEN_MAX_RESPONSE_CHARS) throw new Error('too large');
+      parsed = JSON.parse(text);
+    } catch {
+      throw new TokenFetchError('response');
+    }
+    const body = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+    const accessToken = body.access_token;
+    const tokenType = body.token_type;
+    if (typeof accessToken !== 'string' || !accessToken || accessToken.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(accessToken) ||
+        (typeof tokenType === 'string' && tokenType.toLowerCase() !== 'bearer')) {
+      throw new TokenFetchError('response');
+    }
+    const expiresIn = typeof body.expires_in === 'number' && Number.isFinite(body.expires_in) && body.expires_in > 0 ? body.expires_in : TOKEN_DEFAULT_TTL_SECONDS;
+    const ttlMs = expiresIn * 1000;
+    const issuedAt = (this.options.now ?? Date.now)();
+    // Refresh ~30 s early; very short-lived tokens are refreshed at half their lifetime instead.
+    this.cached = { token: accessToken, refreshAt: issuedAt + ttlMs - Math.min(TOKEN_REFRESH_MARGIN_MS, ttlMs / 2) };
+    return accessToken;
+  }
 }
 
 // ---------------------------------------------------------------- envelope building
@@ -256,6 +379,7 @@ export class AsaaEventProducer implements IntegrationEventSink {
   private timer: ReturnType<typeof setInterval> | undefined;
   private flushing: Promise<void> | undefined;
   private warnedPersistence = false;
+  private tokenSource: ClientCredentialsTokenSource | undefined;
 
   constructor(private readonly options: ProducerOptions) {
     this.config = options.config;
@@ -268,6 +392,9 @@ export class AsaaEventProducer implements IntegrationEventSink {
     this.backoffMax = options.backoffMaxMs ?? 15 * 60_000;
     this.timeoutMs = options.timeoutMs ?? 5_000;
     this.flushIntervalMs = options.flushIntervalMs ?? 5_000;
+    if (this.config?.clientCredentials) {
+      this.tokenSource = new ClientCredentialsTokenSource(this.config.clientCredentials, { fetchImpl: this.fetchImpl, now: this.now, timeoutMs: this.timeoutMs });
+    }
     if (this.config) this.load();
   }
 
@@ -278,6 +405,7 @@ export class AsaaEventProducer implements IntegrationEventSink {
       // Misconfiguration is reported once, without echoing any configured value.
       console.warn(`[JARVIS] ASAA event producer disabled: ${result.reason}.`);
     }
+    if (result.enabled) for (const warning of result.warnings ?? []) console.warn(`[JARVIS] ${warning}`);
     return new AsaaEventProducer({
       config: result.enabled ? result.config : null,
       disabledReason: result.enabled ? undefined : result.reason,
@@ -455,15 +583,19 @@ export class AsaaEventProducer implements IntegrationEventSink {
    * 2xx and 409 (already delivered) are success. 5xx, 408, 429 and network or timeout errors are
    * retried with backoff. Every other response, including redirects (never followed, so the
    * bearer token cannot be forwarded) and other 4xx, is permanent.
+   *
+   * With client credentials: failing to obtain a token is transient (retry), and a 401 refreshes the
+   * token once and re-sends; a second 401 is also a retry (an operational credential problem, not an
+   * invalid event), so events are never dead-lettered because of authentication alone.
    */
   private async send(config: AsaaEventsConfig, envelope: AsaaEventEnvelope): Promise<'delivered' | 'retry' | 'permanent'> {
-    try {
+    const post = async (bearer: string): Promise<number> => {
       const response = await this.fetchImpl(`${config.baseUrl}${EVENTS_PATH}`, {
         method: 'POST',
         redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.token}`,
+          Authorization: `Bearer ${bearer}`,
           'X-Request-ID': envelope.correlationId ?? envelope.id,
         },
         body: JSON.stringify(envelope),
@@ -471,9 +603,33 @@ export class AsaaEventProducer implements IntegrationEventSink {
       });
       // Drain nothing sensitive; the body is never logged.
       void response.body?.cancel().catch(() => undefined);
-      if (response.status >= 200 && response.status < 300) return 'delivered';
-      if (response.status === 409) return 'delivered';
-      if (response.status >= 500 || response.status === 408 || response.status === 429) return 'retry';
+      return response.status;
+    };
+    try {
+      let status: number;
+      if (this.tokenSource) {
+        let bearer: string;
+        try {
+          bearer = await this.tokenSource.get();
+        } catch {
+          return 'retry';
+        }
+        status = await post(bearer);
+        if (status === 401) {
+          try {
+            bearer = await this.tokenSource.get(true);
+          } catch {
+            return 'retry';
+          }
+          status = await post(bearer);
+          if (status === 401) return 'retry';
+        }
+      } else {
+        status = await post(config.token ?? '');
+      }
+      if (status >= 200 && status < 300) return 'delivered';
+      if (status === 409) return 'delivered';
+      if (status >= 500 || status === 408 || status === 429) return 'retry';
       return 'permanent';
     } catch {
       return 'retry';
