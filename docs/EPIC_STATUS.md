@@ -20,3 +20,14 @@
 **Update 2026-11-15 (documentation owner):** epic development labels are rendered from `reports/epic-criteria.json` (committed in 72965d7): 4 COMPLETE AND VERIFIED (JAR-E02, E03, E07, E08), 5 PARTIALLY COMPLETE (E01, E04, E06, E09, E10), 1 BLOCKED BY EXTERNAL DEPENDENCY (E05). Scope of that file: local automated verification only; no GitHub Actions run observed, no physical device or owner acceptance. JAR-E05 stays BLOCKED (two physical phones). US-003 revoke-all and US-025 metrics are still in progress and are not marked done.
 
 **Reconciled 2026-11-15 (documentation owner):** development, testing, integration and acceptance columns updated to the verified evidence in PROJECT_STATUS.md. Local evidence is not CI evidence (no GitHub Actions run observed; `gh` unauthenticated) and nothing here is CI VERIFIED.
+
+
+---
+
+## 2026-11-19 discovery reconciliation note
+
+Sets 1–12 are complete; all questions were answered “all of the above.” These are candidate requirements only. Existing status rows and evidence remain authoritative and are not upgraded by questionnaire answers. New cross-cutting domains to map: architecture/integration; data governance; security/privacy; CI/CD/infrastructure; quality engineering and acceptance. Requirement-to-epic/story/task/evidence mapping, ownership, dependencies, prioritization and acceptance criteria remain pending.
+
+
+## Project-specific pending work carried forward (not a status promotion)
+Re-run exact-head CI after DAG hardening; verify physical MSI Windows voice/microphone/wake-word behavior; complete two-Android-phone per-device session acceptance; measure physical false-accept/false-reject voice rates; resolve remaining Notepad E2E environment sensitivity; complete owner-labelled retrieval corpus/thresholds; verify Jenkins/Nexus only with authorized live infrastructure; finish owner acceptance and release gates.
