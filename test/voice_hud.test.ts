@@ -1,11 +1,12 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { freePort } from './helpers/freePort.js';
 import assert from 'node:assert';
 import { VoiceManager, SpeechState } from '../src/voice/voiceManager.ts';
 import { JarvisServer } from '../src/server/server.ts';
 import { rmSync, existsSync, readFileSync } from 'node:fs';
 
-const TEST_AUDIT_LOG = './data/test_voice_audit.log';
-const TEST_PORT = 3988;
+const TEST_AUDIT_LOG = `./data/test_voice_audit_${process.pid}.log`;
+const TEST_PORT = await freePort();
 
 describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routing', () => {
   let voiceManager: VoiceManager;
@@ -112,7 +113,7 @@ describe('JARVIS Milestone 7: Voice Privacy, Push-to-Talk Lifecycle & HUD Routin
 
     const setupScript = readFileSync('scripts/setup-local-wake-word.ps1', 'utf8');
     assert.match(setupScript, /onnxruntime-web@1\.20\.1/);
-    assert.match(setupScript, /npm ci --prefix \$runtimeRoot/);
+    assert.match(setupScript, /npm install --prefix \$runtimeRoot/);
     assert.match(setupScript, /package-lock\.json/);
     assert.match(setupScript, /multi_jarvis_v9\.3\.zip/);
     assert.match(setupScript, /8002ba9a14d80c0f71447920d3f1c8ee986b1432/);

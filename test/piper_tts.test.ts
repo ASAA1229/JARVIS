@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_PIPER_AUDIO_BYTES,
+  createConfiguredPiperProvider,
   validatePiperWav,
 } from '../src/voice/piperTts.ts';
 
@@ -46,4 +47,15 @@ test('Piper WAV validation rejects truncated chunk payloads', () => {
 test('Piper WAV validation rejects empty audio samples and oversized output', () => {
   assert.match(validatePiperWav(makeWav(Buffer.alloc(0))) ?? '', /incomplete WAV layout/i);
   assert.match(validatePiperWav(Buffer.alloc(MAX_PIPER_AUDIO_BYTES + 1)) ?? '', /size/i);
+});
+
+
+test('Piper provider is unavailable when neither executable nor model is configured', () => {
+  assert.equal(createConfiguredPiperProvider({}), null);
+  assert.equal(createConfiguredPiperProvider({ JARVIS_PIPER_EXECUTABLE: '  ', JARVIS_PIPER_MODEL: '' }), null);
+});
+
+test('Piper provider rejects incomplete configuration', () => {
+  assert.throws(() => createConfiguredPiperProvider({ JARVIS_PIPER_EXECUTABLE: 'piper' }), /Configure both/i);
+  assert.throws(() => createConfiguredPiperProvider({ JARVIS_PIPER_MODEL: 'voice.onnx' }), /Configure both/i);
 });

@@ -6,7 +6,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { Permission, RiskTier, TaskState } from '../src/core/types.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
-const auditPath = './data/test_rejection_permissions.log';
+const auditPath = `./data/test_rejection_permissions_${process.pid}.log`;
 
 function enrollSession(
   jarvis: JarvisCoreService,

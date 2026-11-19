@@ -1,21 +1,99 @@
-import { spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
+import { createServer } from 'node:net';
 
-const port = 3998;
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once('error', reject);
+  probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+
+const port = await freePort();
 const ownerToken = 'browser-e2e-owner-token-2026-0123456789abcdef';
 const stamp = String(Date.now());
 const statePath = `./data/browser-smoke-devices-${stamp}.json`;
 const auditPath = `./data/browser-smoke-audit-${stamp}.log`;
 const baseUrl = `http://127.0.0.1:${port}`;
+
+// ---- Browser selection -------------------------------------------------------------------------------
+// The browser E2E is a REQUIRED gate. It is never skipped: if no candidate can be launched, the run fails
+// and the per-candidate diagnostics (exit code, stderr, raw launch probe) are written to BROWSER_DIAG_DIR.
+// Candidate order: explicit BROWSER_PATH/EDGE_PATH, Playwright's own chromium-headless-shell
+// (installed with "npx playwright-core install chromium-headless-shell", honours PLAYWRIGHT_BROWSERS_PATH),
+// then installed Microsoft Edge / Google Chrome. Under a service account (LocalSystem, session 0) Edge can exit
+// immediately (observed exit code 1002), which is why the bundled headless shell is tried as well.
+const diagDir = path.resolve(process.env.BROWSER_DIAG_DIR || 'test-results/browser-smoke');
+const browserTemp = path.resolve(process.env.BROWSER_TEMP_DIR || path.join('.jenkins-temp', 'browser'));
+mkdirSync(diagDir, { recursive: true });
+mkdirSync(browserTemp, { recursive: true });
+// Playwright creates its throw-away user-data-dir under os.tmpdir(); keep it inside the workspace, never the
+// (possibly unwritable or shared) systemprofile temp directory.
+process.env.TEMP = browserTemp;
+process.env.TMP = browserTemp;
+
+const programFiles = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+const installedBrowsers = (relativePaths) => programFiles
+  .flatMap((root) => relativePaths.map((relative) => path.join(root, relative)))
+  .filter((candidate) => existsSync(candidate));
+const explicitPath = process.env.BROWSER_PATH || process.env.EDGE_PATH;
 const browserCandidates = [
-  process.env.EDGE_PATH,
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-].filter(Boolean);
-const edgePath = browserCandidates.find((candidate) => existsSync(candidate));
-if (!edgePath) throw new Error('Microsoft Edge executable was not found on the Windows CI runner');
+  ...(explicitPath ? [{ name: 'explicit (BROWSER_PATH/EDGE_PATH)', executablePath: explicitPath, headlessFlags: ['--headless=new'] }] : []),
+  { name: 'playwright chromium-headless-shell', executablePath: undefined, headlessFlags: [] },
+  ...installedBrowsers(['Microsoft/Edge/Application/msedge.exe']).map((executablePath) => ({ name: 'Microsoft Edge', executablePath, headlessFlags: ['--headless=new'] })),
+  ...installedBrowsers(['Google/Chrome/Application/chrome.exe']).map((executablePath) => ({ name: 'Google Chrome', executablePath, headlessFlags: ['--headless=new'] })),
+];
+const browserLaunchArgs = [
+  '--disable-gpu',
+  '--disable-dev-shm-usage',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--use-fake-device-for-media-stream',
+  '--use-fake-ui-for-media-stream',
+];
+const launchDiagnostics = { startedAt: new Date().toISOString(), node: process.version, platform: process.platform, user: process.env.USERNAME, temp: browserTemp, attempts: [] };
+
+function rawLaunchProbe(candidate) {
+  // Direct launch without Playwright so the real exit code and stderr of the browser are captured.
+  if (!candidate.executablePath) return undefined;
+  const profile = path.join(browserTemp, `raw-probe-${Date.now()}`);
+  try {
+    const result = spawnSync(candidate.executablePath, [
+      ...candidate.headlessFlags, '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+      `--user-data-dir=${profile}`, '--dump-dom', 'about:blank',
+    ], { encoding: 'utf8', timeout: 45_000, windowsHide: true });
+    return { status: result.status, signal: result.signal, error: result.error?.message, stderr: (result.stderr || '').slice(0, 4000), stdoutHead: (result.stdout || '').slice(0, 200) };
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+}
+
+async function launchBrowser() {
+  for (const candidate of browserCandidates) {
+    const attempt = { name: candidate.name, executablePath: candidate.executablePath || '(playwright-managed)' };
+    launchDiagnostics.attempts.push(attempt);
+    try {
+      const launched = await chromium.launch({
+        ...(candidate.executablePath ? { executablePath: candidate.executablePath } : {}),
+        headless: true,
+        timeout: 60_000,
+        args: browserLaunchArgs,
+      });
+      attempt.result = 'launched';
+      attempt.version = launched.version();
+      console.log(`BROWSER_USED: ${candidate.name} ${attempt.version} (${attempt.executablePath})`);
+      return launched;
+    } catch (error) {
+      attempt.result = 'failed';
+      attempt.error = String(error?.message || error).slice(0, 6000);
+      attempt.rawProbe = rawLaunchProbe(candidate);
+      console.error(`BROWSER_LAUNCH_FAILED: ${candidate.name} (${attempt.executablePath}): ${String(error?.message || error).split('\n')[0]}`);
+    }
+  }
+  return undefined;
+}
 
 let stdout = '';
 let stderr = '';
@@ -23,7 +101,7 @@ let child;
 let browser;
 
 async function waitForServer() {
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 240; attempt++) {
     if (child.exitCode !== null) throw new Error(`JARVIS server exited early.\n${stdout}\n${stderr}`);
     try {
       const response = await fetch(`${baseUrl}/api/status`);
@@ -56,11 +134,10 @@ try {
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   await waitForServer();
 
-  browser = await chromium.launch({
-    executablePath: edgePath,
-    headless: true,
-    args: ['--disable-gpu', '--no-first-run', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
-  });
+  browser = await launchBrowser();
+  if (!browser) {
+    throw new Error(`No browser could be launched (tried ${browserCandidates.map((candidate) => candidate.name).join(', ') || 'none'}). See ${path.join(diagDir, 'browser-launch-diagnostics.json')}. Install one with: npx playwright-core install chromium-headless-shell`);
+  }
   const context = await browser.newContext();
   const pageErrors = [];
   const consoleErrors = [];
@@ -519,6 +596,17 @@ try {
       }),
     });
   });
+  // The HUD reconciles approval cards with the server's pending tasks (GET /api/tasks) and drops cards the server does not
+  // know. This fixture mocks /api/request, so model the server-side pending approval for that exact task; otherwise the card
+  // is removed by the next reconciliation at a timing-dependent moment (seen as 0 cards under the headless shell).
+  let wakeApproveCalls = 0;
+  await hud.route('**/api/tasks', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tasks: [{
+      id: 'local-wake-same-utterance-test', approvalId: 'local-wake-approval-test', state: 'AWAITING_APPROVAL', requestText: 'open Notepad',
+    }] }) });
+  });
+  await hud.route('**/api/approval/approve', async (route) => { wakeApproveCalls += 1; await route.abort(); });
   const wakeRecognizerIndex = await hud.evaluate(() => window.__mockRecognizers.length);
   // A wake event can legitimately be ignored while JARVIS is speaking or inside
   // its post-speech feedback guard. Model repeated detector frames until the
@@ -558,9 +646,21 @@ try {
   if (wakeRequestCount !== 1 || wakeRequestText !== 'open Notepad') {
     throw new Error(`Local wake flow dispatched ${wakeRequestCount} requests with text "${wakeRequestText}" instead of one normalized "open Notepad" request`);
   }
-  if (await hud.locator('#hud-approvals-slot .hud-approval-card').count() !== 1) {
-    throw new Error('The local-wake command did not remain behind the explicit on-screen approval gate');
+  // The approval card renders asynchronously after the AWAITING CONSENT banner; wait for it instead of racing a count.
+  await hud.locator('#hud-appr-local-wake-approval-test').waitFor({ state: 'visible', timeout: 5000 });
+  // Earlier mocked sections can leave their own cards until the next pending-approval sync, so assert on this command's card by id.
+  const approvalCards = await hud.locator('#hud-appr-local-wake-approval-test').count();
+  if (approvalCards !== 1) {
+    throw new Error(`The local-wake command did not remain behind the explicit on-screen approval gate (approval cards: ${approvalCards})`);
   }
+  // Let reconciliation run; the pending card must survive it and nothing may have been approved or executed.
+  await hud.locator('#btn-refresh-tasks').click().catch(() => {});
+  await hud.waitForTimeout(1500);
+  if (wakeApproveCalls !== 0 || (await hud.locator('#hud-appr-local-wake-approval-test').count()) !== 1) {
+    throw new Error('Wake command left the approval gate (approve calls: ' + wakeApproveCalls + ')');
+  }
+  await hud.unroute('**/api/tasks');
+  await hud.unroute('**/api/approval/approve');
   await hud.unroute('**/api/request');
   await hud.locator('#allow-wake-browser-speech').uncheck();
   await hud.locator('#btn-hands-free-toggle').click();
@@ -698,6 +798,12 @@ try {
   console.error(stderr);
   process.exitCode = 1;
 } finally {
+  try {
+    launchDiagnostics.finishedAt = new Date().toISOString();
+    writeFileSync(path.join(diagDir, 'browser-launch-diagnostics.json'), JSON.stringify(launchDiagnostics, null, 2));
+  } catch (error) {
+    console.error('Could not write browser diagnostics:', error);
+  }
   if (browser) await browser.close().catch(() => {});
   if (child && child.exitCode === null) {
     child.kill();

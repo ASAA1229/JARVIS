@@ -9,7 +9,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { isDeniedRepoPath, resolveInsideRepo, type RepoConnection } from './repoRegistry.js';
+import { DEFAULT_PR_BASE, PROMOTION_ONLY_BASES, isDeniedRepoPath, resolveInsideRepo, type RepoConnection } from './repoRegistry.js';
 import { redactSecrets } from './secrets.js';
 
 const MAX_TREE_ENTRIES = 400;
@@ -222,30 +222,65 @@ export async function pushBranch(repo: RepoConnection): Promise<{ branch: string
   return { branch, remoteCommit, localCommit };
 }
 
-/** Pull-request draft text only — nothing is opened remotely. Always targets dev. */
-export async function draftPullRequest(repo: RepoConnection, title?: string): Promise<{ base: string; head: string; title: string; body: string }> {
+export interface PullRequestOptions {
+  /** Explicit base branch for this PR; defaults to the repository's configured base, then `new`. */
+  base?: string;
+  /** Explicit, owner-approved promotion path: required to target main/dev/etc. */
+  promotion?: boolean;
+}
+
+/** Resolve and validate the PR base. main/dev/etc. are refused unless the promotion flag is set. */
+export function resolvePrBase(repo: Pick<RepoConnection, 'prBase'>, options: PullRequestOptions = {}): string {
+  const base = String(options.base ?? repo.prBase ?? DEFAULT_PR_BASE).trim();
+  if (!isValidBranchName(base)) throw new Error(`"${base}" is not a valid pull-request base branch name.`);
+  if (PROMOTION_ONLY_BASES.has(base.toLowerCase()) && options.promotion !== true) {
+    throw new Error(`"${base}" is a promotion target, not a routine pull-request base. Target "${DEFAULT_PR_BASE}", or set the explicit promotion flag for an owner-approved promotion PR.`);
+  }
+  return base;
+}
+
+/** Pull-request draft text only — nothing is opened remotely. Targets the configured base (default `new`). */
+export async function draftPullRequest(repo: RepoConnection, title?: string, options: PullRequestOptions = {}): Promise<{ base: string; head: string; title: string; body: string }> {
+  const base = resolvePrBase(repo, options);
   const head = await currentBranch(repo);
   assertWritableBranch(head);
-  const range = (await runGit(repo, ['rev-parse', '--verify', 'origin/dev'])).code === 0 ? 'origin/dev..HEAD' : 'dev..HEAD';
+  const range = (await runGit(repo, ['rev-parse', '--verify', `origin/${base}`])).code === 0 ? `origin/${base}..HEAD` : `${base}..HEAD`;
   const commits = (await runGit(repo, ['log', '--oneline', '--no-decorate', range])).stdout.trim();
   const stat = (await runGit(repo, ['diff', '--stat', range.replace('..HEAD', '...HEAD')])).stdout.trim();
   const prTitle = String(title ?? '').trim().slice(0, 120) || commits.split('\n')[0]?.replace(/^[a-f0-9]+\s+/, '') || `Changes from ${head}`;
   const body = redactSecrets([
-    '## Summary', '', commits ? commits.split('\n').map((line) => `- ${line}`).join('\n') : '- (no commits ahead of dev)', '',
+    '## Summary', '', commits ? commits.split('\n').map((line) => `- ${line}`).join('\n') : `- (no commits ahead of ${base})`, '',
     '## Files changed', '', '```', stat || '(none)', '```', '',
     '## Checklist', '', '- [ ] Tests run and results recorded', '- [ ] No secrets or generated artifacts committed', '',
-    `Base: dev · Head: ${head} (draft prepared by JARVIS; not opened remotely)`,
+    `Base: ${base} · Head: ${head} (draft prepared by JARVIS; not opened remotely)`,
   ].join('\n'));
-  return { base: 'dev', head, title: redactSecrets(prTitle), body };
+  return { base, head, title: redactSecrets(prTitle), body };
 }
 
 /** Read-only CI status via the GitHub CLI when available. */
-export async function ciStatus(repo: RepoConnection): Promise<{ available: boolean; runs: string }> {
+/** Reduces `gh run list --json` output to runs for exactly one commit; runs for other commits are never reported as this commit's CI. */
+export function runsForCommit(stdout: string, sha: string): { runs: string; matched: number; otherCommitRuns: number } {
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('A full 40-character commit SHA is required.');
+  let parsed: unknown;
+  try { parsed = JSON.parse(stdout); } catch { return { runs: 'GitHub CLI returned unreadable run data.', matched: 0, otherCommitRuns: 0 }; }
+  const list = Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : [];
+  const exact = list.filter((run) => run.headSha === sha);
+  const lines = exact.slice(0, 10).map((run) => `${String(run.status ?? 'unknown')}/${String(run.conclusion || 'pending')}  ${String(run.name ?? 'run').slice(0, 80)}  ${String(run.url ?? '').slice(0, 200)}`);
+  return { runs: lines.join('\n'), matched: exact.length, otherCommitRuns: list.length - exact.length };
+}
+
+/** CI evidence is bound to the exact HEAD commit: runs for earlier commits are counted but never presented as current. */
+export async function ciStatus(repo: RepoConnection): Promise<{ available: boolean; commit: string; runs: string; matchedCommit: boolean }> {
   const branch = await currentBranch(repo);
+  const head = await runGit(repo, ['rev-parse', 'HEAD']);
+  const sha = head.code === 0 ? head.stdout.trim() : '';
   return new Promise((resolvePromise) => {
-    execFile('gh', ['run', 'list', '--branch', branch, '--limit', '5'], { cwd: repo.path, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error) resolvePromise({ available: false, runs: redactSecrets(String(stderr || 'GitHub CLI (gh) is unavailable or not authenticated.').trim().slice(0, 400)) });
-      else resolvePromise({ available: true, runs: redactSecrets(String(stdout).trim().slice(0, 8000)) });
+    execFile('gh', ['run', 'list', '--branch', branch, '--limit', '30', '--json', 'headSha,status,conclusion,name,url'], { cwd: repo.path, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) return resolvePromise({ available: false, commit: sha, matchedCommit: false, runs: redactSecrets(String(stderr || 'GitHub CLI (gh) is unavailable or not authenticated.').trim().slice(0, 400)) });
+      if (!/^[0-9a-f]{40}$/.test(sha)) return resolvePromise({ available: true, commit: sha, matchedCommit: false, runs: 'The current commit could not be determined.' });
+      const result = runsForCommit(String(stdout), sha);
+      const note = result.matched === 0 ? `No CI run exists for commit ${sha.slice(0, 12)}${result.otherCommitRuns ? ` (${result.otherCommitRuns} run(s) for other commits were ignored)` : ''}.` : result.runs;
+      resolvePromise({ available: true, commit: sha, matchedCommit: result.matched > 0, runs: redactSecrets(note) });
     });
   });
 }
@@ -253,12 +288,14 @@ export async function ciStatus(repo: RepoConnection): Promise<{ available: boole
 // ---------------- approval-gated remote PR and project script runs ----------------
 
 /**
- * Open a pull request on GitHub with the GitHub CLI. Always base `dev`; the head
- * must be a pushed feature branch (never main/master/dev). Fixed argument array,
+ * Open a pull request on GitHub with the GitHub CLI. The base defaults to `new`
+ * (or the repository's configured base) and main/dev need the explicit promotion
+ * flag; the head must be a pushed feature branch (never main/master/dev). Fixed argument array,
  * no shell. The result is confirmed with `gh pr view` rather than trusted.
  */
-export async function createPullRequest(repo: RepoConnection, title?: string): Promise<{ url: string; base: 'dev'; head: string; title: string }> {
-  const draft = await draftPullRequest(repo, title);
+export async function createPullRequest(repo: RepoConnection, title?: string, options: PullRequestOptions = {}): Promise<{ url: string; base: string; head: string; title: string }> {
+  const draft = await draftPullRequest(repo, title, options);
+  const base = draft.base;
   const head = draft.head;
   assertWritableBranch(head);
   const upstream = await runGit(repo, ['rev-parse', '--verify', `origin/${head}`]);
@@ -267,7 +304,7 @@ export async function createPullRequest(repo: RepoConnection, title?: string): P
     execFile('gh', args, { cwd: repo.path, timeout: 60_000, windowsHide: true, encoding: 'utf8', env: { ...process.env, GH_PROMPT_DISABLED: '1' } },
       (error, stdout, stderr) => resolvePromise({ code: error ? Number((error as { code?: number }).code ?? 1) || 1 : 0, stdout: String(stdout), stderr: String(stderr) }));
   });
-  const created = await gh(['pr', 'create', '--base', 'dev', '--head', head, '--title', draft.title, '--body', draft.body]);
+  const created = await gh(['pr', 'create', '--base', base, '--head', head, '--title', draft.title, '--body', draft.body]);
   if (created.code !== 0) {
     throw new Error(`gh pr create failed: ${redactSecrets(created.stderr.trim()).slice(0, 400) || 'GitHub CLI unavailable or not authenticated.'}`);
   }
@@ -275,12 +312,12 @@ export async function createPullRequest(repo: RepoConnection, title?: string): P
   let url = '';
   try {
     const parsed = JSON.parse(view.stdout) as { url?: string; baseRefName?: string; headRefName?: string };
-    if (parsed.baseRefName !== 'dev' || parsed.headRefName !== head) throw new Error('mismatch');
+    if (parsed.baseRefName !== base || parsed.headRefName !== head) throw new Error('mismatch');
     url = String(parsed.url ?? '');
   } catch {
-    throw new Error('The pull request command finished, but JARVIS could not confirm a PR from this branch into dev.');
+    throw new Error(`The pull request command finished, but JARVIS could not confirm a PR from this branch into ${base}.`);
   }
-  return { url, base: 'dev', head, title: draft.title };
+  return { url, base, head, title: draft.title };
 }
 
 /** Project scripts the assistant may run (by name, from the repo's own package.json). */

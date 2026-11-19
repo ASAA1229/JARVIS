@@ -56,10 +56,11 @@ Status terms:
 | Text-document RAG | IMPLEMENTED — NEEDS TESTING | Adversarial corpus, retrieval relevance, isolation, deletion and index rebuild tests |
 | PDF/DOCX parsing and opt-in local OCR | IMPLEMENTED — NEEDS TESTING (source documented) | Parser fuzzing, size/ZIP-bomb limits, OCR tool absence/timeouts and citation tests |
 | Android companion | IMPLEMENTED — NEEDS TESTING | Debug build, install, enrollment and independent two-phone acceptance |
-| macOS/Linux/iOS | NOT IMPLEMENTED / NOT ACCEPTED | Native adapters, permission model, package and device-specific test evidence |
+| macOS/Linux | IMPLEMENTED — NOT TESTED | Adapters exist behind the fail-closed contract (commit c97ee83), mocked runner only; physical-machine permission, Wayland and version-drift acceptance needed |
+| iOS | NOT IMPLEMENTED / NOT ACCEPTED | Swift client, permission model, package and device-specific test evidence |
 | Cross-device sync and offline queue | PARTIAL | Durable queue semantics, conflict/replay/revocation and network interruption acceptance |
 | Plugins, workflow templates and developer assistant | PARTIAL | Capability-level permissions, untrusted manifest tests and repository isolation |
-| Release provenance and offline verification tools | IMPLEMENTED — NEEDS TESTING | Exact-head artifact, signing/trust and clean-room verification |
+| Release provenance and offline verification tools | TEST PASSED (local) | Ed25519 signed bundle with clean-room verification and tamper tests (local keys); exact-head CI, production key and customer-environment verification pending |
 | Jenkins/Nexus operational integration | DESIGN / BLOCKED | Approved endpoints, credentials, artifact contract and owner approval |
 
 ## 4. POC acceptance path

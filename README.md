@@ -17,7 +17,7 @@ The project is intended to evolve into a cross-platform personal AI operating sy
 
 ## Current implementation boundary
 
-The shared core is a Node.js 24 / TypeScript modular monolith. The primary host adapter is Windows-focused and an Android companion exists. macOS, Linux desktop adapters and iOS are target platforms, not currently accepted implementations. Android build/two-phone acceptance, target-Windows voice/automation acceptance and exact-head release validation require separate evidence.
+The shared core is a Node.js 24 / TypeScript modular monolith. The primary host adapter is Windows-focused and an Android companion exists. macOS and Linux desktop adapters exist behind the fail-closed contract but are IMPLEMENTED — NOT TESTED (mocked runner, no hardware); iOS is not implemented. None is an accepted implementation. Android build/two-phone acceptance, target-Windows voice/automation acceptance and exact-head release validation require separate evidence.
 
 The concurrent workflow DAG executor is integrated with the live workflow route, isolated child tasks, policy approvals, encrypted checkpoints, audit and outcome verification; exact-head CI and crash/restart acceptance are still required. Learning quality metrics are connected to the ranked retriever and a versioned synthetic benchmark; representative owner-labelled evaluation and regression thresholds remain outstanding. Document RAG and PDF/DOCX/local OCR parser sources exist; their adversarial, relevance, deletion and real-environment acceptance remain separate gates.
 

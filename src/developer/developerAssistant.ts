@@ -17,6 +17,7 @@ import { RepoRegistry, parseScopes, type RepoConnection, type RepoScope } from '
 import {
   applyDiff, assertSafeDiff, ciStatus, commitChanges, createBranch, createPullRequest, draftPullRequest,
   gitBranches, gitDiff, gitLog, gitStatus, grepRepo, listTree, pushBranch, readRepoFile, runProjectScript,
+  type PullRequestOptions,
 } from './repoTools.js';
 import { containsSecret, redactSecrets } from './secrets.js';
 
@@ -39,6 +40,14 @@ const MAX_CONTEXT_CHARS = 24_000;
 
 import { DEVELOPER_OPERATIONS, isDeveloperOperation, type DeveloperOperation } from './operations.js';
 export { DEVELOPER_OPERATIONS, isDeveloperOperation, type DeveloperOperation };
+
+/** Pull-request options from operation parameters; `promotion` must be literally true (owner-approved path). */
+function prOptions(parameters: Record<string, unknown>): PullRequestOptions {
+  return {
+    ...(parameters.base ? { base: String(parameters.base) } : {}),
+    promotion: parameters.promotion === true,
+  };
+}
 
 function ok(data: unknown, evidence: Record<string, unknown> = {}): ExecutionResult {
   return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data, evidence: { developerAssistant: true, ...evidence } };
@@ -181,7 +190,7 @@ export class DeveloperAssistant {
     try {
       switch (operation) {
         case 'dev:repo_connect': {
-          const connection = this.repos.connect(String(parameters.name ?? ''), String(parameters.path ?? ''), parseScopes(String(parameters.scopes ?? '')));
+          const connection = this.repos.connect(String(parameters.name ?? ''), String(parameters.path ?? ''), parseScopes(String(parameters.scopes ?? '')), parameters.prBase ? String(parameters.prBase) : undefined);
           return ok(connection, { repo: connection.name, scopes: connection.scopes });
         }
         case 'dev:repo_disconnect': {
@@ -261,7 +270,7 @@ export class DeveloperAssistant {
         }
         case 'dev:pr_draft': {
           const repo = this.repo(parameters, 'read');
-          return ok(await draftPullRequest(repo, parameters.title ? String(parameters.title) : undefined), { repo: repo.name, openedRemotely: false });
+          return ok(await draftPullRequest(repo, parameters.title ? String(parameters.title) : undefined, prOptions(parameters)), { repo: repo.name, openedRemotely: false });
         }
         case 'dev:ci_status': {
           const repo = this.repo(parameters, 'ci');
@@ -269,9 +278,9 @@ export class DeveloperAssistant {
           return status.available ? ok(status, { repo: repo.name }) : fail(status.runs, { repo: repo.name, ciAvailable: false });
         }
         case 'dev:pr_create': {
-          // Remote side effect: approval-gated by policy; base is always dev.
+          // Remote side effect: approval-gated by policy; base defaults to `new`, main/dev need parameters.promotion === true.
           const repo = this.repo(parameters, 'git-write');
-          const pr = await createPullRequest(repo, parameters.title ? String(parameters.title) : undefined);
+          const pr = await createPullRequest(repo, parameters.title ? String(parameters.title) : undefined, prOptions(parameters));
           return ok(pr, { repo: repo.name, base: pr.base, head: pr.head, verifiedBy: 'gh pr view base/head match' });
         }
         case 'dev:run_script': {

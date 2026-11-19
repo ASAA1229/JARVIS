@@ -4,7 +4,7 @@ export const DEVELOPER_OPERATIONS = [
   'dev:git_status', 'dev:git_log', 'dev:git_diff', 'dev:explain', 'dev:suggest_change',
   'dev:suggestion_list', 'dev:apply_suggestion', 'dev:branch_create', 'dev:commit', 'dev:push',
   'dev:pr_draft', 'dev:ci_status',
-  // Approval-gated remote PR (base dev only), project script runs, history, doc drafts.
+  // Approval-gated remote PR (base `new` by default; promotion bases need an explicit flag), project script runs, history, doc drafts.
   'dev:pr_create', 'dev:run_script', 'dev:history', 'dev:doc_suggest',
 ] as const;
 

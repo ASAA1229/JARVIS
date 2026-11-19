@@ -250,7 +250,7 @@ PRs #63/#64 are merged into `new`; local lint, build, tests, browser smoke, Pyth
 - Jenkins: approved controller/agent, pipeline definition, credentials, immutable build-identity inputs (customer/product/version/release coordinates).
 - Nexus: repository key/format, canonical path hierarchy, auth contract, trust-anchor distribution, retention/immutability policy and explicit publish authorization for each digest.
 - Devices: the MSI Windows 11 microphone/STT/wake acceptance run and two physical Android phones (build, install, enroll, revoke, offline/reconnect).
-- Signing: `MANIFEST_IGNORE_PRIVATE_KEY` / `MANIFEST_IGNORE_PUBLIC_KEY` repository secrets for release signatures.
+- Signing: `JARVIS_RELEASE_SIGNING_KEY` (private PEM, environment only) and `JARVIS_RELEASE_PUBLIC_KEY` for `scripts/release-bundle.mjs`; `MANIFEST_IGNORE_PRIVATE_KEY` / `MANIFEST_IGNORE_PUBLIC_KEY` repository secrets for release signatures.
 - Owner acceptance of performance budgets (provisional values live in `scripts/perf-soak.ts`).
 
 ### Backup and restore tool
@@ -270,3 +270,8 @@ After a restart, branches that were dispatched become `uncertain` and are never 
 Use signed `POST /api/documents/ingest-file` with `sourceName`, canonical base64 `documentBase64`, optional `title`, and optional boolean `ocr`. The request body limit is 21 MiB; the decoded file limit is 15 MB. The response reports format and extraction method (`text`, `ocr`, or `text+ocr`).
 
 DOCX needs no external parser. For PDF text extraction install Poppler so `pdftotext` is on PATH. For scanned PDFs, also install `pdftoppm` and Tesseract (`tesseract`) on the JARVIS host; set `ocr: true` explicitly. These tools run locally. No cloud OCR is configured. OCR currently recognizes English and at most 20 pages, a 3-minute processing budget and 100 MB aggregate raster-output cap; normal PDF text extraction supports at most 30 pages. If local tools are missing, PDF ingestion fails with an actionable error rather than returning an empty index.
+
+
+## Voice synthesis note (2026-11-15)
+
+Commits bc7dd7a and 28e7ebb make the Piper TTS path report "unavailable" when Piper is not configured instead of failing, with a test for the unconfigured fallback. Piper has not been exercised on the target MSI hardware.

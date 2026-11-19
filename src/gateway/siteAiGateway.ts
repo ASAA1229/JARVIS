@@ -16,6 +16,7 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AuditLogger } from '../audit/audit.js';
 import type { PublicSiteClient, SiteClientStore } from './siteClientStore.js';
 
@@ -80,6 +81,19 @@ export function toAnthropicMessages(messages: ChatMessage[]): { system: string; 
 function anthropicFinish(reason: unknown): string | undefined {
   if (typeof reason !== 'string') return undefined;
   return reason === 'max_tokens' ? 'length' : 'stop';
+}
+
+/** Correlation header shared across the ASAA ecosystem; a valid incoming value is reused, otherwise one is generated. */
+export const REQUEST_ID_HEADER = 'x-request-id';
+export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{8,64}$/;
+const requestContext = new AsyncLocalStorage<{ requestId: string }>();
+
+export function resolveRequestId(header: string | string[] | undefined): string {
+  return typeof header === 'string' && REQUEST_ID_PATTERN.test(header) ? header : randomUUID();
+}
+
+function currentRequestId(): string | undefined {
+  return requestContext.getStore()?.requestId;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -215,7 +229,10 @@ export class SiteAiGateway {
 
   start(port: number): Promise<number> {
     this.server = createServer((req, res) => {
-      void this.handle(req, res).catch((error: unknown) => {
+      // Every response (success, error, stream) echoes the correlation id; audit entries record it.
+      const requestId = resolveRequestId(req.headers[REQUEST_ID_HEADER]);
+      res.setHeader('X-Request-ID', requestId);
+      void requestContext.run({ requestId }, () => this.handle(req, res)).catch((error: unknown) => {
         sendError(res, error instanceof HttpError ? error : new HttpError(500, 'Internal gateway error.', 'server_error'));
       });
     });
@@ -239,7 +256,7 @@ export class SiteAiGateway {
   private audit(event: string, details: Record<string, unknown>): void {
     // Audit is mandatory: if it cannot be written, refuse service (fail closed).
     try {
-      this.options.audit.record(event, details);
+      this.options.audit.record(event, { ...details, requestId: currentRequestId() ?? null });
     } catch {
       throw new HttpError(503, 'Gateway audit log is unavailable; request refused.', 'server_error');
     }
@@ -358,6 +375,7 @@ export class SiteAiGateway {
           turnCount: request.messages.length,
           inputChars: request.messages.reduce((sum, message) => sum + message.content.length, 0),
           outputChars, durationMs: Date.now() - started, clientDisconnected: clientGone,
+          requestId: currentRequestId() ?? null,
         });
       } catch { /* the request already completed; the next request will fail closed */ }
       try {

@@ -5,8 +5,8 @@ import { AuditLogger } from '../src/audit/audit.js';
 import { DeviceRecord, DeviceStatus, Permission, RiskTier } from '../src/core/types.js';
 import { PolicyGateway } from '../src/policy/gateway.js';
 
-const auditPath = './data/test_policy_gateway.log';
-const grantPath = './data/test_policy_gateway_grants.json';
+const auditPath = `./data/test_policy_gateway_${process.pid}.log`;
+const grantPath = `./data/test_policy_gateway_grants_${process.pid}.json`;
 
 function makeDevice(id: string): DeviceRecord {
   return {

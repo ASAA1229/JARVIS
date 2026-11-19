@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { freePort } from './helpers/freePort.js';
 import { after, before, test } from 'node:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { JarvisServer } from '../src/server/server.js';
 import { CryptoUtil } from '../src/crypto/crypto.js';
 import { Permission } from '../src/core/types.js';
 
-const PORT = 3987;
+const PORT = await freePort();
 let server: JarvisServer;
 let dir: string;
 const previousToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;

@@ -15,6 +15,8 @@ export type PlatformOperation = 'app:launch' | 'desktop:list_windows' | 'desktop
 export interface PlatformAdapterInfo {
   platform: DesktopPlatform;
   implemented: boolean;
+  /** True only after physical-device acceptance. Never set by code or unit tests. */
+  hardwareVerified?: boolean;
   /** Operations this adapter can actually execute. Empty for unsupported platforms. */
   supportedOperations: readonly PlatformOperation[];
   /** What native work remains before this platform can be accepted. */
@@ -76,9 +78,12 @@ export function platformFromNode(nodePlatform: string): DesktopPlatform | undefi
 export function selectPlatformAdapter(
   nodePlatform: string,
   windowsExecutor: ConstructorParameters<typeof WindowsPlatformAdapter>[0],
+  native?: { macos?: DesktopPlatformAdapter; linux?: DesktopPlatformAdapter },
 ): DesktopPlatformAdapter {
   const platform = platformFromNode(nodePlatform);
   if (platform === 'windows') return new WindowsPlatformAdapter(windowsExecutor);
-  if (platform === 'macos' || platform === 'linux') return new UnsupportedPlatformAdapter(platform);
+  // Native adapters are opt-in injections (see nativeAdapters.ts); without one the contract fails closed.
+  if (platform === 'macos') return native?.macos ?? new UnsupportedPlatformAdapter('macos');
+  if (platform === 'linux') return native?.linux ?? new UnsupportedPlatformAdapter('linux');
   throw new Error(`Unsupported host platform: ${nodePlatform}.`);
 }

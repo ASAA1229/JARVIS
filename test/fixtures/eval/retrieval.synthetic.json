@@ -1,0 +1,22 @@
+{
+  "name": "synthetic-retrieval-v1",
+  "version": "1.0.0",
+  "synthetic": true,
+  "corpus": [
+    { "id": "wake-consent", "text": "The wake phrase starts capture only after the owner has granted microphone consent in the HUD." },
+    { "id": "backup-restore", "text": "Backup archives hold encrypted state files; restore verifies the HMAC before writing anything." },
+    { "id": "dag-recovery", "text": "After a restart in-flight workflow branches become uncertain and are never replayed automatically." },
+    { "id": "sbom-signing", "text": "Release bundles contain the artifact, SBOM and checksums signed with an Ed25519 key." },
+    { "id": "ollama-models", "text": "Local language models run through Ollama on loopback with a configurable embedding model." },
+    { "id": "android-pairing", "text": "Android companions enroll with a one-time challenge and sign every request with their device key." }
+  ],
+  "queries": [
+    { "query": "microphone consent wake phrase", "relevant": ["wake-consent"] },
+    { "query": "restore backup HMAC verification", "relevant": ["backup-restore"] },
+    { "query": "workflow branches after restart replayed", "relevant": ["dag-recovery"] },
+    { "query": "Ed25519 signed release checksums", "relevant": ["sbom-signing"] },
+    { "query": "Ollama embedding model loopback", "relevant": ["ollama-models"] },
+    { "query": "enroll Android device challenge signed requests", "relevant": ["android-pairing"] },
+    { "query": "quantum spaceship pastry recipe", "relevant": [] }
+  ]
+}

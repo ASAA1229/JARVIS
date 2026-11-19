@@ -66,6 +66,7 @@ async function main() {
       },
     });
     await gateway.start(port);
+    server.setAiGatewayRunning(true);
     console.log(`✅ JARVIS site AI gateway is listening on http://${requestedHost}:${port}/v1 (site keys: npm run site-key -- list)`);
   }
 }

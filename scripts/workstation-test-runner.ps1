@@ -48,7 +48,7 @@ if ($windowsBuild -or $windowsTests) {
     if (-not $npm) {
         Add-Result "Windows Node tasks" "npm" 127 0 "BLOCKED" "npm was not found on PATH."
     } elseif (-not $nodeModules) {
-        Add-Result "Windows Node tasks" "npm scripts" 2 0 "BLOCKED" "node_modules is absent. Review the lockfile and local changes, then run npm ci explicitly."
+        Add-Result "Windows Node tasks" "npm scripts" 2 0 "BLOCKED" "node_modules is absent. Review the lockfile and local changes, then run npm install explicitly."
     } elseif ($windowsBuild) {
         Invoke-Checked "Windows TypeScript build" "npm" @("run","build") $repoRoot
     } else {

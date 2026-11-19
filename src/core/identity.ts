@@ -18,6 +18,14 @@ export interface EnrollmentChallenge {
   expiresAt: number;
   redeemed: boolean;
   assignedPermissions: Permission[];
+  /** SSO identity that authorized this challenge (when issued through ASAA SSO); recorded on the enrolled device. */
+  actor?: EnrollmentActor;
+}
+
+/** Verified single sign-on identity attributed to an enrollment. */
+export interface EnrollmentActor {
+  sub: string;
+  username?: string;
 }
 
 export class DeviceIdentityManager {
@@ -105,7 +113,8 @@ export class DeviceIdentityManager {
    */
   public createEnrollmentChallenge(
     permissions: Permission[] = [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH],
-    ttlSeconds: number = 120
+    ttlSeconds: number = 120,
+    actor?: EnrollmentActor
   ): { challengeToken: string; expiresAt: number; uri: string } {
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 3600) {
       throw new Error('Enrollment challenge TTL must be an integer between 1 and 3600 seconds');
@@ -119,11 +128,13 @@ export class DeviceIdentityManager {
       expiresAt,
       redeemed: false,
       assignedPermissions: [...permissions],
+      ...(actor ? { actor: { sub: actor.sub, ...(actor.username ? { username: actor.username } : {}) } } : {}),
     });
 
     this.audit.record('ENROLLMENT_CHALLENGE_CREATED', {
       expiresAt,
       permissions,
+      ...(actor ? { via: 'sso', ssoSub: actor.sub, ssoUsername: actor.username ?? null } : {}),
     });
 
     return { challengeToken, expiresAt, uri };
@@ -185,9 +196,12 @@ export class DeviceIdentityManager {
       permissions: [...challenge.assignedPermissions],
       enrolledAt: now,
       lastSeenAt: now,
+      // Attribution: every later action by this device is attributable to the SSO person who authorized it.
+      ...(challenge.actor ? { ssoSub: challenge.actor.sub, ...(challenge.actor.username ? { ssoUsername: challenge.actor.username } : {}) } : {}),
     };
+    const attribution = challenge.actor ? { ssoSub: challenge.actor.sub, ssoUsername: challenge.actor.username ?? null } : {};
 
-    this.audit.record('DEVICE_ENROLLMENT_COMMITTING', { deviceId, permissions: deviceRecord.permissions }, deviceId);
+    this.audit.record('DEVICE_ENROLLMENT_COMMITTING', { deviceId, permissions: deviceRecord.permissions, ...attribution }, deviceId);
     this.devices.set(deviceId, deviceRecord);
     if (!this.persistState()) {
       this.devices.delete(deviceId);
@@ -195,7 +209,7 @@ export class DeviceIdentityManager {
     }
 
     try {
-      this.audit.record('DEVICE_ENROLLED', { deviceId, permissions: deviceRecord.permissions }, deviceId);
+      this.audit.record('DEVICE_ENROLLED', { deviceId, permissions: deviceRecord.permissions, ...attribution }, deviceId);
     } catch {
       this.devices.delete(deviceId);
       this.persistState();
@@ -389,6 +403,63 @@ export class DeviceIdentityManager {
     const persisted = this.persistState();
     this.audit.record('DEVICE_REVOKED', { reasonProvided: Boolean(reason), persisted }, deviceId);
     return persisted;
+  }
+
+  /**
+   * Owner-only emergency revoke-all. Every ACTIVE device is revoked and every live session is
+   * invalidated, INCLUDING the caller's, unless `keepSessionId` explicitly names the caller's
+   * current session; then only that device and that single session survive (the caller's other
+   * sessions are still terminated). Persisted before returning; audited with counts only.
+   */
+  public revokeAllDevices(actorDeviceId: DeviceId, options: { keepSessionId?: SessionId; reason?: string } = {}): { success: boolean; revokedDeviceIds: DeviceId[]; sessionsInvalidated: number; error?: string } {
+    if (!this.stateHealthy) return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: 'Identity state is unhealthy.' };
+    const actor = this.devices.get(actorDeviceId);
+    if (!actor || actor.status !== DeviceStatus.ACTIVE || !actor.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('DEVICE_REVOKE_ALL_DENIED', { reason: 'NOT_OWNER_DEVICE' }, actorDeviceId);
+      return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: 'Only an active device-management (owner) device may revoke all devices.' };
+    }
+    const kept = options.keepSessionId ? this.sessions.get(options.keepSessionId) : undefined;
+    if (options.keepSessionId && (!kept || kept.deviceId !== actorDeviceId || !kept.active || kept.expiresAt <= Date.now())) {
+      return { success: false, revokedDeviceIds: [], sessionsInvalidated: 0, error: "keepSessionId must be the caller's own live session." };
+    }
+    const keepActor = Boolean(kept);
+    const now = Date.now();
+    const revoked: DeviceId[] = [];
+    for (const device of this.devices.values()) {
+      if (device.status !== DeviceStatus.ACTIVE) continue;
+      if (keepActor && device.id === actorDeviceId) continue;
+      device.status = DeviceStatus.REVOKED;
+      device.revokedAt = now;
+      revoked.push(device.id);
+    }
+    let invalidated = 0;
+    for (const session of this.sessions.values()) {
+      if (!session.active) continue;
+      if (keepActor && session.id === options.keepSessionId) continue;
+      session.active = false;
+      invalidated += 1;
+    }
+    const pendingEnrollmentsEnded = this.invalidatePendingChallenges('revoke-all');
+    const persisted = this.persistState();
+    this.audit.record('DEVICE_REVOKE_ALL', { pendingEnrollmentsEnded, revokedCount: revoked.length, loginsEnded: invalidated, callerKept: keepActor, reasonProvided: Boolean(options.reason), persisted }, actorDeviceId);
+    return { success: persisted, revokedDeviceIds: revoked, sessionsInvalidated: invalidated, ...(persisted ? {} : { error: 'Revocation could not be persisted.' }) };
+  }
+
+  /**
+   * Consumes every unredeemed, unexpired enrollment challenge (owner-token or SSO issued). Used by
+   * revoke-all and owner recovery so a challenge that leaked before the emergency cannot enroll a
+   * new device afterwards. Returns how many challenges were invalidated.
+   */
+  public invalidatePendingChallenges(reason: string): number {
+    const now = Date.now();
+    let count = 0;
+    for (const challenge of this.challenges.values()) {
+      if (challenge.redeemed || challenge.expiresAt <= now) continue;
+      challenge.redeemed = true;
+      count += 1;
+    }
+    this.audit.record('ENROLLMENT_CHALLENGES_INVALIDATED', { count, reason });
+    return count;
   }
 
   public getDevice(deviceId: DeviceId): DeviceRecord | undefined {
