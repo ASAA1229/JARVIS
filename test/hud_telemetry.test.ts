@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { freePort } from './helpers/freePort.js';
 import { after, before, describe, test } from 'node:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,7 @@ import { JarvisServer } from '../src/server/server.js';
  * these do not prove on-screen rendering or real microphone behavior.
  */
 
-const PORT = 3992;
+const PORT = await freePort();
 let directory: string;
 let server: JarvisServer;
 

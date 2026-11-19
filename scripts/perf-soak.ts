@@ -2,13 +2,14 @@
  * JARVIS-GAP-015: repeatable local performance / soak harness.
  *
  * Usage:  npx tsx scripts/perf-soak.ts [--iterations N] [--soak-seconds S] [--json out.json]
+ *            [--save-baseline file.json] [--baseline file.json --regression-threshold 0.25]
  *
  * Measures latency percentiles, CPU time and memory growth of core in-process paths
  * on THIS machine. It prints measured numbers only; budgets are evaluated against
  * the constants below, which are provisional until baselined on the target MSI box.
  * No network, no external services, no real device or application actions.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, cpus, totalmem, platform, release } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -19,6 +20,7 @@ import { DocumentRagStore } from '../src/memory/documentRagStore.js';
 import { TaskCoordinator } from '../src/core/taskCoordinator.js';
 import { WorkflowBranchExecutor } from '../src/workflows/workflowExecution.js';
 import { VoiceUtteranceGuard } from '../src/voice/utteranceGuard.js';
+import { compareToBaseline, type PerfReport } from '../src/evaluation/perfTrend.js';
 import type { WorkflowStep } from '../src/workflows/workflowStore.js';
 
 const args = process.argv.slice(2);
@@ -26,6 +28,9 @@ const flag = (name: string, fallback: string) => { const i = args.indexOf(name);
 const ITERATIONS = Math.max(10, Number(flag('--iterations', '200')));
 const SOAK_SECONDS = Math.max(0, Number(flag('--soak-seconds', '0')));
 const JSON_OUT = flag('--json', '');
+const BASELINE = flag('--baseline', '');
+const SAVE_BASELINE = flag('--save-baseline', '');
+const REGRESSION_THRESHOLD = Number(flag('--regression-threshold', '0.25'));
 const TOKEN = 'performance-harness-owner-token-0123456789abcdef';
 
 /** Provisional budgets (p95 ms). Replace after baselining on the target hardware. */
@@ -122,6 +127,19 @@ try {
   console.log('process:', JSON.stringify(report.process));
   if (soak) console.log('soak:', JSON.stringify(soak));
   if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
+  if (SAVE_BASELINE) { writeFileSync(SAVE_BASELINE, JSON.stringify(report, null, 2)); console.log(`Baseline saved to ${SAVE_BASELINE}`); }
+  if (BASELINE) {
+    if (!existsSync(BASELINE)) { console.error(`Baseline file not found: ${BASELINE}`); process.exitCode = 2; }
+    else {
+      const trend = compareToBaseline(report as unknown as PerfReport, JSON.parse(readFileSync(BASELINE, 'utf8')) as PerfReport, { threshold: REGRESSION_THRESHOLD });
+      if (!trend.comparable) console.log(`Trend: not comparable - ${trend.reason}`);
+      else {
+        console.table(trend.findings.map((f) => ({ metric: f.metric, baseline: Number.isFinite(f.baseline) ? +f.baseline.toFixed(3) : '-', current: Number.isFinite(f.current) ? +f.current.toFixed(3) : '-', change: f.change, regression: f.regression })));
+        console.log(trend.regression ? `TREND REGRESSION: at least one metric exceeds the ${REGRESSION_THRESHOLD * 100}% threshold.` : 'Trend: no regression against baseline.');
+        if (trend.regression) process.exitCode = 1;
+      }
+    }
+  }
   if (rows.some((r) => r.withinBudget === false) || (soak && (soak.failures as number) > 0)) process.exitCode = 1;
 } finally {
   rmSync(dir, { recursive: true, force: true });

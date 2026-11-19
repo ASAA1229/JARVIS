@@ -39,6 +39,7 @@ import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 import { TaskCoordinator } from './taskCoordinator.js';
+import type { DeviceRevokeReason, IntegrationEventSink } from '../integration/asaaEvents.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
 
@@ -127,6 +128,8 @@ const RETRYABLE_READ_ONLY = new Set([
 ]);
 
 export class JarvisCoreService {
+  /** Optional ecosystem event sink (ASAA events); undefined means standalone and nothing is emitted. */
+  public integrationSink?: IntegrationEventSink;
   public readonly audit: AuditLogger;
   public readonly identity: DeviceIdentityManager;
   public readonly deviceSecurity?: DeviceSecurityService;
@@ -1136,6 +1139,11 @@ export class JarvisCoreService {
         verified: false,
       };
     }
+    if (taskRecord.state === TaskState.COMPLETED || taskRecord.state === TaskState.FAILED) {
+      try {
+        this.integrationSink?.taskFinished({ taskId, operation: opRequest.operation, outcome: String(verification.honestOutcome), failed: taskRecord.state === TaskState.FAILED, actor: this.identity.getDevice(taskRecord.deviceId)?.ssoSub });
+      } catch { /* ecosystem events never affect task handling */ }
+    }
     if (taskRecord.state === TaskState.COMPLETED) {
       this.notifications.push('info', 'task_completed', `Completed and verified: ${opRequest.operation}.`, { taskId, deviceId: taskRecord.deviceId });
     } else if (taskRecord.state === TaskState.FAILED) {
@@ -1583,7 +1591,7 @@ export class JarvisCoreService {
       throw new Error('Session is not authenticated');
     }
     if (typeof note !== 'string' || note.trim().length < 8 || note.length > 500) {
-      throw new Error('Recovery note must be 8–500 characters');
+      throw new Error('Recovery note must be 8â€“500 characters');
     }
     if (!Array.isArray(reconciledNoEffectSteps) || reconciledNoEffectSteps.length > 20 ||
         reconciledNoEffectSteps.some((id) => typeof id !== 'string' || !id || id.length > 40) ||
@@ -1713,8 +1721,10 @@ export class JarvisCoreService {
    * Must be called whenever a device is revoked. Pending approvals, remembered
    * grants, scheduled work and running tasks owned by that device stop immediately.
    */
-  public onDeviceRevoked(deviceId: DeviceId): void {
+  public onDeviceRevoked(deviceId: DeviceId, reason: DeviceRevokeReason = 'unspecified'): void {
+    try { this.integrationSink?.deviceRevoked(reason); } catch { /* ecosystem events never affect revocation */ }
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
+    this.deviceSecurity?.cancelPendingCreatedBy(deviceId);
     const schedules = this.scheduler.cancelForDevice(deviceId);
     // A revoked device's short-lived working context is discarded immediately.
     this.memoryManager?.working.clearDevice(deviceId);
@@ -1795,9 +1805,44 @@ export class JarvisCoreService {
         awaitingApproval: tasks.filter((task) => task.state === TaskState.AWAITING_APPROVAL).length,
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
+        reliability: this.reliabilityMetrics(),
       },
       schedules: { active: this.scheduler.activeCount },
       notifications: this.notifications.size,
+    };
+  }
+
+  /**
+   * Reliability aggregates derived from existing task/outcome records (JARVIS-US-025). Only counts
+   * and rates are returned: no prompts, parameters, ids or message text. The window is the retained
+   * task journal (bounded), not an unbounded history.
+   *
+   * Executed = reached an execution outcome (completed, partial, failed, interrupted, awaiting recovery).
+   * Owner-driven endings (rejected, expired, cancelled) are excluded from both rates.
+   * Crash-free completion rate = 1 - (interrupted or awaiting-recovery) / executed.
+   * Verified-outcome rate = executed tasks whose result is a definitive VERIFIED_SUCCESS or VERIFIED_FAILURE.
+   */
+  public reliabilityMetrics(): {
+    window: 'retained-task-records'; recordsConsidered: number; executedTasks: number; completed: number; interruptedOrRecovery: number;
+    crashFreeCompletionRate: number | null; verifiedDefinitive: number; verifiedSuccess: number; verifiedOutcomeRate: number | null; verifiedSuccessRate: number | null;
+  } {
+    const executedStates = new Set<TaskState>([TaskState.COMPLETED, TaskState.PARTIAL, TaskState.FAILED, TaskState.INTERRUPTED, TaskState.AWAITING_RECOVERY]);
+    let executed = 0, completed = 0, interrupted = 0, definitive = 0, success = 0, considered = 0;
+    for (const task of this.tasks.values()) {
+      considered += 1;
+      if (!executedStates.has(task.state)) continue;
+      executed += 1;
+      if (task.state === TaskState.COMPLETED) completed += 1;
+      if (task.state === TaskState.INTERRUPTED || task.state === TaskState.AWAITING_RECOVERY) interrupted += 1;
+      const outcome = task.result?.outcome;
+      if (outcome === VerificationOutcome.VERIFIED_SUCCESS) { definitive += 1; success += 1; }
+      else if (outcome === VerificationOutcome.VERIFIED_FAILURE) definitive += 1;
+    }
+    const rate = (n: number) => (executed > 0 ? Math.round((n / executed) * 10000) / 10000 : null);
+    return {
+      window: 'retained-task-records', recordsConsidered: considered, executedTasks: executed, completed, interruptedOrRecovery: interrupted,
+      crashFreeCompletionRate: rate(executed - interrupted), verifiedDefinitive: definitive, verifiedSuccess: success,
+      verifiedOutcomeRate: rate(definitive), verifiedSuccessRate: rate(success),
     };
   }
 

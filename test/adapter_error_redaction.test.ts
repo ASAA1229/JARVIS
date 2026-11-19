@@ -6,7 +6,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { Permission, TaskState } from '../src/core/types.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
 
-const auditPath = './data/test_adapter_error_redaction.log';
+const auditPath = `./data/test_adapter_error_redaction_${process.pid}.log`;
 
 afterEach(() => {
   if (existsSync(auditPath)) rmSync(auditPath, { force: true });

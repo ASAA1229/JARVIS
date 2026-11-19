@@ -231,6 +231,34 @@ export class DeviceSecurityService {
     return { deviceId: enrolled.deviceId };
   }
 
+  /**
+   * Cancels every enrollment transaction that has not completed (waiting for a scan or for owner
+   * approval). Used by revoke-all and owner recovery. Returns how many were cancelled.
+   */
+  cancelAllPending(reason: string): number {
+    this.expire();
+    let count = 0;
+    for (const tx of this.transactions.values()) {
+      if (!['WAITING_FOR_SCAN', 'AWAITING_OWNER_AUTHORIZATION'].includes(tx.state)) continue;
+      tx.state = 'CANCELLED';
+      count += 1;
+    }
+    this.audit.record('ENROLLMENT_TRANSACTIONS_CANCELLED', { count, reason });
+    return count;
+  }
+
+  /** Cancels unfinished enrollment transactions created by one (now revoked) device. */
+  cancelPendingCreatedBy(deviceId: string): number {
+    let count = 0;
+    for (const tx of this.transactions.values()) {
+      if (tx.createdBy !== deviceId || !['WAITING_FOR_SCAN', 'AWAITING_OWNER_AUTHORIZATION'].includes(tx.state)) continue;
+      tx.state = 'CANCELLED';
+      count += 1;
+    }
+    if (count > 0) this.audit.record('ENROLLMENT_TRANSACTIONS_CANCELLED', { count, reason: 'creator-revoked' }, deviceId);
+    return count;
+  }
+
   reject(device: DeviceRecord, transactionId: string): boolean { return this.resolve(device, transactionId, 'REJECTED', 'ENROLLMENT_OWNER_REJECTED'); }
   cancel(device: DeviceRecord, transactionId: string): boolean {
     this.requireManage(device);

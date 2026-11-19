@@ -9,6 +9,7 @@ let activeConversationId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  initSso();
   restoreExistingDevice();
   pollStatus();
   setInterval(pollStatus, 3000);
@@ -49,6 +50,41 @@ function setupEventListeners() {
   document.getElementById('input-request').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSendRequest();
   });
+}
+
+// Optional ASAA single sign-on: after a verified sign-in the server redirects back here with a
+// single-use enrollment challenge in the URL fragment (never sent to a server). It is used exactly
+// like an owner-authorized challenge; the device key model is unchanged.
+const SSO_ERRORS = {
+  denied: 'Sign-in was cancelled or denied.',
+  invalid_state: 'The sign-in session expired or did not match this browser. Try again.',
+  invalid_token: 'The identity provider response could not be verified.',
+  mfa_required: 'Authenticator-app verification is required to authorize enrollment.',
+  role_required: 'Your account is not allowed to authorize JARVIS devices.',
+  unavailable: 'Single sign-on is currently unavailable.',
+};
+
+async function initSso() {
+  const status = document.getElementById('sso-status');
+  const button = document.getElementById('btn-sso-login');
+  try {
+    const res = await fetch('/api/sso/status');
+    const info = res.ok ? await res.json() : { enabled: false };
+    if (info.enabled && button) button.classList.remove('hidden');
+  } catch { /* SSO stays hidden when status cannot be read */ }
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const challengeToken = params.get('sso_challenge');
+  const error = params.get('sso_error');
+  if (challengeToken || error) history.replaceState(null, '', window.location.pathname + window.location.search);
+  if (error && status) status.textContent = SSO_ERRORS[error] || SSO_ERRORS.unavailable;
+  if (!challengeToken) return;
+  const expiresAt = Number(params.get('sso_expires'));
+  activeChallenge = { challengeToken, expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 120000 };
+  const box = document.getElementById('challenge-box');
+  const token = document.getElementById('challenge-token');
+  if (token) token.textContent = challengeToken;
+  if (box) box.classList.remove('hidden');
+  if (status) status.textContent = 'Signed in with ASAA SSO. Choose "Enroll This Browser" within two minutes to bind this browser to your identity.';
 }
 
 async function handleCreateChallenge() {

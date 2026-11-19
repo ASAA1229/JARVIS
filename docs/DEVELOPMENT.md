@@ -81,6 +81,8 @@ npm run test:browser
 npm run test:ollama
 ~~~
 
+The Jenkins browser smoke test launches Microsoft Edge in headless mode. The Jenkins agent account must be able to launch Edge and write temporary browser profiles; the pipeline sets `TEMP` and `TMP` to a workspace-local temporary directory for this stage.
+
 Direct Ollama test:
 
 ~~~powershell
@@ -188,6 +190,9 @@ Work is delivered on branch `new`; PRs #63 and #64 (Live DAG hardening and integ
 
 ~~~powershell
 npm run perf -- --iterations 200 --soak-seconds 20 --json perf-report.json   # latency/CPU/RAM harness (GAP-015)
+npm run eval   # offline wake/transcript duplicate and retrieval evaluation on synthetic fixtures (GAP-006/007)
+npm run perf -- --baseline perf/baseline.i5-1235U.json   # trend comparison against the stored baseline (GAP-015)
+node scripts/release-bundle.mjs keygen|create|verify ...   # Ed25519 signed release bundle (GAP-018)
 npm sbom --sbom-format=cyclonedx > sbom.cdx.json; node scripts/sbom-verify.mjs sbom.cdx.json package-lock.json
 npx tsx scripts/state-backup.ts create|verify|restore ...   # owner token from JARVIS_OWNER_CONTROL_TOKEN
 ~~~

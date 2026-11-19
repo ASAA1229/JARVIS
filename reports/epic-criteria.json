@@ -1,0 +1,1760 @@
+{
+  "generatedAt": "2026-11-15",
+  "scope": "Local automated verification only (no GitHub Actions run observed, no physical device or owner acceptance).",
+  "statusVocabulary": [
+    "COMPLETE AND VERIFIED",
+    "IMPLEMENTED — NOT FULLY TESTED",
+    "PARTIALLY COMPLETE",
+    "BLOCKED BY EXTERNAL DEPENDENCY",
+    "NOT IMPLEMENTED",
+    "OBSOLETE"
+  ],
+  "obsoleteCriteria": [],
+  "epics": [
+    {
+      "id": "JAR-E01",
+      "name": "Core runtime and agent architecture",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/agent_contracts.test.ts; test/conversation.test.ts; full suite 547 tests",
+      "note": "Agent contracts, routing and failure handling are verified; integration depth with every tool is partial."
+    },
+    {
+      "id": "JAR-E02",
+      "name": "Workflow orchestration/DAG",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_execution.test.ts; test/workflow_live_dag.test.ts; test/workflow_dag_service_recovery.test.ts",
+      "note": "Locally verified; operational acceptance pending."
+    },
+    {
+      "id": "JAR-E03",
+      "name": "Capability catalogue/safe tools",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/app_catalogue_contract.test.ts; test/app_adapter_contracts.test.ts; test/policy_permission_matrix.test.ts",
+      "note": "Synthetic windows only; real apps pending."
+    },
+    {
+      "id": "JAR-E04",
+      "name": "Windows desktop/developer automation",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/windows_desktop_agent.test.ts; test/native_platform_adapters.test.ts; test/plugin_isolation.test.ts; test/developer_ci_commit_binding.test.ts",
+      "note": "macOS/Linux adapters IMPLEMENTED — NOT TESTED on real hardware."
+    },
+    {
+      "id": "JAR-E05",
+      "name": "Android/per-device sessions",
+      "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+      "evidence": "test/device_session_extra.test.ts; test/android_protocol.test.ts",
+      "note": "Session security verified in software; physical phones required."
+    },
+    {
+      "id": "JAR-E06",
+      "name": "Voice/wake word/audio privacy",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/voice_utterance_guard.test.ts; test/offline_evaluation.test.ts; test/local_cloud_separation.test.ts",
+      "note": "Software level verified; MSI hardware BLOCKED."
+    },
+    {
+      "id": "JAR-E07",
+      "name": "Local/cloud AI/provider integration",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/local_cloud_separation.test.ts; test/provider_router.test.ts; test/ollama_provider.test.ts",
+      "note": "Zero-cost defaults and no-egress-by-default proven locally; live cloud providers intentionally not exercised."
+    },
+    {
+      "id": "JAR-E08",
+      "name": "Security/trust/human approval",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/policy_permission_matrix.test.ts; test/device_session_extra.test.ts; test/privacy_log_exclusion.test.ts",
+      "note": "Locally verified; not an independent security certification."
+    },
+    {
+      "id": "JAR-E09",
+      "name": "CI/CD/Jenkins/Nexus",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/release_bundle_signing.test.ts; test/jenkins_boundary.test.ts; test/sbom_verification.test.ts",
+      "note": "GitHub Actions run not observed; Jenkins/Nexus BLOCKED BY EXTERNAL DEPENDENCY (disabled providers fail closed)."
+    },
+    {
+      "id": "JAR-E10",
+      "name": "Monitoring/audit/recovery/operations",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/monitoring_endpoints.test.ts; test/state_backup_restore.test.ts; test/perf_trend.test.ts",
+      "note": "No real disaster-recovery exercise; budgets provisional."
+    }
+  ],
+  "userStories": [
+    {
+      "id": "JARVIS-US-001",
+      "title": "Enroll independent devices",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Each device generates and protects its own private key.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/companion/deviceCrypto.js; test/e2e_recovery.test.ts E2E-LIVE-01; test/android_protocol.test.ts",
+          "note": "Browser/companion key generation and signing verified in software; hardware-backed key custody on phones not verified."
+        },
+        {
+          "n": 2,
+          "text": "Enrollment requires an owner-authorized transaction and proof of possession.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/e2e_recovery.test.ts (enrollment challenge/redeem, proof of possession); test/device_security.test.ts; test/session_lifecycle_security.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Device permissions are least-privilege and independently revocable.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_session_extra.test.ts (revocation); test/hardening.test.ts SEC-HARD-03; test/policy_permission_matrix.test.ts (permission boundaries)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Unknown, expired, revoked and replayed requests are rejected.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/e2e_recovery.test.ts SEC-API-07; test/hardening.test.ts SEC-HARD-08; test/device_session_extra.test.ts (forged/stale/future sessions, expiry, hostile ids)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Two Android phones can enroll and operate independently.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": "Requires two physical Android phones (GAP-012)",
+          "note": "OWNER ACCEPTANCE PENDING"
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-002",
+      "title": "Approve exact state-changing work",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Default-deny policy evaluates every state-changing operation.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/policy_permission_matrix.test.ts (every allowlisted operation, unknown ops denied)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Approval is single-use, expiry-bound and scope-bound.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/approval_lifecycle.test.ts; test/workflow_dag_service_recovery.test.ts (expiry, replay, race)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Policy is rechecked immediately before dispatch.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/policy_gateway_binding.test.ts; test/remembered_approval.test.ts",
+          "note": "Policy re-evaluated at dispatch through evaluateAndProceed."
+        },
+        {
+          "n": 4,
+          "text": "Model output, voice recognition and plugins cannot grant authority.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/agent_contracts.test.ts; test/document_rag_adversarial.test.ts; test/plugin_isolation.test.ts; test/voice_utterance_guard.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Denial and mismatch are audited without leaking sensitive payloads.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/audit.test.ts; test/privacy_log_exclusion.test.ts; test/approval_lifecycle.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-003",
+      "title": "Revoke and recover a device",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Revocation blocks future requests immediately.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_session_extra.test.ts; test/workflow_dag_service_recovery.test.ts (revoked approver refused)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Active work stops or becomes uncertain and is reconciled.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/hardening.test.ts FLOW-04 (interrupted work uncertain); test/workflow_dag_service_recovery.test.ts; test/sync_durability.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Replacement devices enroll with new keys.",
+          "status": "IMPLEMENTED — NOT FULLY TESTED",
+          "evidence": "src/core/identity.ts enrollment path; test/device_session_extra.test.ts enrolls fresh keys",
+          "note": "No test enrolls a replacement device after a revocation specifically."
+        },
+        {
+          "n": 4,
+          "text": "Other devices remain active unless revoke-all is explicitly selected.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_session_extra.test.ts; test/hardening.test.ts SEC-HARD-03; test/revoke_all_and_reliability.test.ts (explicit owner-only revoke-all via identity.revokeAllDevices and POST /api/device/revoke-all, audited, survives restart)",
+          "note": "Other devices stay active by default; revoke-all requires the confirm phrase and signs out the caller unless keepCurrentSession is true."
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-004",
+      "title": "Use local AI by default",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Provider routing selects local Ollama by default.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/provider_router.test.ts; test/local_cloud_separation.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Remote providers remain unavailable without explicit configuration and task authorization.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/provider_router.test.ts; test/local_cloud_separation.test.ts (API keys alone never enable cloud)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "No private-memory cloud fallback occurs after local failure.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/local_cloud_separation.test.ts (local outage does not fall back); test/provider_router.test.ts (private data local only)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Timeouts, unavailable models and malformed responses are bounded and reported.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/ollama_provider.test.ts; test/agent_contracts.test.ts (timeout/network/http/refusal classification)",
+          "note": "Live Ollama is installed locally; npm run test:ollama exercises it manually."
+        },
+        {
+          "n": 5,
+          "text": "Existing conversation contracts remain stable.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/conversation.test.ts; test/hardening.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-005",
+      "title": "Use specialist agents safely",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Agent outputs are schema-validated and advisory.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/agent_contracts.test.ts (malformed/extra-field/oversized output rejected)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Tool candidates map to registered capabilities.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/agent_contracts.test.ts (unknown and restricted capability ids rejected)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "All actions pass the normal policy/approval/execution path.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/agent_contracts.test.ts (execution directives routed to policy_gateway, model never called); test/policy_permission_matrix.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Malformed, conflicting or injected outputs fail closed.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/agent_contracts.test.ts (injected context labelled untrusted, invalid JSON/contract mismatch fail closed)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-006",
+      "title": "Wake JARVIS locally",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Listening is visibly indicated and can be muted/stopped immediately.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "test/browser-smoke.mjs (voice cancel/discard/mute UI lifecycle)",
+          "note": "Visible indicator verified in a headless browser only."
+        },
+        {
+          "n": 2,
+          "text": "Local wake processing is proven on the MSI, not inferred from a browser mock.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": "Requires the MSI microphone (GAP-004)",
+          "note": "OWNER ACCEPTANCE PENDING"
+        },
+        {
+          "n": 3,
+          "text": "Measure false accepts, false rejects, wake latency, CPU/RAM and performance in quiet/noisy environments.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/evaluation/offlineEval.ts + npm run eval + WakeMetrics counters (test/offline_evaluation.test.ts)",
+          "note": "Real rates need hardware and owner-labelled data."
+        },
+        {
+          "n": 4,
+          "text": "Consent revocation stops capture and discards pending transcript.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/browser-smoke.mjs (consent revocation, discard pending transcript); test/voice_manager.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Wake phrase alone never authorizes consequential actions.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/voice_providers.test.ts (wake phrase returns command text only); test/policy_permission_matrix.test.ts; wake output goes through the normal signed-request path",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-007",
+      "title": "Convert speech into a reviewed command",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Capture, STT, final transcript, intent/parameter extraction and request submission have explicit states.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "test/voice_manager.test.ts; test/browser-smoke.mjs",
+          "note": "States are explicit; full chain on real hardware not verified."
+        },
+        {
+          "n": 2,
+          "text": "Interim hypotheses cannot execute.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/browser-smoke.mjs (interim vs final transcript); test/voice_manager.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Transcript review/explicit submission is enforced where configured.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/browser-smoke.mjs (explicit submission, text fallback)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Recognition errors, empty/ambiguous transcripts, timeouts and cancellation are recoverable.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/browser-smoke.mjs (network/no-speech/abort/permission errors, timeout); test/voice_manager.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "A single utterance cannot create duplicate tasks.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/voice_utterance_guard.test.ts; test/offline_evaluation.test.ts",
+          "note": ""
+        },
+        {
+          "n": 6,
+          "text": "Command parameters and target application are confirmed when ambiguous.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/adapters/windowsAppLauncher.ts ambiguity refusal; test/windows-app-launcher-window-matching.test.ts",
+          "note": "Spoken ambiguity confirmation UX is not separately tested."
+        },
+        {
+          "n": 7,
+          "text": "Authorization and independent outcome verification are identical to typed commands.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/voice_utterance_guard.test.ts (voice requests use /api/request and the same policy path)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-008",
+      "title": "Receive spoken acknowledgement and results",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Target phrase is “Hi sir, I am ready to work”.",
+          "status": "IMPLEMENTED — NOT FULLY TESTED",
+          "evidence": "src/companion/hud.js WAKE_ACKNOWLEDGEMENT",
+          "note": "Constant present; no automated assertion of the spoken text."
+        },
+        {
+          "n": 2,
+          "text": "Local Piper is preferred when installed and configured.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/piper_tts.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Browser speech fallback is disclosed as potentially remote.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/voice_providers.test.ts (diagnostics disclose browser recognizer may be remote); test/local_cloud_separation.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "TTS failure does not affect task correctness or authorization.",
+          "status": "IMPLEMENTED — NOT FULLY TESTED",
+          "evidence": "src/companion/hud.js speakResponse fallbacks",
+          "note": "TTS failure isolation is not asserted by a dedicated test."
+        },
+        {
+          "n": 5,
+          "text": "Audio output can be stopped and is not logged as sensitive content.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "test/voice_endpoint_redaction.test.ts",
+          "note": "Stop control exercised in browser smoke only; target-device audio unverified."
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-009",
+      "title": "Discover and launch approved applications",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Resolve app identity from trusted OS metadata/registered adapters.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/windows-appid-identity.test.ts; test/app_adapter_contracts.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Never launch an ambiguous or untrusted target.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/windows-app-launcher-window-matching.test.ts; test/app_adapter_contracts.test.ts (ambiguous = no selection)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Confirm process/window identity and report launch outcome.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/windows-app-launcher-window-matching.test.ts; test/app_adapter_contracts.test.ts (verified vs partial launch)",
+          "note": "Synthetic windows; real per-app launches pending on the MSI."
+        },
+        {
+          "n": 4,
+          "text": "Respect allowlists, permissions and owner policy.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/policy_permission_matrix.test.ts; test/app_catalogue_contract.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-010",
+      "title": "Interact with application controls",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Verify foreground process/window before every action.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/windows_desktop_agent.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Stop on focus changes, ambiguous controls or inaccessible UI.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/windows_desktop_agent.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Use supported OS accessibility/UI APIs rather than blind coordinates where possible.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/adapters/windowsDesktopAgent.ts (UI Automation)",
+          "note": "No per-app accessibility-API evidence on real apps."
+        },
+        {
+          "n": 4,
+          "text": "Verify the state change independently.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/outcome_verification.test.ts; test/file-verify-saved.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Report unsupported/partial outcomes honestly.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/outcome_verification.test.ts; test/app_catalogue_contract.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-011",
+      "title": "Plan and execute multi-step tasks",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Tasks have durable identity, lifecycle, dependency, deadline and audit references.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/task_journal.test.ts; test/task_coordinator.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Planner output is validated and advisory.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/planner-launch-phrasing.test.ts; test/hardening.test.ts SEC-HARD-05",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Every side effect is authorized and verified.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/outcome_verification.test.ts; test/hardening.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Failed/blocked/uncertain prerequisites prevent dependent execution.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Partial outcomes are visible to the owner.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts; test/hardening.test.ts FLOW-03",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-012",
+      "title": "Execute independent workflow branches safely",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Validate missing dependencies, cycles and duplicate IDs.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_dag_batches.test.ts; test/workflow_execution.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Each branch has isolated task state, approval, attempt count, checkpoint and outcome.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_live_dag.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Branch execution passes the live task service, policy gateway, audit, encrypted journal and outcome verifier.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_live_dag.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Bound concurrency and resource locks prevent races/deadlocks.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/task_coordinator.test.ts; test/workflow_dag_service_recovery.test.ts (lock release on throw/cancel/timeout)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "A failed branch blocks descendants but does not unnecessarily stop unrelated safe branches.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts",
+          "note": ""
+        },
+        {
+          "n": 6,
+          "text": "Cancellation, timeout and restart preserve truthful outcomes.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts; test/workflow_dag_service_recovery.test.ts",
+          "note": ""
+        },
+        {
+          "n": 7,
+          "text": "Uncertain/non-idempotent branches never replay automatically.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_dag_service_recovery.test.ts",
+          "note": "Process kill simulated at journal level."
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-013",
+      "title": "Recover interrupted work",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Persist checkpoint before external side effects.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts (checkpoint failure before execution)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Distinguish no-effect, completed, partial and uncertain.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts; test/task_journal.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Require owner reconciliation where external state cannot be proven.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_dag_service_recovery.test.ts (resumeWorkflowRun)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Retry only with confirmed no-effect or verified idempotency.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_execution.test.ts; test/workflow_dag_service_recovery.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Preserve audit and branch-level approval history.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_live_dag.test.ts (WORKFLOW_BRANCH_APPROVAL_RESOLVED audit); test/workflow_dag_service_recovery.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-014",
+      "title": "Manage personal memory",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Memory has provenance, owner scope, retention and expiry.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/desktop_memory_store.test.ts; test/memory_companion.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Changes are owner-reviewed where required.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_telemetry_lifecycle.test.ts; test/memory_gateway.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Deletion covers primary records and derived indexes/caches where supported and verifies completion.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/memory_deletion_scrub.test.ts; test/state_backup_restore.test.ts (derived deletion)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Cross-device access is permission-bound.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/memory_gateway.test.ts; test/document_rag_adversarial.test.ts (device isolation)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Corrupt state fails closed.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag.test.ts (tamper fails closed); test/learning_telemetry_lifecycle.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-015",
+      "title": "Retrieve useful memories and documents",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Semantic and lexical retrieval are bounded and have deterministic fallback.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag.test.ts (lexical fallback); test/document_rag_adversarial.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Document ingestion validates type, size and ownership.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag.test.ts; test/document_hostile_input.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "PDF/DOCX parsing and OCR are local-only and bounded.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_hostile_input.test.ts; test/document_parser.test.ts",
+          "note": "Poppler/Tesseract mocked; Tesseract absent on this host."
+        },
+        {
+          "n": 4,
+          "text": "Results cite source and chunk.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag.test.ts (source and chunk citations)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Retrieved text is untrusted and cannot instruct JARVIS to execute actions.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag_adversarial.test.ts; test/agent_contracts.test.ts",
+          "note": ""
+        },
+        {
+          "n": 6,
+          "text": "Deletion removes source and derived index entries.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/document_rag.test.ts; test/document_rag_adversarial.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-016",
+      "title": "Measure learning quality",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Capture owner-labelled relevance judgements and helpful/not-helpful feedback.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_quality_evaluator.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Measure Precision@K, Recall@K, MRR, helpful rate, correction rate and candidate acceptance rate.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_quality_evaluator.test.ts; test/offline_evaluation.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Track trends only after a minimum sample threshold.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_quality_evaluator.test.ts (trend only after enough samples)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Establish a baseline evaluation corpus and prevent regression beyond agreed tolerances.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "test/fixtures/learning-retrieval-benchmark.ts; test/fixtures/eval/*.synthetic.json; src/evaluation/offlineEval.ts",
+          "note": "Synthetic corpus only; owner-labelled baseline and tolerances still required."
+        },
+        {
+          "n": 5,
+          "text": "Keep raw prompts, transcripts, memory text and identifiers out of aggregate telemetry.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_quality_evaluator.test.ts (ids not persisted); test/learning_telemetry_lifecycle.test.ts",
+          "note": ""
+        },
+        {
+          "n": 6,
+          "text": "Candidate approval/rejection must remain owner-controlled; metrics cannot auto-promote memory.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/learning_telemetry_lifecycle.test.ts (metrics cannot promote candidates)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-017",
+      "title": "Use two independent Android companions",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Debug/release package builds reproducibly.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": ".github/workflows/android-apk.yml builds a debug APK; no run observed and no device",
+          "note": "Reproducibility unverified."
+        },
+        {
+          "n": 2,
+          "text": "Each phone has independent identity and encrypted local queue.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": "android-app source; hub-side queue test/android_command_queue.test.ts",
+          "note": "Encrypted on-device queue needs a physical phone."
+        },
+        {
+          "n": 3,
+          "text": "Signed request, expiry, replay and revocation checks work.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/android_protocol.test.ts; test/e2e_recovery.test.ts SEC-API-07",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Background polling behavior and limitations are disclosed.",
+          "status": "IMPLEMENTED — NOT FULLY TESTED",
+          "evidence": "docs/OPERATIONS.md polling limitation notes",
+          "note": "No automated assertion."
+        },
+        {
+          "n": 5,
+          "text": "Physical install and two-phone acceptance are recorded.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": "Requires two physical phones (GAP-012)",
+          "note": "OWNER ACCEPTANCE PENDING"
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-018",
+      "title": "Synchronize safely across devices",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Durable bounded queues, TTL, monotonic sequence and replay protection.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/sync_durability.test.ts; test/device_sync.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Device-scoped data and permissions.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_sync.test.ts (revoked and non-owner devices refused)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Explicit conflict resolution; no last-writer-wins.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_sync.test.ts; test/sync_durability.test.ts (conflict survives restart, never overwrites)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Offline state-changing commands remain held for owner decision.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/device_sync.test.ts; test/sync_durability.test.ts (command decided exactly once)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Reconnect, revoked-device and crash recovery tests pass.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/sync_durability.test.ts (crash mid-batch, restart, revocation)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-019",
+      "title": "Use JARVIS across desktop and mobile platforms",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Shared API/contracts and capability negotiation.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/platform/platformAdapters.ts; test/platform_and_repository_contracts.test.ts; capability negotiation in test/device_sync.test.ts",
+          "note": "Shared contract exists; negotiation across all platforms not exercised."
+        },
+        {
+          "n": 2,
+          "text": "Native adapters use platform permissions and secure storage.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "src/platform/nativeAdapters.ts; test/native_platform_adapters.test.ts",
+          "note": "IMPLEMENTED — NOT TESTED on real macOS/Linux hardware; secure storage per platform not implemented."
+        },
+        {
+          "n": 3,
+          "text": "Unsupported capabilities are declared per OS/version.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/capability_registry.test.ts; test/app_catalogue_contract.test.ts; UnsupportedPlatformAdapter in test/platform_and_repository_contracts.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Each platform has automated and physical-device acceptance.",
+          "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+          "evidence": "Physical devices per platform",
+          "note": "OWNER ACCEPTANCE PENDING"
+        },
+        {
+          "n": 5,
+          "text": "No claim of universal support based only on shared UI/API.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/capability_registry.test.ts (planned is never shown as implemented)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-020",
+      "title": "Add integrations safely",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Data-only manifests; no arbitrary plugin code or shell.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/plugin_isolation.test.ts (unknown fields rejected, no code or shell)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Explicit install, grant, revoke and version validation.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/plugin_isolation.test.ts (install/grant/revoke/version rules)",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "All actions use standard policy/approval and audit.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/policy_permission_matrix.test.ts; test/plugin_isolation.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Invalid or injected manifests fail closed.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/plugin_isolation.test.ts (malformed/injected/tampered state)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-021",
+      "title": "Use JARVIS as a developer assistant",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Explicit repository and scope grants.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/developer_assistant.test.ts (repositories require connection and scope)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Secret/runtime/protected paths excluded.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/plugin_isolation.test.ts (protected paths, symlink escape); test/developer_assistant.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Suggestions remain drafts until separately approved.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/developer_assistant_extras.test.ts; test/developer_assistant.test.ts (git writes approval-gated)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Apply, branch, commit and push are distinct operations.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/developer_assistant.test.ts; test/policy_permission_matrix.test.ts (dev:commit and dev:push are separate approval-gated operations)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "CI evidence refers to exact commit SHA.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/developer_ci_commit_binding.test.ts (ciStatus now reports only runs for the exact HEAD SHA)",
+          "note": "Implemented in this sweep; live gh call needs authentication."
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-022",
+      "title": "Produce verifiable releases",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Build provenance, SBOM and SHA-256 inventory.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/artifact-integrity.test.ts; test/sbom_verification.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Trusted signing/manifest policy.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/release_bundle_signing.test.ts; test/policy-signature.test.ts; test/customer-release-verifier.test.ts",
+          "note": "Production key custody is an owner action."
+        },
+        {
+          "n": 3,
+          "text": "Archive/path/symlink/inventory tamper tests.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/artifact-integrity.test.ts; test/release_bundle_signing.test.ts (traversal tar entries)",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Clean-room verification and backup/restore drills.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/release_bundle_signing.test.ts (clean-room); test/state_backup_restore.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Release approval remains owner-controlled.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/release-disposition-gate.test.ts; test/jenkins_boundary.test.ts (publication off by default)",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-023",
+      "title": "Operate and recover JARVIS",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Redacted health/diagnostic events.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/monitoring_endpoints.test.ts; test/hud_telemetry.test.ts; test/adapter_error_redaction.test.ts",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Resource, queue, task and provider health are bounded and observable.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/resource_manager.test.ts; test/task_coordinator.test.ts; test/monitoring_endpoints.test.ts",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Backup/restore is documented and tested.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/state_backup_restore.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Persistence/audit failures fail closed.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/task_journal.test.ts; test/monitoring_endpoints.test.ts (tampered audit blocks execution)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Recovery distinguishes uncertain external effects.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/workflow_dag_service_recovery.test.ts; test/task_journal.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-024",
+      "title": "Protect private data and consent",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "No continuous cloud audio upload by default.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/local_cloud_separation.test.ts (no non-loopback egress by default)",
+          "note": ""
+        },
+        {
+          "n": 2,
+          "text": "Browser STT remote-processing limitations disclosed.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/voice_providers.test.ts; test/local_cloud_separation.test.ts",
+          "note": "Browser recognizer limitation is disclosed in voice capabilities."
+        },
+        {
+          "n": 3,
+          "text": "Prompt/transcript/secret payloads excluded from routine logs.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/privacy_log_exclusion.test.ts",
+          "note": ""
+        },
+        {
+          "n": 4,
+          "text": "Export/deletion/retention semantics are clear.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/memory_export.test.ts; test/memory_deletion_scrub.test.ts; test/state_backup_restore.test.ts (older backups documented limit)",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Cloud use is explicit, scoped and revocable.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/local_cloud_separation.test.ts",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "JARVIS-US-025",
+      "title": "Meet reliability and performance targets",
+      "criteria": [
+        {
+          "n": 1,
+          "text": "Define latency, CPU, RAM, queue wait, timeout and recovery budgets.",
+          "status": "PARTIALLY COMPLETE",
+          "evidence": "scripts/perf-soak.ts provisional budgets",
+          "note": "Owner has not agreed budgets."
+        },
+        {
+          "n": 2,
+          "text": "Run repeated workload and soak tests.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "scripts/perf-soak.ts; test/perf_trend.test.ts; perf/baseline.i5-1235U.json",
+          "note": ""
+        },
+        {
+          "n": 3,
+          "text": "Track crash-free task completion and verified outcome rate.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/revoke_all_and_reliability.test.ts (JarvisCoreService.reliabilityMetrics, exposed as tasks.reliability on the DEVICE_MANAGE-gated GET /api/health)",
+          "note": "Bounded aggregates over retained task records; no prompts or ids; rates are null when there is no data."
+        },
+        {
+          "n": 4,
+          "text": "Test resource exhaustion, queue saturation and provider outage.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "test/task_coordinator.test.ts (queue saturation); test/provider_router.test.ts and test/agent_contracts.test.ts (provider outage); test/resource_manager.test.ts",
+          "note": ""
+        },
+        {
+          "n": 5,
+          "text": "Publish measurements with hardware/software configuration.",
+          "status": "COMPLETE AND VERIFIED",
+          "evidence": "scripts/perf-soak.ts report includes machine and runtime; docs/PROJECT_STATUS.md",
+          "note": ""
+        }
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "n": 1,
+      "section": "2.1",
+      "text": "Preserve existing chat UI, authenticated chat API, conversation IDs, prompt system, agent orchestration and response contracts.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/conversation.test.ts; test/e2e_recovery.test.ts",
+      "note": ""
+    },
+    {
+      "n": 2,
+      "section": "2.1",
+      "text": "Route local inference through the provider abstraction; native Ollama `/api/chat` is primary.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/ollama_provider.test.ts; test/provider_router.test.ts",
+      "note": ""
+    },
+    {
+      "n": 3,
+      "section": "2.1",
+      "text": "Support configurable model, URL, timeout, health/model checks, bounded retry and typed error handling.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/ollama_provider.test.ts",
+      "note": ""
+    },
+    {
+      "n": 4,
+      "section": "2.1",
+      "text": "Preserve streaming where existing callers support it.",
+      "status": "IMPLEMENTED — NOT FULLY TESTED",
+      "evidence": "src/ai/ollamaProvider.ts streaming path",
+      "note": "No dedicated streaming regression test located."
+    },
+    {
+      "n": 5,
+      "section": "2.1",
+      "text": "Keep future provider adapters replaceable without changing business logic.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/provider_router.test.ts",
+      "note": ""
+    },
+    {
+      "n": 6,
+      "section": "2.1",
+      "text": "Treat model output as advisory and validate structured responses.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/agent_contracts.test.ts",
+      "note": ""
+    },
+    {
+      "n": 7,
+      "section": "2.1",
+      "text": "Keep cloud use task-scoped, explicit and privacy-aware.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/local_cloud_separation.test.ts; test/provider_router.test.ts",
+      "note": ""
+    },
+    {
+      "n": 8,
+      "section": "2.2",
+      "text": "Text and consent-controlled voice interaction through the existing HUD.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/browser-smoke.mjs",
+      "note": "Headless browser only; real microphone pending."
+    },
+    {
+      "n": 9,
+      "section": "2.2",
+      "text": "Push-to-talk, transcript review where configured, cancellation, timeout, mute and visible microphone/listening state.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/browser-smoke.mjs; test/voice_manager.test.ts",
+      "note": ""
+    },
+    {
+      "n": 10,
+      "section": "2.2",
+      "text": "Local “Hey Jarvis” wake is the target; explicitly enabled and tested per target device. Measure false accepts, false rejects, wake latency and resource use on actual hardware.",
+      "status": "BLOCKED BY EXTERNAL DEPENDENCY",
+      "evidence": "MSI hardware acceptance (GAP-004)",
+      "note": "OWNER ACCEPTANCE PENDING"
+    },
+    {
+      "n": 11,
+      "section": "2.2",
+      "text": "Target acknowledgement: “Hi sir, I am ready to work.”",
+      "status": "IMPLEMENTED — NOT FULLY TESTED",
+      "evidence": "src/companion/hud.js",
+      "note": "No assertion of the acknowledgement text."
+    },
+    {
+      "n": 12,
+      "section": "2.2",
+      "text": "Optional local Piper TTS; browser speech synthesis fallback. Local TTS does not prove local speech recognition.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/piper_tts.test.ts; browser fallback in hud.js",
+      "note": "Browser fallback not asserted."
+    },
+    {
+      "n": 13,
+      "section": "2.2",
+      "text": "Voice is not strong authentication and cannot independently authorize high-risk actions. End-to-end validation covers microphone, wake, capture, STT, transcript finalization/review, intent/parameter extraction, signed request, policy/approval, execution and independent outcome verification.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/voice_providers.test.ts; test/voice_utterance_guard.test.ts",
+      "note": "Chain on real hardware BLOCKED."
+    },
+    {
+      "n": 14,
+      "section": "2.3",
+      "text": "Discover installed applications and registered capabilities; choose the safest supported official API or UI adapter.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/app_catalogue_contract.test.ts; test/app_adapter_contracts.test.ts",
+      "note": ""
+    },
+    {
+      "n": 15,
+      "section": "2.3",
+      "text": "Launch allowlisted applications and reuse a matching window only when identity is verified.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/windows-app-launcher-window-matching.test.ts",
+      "note": ""
+    },
+    {
+      "n": 16,
+      "section": "2.3",
+      "text": "Verify process/window identity and foreground target before interaction; stop on ambiguity, focus change or inaccessible controls.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/windows_desktop_agent.test.ts",
+      "note": ""
+    },
+    {
+      "n": 17,
+      "section": "2.3",
+      "text": "Support only implemented/tested actions such as selected UI controls, clipboard, keyboard and zoom.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/windows_desktop_agent.test.ts",
+      "note": ""
+    },
+    {
+      "n": 18,
+      "section": "2.3",
+      "text": "Independently verify state-changing outcomes; acknowledgements are not proof of completion.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/outcome_verification.test.ts",
+      "note": ""
+    },
+    {
+      "n": 19,
+      "section": "2.3",
+      "text": "Report unsupported capabilities as unsupported or partial.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/capability_registry.test.ts; test/native_platform_adapters.test.ts",
+      "note": ""
+    },
+    {
+      "n": 20,
+      "section": "2.4",
+      "text": "Track task identity, lifecycle, dependencies, progress, cancellation, deadlines and audit references.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/task_journal.test.ts; test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 21,
+      "section": "2.4",
+      "text": "Planner/agent output is advisory; only trusted capabilities can execute.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/agent_contracts.test.ts",
+      "note": ""
+    },
+    {
+      "n": 22,
+      "section": "2.4",
+      "text": "Every state-changing step passes policy and task/device/operation/parameter-bound approval.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/policy_permission_matrix.test.ts; test/approval_lifecycle.test.ts",
+      "note": ""
+    },
+    {
+      "n": 23,
+      "section": "2.4",
+      "text": "Persist required checkpoints before dependent side effects.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_execution.test.ts",
+      "note": ""
+    },
+    {
+      "n": 24,
+      "section": "2.4",
+      "text": "Stop descendants after failed, blocked, cancelled or uncertain prerequisites.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_execution.test.ts",
+      "note": ""
+    },
+    {
+      "n": 25,
+      "section": "2.4",
+      "text": "Distinguish completed, failed, partial, uncertain, blocked, cancelled and recovery-required outcomes.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/outcome_verification.test.ts",
+      "note": ""
+    },
+    {
+      "n": 26,
+      "section": "2.4",
+      "text": "Treat interrupted external effects as uncertain. Never automatically replay a non-idempotent or uncertain action.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_service_recovery.test.ts",
+      "note": ""
+    },
+    {
+      "n": 27,
+      "section": "2.4",
+      "text": "Retry only after owner-reviewed confirmed-no-effect reconciliation or a verified idempotency contract.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_service_recovery.test.ts",
+      "note": ""
+    },
+    {
+      "n": 28,
+      "section": "2.4",
+      "text": "Scheduling revalidates permission/risk at run time and persists at-most-once state before dispatch.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/scheduler_persistence_security.test.ts; test/scheduler_concurrency.test.ts",
+      "note": ""
+    },
+    {
+      "n": 29,
+      "section": "2.5",
+      "text": "Bound planner and adapter admission, queue lengths and per-device concurrency.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 30,
+      "section": "2.5",
+      "text": "Prioritize interactive work while aging queued work to prevent starvation.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 31,
+      "section": "2.5",
+      "text": "Acquire complete resource lock sets atomically in canonical order.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 32,
+      "section": "2.5",
+      "text": "Release locks/slots on completion, error, cancellation and timeout.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_service_recovery.test.ts; test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 33,
+      "section": "2.5",
+      "text": "Reject duplicate task admission and unsafe re-entrant admission.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/task_coordinator.test.ts",
+      "note": ""
+    },
+    {
+      "n": 34,
+      "section": "2.5",
+      "text": "Validate workflow DAGs for missing dependencies and cycles.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_batches.test.ts",
+      "note": ""
+    },
+    {
+      "n": 35,
+      "section": "2.5",
+      "text": "Concurrent branches are enabled only after full executor/service integration and testing.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_live_dag.test.ts",
+      "note": ""
+    },
+    {
+      "n": 36,
+      "section": "2.5",
+      "text": "Branch approvals must be scoped and revalidated through the normal policy gateway.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_service_recovery.test.ts",
+      "note": ""
+    },
+    {
+      "n": 37,
+      "section": "2.5",
+      "text": "Partial failure blocks descendants but may allow unrelated safe branches to finish.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_execution.test.ts",
+      "note": ""
+    },
+    {
+      "n": 38,
+      "section": "2.5",
+      "text": "No automatic replay of uncertain branches after restart.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_dag_service_recovery.test.ts",
+      "note": ""
+    },
+    {
+      "n": 39,
+      "section": "2.6",
+      "text": "Preserve bounded device/conversation-isolated session context.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/conversation_session_store.test.ts",
+      "note": ""
+    },
+    {
+      "n": 40,
+      "section": "2.6",
+      "text": "Maintain short-lived working memory and encrypted long-term memory.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/desktop_memory_store.test.ts; test/memory_companion.test.ts",
+      "note": ""
+    },
+    {
+      "n": 41,
+      "section": "2.6",
+      "text": "Support categories, provenance, owner review, correction, expiry, export and verified deletion.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/memory_export.test.ts; test/memory_deletion_scrub.test.ts",
+      "note": ""
+    },
+    {
+      "n": 42,
+      "section": "2.6",
+      "text": "Retrieve relevant memory and owner-scoped documents using local semantic/lexical signals; use lexical fallback if embeddings fail.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/document_rag.test.ts; test/memory_semantic_peers.test.ts",
+      "note": ""
+    },
+    {
+      "n": 43,
+      "section": "2.6",
+      "text": "Ingest bounded UTF-8 text documents, deduplicate, chunk with overlap, cite source filename/title/chunk, and support list/search/delete.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/document_rag.test.ts",
+      "note": ""
+    },
+    {
+      "n": 44,
+      "section": "2.6",
+      "text": "Encrypt document content and derived embeddings at rest; isolate documents by authenticated device.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/document_rag.test.ts",
+      "note": ""
+    },
+    {
+      "n": 45,
+      "section": "2.6",
+      "text": "Treat retrieved memory/document text as untrusted, never as system instructions or action authority.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/document_rag_adversarial.test.ts",
+      "note": ""
+    },
+    {
+      "n": 46,
+      "section": "2.6",
+      "text": "PDF/DOCX parsing and opt-in local OCR have implementation documented in the architecture/operations baseline; parser security, relevance, deletion and physical-environment acceptance remain required. Cross-device document sharing remains a separate capability.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/document_hostile_input.test.ts",
+      "note": "Tools mocked; physical-environment acceptance pending."
+    },
+    {
+      "n": 47,
+      "section": "2.6",
+      "text": "Capture feedback/useful facts as encrypted, attributed learning candidates.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/learning_telemetry_lifecycle.test.ts",
+      "note": ""
+    },
+    {
+      "n": 48,
+      "section": "2.6",
+      "text": "Require owner approval before candidates become durable memory.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/learning_telemetry_lifecycle.test.ts",
+      "note": ""
+    },
+    {
+      "n": 49,
+      "section": "2.6",
+      "text": "Never automatically fine-tune model weights.\\n- Measure retrieval quality using owner-labelled relevance judgements, Precision@K, Recall@K, MRR, helpful/correction feedback and learning-candidate acceptance. Establish a versioned baseline corpus and regression thresholds before claiming learning improvement. Metrics must never auto-promote memory or authorize actions.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "No fine-tuning code path exists; test/offline_evaluation.test.ts",
+      "note": "Owner-labelled corpus and baseline still required."
+    },
+    {
+      "n": 50,
+      "section": "2.6",
+      "text": "Define deletion/retention across primary stores, indexes, caches, exports and backups.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/state_backup_restore.test.ts",
+      "note": "Backups and external copies are outside JARVIS control; limits documented."
+    },
+    {
+      "n": 51,
+      "section": "2.6",
+      "text": "When owner control is configured, conversation sessions use encrypted local persistence and restore after restart; sessions expire after about 30 minutes. Without owner control, session history is process-local. Validate the exact configured path and behavior against the deployed build.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/conversation_session_persistence.test.ts",
+      "note": ""
+    },
+    {
+      "n": 52,
+      "section": "2.7",
+      "text": "Independently enroll each phone with distinct key and permissions.",
+      "status": "PARTIALLY COMPLETE",
+      "evidence": "test/device_session_extra.test.ts",
+      "note": "Two-phone independence needs hardware."
+    },
+    {
+      "n": 53,
+      "section": "2.7",
+      "text": "Sign requests; enforce session expiry, replay defense and immediate revocation.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/e2e_recovery.test.ts; test/device_session_extra.test.ts",
+      "note": ""
+    },
+    {
+      "n": 54,
+      "section": "2.7",
+      "text": "Use trusted HTTPS; never expose the main API directly to the public internet.",
+      "status": "IMPLEMENTED — NOT FULLY TESTED",
+      "evidence": "src/server/server.ts binds 127.0.0.1",
+      "note": "No dedicated test of the loopback bind or HTTPS front end."
+    },
+    {
+      "n": 55,
+      "section": "2.7",
+      "text": "Encrypt offline queues at rest; bound size, TTL, sequence and payload.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/sync_durability.test.ts; test/android_command_queue.test.ts",
+      "note": ""
+    },
+    {
+      "n": 56,
+      "section": "2.7",
+      "text": "Revalidate device, permission, age and approval when changes reach the hub.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/device_sync.test.ts",
+      "note": ""
+    },
+    {
+      "n": 57,
+      "section": "2.7",
+      "text": "Detect memory conflicts; no silent last-writer-wins.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/device_sync.test.ts",
+      "note": ""
+    },
+    {
+      "n": 58,
+      "section": "2.7",
+      "text": "Hold offline commands for owner decision; never auto-run on reconnect.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/device_sync.test.ts; test/sync_durability.test.ts",
+      "note": ""
+    },
+    {
+      "n": 59,
+      "section": "2.7",
+      "text": "Peer envelopes must be signed, recipient-bound, expiring and replay-protected.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/device_sync.test.ts",
+      "note": ""
+    },
+    {
+      "n": 60,
+      "section": "2.8",
+      "text": "Plugins are data-only manifests; no executable plugin code or shell.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/plugin_isolation.test.ts",
+      "note": ""
+    },
+    {
+      "n": 61,
+      "section": "2.8",
+      "text": "Install disabled with no grants; grant only allowlisted permissions and revalidate manifests.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/plugin_isolation.test.ts",
+      "note": ""
+    },
+    {
+      "n": 62,
+      "section": "2.8",
+      "text": "Version workflows; every state-changing step uses normal policy/approval.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/workflow_live_dag.test.ts; test/policy_permission_matrix.test.ts",
+      "note": ""
+    },
+    {
+      "n": 63,
+      "section": "2.8",
+      "text": "AI workflow drafts are advisory and cannot run before validation and owner approval.",
+      "status": "IMPLEMENTED — NOT FULLY TESTED",
+      "evidence": "workflow:draft_ai (low risk) and workflow:approve_draft (approval-gated) in src/policy/gateway.ts",
+      "note": "Draft-before-approval ordering is not covered by a dedicated test."
+    },
+    {
+      "n": 64,
+      "section": "2.8",
+      "text": "Developer repository connections are explicitly scoped; secrets, runtime state and protected paths are never read or sent to a model.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/plugin_isolation.test.ts; test/developer_assistant.test.ts",
+      "note": ""
+    },
+    {
+      "n": 65,
+      "section": "2.8",
+      "text": "Code suggestions remain drafts; apply/commit/push require separate scope and approval.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/developer_assistant.test.ts; test/policy_permission_matrix.test.ts",
+      "note": ""
+    },
+    {
+      "n": 66,
+      "section": "2.8",
+      "text": "External communications use supported official APIs or explicitly enabled platform capabilities with risk-appropriate approval and outcome verification.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/comms_and_inventory.test.ts",
+      "note": ""
+    },
+    {
+      "n": 67,
+      "section": "2.8",
+      "text": "Long-term integrations are not claimed implemented without evidence.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/capability_registry.test.ts",
+      "note": ""
+    },
+    {
+      "n": 68,
+      "section": "2.9",
+      "text": "Optional separate OpenAI-compatible text gateway for owner-controlled sites.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/site_ai_gateway.test.ts",
+      "note": ""
+    },
+    {
+      "n": 69,
+      "section": "2.9",
+      "text": "Per-site keys, hash-at-rest, one-time reveal, revocation/rotation and rate/output limits.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/site_ai_gateway.test.ts",
+      "note": ""
+    },
+    {
+      "n": 70,
+      "section": "2.9",
+      "text": "No tools, planner, memory, device control or owner endpoints through the gateway.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/site_ai_gateway.test.ts",
+      "note": ""
+    },
+    {
+      "n": 71,
+      "section": "2.9",
+      "text": "Gateway off unless configured; primary JARVIS API remains loopback-only.",
+      "status": "IMPLEMENTED — NOT FULLY TESTED",
+      "evidence": "src/gateway/siteAiGateway.ts, src/server/server.ts",
+      "note": "Gateway-off-by-default not asserted by a dedicated test."
+    },
+    {
+      "n": 72,
+      "section": "2.10",
+      "text": "Generate build provenance and SHA-256 artifact inventories.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/artifact-integrity.test.ts",
+      "note": ""
+    },
+    {
+      "n": 73,
+      "section": "2.10",
+      "text": "Verify manifest, archive and extracted inventory.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/artifact-integrity.test.ts; test/release_bundle_signing.test.ts",
+      "note": ""
+    },
+    {
+      "n": 74,
+      "section": "2.10",
+      "text": "Authenticate release policy using independently trusted digest or approved Ed25519 signature.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/policy-signature.test.ts; test/customer-release-verifier.test.ts",
+      "note": ""
+    },
+    {
+      "n": 75,
+      "section": "2.10",
+      "text": "Offline Linux/AIX snapshot and compatibility tools are read-only except requested outputs.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "tests/test_environment_snapshot.py; tests/test_compatibility_matrix.py",
+      "note": ""
+    },
+    {
+      "n": 76,
+      "section": "2.10",
+      "text": "Nexus publication remains disabled pending explicit approval and validated repository contract.",
+      "status": "COMPLETE AND VERIFIED",
+      "evidence": "test/jenkins_boundary.test.ts; test/platform_and_repository_contracts.test.ts",
+      "note": ""
+    }
+  ],
+  "summary": {
+    "epics": {
+      "PARTIALLY COMPLETE": 5,
+      "COMPLETE AND VERIFIED": 4,
+      "BLOCKED BY EXTERNAL DEPENDENCY": 1
+    },
+    "userStoryCriteria": {
+      "PARTIALLY COMPLETE": 11,
+      "COMPLETE AND VERIFIED": 106,
+      "BLOCKED BY EXTERNAL DEPENDENCY": 6,
+      "IMPLEMENTED — NOT FULLY TESTED": 4
+    },
+    "requirements": {
+      "COMPLETE AND VERIFIED": 63,
+      "IMPLEMENTED — NOT FULLY TESTED": 5,
+      "PARTIALLY COMPLETE": 7,
+      "BLOCKED BY EXTERNAL DEPENDENCY": 1
+    },
+    "counts": {
+      "epics": 10,
+      "userStoryCriteria": 127,
+      "requirements": 76
+    }
+  }
+}

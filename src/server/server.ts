@@ -33,6 +33,10 @@ import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
 import { providerRouter } from '../ai/providerRouter.js';
 import { OllamaProvider } from '../ai/ollamaProvider.js';
+import { buildServiceManifest } from '../integration/serviceManifest.js';
+import { evaluateRuntimeBudgets, summarizeMeasurements } from '../evaluation/runtimeBudgets.js';
+import { AsaaEventProducer, categorizeAuditFailure } from '../integration/asaaEvents.js';
+import { OidcSso, SsoError, SSO_CALLBACK_PATH, SSO_LOGIN_PATH, readOidcConfig } from '../identity/ssoOidc.js';
 import { AndroidCommandQueue } from '../android/commandQueue.js';
 
 export class JarvisServer {
@@ -101,6 +105,15 @@ export class JarvisServer {
         if (event.type === 'accepted') this.jarvis.audit.record('LAN_PEER_MESSAGE', { peerDeviceId: event.deviceId, type: event.message });
       });
     }
+    const oidc = readOidcConfig(process.env, port);
+    if (oidc.enabled) this.sso = new OidcSso(oidc.config);
+    else if (oidc.reason !== 'not-configured') console.warn(`[JARVIS] ASAA single sign-on disabled: ${oidc.reason}.`);
+    // ASAA ecosystem events: a disabled no-op unless ASAA_EVENTS_URL, ASAA_EVENTS_TOKEN and ASAA_ORG_ID are all set.
+    this.asaaEvents = AsaaEventProducer.fromEnvironment(process.env, { statePath, ownerToken: this.ownerControlToken });
+    if (this.asaaEvents.enabled) {
+      this.jarvis.integrationSink = this.asaaEvents;
+      this.jarvis.audit.onFailClosed = (reason) => this.asaaEvents.auditIntegrityFailed(categorizeAuditFailure(reason));
+    }
     this.server = createServer(this.handleRequest.bind(this));
   }
 
@@ -109,6 +122,10 @@ export class JarvisServer {
       const onListening = () => {
         this.server.off('error', onError);
         this.jarvis.startBackgroundServices();
+        this.asaaEvents.start();
+        // An audit failure that happened before the listener existed (startup verification) is still reported.
+        const startupAuditFailure = this.jarvis.audit.getFailureReason();
+        if (startupAuditFailure) this.asaaEvents.auditIntegrityFailed(categorizeAuditFailure(startupAuditFailure));
         // LAN discovery stays off unless JARVIS_PEER_DISCOVERY=true.
         this.peerDiscovery?.start();
         resolve(this.port);
@@ -132,6 +149,7 @@ export class JarvisServer {
 
   public stop(): Promise<void> {
     this.jarvis.stopBackgroundServices();
+    this.asaaEvents.stop();
     this.peerDiscovery?.stop();
     if (!this.server.listening) return Promise.resolve();
 
@@ -141,6 +159,78 @@ export class JarvisServer {
         else resolve();
       });
     });
+  }
+
+  private readonly asaaEvents: AsaaEventProducer;
+  /** Optional ASAA single sign-on for enrollment authorization (disabled unless JARVIS_OIDC_* is configured). */
+  private readonly sso?: OidcSso;
+  private ssoRedirect(res: ServerResponse, fragment: string, extraHeaders: Record<string, string> = {}): void {
+    res.writeHead(302, { Location: `/companion#${fragment}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...extraHeaders });
+    res.end();
+  }
+
+  private static readonly SSO_COOKIE = 'jarvis_sso';
+
+  /** Starts the OIDC login. The state is also bound to this browser by a short-lived HttpOnly cookie (login CSRF defence). */
+  private async handleSsoLogin(res: ServerResponse): Promise<void> {
+    if (!this.sso) return this.jsonResponse(res, 404, { error: 'Single sign-on is not configured' });
+    try {
+      const login = await this.sso.beginLogin();
+      res.writeHead(302, {
+        Location: login.url,
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${JarvisServer.SSO_COOKIE}=${login.state}; HttpOnly; SameSite=Lax; Path=${SSO_CALLBACK_PATH}; Max-Age=600`,
+      });
+      res.end();
+    } catch {
+      this.jarvis.audit.record('SSO_LOGIN_FAILED', { reason: 'unavailable', stage: 'begin' });
+      return this.jsonResponse(res, 503, { error: 'Single sign-on is currently unavailable' });
+    }
+  }
+
+  /**
+   * OIDC redirect target. On a fully verified sign-in (signature, claims, MFA evidence, required role)
+   * it issues the same single-use enrollment challenge the owner token would, attributed to the SSO
+   * identity, and hands it to the companion page in the URL fragment (never sent to a server).
+   */
+  private async handleSsoCallback(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const clearCookie = { 'Set-Cookie': `${JarvisServer.SSO_COOKIE}=; HttpOnly; SameSite=Lax; Path=${SSO_CALLBACK_PATH}; Max-Age=0` };
+    if (!this.sso) return this.jsonResponse(res, 404, { error: 'Single sign-on is not configured' });
+    const fail = (code: string, reason: string): void => {
+      try { this.jarvis.audit.record('SSO_LOGIN_FAILED', { reason, code }); } catch { /* audit failure already blocks other operations */ }
+      this.ssoRedirect(res, `sso_error=${code}`, clearCookie);
+    };
+    const state = url.searchParams.get('state') ?? '';
+    const code = url.searchParams.get('code') ?? '';
+    const cookie = /(?:^|;\s*)jarvis_sso=([A-Za-z0-9_-]{1,128})/.exec(String(req.headers.cookie ?? ''))?.[1];
+    if (!state || cookie !== state) return fail('invalid_state', 'state_cookie_mismatch');
+    if (url.searchParams.get('error')) {
+      this.sso.completeLogin('', state).catch(() => undefined); // consume the pending state
+      return fail('denied', 'idp_denied');
+    }
+    try {
+      const identity = await this.sso.completeLogin(code, state);
+      const challenge = this.jarvis.identity.createEnrollmentChallenge(
+        [Permission.SYSTEM_INFO_READ, Permission.APP_LAUNCH, Permission.DEVICE_MANAGE], 120, identity,
+      );
+      this.jarvis.audit.record('SSO_LOGIN_SUCCEEDED', { ssoSub: identity.sub, ssoUsername: identity.username ?? null });
+      this.ssoRedirect(res, `sso_challenge=${encodeURIComponent(challenge.challengeToken)}&sso_expires=${challenge.expiresAt}`, clearCookie);
+    } catch (error) {
+      if (error instanceof SsoError) return fail(error.code, error.message.slice(0, 120));
+      return fail('unavailable', 'unexpected');
+    }
+  }
+
+  private aiGatewayRunning = false;
+
+  /** Called by the process entry point once the optional site AI gateway listener is up. */
+  public setAiGatewayRunning(running: boolean): void {
+    this.aiGatewayRunning = running;
+  }
+
+  /** Manifest check value for the ASAA event producer; wired when the producer exists. */
+  private asaaEventsCheck(): 'ok' | 'degraded' | 'down' | 'disabled' {
+    return this.asaaEvents.manifestCheck();
   }
 
   public getService(): JarvisCoreService {
@@ -271,6 +361,21 @@ export class JarvisServer {
       }
 
       // 2. API Routes
+      // ASAA ecosystem service manifest v1: public, secret-free, derived from cached state only
+      // (no network call per probe).
+      if (req.method === 'GET' && url.pathname === '/.well-known/asaa-service') {
+        const local = providerRouter.status().providers.find((item) => item.id === 'local');
+        const manifest = buildServiceManifest({
+          auditIntegrity: this.jarvis.audit.verifyIntegrity().valid,
+          identityState: this.jarvis.identity.isStateHealthy(),
+          ollama: local ? { configured: local.configured, available: local.available } : undefined,
+          aiGatewayRunning: this.aiGatewayRunning,
+          asaaEvents: this.asaaEventsCheck(),
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return this.jsonResponse(res, 200, manifest);
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/status') {
         // Public health response only; never disclose device records, public-key
         // material, task content, or audit internals without an authorized session.
@@ -315,7 +420,7 @@ export class JarvisServer {
         const revoke = (deviceId: string): boolean => {
           if (!this.jarvis.identity.revokeDevice(deviceId, 'Owner recovery')) return false;
           // Same effects as a normal revocation: approvals, schedules, tasks, phone commands.
-          this.jarvis.onDeviceRevoked(deviceId);
+          this.jarvis.onDeviceRevoked(deviceId, 'owner-recovery');
           this.androidCommands.cancelForDevice(deviceId);
           return true;
         };
@@ -351,6 +456,9 @@ export class JarvisServer {
             next: 'Restore durable device-state storage and retry recovery before resetting the authenticator.',
           });
         }
+        // Anything that could still enroll a device (raw challenges, QR transactions) dies with the devices.
+        this.jarvis.identity.invalidatePendingChallenges('owner-recovery');
+        this.jarvis.deviceSecurity.cancelAllPending('owner-recovery');
         const authenticator = this.jarvis.deviceSecurity.ownerResetAuthenticator();
         this.jarvis.audit.record('OWNER_RECOVERY_ALL_DEVICES_REVOKED', { revokedCount: revokedDeviceIds.length, failedCount: 0 });
         return this.jsonResponse(res, 200, {
@@ -358,6 +466,13 @@ export class JarvisServer {
           next: 'Enroll a new device with a NEW key via owner-token bootstrap enrollment (POST /api/enrollment/challenge).',
         });
       }
+
+      // ASAA single sign-on (optional). Whether it is available is public; nothing else is.
+      if (req.method === 'GET' && url.pathname === '/api/sso/status') {
+        return this.jsonResponse(res, 200, { enabled: Boolean(this.sso) });
+      }
+      if (req.method === 'GET' && url.pathname === SSO_LOGIN_PATH) return this.handleSsoLogin(res);
+      if (req.method === 'GET' && url.pathname === SSO_CALLBACK_PATH) return this.handleSsoCallback(req, res, url);
 
       // Create enrollment challenge
       if (req.method === 'POST' && url.pathname === '/api/enrollment/challenge') {
@@ -1376,6 +1491,33 @@ export class JarvisServer {
         return this.jsonResponse(res, 200, { results: this.androidCommands.resultsForRequester(auth.device.id) });
       }
 
+      // Owner-only emergency revoke-all (US-003). Revokes every active device and all live sessions;
+      // the caller survives only when keepCurrentSession is explicitly true.
+      if (req.method === 'POST' && url.pathname === '/api/device/revoke-all') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON body must be an object' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (body.confirm !== 'REVOKE_ALL_DEVICES') return this.jsonResponse(res, 400, { error: 'confirm must equal REVOKE_ALL_DEVICES' });
+        const decision = this.jarvis.policy.evaluate({ operation: 'device:revoke', parameters: {} }, auth.device, `security-${CryptoUtil.randomToken(8)}`);
+        if (!decision.allowed) return this.jsonResponse(res, 403, { error: 'Device is not authorized to revoke devices' });
+        if (this.jarvis.deviceSecurity?.getTotpStatus() === 'ENABLED' && (typeof body.totpCode !== 'string' || !this.jarvis.deviceSecurity.verifyStepUp(auth.device, body.totpCode))) return this.jsonResponse(res, 401, { error: 'Fresh authenticator verification required' });
+        const result = this.jarvis.identity.revokeAllDevices(auth.device.id, {
+          ...(body.keepCurrentSession === true ? { keepSessionId: sessionId } : {}),
+          ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
+        });
+        if (!result.success) return this.jsonResponse(res, result.revokedDeviceIds.length ? 409 : 403, { success: false, error: result.error ?? 'Revoke-all failed' });
+        for (const deviceId of result.revokedDeviceIds) {
+          this.jarvis.onDeviceRevoked(deviceId, 'revoke-all');
+          this.androidCommands.cancelForDevice(deviceId);
+        }
+        // Pending enrollment (QR transactions); raw challenges were already invalidated by revokeAllDevices.
+        this.jarvis.deviceSecurity?.cancelAllPending('revoke-all');
+        return this.jsonResponse(res, 200, { success: true, revokedCount: result.revokedDeviceIds.length, sessionsInvalidated: result.sessionsInvalidated, callerKept: body.keepCurrentSession === true });
+      }
+
       // Revoke device
       if (req.method === 'POST' && url.pathname === '/api/device/revoke') {
         const body = await this.readJsonBody(req);
@@ -1399,7 +1541,7 @@ export class JarvisServer {
           return this.jsonResponse(res, 409, { success: false, error: 'Device not found or revocation could not be persisted' });
         }
         // Immediately invalidate that device's approvals, schedules and running tasks.
-        this.jarvis.onDeviceRevoked(deviceId);
+        this.jarvis.onDeviceRevoked(deviceId, 'device-request');
         const cancelledAndroidCommands = this.androidCommands.cancelForDevice(deviceId);
         if (cancelledAndroidCommands > 0) {
           this.jarvis.audit.record('ANDROID_COMMANDS_CANCELLED_DEVICE_REVOKED', {
@@ -1429,6 +1571,23 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view health details' });
         return this.jsonResponse(res, 200, this.jarvis.getHealthSnapshot());
+      }
+
+      // Owner metrics (US-025): measured aggregates plus a provisional budget evaluation. Aggregates
+      // only; no task ids, prompts, paths or device identifiers. Local JSON; nothing is exported.
+      if (req.method === 'GET' && url.pathname === '/api/metrics') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Insufficient permission to view metrics' });
+        const snapshot = this.jarvis.getHealthSnapshot();
+        return this.jsonResponse(res, 200, {
+          generatedAt: snapshot.generatedAt,
+          measurements: summarizeMeasurements(snapshot),
+          budgets: evaluateRuntimeBudgets(snapshot),
+          note: 'owner-approved baseline 2026-11-18; revisit after field data',
+        });
       }
 
       // Task list with per-step status. Parameters and results are not exposed here.

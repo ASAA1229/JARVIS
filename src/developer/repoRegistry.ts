@@ -19,6 +19,19 @@ export interface RepoConnection {
   path: string;
   scopes: RepoScope[];
   connectedAt: string;
+  /** Base branch for pull requests from this repository; defaults to `new` (branching policy). */
+  prBase?: string;
+}
+
+/** Default pull-request base per the branching policy: work PRs target `new`. */
+export const DEFAULT_PR_BASE = 'new';
+/** Branches that are promotion targets only; never a routine PR base. */
+export const PROMOTION_ONLY_BASES = new Set(['main', 'master', 'dev', 'production', 'release']);
+const PR_BASE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
+
+function validRoutinePrBase(value: unknown): value is string {
+  return typeof value === 'string' && PR_BASE_PATTERN.test(value) && !value.includes('..') && !value.endsWith('.lock') &&
+    !PROMOTION_ONLY_BASES.has(value.toLowerCase());
 }
 
 interface RegistryFile {
@@ -82,7 +95,12 @@ export class RepoRegistry {
     if (parsed.version !== 1 || !Array.isArray(parsed.repos)) throw new Error('Developer repository registry is invalid.');
     this.repos = parsed.repos.filter((repo) =>
       repo && NAME_PATTERN.test(repo.name) && typeof repo.path === 'string' &&
-      Array.isArray(repo.scopes) && repo.scopes.every((scope) => REPO_SCOPES.includes(scope)));
+      Array.isArray(repo.scopes) && repo.scopes.every((scope) => REPO_SCOPES.includes(scope)))
+      .map((repo) => {
+        // A stored promotion-only or malformed base is dropped so the safe default applies.
+        const { prBase, ...rest } = repo;
+        return validRoutinePrBase(prBase) ? { ...rest, prBase } : rest;
+      });
   }
 
   private persist(): void {
@@ -111,7 +129,7 @@ export class RepoRegistry {
     return repo;
   }
 
-  connect(name: string, path: string, scopes: RepoScope[]): RepoConnection {
+  connect(name: string, path: string, scopes: RepoScope[], prBase?: string): RepoConnection {
     const normalizedName = String(name ?? '').toLowerCase();
     if (!NAME_PATTERN.test(normalizedName)) throw new Error('Repository name must be 2-41 lowercase letters, digits or hyphens.');
     const cleanedPath = String(path ?? '').trim().replace(/^["']|["']$/g, '');
@@ -121,9 +139,12 @@ export class RepoRegistry {
     if (!existsSync(resolve(absolute, '.git'))) throw new Error('That folder is not a git repository (no .git found).');
     const uniqueScopes = [...new Set(scopes)].filter((scope): scope is RepoScope => REPO_SCOPES.includes(scope));
     if (!uniqueScopes.includes('read')) uniqueScopes.unshift('read');
+    if (prBase !== undefined && prBase !== '' && !validRoutinePrBase(prBase)) {
+      throw new Error(`"${prBase}" cannot be a repository pull-request base: use a valid branch name that is not main/dev/master/production/release (promotion PRs need the explicit promotion flag).`);
+    }
     const existing = this.repos.findIndex((repo) => repo.name === normalizedName);
     if (existing < 0 && this.repos.length >= MAX_REPOS) throw new Error('Too many connected repositories.');
-    const connection: RepoConnection = { name: normalizedName, path: absolute, scopes: uniqueScopes, connectedAt: new Date().toISOString() };
+    const connection: RepoConnection = { name: normalizedName, path: absolute, scopes: uniqueScopes, connectedAt: new Date().toISOString(), ...(prBase ? { prBase } : {}) };
     if (existing >= 0) this.repos[existing] = connection;
     else this.repos.push(connection);
     this.persist();

@@ -32,6 +32,20 @@ test('cloud is never used without owner authorization, and never for private dat
   assert.equal(router.route({ taskType: 'conversation', containsPrivateData: false, cloudAuthorized: true }).provider?.id, 'local');
 });
 
+test('cloud fallback fails closed when privacy classification is missing or invalid', () => {
+  const router = new ProviderRouter(() => cloudEnv);
+  router.reportFailure('local');
+  for (const classification of [undefined, null, 0, 'false']) {
+    const decision = router.route({
+      taskType: 'conversation',
+      containsPrivateData: classification,
+      cloudAuthorized: true,
+    });
+    assert.equal(decision.provider, null);
+    assert.ok(decision.skipped.some((item) => /privacy classification is missing\/invalid/.test(item.reason)));
+  }
+});
+
 test('owner allowlist authorizes cloud per task type and format filters apply', () => {
   const router = new ProviderRouter(() => ({ ...cloudEnv, JARVIS_CLOUD_ALLOWED_TASKS: 'developer' }));
   router.reportFailure('local');

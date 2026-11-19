@@ -64,3 +64,31 @@ jarvis-dependencies.cdx.json
 customer-release-report.json
 perf-report*.json
 sbom-verify-input.cdx.json
+
+# Jenkins/CI scratch output
+.jenkins-temp/
+test-results/
+jarvis-*.sha256
+.nexus-verify/
+.manifest-ignore-public.pem
+.playwright-browsers/
+jarvis-manifest-ignore.sig
+
+# Local release staging (deploy/local/build-local-bundle.ps1)
+.release-stage/
+
+# npm dependency lockfile (repository policy)
+package-lock.json
+
+# Generated/local output and secrets
+dist-ssr/
+.output/
+playwright-report/
+*.db
+*.sqlite3
+.DS_Store
+Thumbs.db
+secrets/
+credentials/
+*.sha256
+*.cdx.json

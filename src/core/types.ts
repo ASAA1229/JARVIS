@@ -36,6 +36,9 @@ export interface DeviceRecord {
   enrolledAt: number;
   revokedAt?: number;
   lastSeenAt: number;
+  /** SSO subject that authorized this device's enrollment (optional; absent for owner-token enrollment). */
+  ssoSub?: string;
+  ssoUsername?: string;
 }
 
 export interface SessionRecord {

@@ -155,3 +155,8 @@ Fixes from this increment: developer repo path containment now resolves symlinks
 - PDF/OCR utilities are invoked as fixed local executables with argument arrays (no shell); temporary files are created with restrictive permissions and removed in a finally block.
 - OCR is owner-requested, local-only, English-only and limited to 20 pages. No document bytes are sent to cloud services.
 - Retrieved document text is untrusted data; the conversation prompt explicitly prohibits following instructions embedded in retrieved context. Document retrieval is skipped for action requests, which continue through the policy-controlled planner.
+
+
+## Verification update 2026-11-15
+
+New local tests (commit 72965d7, coordinator-verified in the 585/585 run): local/cloud separation (no egress by default), agent contracts, policy permission matrix, device session lifecycle, monitoring endpoints and the Jenkins boundary (disabled provider fails closed). A privacy sentinel test (3e4b9d1) shows request, transcript and document text stay out of the audit log and plaintext state. These are local software tests, not an independent security certification, and no GitHub Actions run has been observed.

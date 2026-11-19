@@ -277,14 +277,26 @@ function normalizeArchiveMember(rawName) {
 }
 
 async function archiveMemberDigest(archivePath, memberPath) {
-  const hash = createHash(ALGORITHM);
-  let size = 0;
-  await runTar(archivePath, ['-xOzf', '--', './' + memberPath], (chunk) => {
-    size += chunk.length;
-    if (!Number.isSafeInteger(size)) throw new Error('Archive member is too large: ' + memberPath);
-    hash.update(chunk);
-  });
-  return { size, sha256: hash.digest('hex') };
+  // bsdtar (Windows System32\tar.exe) treats [ ] * ? in member names as wildcards; GNU tar matches literally.
+  // Retry with escaped names so both work (this was observed to break verify-release in Portfolio).
+  const candidates = ['./' + memberPath];
+  if (/[[\]*?]/.test(memberPath)) candidates.push('./' + memberPath.replace(/([[\]*?\\])/g, '\\$1'));
+  let lastError;
+  for (const candidate of candidates) {
+    const retryHash = createHash(ALGORITHM);
+    let retrySize = 0;
+    try {
+      await runTar(archivePath, ['-xOzf', '--', candidate], (chunk) => {
+        retrySize += chunk.length;
+        if (!Number.isSafeInteger(retrySize)) throw new Error('Archive member is too large: ' + memberPath);
+        retryHash.update(chunk);
+      });
+      return { size: retrySize, sha256: retryHash.digest('hex') };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 async function verifyArchiveInventory(archivePath, expected) {

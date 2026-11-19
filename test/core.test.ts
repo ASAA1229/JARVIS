@@ -1,4 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
+import { acquireDesktopLock } from './helpers/desktopLock.js';
+import { desktopSkip } from './helpers/desktopSession.js';
 import assert from 'node:assert';
 import { JarvisCoreService } from '../src/core/service.js';
 import { LocalHeuristicPlanner } from '../src/planner/planner.js';
@@ -6,7 +8,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { TaskState, Permission, VerificationOutcome } from '../src/core/types.js';
 import { rmSync, existsSync } from 'node:fs';
 
-const TEST_AUDIT_LOG = './data/test_audit.log';
+const TEST_AUDIT_LOG = `./data/test_audit_${process.pid}.log`;
 
 describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }, () => {
   let jarvis: JarvisCoreService;
@@ -14,7 +16,10 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
   let companionDeviceId: string;
   let companionSessionId: string;
 
-  beforeEach(() => {
+  let releaseDesktop: (() => void) | undefined;
+
+  beforeEach(async () => {
+    releaseDesktop = await acquireDesktopLock();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }
@@ -45,6 +50,7 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
   });
 
   afterEach(() => {
+    releaseDesktop?.();
     if (existsSync(TEST_AUDIT_LOG)) {
       rmSync(TEST_AUDIT_LOG, { force: true });
     }
@@ -168,7 +174,16 @@ describe('JARVIS Core Security & Lifecycle Verification', { concurrency: false }
     assert.match(destructive.message, /prohibited/i);
   });
 
-  test('FLOW-02: Policy Gateway enforces approval for state-changing app launch', async () => {
+  test('FLOW-02a: Policy Gateway requires approval for state-changing app launch (no desktop needed)', async () => {
+    const pending = await jarvis.submitRequest(companionSessionId, 'Please launch Notepad');
+    assert.strictEqual(pending.state, TaskState.AWAITING_APPROVAL);
+    assert.ok(pending.approvalId);
+    const record = jarvis.policy.getApproval(pending.approvalId!);
+    assert.ok(record);
+    assert.strictEqual(record.approved, false);
+  });
+
+  test('FLOW-02: approved app launch executes against a real desktop', { skip: desktopSkip() }, async () => {
     const res = await jarvis.submitRequest(companionSessionId, 'Please launch Notepad');
     assert.strictEqual(res.state, TaskState.AWAITING_APPROVAL);
     assert.ok(res.approvalId);

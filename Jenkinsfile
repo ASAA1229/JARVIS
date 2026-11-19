@@ -1,89 +1,130 @@
+// JARVIS CI/CD pipeline (Windows Jenkins agent). Windows PowerShell 5.1 and PowerShell 7 compatible helpers live in ci/jenkins.
+// Standard stage order: checkout + source verification, agent prerequisites, install, SBOM + dependency audit,
+// static analysis + build, tests (JUnit), required browser E2E, package + integrity, archive, optional signing,
+// optional gated Nexus release. Ordinary new/dev/fix/test builds never publish; releases need main or release/*,
+// ENABLE_NEXUS_PUBLISH=true and an explicit input approval.
 pipeline {
   agent any
   options {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    skipDefaultCheckout(true)
+    timeout(time: 90, unit: 'MINUTES')
   }
   environment {
+    CI = 'true'
     PROJECT_NAME = 'JARVIS'
     REQUIRE_BUILD_PROVENANCE = 'true'
     ARTIFACT_FILE = 'jarvis-build.tar.gz'
     MANIFEST_FILE = 'jarvis-manifest.json'
     CHECKSUM_FILE = 'jarvis-build.tar.gz.sha256'
     CUSTOMER_RELEASE_REPORT_PATH = 'customer-release-report.json'
+    NPM_CONFIG_UPDATE_NOTIFIER = 'false'
+    NPM_CONFIG_FUND = 'false'
   }
   parameters {
-    booleanParam(name: 'ENABLE_NEXUS_PUBLISH', defaultValue: false, description: 'Nexus publishing is paused; enable only after explicit approval and configuration.')
+    booleanParam(name: 'ENABLE_NEXUS_PUBLISH', defaultValue: false, description: 'Nexus publishing is paused; enable only after explicit approval and configuration. Only runs from main or release/* and still asks for approval.')
     booleanParam(name: 'ENABLE_POLICY_SIGNING', defaultValue: false, description: 'Sign manifest-ignore with the configured Ed25519 Jenkins credentials.')
+    booleanParam(name: 'TRIGGER_LOCAL_STACK_DEPLOY', defaultValue: false, description: 'After a green build of branch new, trigger the ASAA-Local-Stack job (local development stack only; the job must exist).')
   }
   stages {
-    stage('Checkout') {
+    stage('Checkout and source verification') {
       steps {
         deleteDir()
-        checkout scm
+        script {
+          def scmVars = checkout scm
+          env.GIT_COMMIT = scmVars.GIT_COMMIT
+          env.GIT_BRANCH = scmVars.GIT_BRANCH
+          env.GIT_URL = scmVars.GIT_URL
+        }
+        bat 'git --no-pager log -1 --oneline'
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "git rev-parse failed." }
+          if ($head -ne $env:GIT_COMMIT) { throw "Checked-out commit $head does not match the commit Jenkins resolved ($env:GIT_COMMIT)." }
+        '''
       }
     }
     stage('Agent prerequisites') {
       steps {
-        powershell -ExecutionPolicy Bypass -File scripts/devops-preflight.ps1
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "node,npm,git,tar,workspace" -NodeRange ">=24" -ReportFile .jenkins-temp\\agent-prereqs.json'
       }
     }
-    stage('Install locked dependencies') {
+    stage('Install dependencies') {
       steps {
-        bat 'node --version'
-        bat 'npm --version'
-        bat 'npm ci'
-        bat 'npm sbom --sbom-format=cyclonedx --output-file=jarvis-dependencies.cdx.json'
+        // package-lock.json is intentionally not committed (repository policy); npm install generates it for the SBOM cross-check.
+        bat 'npm install --no-audit --no-fund'
       }
     }
-    stage('Build and test') {
+    stage('SBOM and dependency audit') {
+      steps {
+        // npm sbom has no --output-file option (it prints to stdout), so redirect it and verify the written file.
+        bat 'npm sbom --sbom-format=cyclonedx > jarvis-dependencies.cdx.json'
+        bat 'node scripts\\sbom-verify.mjs jarvis-dependencies.cdx.json package-lock.json'
+        bat 'npm audit --audit-level=moderate'
+      }
+    }
+    stage('Static analysis and build') {
       steps {
         bat 'npm run lint'
         bat 'npm run build'
-        bat 'npm test'
+      }
+    }
+    stage('Automated tests') {
+      steps {
+        bat 'npm run test:ci'
+      }
+      post {
+        always {
+          junit testResults: 'test-results/junit-*.xml', allowEmptyResults: true
+        }
+      }
+    }
+    stage('Release tooling tests (Python)') {
+      steps {
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "python" -ReportFile .jenkins-temp\\python-prereqs.json'
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          $env:PYTHONDONTWRITEBYTECODE = "1"
+          # Prefer a real interpreter; skip Microsoft Store "App execution alias" stubs in WindowsApps.
+          $py = (Get-Command python, python3 -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*WindowsApps*' } | Select-Object -First 1).Source
+          if ($py) { & $py -m unittest discover -s tests -t . } else { & py -3 -m unittest discover -s tests -t . }
+          if ($LASTEXITCODE -ne 0) { throw "Python release-tooling tests failed." }
+        '''
+      }
+    }
+    stage('Browser E2E (required)') {
+      environment {
+        PLAYWRIGHT_BROWSERS_PATH = "${env.PLAYWRIGHT_BROWSERS_PATH ?: (env.WORKSPACE + '\\.playwright-browsers')}"
+        BROWSER_DIAG_DIR = 'test-results\\browser-smoke'
+      }
+      steps {
+        script {
+          // Playwright's own chromium-headless-shell is independent of the Edge install and of the service account profile.
+          def rc = bat(returnStatus: true, script: 'npx playwright-core install chromium-headless-shell')
+          if (rc != 0) {
+            echo "WARNING: could not download the Playwright headless shell (exit ${rc}); the next step still fails the build unless another browser can launch."
+          }
+        }
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\agent-prereqs.ps1 -Require "browser" -ReportFile .jenkins-temp\\browser-prereqs.json'
         bat 'npm run test:browser'
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'test-results/browser-smoke/**,.jenkins-temp/browser-prereqs.json', allowEmptyArchive: true
+        }
       }
     }
     stage('Package and verify integrity') {
       steps {
-        powershell '''
-          $ErrorActionPreference = "Stop"
-          function Invoke-Node {
-            & node @args
-            if ($LASTEXITCODE -ne 0) {
-              throw "Node command failed: node $($args -join ' ') (exit code $LASTEXITCODE)."
-            }
-          }
-          $env:BUILD_REPOSITORY = $env:GIT_URL
-          $env:BUILD_BRANCH = $env:GIT_BRANCH
-          $env:BUILD_WORKFLOW = $env:JOB_NAME
-          $env:BUILD_RUN_ID = $env:BUILD_TAG
-          $env:BUILD_RUN_URL = $env:BUILD_URL
-          if (!(Test-Path "dist" -PathType Container)) {
-            throw "Expected TypeScript build output directory 'dist' was not created."
-          }
-          tar -czf "$env:ARTIFACT_FILE" -C "dist" .
-          if ($LASTEXITCODE -ne 0) { throw "Release package creation failed." }
-          $env:PROJECT_NAME = "JARVIS"
-          Invoke-Node scripts/artifact-integrity.mjs create "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
-          if ($LASTEXITCODE -ne 0) { throw "Manifest creation failed." }
-          Invoke-Node scripts/artifact-integrity.mjs verify "dist" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE"
-          if ($LASTEXITCODE -ne 0) { throw "Manifest verification failed." }
-          Invoke-Node scripts/artifact-integrity.mjs hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
-          if ($LASTEXITCODE -ne 0) { throw "Artifact hashing failed." }
-          Invoke-Node scripts/artifact-integrity.mjs verify-hash "$env:ARTIFACT_FILE" "$env:CHECKSUM_FILE"
-          if ($LASTEXITCODE -ne 0) { throw "Artifact checksum verification failed." }
-          Invoke-Node scripts/artifact-integrity.mjs verify-release "$env:ARTIFACT_FILE" "$env:MANIFEST_FILE" "$env:CHECKSUM_FILE"
-          if ($LASTEXITCODE -ne 0) { throw "Release verification failed." }
-          Invoke-Node scripts/customer-release-verifier.mjs create "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" "jarvis-manifest-ignore.json"
-          if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy creation failed." }
-          Invoke-Node scripts/artifact-integrity.mjs hash "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256"
-          if ($LASTEXITCODE -ne 0) { throw "Manifest-ignore policy hashing failed." }
-          $trustedPolicyHash = (Get-Content "jarvis-manifest-ignore.json.sha256").Split(' ')[0]
-          Invoke-Node scripts/customer-release-verifier.mjs verify "jarvis-manifest-ignore.json" "jarvis-manifest-ignore.json.sha256" "$env:MANIFEST_FILE" "$env:ARTIFACT_FILE" $trustedPolicyHash
-          if ($LASTEXITCODE -ne 0) { throw "Customer release verification failed." }
-'''
+        bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\package-release.ps1 -ProjectName JARVIS -Prefix jarvis -OutputDirs dist'
+      }
+    }
+    stage('Archive verified release bundle') {
+      steps {
+        archiveArtifacts artifacts: 'jarvis-build.tar.gz,jarvis-manifest.json,jarvis-build.tar.gz.sha256,jarvis-manifest-ignore.json,jarvis-manifest-ignore.json.sha256,jarvis-dependencies.cdx.json', fingerprint: true, onlyIfSuccessful: true
       }
     }
     stage('Sign manifest-ignore policy (optional)') {
@@ -125,107 +166,22 @@ pipeline {
         }
       }
     }
-    stage('Publish to Nexus (optional)') {
+    stage('Publish to Nexus (optional, release branches only)') {
       when {
+        beforeInput true
         allOf {
-          branch 'dev'
-          expression { return params.ENABLE_NEXUS_PUBLISH && env.NEXUS_RAW_REPOSITORY_URL?.trim() }
+          expression { return isReleaseBranch() }
+          expression { return params.ENABLE_NEXUS_PUBLISH }
+          expression { return (env.NEXUS_RAW_REPOSITORY_URL ?: '').trim().length() > 0 }
         }
+      }
+      input {
+        message 'Publish the verified JARVIS release bundle to Nexus?'
+        ok 'Publish'
       }
       steps {
         withCredentials([usernamePassword(credentialsId: 'nexus-credentials', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASSWORD')]) {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            $base = $env:NEXUS_RAW_REPOSITORY_URL.TrimEnd('/')
-            $repositoryUri = $null
-            if (-not [Uri]::TryCreate($base, [UriKind]::Absolute, [ref]$repositoryUri)) {
-              throw "NEXUS_RAW_REPOSITORY_URL must be a valid absolute HTTPS repository URL."
-            }
-            if ($repositoryUri.Scheme -ne [Uri]::UriSchemeHttps -or
-                [string]::IsNullOrWhiteSpace($repositoryUri.Host) -or
-                -not [string]::IsNullOrEmpty($repositoryUri.UserInfo) -or
-                -not [string]::IsNullOrEmpty($repositoryUri.Query) -or
-                -not [string]::IsNullOrEmpty($repositoryUri.Fragment)) {
-              throw "NEXUS_RAW_REPOSITORY_URL must use HTTPS and must not contain embedded credentials, query parameters, or fragments."
-            }
-            if ([string]::IsNullOrWhiteSpace($env:GIT_COMMIT)) {
-              throw "Git commit metadata is required for immutable Nexus publication paths."
-            }
-            $commit = $env:GIT_COMMIT.Substring(0, [Math]::Min(12, $env:GIT_COMMIT.Length))
-            $projectPath = $env:PROJECT_NAME.ToLowerInvariant()
-            $target = "$base/$projectPath/$env:BUILD_NUMBER-$commit"
-            $pair = $env:NEXUS_USER + ':' + $env:NEXUS_PASSWORD
-            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
-            $headers = @{ Authorization = "Basic $encoded" }
-            $verificationDir = Join-Path $env:WORKSPACE ".nexus-verify"
-            New-Item -ItemType Directory -Force -Path $verificationDir | Out-Null
-            try {
-              # Do not silently replace an artifact at an already-used release path.
-              $releaseFiles = @($env:ARTIFACT_FILE, $env:MANIFEST_FILE, $env:CHECKSUM_FILE, 'jarvis-manifest-ignore.json', 'jarvis-manifest-ignore.json.sha256')
-            if (Test-Path 'jarvis-manifest-ignore.sig' -PathType Leaf) { $releaseFiles += 'jarvis-manifest-ignore.sig' }
-            foreach ($file in $releaseFiles) {
-                $uri = "$target/$file"
-                try {
-                  $existing = Invoke-WebRequest -Uri $uri -Method Head -Headers $headers -UseBasicParsing -ErrorAction Stop
-                  throw "Refusing to overwrite existing Nexus release asset: $uri (HTTP $([int]$existing.StatusCode)). Use a new build number or investigate the existing release."
-                } catch {
-                  $statusCode = $null
-                  if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
-                  }
-                  if ($statusCode -ne 404) {
-                    if ($_.Exception.Message -like 'Refusing to overwrite existing Nexus release asset:*') { throw }
-                    throw "Could not safely establish that Nexus release asset is absent: $uri. HTTP status: $statusCode. Publication stopped."
-                  }
-                }
-              }
-              foreach ($file in $releaseFiles) {
-                $uri = "$target/$file"
-                Invoke-WebRequest -Uri $uri -Method Put -InFile $file -Headers $headers -UseBasicParsing | Out-Null
-                $download = Join-Path $verificationDir $file
-                Invoke-WebRequest -Uri $uri -Method Get -OutFile $download -Headers $headers -UseBasicParsing | Out-Null
-                $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash
-                $remoteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash
-                if ($localHash -ne $remoteHash) {
-                  throw "Nexus read-back SHA-256 mismatch for $file."
-                }
-                Write-Output "Published and verified $file at immutable build path $env:BUILD_NUMBER-$commit"
-              }
-              node scripts/artifact-integrity.mjs verify-hash (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
-              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back checksum verification failed." }
-              node scripts/artifact-integrity.mjs verify-release (Join-Path $verificationDir $env:ARTIFACT_FILE) (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:CHECKSUM_FILE)
-              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
-              # Inspect archive paths before extraction to block path traversal.
-              $archivePath = Join-Path $verificationDir $env:ARTIFACT_FILE
-              $archiveEntries = & tar -tzf $archivePath
-              if ($LASTEXITCODE -ne 0) { throw "Could not list the downloaded Nexus package archive." }
-              foreach ($entry in $archiveEntries) {
-                $normalizedEntry = ([string]$entry).Replace('\', '/')
-                if ([string]::IsNullOrWhiteSpace($normalizedEntry) -or $normalizedEntry.StartsWith('/') -or $normalizedEntry -match '^[A-Za-z]:' -or ($normalizedEntry -split '/') -contains '..') {
-                  throw "Unsafe archive member path rejected: $entry"
-                }
-              }
-              $downloadedPackageDir = Join-Path $verificationDir 'downloaded-package'
-              New-Item -ItemType Directory -Force -Path $downloadedPackageDir | Out-Null
-              & tar -xzf $archivePath -C $downloadedPackageDir
-              if ($LASTEXITCODE -ne 0) { throw "Failed to extract the downloaded Nexus package." }
-              $artifactDir = $downloadedPackageDir
-              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back release verification failed." }
-              $trustedPolicyHash = (Get-Content (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256')).Split(' ')[0]
-              $remotePolicy = Join-Path $verificationDir 'jarvis-manifest-ignore.json'
-              if (Test-Path (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') -PathType Leaf) {
-                node scripts/policy-signature.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
-                if ($LASTEXITCODE -ne 0) { throw "Nexus read-back policy signature verification failed." }
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) '-' (Join-Path $verificationDir 'jarvis-manifest-ignore.sig') (Join-Path $env:WORKSPACE '.manifest-ignore-public.pem')
-              } else {
-                node scripts/customer-release-verifier.mjs verify $remotePolicy (Join-Path $verificationDir 'jarvis-manifest-ignore.json.sha256') (Join-Path $verificationDir $env:MANIFEST_FILE) (Join-Path $verificationDir $env:ARTIFACT_FILE) $trustedPolicyHash
-              }
-              if ($LASTEXITCODE -ne 0) { throw "Nexus read-back customer release verification failed." }
-            } finally {
-              Remove-Item -Recurse -Force -LiteralPath $verificationDir -ErrorAction SilentlyContinue
-              Remove-Variable pair, encoded, headers -ErrorAction SilentlyContinue
-            }
-          '''
+          bat 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ci\\jenkins\\publish-nexus.ps1 -ProjectName JARVIS -Prefix jarvis'
         }
       }
     }
@@ -234,14 +190,40 @@ pipeline {
     success {
       echo 'JARVIS pipeline succeeded; artifact checksums and manifest were verified.'
       echo "Release traceability: project=${env.PROJECT_NAME}; build=${env.BUILD_NUMBER}; commit=${env.GIT_COMMIT}; artifact=${env.ARTIFACT_FILE}; manifest=${env.MANIFEST_FILE}; checksum=${env.CHECKSUM_FILE}."
+      script {
+        if (params.TRIGGER_LOCAL_STACK_DEPLOY && currentBranchName() == 'new') {
+          try {
+            build job: 'ASAA-Local-Stack', parameters: [string(name: 'ACTION', value: 'DEPLOY')], wait: false
+          } catch (err) {
+            echo "WARNING: local stack deployment was requested but could not be triggered: ${err.message}"
+            currentBuild.result = 'UNSTABLE'
+          }
+        } else {
+          echo 'No deployment was performed.'
+        }
+      }
     }
     failure {
       echo 'JARVIS pipeline failed. Review the first failing stage; publication is gated behind successful verification.'
     }
     always {
-      // Keep the structured customer-verification failure report when one was written.
-      archiveArtifacts artifacts: 'customer-release-report.json', allowEmptyArchive: true
-      powershell 'Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue'
+      // Keep the structured customer-verification failure report and agent diagnostics when present.
+      archiveArtifacts artifacts: 'customer-release-report.json,.jenkins-temp/agent-prereqs.json', allowEmptyArchive: true
+      powershell '''
+        Remove-Item -Force (Join-Path $env:WORKSPACE ".manifest-ignore-public.pem") -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force (Join-Path $env:WORKSPACE ".jenkins-temp") -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force (Join-Path $env:WORKSPACE ".nexus-verify") -ErrorAction SilentlyContinue
+      '''
     }
   }
+}
+
+def currentBranchName() {
+  def branch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+  return branch.replaceFirst('^refs/heads/', '').replaceFirst('^origin/', '')
+}
+
+def isReleaseBranch() {
+  def branch = currentBranchName()
+  return branch == 'main' || branch.startsWith('release/')
 }
