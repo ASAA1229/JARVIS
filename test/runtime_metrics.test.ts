@@ -28,7 +28,7 @@ const healthy = () => ({
 
 test('budget evaluation: measured values inside the provisional budgets are ok', () => {
   const evaluation = evaluateRuntimeBudgets(healthy());
-  assert.equal(evaluation.provisional, true);
+  assert.equal(evaluation.provisional, false);
   assert.equal(evaluation.overall, 'ok');
   assert.deepEqual(evaluation.checks.map((check) => check.name), ['cpuUsagePercent', 'memoryUsedPercent', 'processRssBytes', 'queueWaitMs', 'queueFillRatio', 'crashFreeCompletionRate', 'verifiedOutcomeRate']);
   assert.equal(evaluation.checks.find((check) => check.name === 'queueWaitMs')?.observed, 1200);
@@ -56,7 +56,7 @@ test('budget evaluation: exceeded values are flagged per check, and missing data
   assert.equal(empty.checks.find((check) => check.name === 'queueWaitMs')?.observed, 0);
   assert.equal(evaluateRuntimeBudgets({}).overall, 'unknown');
   assert.equal(maxQueueWaitMs({}), null);
-  assert.equal(PROVISIONAL_RUNTIME_BUDGETS.provisional, true);
+  assert.equal(PROVISIONAL_RUNTIME_BUDGETS.provisional, false);
 });
 
 test('the measurement summary keeps aggregates only: no task ids and no unknown fields', () => {
@@ -99,10 +99,10 @@ test('GET /api/metrics requires a signed owner (DEVICE_MANAGE) session and retur
     const ok = await get(owner);
     assert.equal(ok.status, 200);
     const body = JSON.parse(ok.text) as { measurements: Record<string, unknown>; budgets: { provisional: boolean; checks: unknown[]; overall: string }; note: string };
-    assert.equal(body.budgets.provisional, true);
+    assert.equal(body.budgets.provisional, false);
     assert.equal(body.budgets.checks.length, 7);
     assert.ok(['ok', 'exceeded', 'unknown'].includes(body.budgets.overall));
-    assert.match(body.note, /provisional/);
+    assert.equal(body.note, 'owner-approved baseline 2026-11-18; revisit after field data');
     assert.ok(ok.text.length < 8_000, 'bounded response');
     for (const secret of [OWNER_TOKEN, dir, hostname(), userInfo().username, owner.id, ordinary.id, owner.sessionId, 'publicKey']) {
       if (secret.length < 4) continue;

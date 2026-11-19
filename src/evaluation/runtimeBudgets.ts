@@ -1,7 +1,7 @@
 /**
- * Provisional runtime budgets (JARVIS-US-025 / JARVIS-GAP-015).
+ * Runtime budgets (JARVIS-US-025 / JARVIS-GAP-015).
  *
- * These are NOT owner-agreed targets: they are conservative placeholders so the owner metrics
+ * Owner-approved baseline (2026-11-18; revisit after field data) so the owner metrics
  * endpoint can say "within / outside budget" from measured values. Latency percentiles are
  * measured offline by `npm run perf` (see perf/baseline.*.json); this module covers what the
  * running service can observe cheaply: CPU, memory, queue pressure and reliability rates.
@@ -9,7 +9,7 @@
  * Pure functions over the health snapshot: no I/O, no prompts, no ids.
  */
 export interface RuntimeBudgets {
-  provisional: true;
+  provisional: boolean;
   cpuUsagePercentMax: number;
   memoryUsedPercentMax: number;
   processRssBytesMax: number;
@@ -21,7 +21,7 @@ export interface RuntimeBudgets {
 }
 
 export const PROVISIONAL_RUNTIME_BUDGETS: RuntimeBudgets = {
-  provisional: true,
+  provisional: false,
   cpuUsagePercentMax: 85,
   memoryUsedPercentMax: 90,
   processRssBytesMax: 1024 * 1024 * 1024,
@@ -43,7 +43,7 @@ export interface BudgetCheck {
 }
 
 export interface BudgetEvaluation {
-  provisional: true;
+  provisional: boolean;
   overall: BudgetStatus;
   checks: BudgetCheck[];
 }
@@ -87,7 +87,7 @@ export function evaluateRuntimeBudgets(snapshot: Record<string, unknown>, budget
     status: check.observed === null ? 'unknown' : (check.kind === 'max' ? check.observed <= check.budget : check.observed >= check.budget) ? 'ok' : 'exceeded',
   }));
   const overall: BudgetStatus = checks.some((check) => check.status === 'exceeded') ? 'exceeded' : checks.some((check) => check.status === 'unknown') ? 'unknown' : 'ok';
-  return { provisional: true, overall, checks };
+  return { provisional: budgets.provisional, overall, checks };
 }
 
 /** Secret-free measurement summary for the metrics endpoint: aggregates only, no task ids. */

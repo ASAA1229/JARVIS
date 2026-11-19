@@ -1586,7 +1586,7 @@ export class JarvisServer {
           generatedAt: snapshot.generatedAt,
           measurements: summarizeMeasurements(snapshot),
           budgets: evaluateRuntimeBudgets(snapshot),
-          note: 'Budgets are provisional placeholders, not owner-agreed targets. Latency percentiles are measured offline with npm run perf.',
+          note: 'owner-approved baseline 2026-11-18; revisit after field data',
         });
       }
 
