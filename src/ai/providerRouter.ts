@@ -171,7 +171,7 @@ export class ProviderRouter {
     else skipped.push({ id: 'local', reason: 'temporarily unavailable after a recent failure' });
 
     for (const provider of providers.filter((item) => !item.local)) {
-      if (request.containsPrivateData) { skipped.push({ id: provider.id, reason: 'request contains private data; local only' }); continue; }
+      if (request.containsPrivateData !== false) { skipped.push({ id: provider.id, reason: 'request is private or privacy classification is missing/invalid; local only' }); continue; }
       if (!cloudOk) { skipped.push({ id: provider.id, reason: 'cloud use not authorized by the owner for this task' }); continue; }
       if (!formatOk(provider)) { skipped.push({ id: provider.id, reason: 'incompatible format' }); continue; }
       if (!this.isAvailable(provider.id)) { skipped.push({ id: provider.id, reason: 'temporarily unavailable after a recent failure' }); continue; }
