@@ -48,11 +48,11 @@ test('API keys alone never enable cloud: without owner authorization a cloud pro
   assert.ok(loadProviders(env).some((p) => p.cost === 'paid'), 'configured cloud adapters exist but are inert');
   assert.equal(router.route({ taskType: 'conversation' }).provider?.id, 'local');
   router.reportFailure('local');
-  const down = router.route({ taskType: 'conversation' });
+  const down = router.route({ taskType: 'conversation', containsPrivateData: false });
   assert.equal(down.provider, null, 'local outage does not silently fall back to a paid provider');
   assert.ok(down.skipped.some((s) => /not authorized by the owner/.test(s.reason)));
   assert.equal(router.route({ taskType: 'conversation', cloudAuthorized: true, containsPrivateData: true }).provider, null, 'private data stays local even when cloud is authorized');
-  assert.equal(router.route({ taskType: 'conversation', cloudAuthorized: true }).provider?.local, false, 'explicit authorization is the only way to a cloud provider');
+  assert.equal(router.route({ taskType: 'conversation', cloudAuthorized: true, containsPrivateData: false }).provider?.local, false, 'explicit authorization is the only way to a cloud provider');
 });
 
 test('speech defaults: cloud speech is off, no local STT is assumed, and cloud STT can only be registered after explicit opt-in', async () => {
