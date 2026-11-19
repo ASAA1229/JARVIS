@@ -238,22 +238,64 @@ describe('ASAA event producer (disabled by default; tested against a MOCK ingest
     assert.equal(p.manifestCheck(), 'ok');
   });
 
-  test('409 is treated as already delivered; other 4xx are dead-lettered without retry', async () => {
-    mock.script = [409, 400, 401];
+  test('409 is treated as already delivered; 400/413/422 and other 4xx are dead-lettered without retry', async () => {
+    mock.script = [409, 400, 413, 422, 404];
     const p = producer();
     p.taskFinished(task('task-conflict'));
     await p.flush();
     assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 0 }, '409 means ASAA already has it');
-    p.taskFinished(task('task-bad-400'));
-    await p.flush();
-    assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 1 });
-    p.taskFinished(task('task-bad-401'));
-    await p.flush();
-    assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 2 });
+    for (const [index, id] of ['task-bad-400', 'task-bad-413', 'task-bad-422', 'task-bad-404'].entries()) {
+      p.taskFinished(task(id));
+      await p.flush();
+      assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: index + 1 }, id);
+    }
     clock += 3_600_000;
     await p.flush();
-    assert.equal(mock.requests.length, 3, 'no retries for permanent rejections');
+    assert.equal(mock.requests.length, 5, 'no retries for permanent rejections');
     assert.equal(p.manifestCheck(), 'degraded');
+  });
+
+  test('401 and 403 (for example producer_not_authorized before ASAA is configured) are retried after a long backoff, never dead-lettered and consume no attempts', async () => {
+    const p = producer({ maxAttempts: 2 });
+    for (const status of [403, 401]) {
+      mock.requests.length = 0;
+      mock.script = [status, 403, 403];
+      const id = `task-auth-${status}`;
+      p.taskFinished(task(id));
+      await p.flush();
+      assert.equal(mock.requests.length, 1, `${status}: one attempt`);
+      assert.deepEqual(p.status(), { enabled: true, pending: 1, deadLetter: 0 }, `${status}: stays queued`);
+      assert.equal(p.manifestCheck(), 'degraded', `${status}: the manifest reports degraded`);
+      clock += 14 * 60_000;
+      await p.flush();
+      assert.equal(mock.requests.length, 1, `${status}: not retried before 15 minutes`);
+      // Many refusals over a long outage never reach maxAttempts (2 here), so nothing is dead-lettered.
+      for (let round = 0; round < 5; round += 1) {
+        clock += 15 * 60_000;
+        mock.script = [403];
+        await p.flush();
+        assert.deepEqual(p.status(), { enabled: true, pending: 1, deadLetter: 0 }, `${status}: round ${round}`);
+      }
+      // ASAA is configured: the same event is delivered and the manifest recovers.
+      clock += 15 * 60_000;
+      mock.script = [];
+      await p.flush();
+      assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 0 }, `${status}: delivered once ASAA accepts`);
+      assert.equal(p.manifestCheck(), 'ok', `${status}: manifest recovers`);
+    }
+  });
+
+  test('a refusal holds the whole backlog (one request, not one per event) and the backlog drains afterwards', async () => {
+    const p = producer();
+    mock.script = [403];
+    for (const id of ['task-bulk-001', 'task-bulk-002', 'task-bulk-003']) p.taskFinished(task(id));
+    await p.flush();
+    assert.equal(mock.requests.length, 1, 'ASAA is not hammered once per queued event');
+    assert.deepEqual(p.status(), { enabled: true, pending: 3, deadLetter: 0 });
+    clock += 15 * 60_000;
+    await p.flush();
+    assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 0 });
+    assert.equal(mock.requests.length, 4);
   });
 
   test('redirects are never followed (the bearer token cannot be forwarded) and are dead-lettered', async () => {

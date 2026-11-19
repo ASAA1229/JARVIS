@@ -184,7 +184,7 @@ describe('ASAA event producer: client-credentials access tokens (MOCK token endp
     assert.equal(bearerOf(asaa.requests[2]), 'token-2');
   });
 
-  test('a 401 refreshes the token once and re-sends; a second 401 is retried later and never dead-letters', async () => {
+  test('a 401 refreshes the token once and re-sends; a second 401 waits 15 minutes and never dead-letters', async () => {
     const p = producer();
     asaa.script = [() => ({ status: 401 })]; // the first delivery attempt is rejected as unauthorized
     taskEvent(p, 'task-401-0001');
@@ -198,10 +198,15 @@ describe('ASAA event producer: client-credentials access tokens (MOCK token endp
     taskEvent(p, 'task-401-0002');
     await p.flush();
     assert.equal(asaa.requests.length, 2, 'exactly one refresh and one re-send, no loop');
-    assert.deepEqual(p.status(), { enabled: true, pending: 1, deadLetter: 0 }, 'kept for a backoff retry, not dead-lettered');
+    assert.deepEqual(p.status(), { enabled: true, pending: 1, deadLetter: 0 }, 'kept for a long backoff, not dead-lettered');
+    assert.equal(p.manifestCheck(), 'degraded');
     clock += 1_000;
     await p.flush();
+    assert.equal(asaa.requests.length, 2, 'not retried within the 15 minute auth backoff');
+    clock += 15 * 60_000;
+    await p.flush();
     assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 0 }, 'delivered on the retry');
+    assert.equal(p.manifestCheck(), 'ok');
   });
 
   test('a token fetch failure is transient: events stay queued, back off, and are never dead-lettered by it', async () => {
@@ -235,13 +240,18 @@ describe('ASAA event producer: client-credentials access tokens (MOCK token endp
     assert.equal(asaa.requests.length, 0);
   });
 
-  test('permanent rejections by ASAA (for example 403 producer binding) still dead-letter after a valid token', async () => {
+  test('a 403 producer-binding refusal is retried (never dead-lettered) without a token refresh, while 422 stays permanent', async () => {
     const p = producer();
     asaa.script = [() => ({ status: 403 })];
     taskEvent(p, 'task-403-0001');
     await p.flush();
-    assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 1 });
+    assert.deepEqual(p.status(), { enabled: true, pending: 1, deadLetter: 0 });
+    assert.equal(p.manifestCheck(), 'degraded');
     assert.equal(idp.requests.length, 1, 'a 403 does not trigger a token refresh');
+    clock += 15 * 60_000;
+    asaa.script = [() => ({ status: 422 })];
+    await p.flush();
+    assert.deepEqual(p.status(), { enabled: true, pending: 0, deadLetter: 1 }, '422 is permanent');
   });
 
   test('the client secret and tokens never reach disk, the outbox, event bodies or logs', async () => {

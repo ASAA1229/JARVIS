@@ -306,6 +306,8 @@ export interface OutboxEntry {
   nextAttemptAt: number;
   /** Set on dead-lettered entries: coarse reason only. */
   deadReason?: string;
+  /** Set (time of the last refusal) while ASAA refuses our credentials or producer binding (401/403). */
+  authBlockedAt?: number;
 }
 
 export interface OutboxState {
@@ -353,6 +355,8 @@ export interface ProducerOptions {
   backoffMaxMs?: number;
   timeoutMs?: number;
   flushIntervalMs?: number;
+  /** Wait after a 401/403 refusal (default 15 minutes). */
+  authBackoffMs?: number;
 }
 
 export interface ProducerStatus {
@@ -380,6 +384,7 @@ export class AsaaEventProducer implements IntegrationEventSink {
   private flushing: Promise<void> | undefined;
   private warnedPersistence = false;
   private tokenSource: ClientCredentialsTokenSource | undefined;
+  private readonly authBackoff: number;
 
   constructor(private readonly options: ProducerOptions) {
     this.config = options.config;
@@ -392,6 +397,8 @@ export class AsaaEventProducer implements IntegrationEventSink {
     this.backoffMax = options.backoffMaxMs ?? 15 * 60_000;
     this.timeoutMs = options.timeoutMs ?? 5_000;
     this.flushIntervalMs = options.flushIntervalMs ?? 5_000;
+    // Credential or producer-binding refusals wait at least 15 minutes between attempts.
+    this.authBackoff = Math.max(options.authBackoffMs ?? 15 * 60_000, 0);
     if (this.config?.clientCredentials) {
       this.tokenSource = new ClientCredentialsTokenSource(this.config.clientCredentials, { fetchImpl: this.fetchImpl, now: this.now, timeoutMs: this.timeoutMs });
     }
@@ -459,7 +466,7 @@ export class AsaaEventProducer implements IntegrationEventSink {
   /** Manifest `checks.asaaEvents` value. */
   manifestCheck(): CheckValue {
     if (!this.enabled) return 'disabled';
-    const stuck = this.state.pending.some((entry) => entry.attempts >= 3);
+    const stuck = this.state.pending.some((entry) => entry.attempts >= 3 || entry.authBlockedAt !== undefined);
     return this.state.dead.length > 0 || stuck ? 'degraded' : 'ok';
   }
 
@@ -567,7 +574,20 @@ export class AsaaEventProducer implements IntegrationEventSink {
       } else if (outcome === 'permanent') {
         this.state.pending.splice(index, 1);
         this.deadLetter(entry, 'rejected');
+      } else if (outcome === 'auth') {
+        // ASAA refuses our credentials or producer binding (401 after a refresh, or 403): an operator problem, not a
+        // property of the event. Keep every pending event, back off for a long time and never consume an attempt.
+        const now = this.now();
+        entry.authBlockedAt = now;
+        entry.nextAttemptAt = now + this.authBackoff;
+        for (const other of due) {
+          if (attempted.has(other) || !this.state.pending.includes(other)) continue;
+          other.authBlockedAt = now; // do not hammer ASAA once per queued event
+          other.nextAttemptAt = now + this.authBackoff;
+        }
+        return;
       } else {
+        delete entry.authBlockedAt;
         entry.attempts += 1;
         if (entry.attempts >= this.maxAttempts) {
           this.state.pending.splice(index, 1);
@@ -584,11 +604,15 @@ export class AsaaEventProducer implements IntegrationEventSink {
    * retried with backoff. Every other response, including redirects (never followed, so the
    * bearer token cannot be forwarded) and other 4xx, is permanent.
    *
+   * Authentication and producer-binding refusals (401 after the one allowed refresh, and 403 such as
+   * producer_not_authorized/producer_mismatch before ASAA's producer mapping is configured) return 'auth':
+   * the events stay queued with a long backoff and consume no attempts, so they are never dead-lettered
+   * for it. 400/413/422 and other 4xx remain permanent.
+   *
    * With client credentials: failing to obtain a token is transient (retry), and a 401 refreshes the
-   * token once and re-sends; a second 401 is also a retry (an operational credential problem, not an
-   * invalid event), so events are never dead-lettered because of authentication alone.
+   * token once and re-sends.
    */
-  private async send(config: AsaaEventsConfig, envelope: AsaaEventEnvelope): Promise<'delivered' | 'retry' | 'permanent'> {
+  private async send(config: AsaaEventsConfig, envelope: AsaaEventEnvelope): Promise<'delivered' | 'retry' | 'permanent' | 'auth'> {
     const post = async (bearer: string): Promise<number> => {
       const response = await this.fetchImpl(`${config.baseUrl}${EVENTS_PATH}`, {
         method: 'POST',
@@ -622,13 +646,14 @@ export class AsaaEventProducer implements IntegrationEventSink {
             return 'retry';
           }
           status = await post(bearer);
-          if (status === 401) return 'retry';
+          if (status === 401) return 'auth';
         }
       } else {
         status = await post(config.token ?? '');
       }
       if (status >= 200 && status < 300) return 'delivered';
       if (status === 409) return 'delivered';
+      if (status === 401 || status === 403) return 'auth';
       if (status >= 500 || status === 408 || status === 429) return 'retry';
       return 'permanent';
     } catch {
