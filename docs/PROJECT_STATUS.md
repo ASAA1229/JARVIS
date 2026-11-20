@@ -150,3 +150,20 @@ The 2026-11-14 record of four `e2e_recovery` failures from port 3899 collisions 
 ## Delivery phase — 2026-11-15
 
 **Current phase: DEVELOPMENT** (owner direction: DEVELOPMENT, then TESTING, then DEPLOYMENT). Features added in this phase carry the status **IMPLEMENTED — NOT FULLY TESTED** until the testing phase runs. Test-phase and deployment-phase items that are not yet due (full-suite reruns, CI runs, hosted or staging verification, hosting, live providers, production rehearsal) are **deferred to test phase** or **deferred to deployment phase**; they are not failures. Evidence classes used in these documents: coordinator-verified, agent-reported, in progress, CI not observed.
+
+
+## Organization verification update — 2026-11-20
+
+**Assessed branch:** `new`  
+**Latest observed CI evidence:** JARVIS CI passed on run [44727781030](https://github.com/ASAA1229/JARVIS/actions/runs/44727781030). No current `dev` or `main` workflow run was found in the organization audit; absence of a run is NOT TESTED, not PASS.
+
+### Repository governance
+- Standard branches `main`, `dev`, `new`, `fix`, and `test` exist.
+- The repository remains public by owner decision.
+- Standard branches were observed without branch protection (`protected: false`) in the 2026-11-20 audit. Protection is approved but not yet applied/verified.
+- Promotion policy is working branches → `new`; only `new` → `dev`; only `dev` → `main`. No promotion or merge is authorized by this status update.
+
+### Delivery and release status
+A passing CI run on `new` is limited to the checks in that workflow. Physical Windows 11 laptop and Android device verification remains outstanding for wake-word activation, voice interaction, device pairing/QR-authenticator flow, offline/local-cloud behavior, privacy controls and session handling. Jenkins integration, artifact publishing/retrieval/recovery, and full end-to-end operational acceptance are not established by the current CI run.
+
+**Release status: NO-GO / NOT ACCEPTED.** Do not claim device verification, production readiness, or end-to-end acceptance until the relevant physical-device and integration evidence is attached to an exact commit.
