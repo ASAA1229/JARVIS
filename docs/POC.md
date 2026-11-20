@@ -117,3 +117,8 @@ The POC succeeds when:
 - Failure groups: async rejection assertions in approval authorization tests; checkpoint validation accepting an `awaiting_approval` branch with `verified_success` outcome; synthetic retrieval benchmark measuring precision across up to five results while asserting a single-label Precision@K of 1.0.
 - PRs #63/#64 are merged into `new`; the six historical failures pass locally. Local final results: lint, build, 497 tests (one environment-sensitive real-Notepad E2E flake that passes in isolation), 3 script tests, browser smoke, 33 Python tests, `npm audit` clean. GitHub CI on the final SHA, device acceptance and owner acceptance remain outstanding.
 - The branch creation and file updates do not constitute device acceptance, production deployment or owner acceptance.
+
+
+## POC reassessment — 2026-11-20
+
+The POC remains **NOT ACCEPTED**. JARVIS CI passed on the observed `new` workflow run 44727781030; no current `dev` or `main` workflow run was found in the organization audit. Physical Windows 11 and Android testing, wake-word/voice/device pairing, privacy/offline behavior, live Jenkins integration and artifact publishing/retrieval/recovery remain unverified. CI success alone does not demonstrate the end-to-end POC or device acceptance.
