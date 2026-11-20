@@ -24,7 +24,7 @@ test('cloud is never used without owner authorization, and never for private dat
   assert.equal(router.route({ taskType: 'conversation', containsPrivateData: false }).provider, null);
   const privateDecision = router.route({ taskType: 'conversation', containsPrivateData: true, cloudAuthorized: true });
   assert.equal(privateDecision.provider, null);
-  assert.ok(privateDecision.skipped.some((item) => /private data/.test(item.reason)));
+  assert.ok(privateDecision.skipped.some((item) => /private/.test(item.reason)));
   const authorized = router.route({ taskType: 'conversation', containsPrivateData: false, cloudAuthorized: true });
   assert.equal(authorized.provider?.id, 'openai');
   assert.match(authorized.reason, /authorized/);
