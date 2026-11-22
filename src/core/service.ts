@@ -1,3 +1,5 @@
+import { routingMode } from '../ai/providerRouter.js';
+import { createCiProvider } from '../release/ciProvider.js';
 import {
   TaskId,
   TaskState,
@@ -39,6 +41,7 @@ import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 import { TaskCoordinator } from './taskCoordinator.js';
+import { EventBus } from '../events/eventBus.js';
 import type { DeviceRevokeReason, IntegrationEventSink } from '../integration/asaaEvents.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
@@ -131,6 +134,9 @@ export class JarvisCoreService {
   /** Optional ecosystem event sink (ASAA events); undefined means standalone and nothing is emitted. */
   public integrationSink?: IntegrationEventSink;
   public readonly audit: AuditLogger;
+  /** Cross-module event/state synchronization (D2.20). Summaries only; never audio, transcripts or secrets. */
+  public readonly events = new EventBus();
+  readonly #lastPublishedState = new Map<string, string>();
   public readonly identity: DeviceIdentityManager;
   public readonly deviceSecurity?: DeviceSecurityService;
   public readonly policy: PolicyGateway;
@@ -482,6 +488,10 @@ export class JarvisCoreService {
   /** Persist a checkpoint before further work; a failed write stops dependent steps. */
   #persistTask(task: TaskLifecycleRecord): boolean {
     task.updatedAt = Date.now();
+    if (this.#lastPublishedState.get(task.id) !== task.state) {
+      this.#lastPublishedState.set(task.id, task.state);
+      this.events.publish('task.state', { taskId: task.id, state: task.state }, task.deviceId);
+    }
     if (!this.taskJournal) return true;
     try {
       this.taskJournal.save(task);
@@ -646,6 +656,58 @@ export class JarvisCoreService {
     let rawResult: ExecutionResult;
     const parameters = opRequest.parameters;
     const signal = abortController.signal;
+
+    const launchAndType = async (appId: string, text: string): Promise<ExecutionResult> => {
+          const launch = await this.appAdapter.launchApp(appId, signal);
+          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
+          // Type only into the exact window the launch verified. Without a verified
+          // window identity JARVIS refuses to type rather than guess the foreground app.
+          const launched = launch.data as { windowPid?: number; windowProcess?: string } | undefined;
+          if (!launched?.windowPid || !launched.windowProcess) {
+            return {
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application launched, but its window could not be identified, so no text was typed.',
+              failureKind: 'target_mismatch',
+              data: { launch: launch.data },
+              evidence: { launch: launch.evidence, typingSkipped: true },
+            };
+          }
+          const focus = await this.desktopAgent.execute({ operation: 'desktop:focus_window', parameters: { pid: launched.windowPid } }, signal);
+          if (!focus.success) {
+            return {
+              success: false,
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application launched, but it could not be brought to the foreground, so no text was typed.',
+              failureKind: focus.failureKind ?? 'unavailable',
+              data: { launch: launch.data },
+              evidence: { launch: launch.evidence, focus: focus.evidence, typingSkipped: true },
+            };
+          }
+          this.recentAppTargets.set(taskRecord.deviceId, {
+            processName: launched.windowProcess.replace(/\.exe$/i, ''),
+            appName: appId,
+            windowPid: launched.windowPid,
+            verifiedAt: Date.now(),
+          });
+          const typing = await this.desktopAgent.execute({
+            operation: 'desktop:type_text',
+            parameters: { text: text, expectProcess: launched.windowProcess },
+          } as unknown as DesktopAction, signal);
+          // The launch is a verified side effect, so a typing failure is never a clean
+          // failure of the whole request. Typing is VERIFIED only when the adapter's UI
+          // Automation readback matched; acknowledgement-only stays PARTIAL.
+          const typingFailedCleanly = !typing.success && typing.outcome === VerificationOutcome.VERIFIED_FAILURE;
+          return {
+            ...typing,
+            ...(typingFailedCleanly ? {
+              outcome: VerificationOutcome.PARTIAL_SUCCESS,
+              error: 'The application opened, but the text was not entered: ' + (typing.error || 'typing failed.'),
+            } : {}),
+            data: { launch: launch.data, typing: typing.data },
+            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence, independentlyVerified: typing.outcome === VerificationOutcome.VERIFIED_SUCCESS },
+          };
+            };
 
     const dispatch = async (): Promise<ExecutionResult> => {
       // Dispatch ONLY to allowlisted adapters
@@ -825,56 +887,43 @@ export class JarvisCoreService {
             },
           };
         }
-        case 'desktop:launch_and_type': {
-          const launch = await this.appAdapter.launchApp(parameters.appId as string, signal);
-          if (!launch.success || launch.outcome !== VerificationOutcome.VERIFIED_SUCCESS) return launch;
-          // Type only into the exact window the launch verified. Without a verified
-          // window identity JARVIS refuses to type rather than guess the foreground app.
-          const launched = launch.data as { windowPid?: number; windowProcess?: string } | undefined;
-          if (!launched?.windowPid || !launched.windowProcess) {
-            return {
-              success: false,
-              outcome: VerificationOutcome.PARTIAL_SUCCESS,
-              error: 'The application launched, but its window could not be identified, so no text was typed.',
-              failureKind: 'target_mismatch',
-              data: { launch: launch.data },
-              evidence: { launch: launch.evidence, typingSkipped: true },
-            };
+        case 'desktop:launch_and_type':
+          return launchAndType(parameters.appId as string, parameters.text as string);
+        case 'desktop:notepad_write_and_save': {
+          // Notepad automation (D2.8): open, type, Save As into a NEW workspace file, then verify the file.
+          const { path, text } = parameters;
+          if (typeof path !== 'string' || typeof text !== 'string' || !text || text.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(text)) {
+            return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: 'Notepad save requires a workspace file path and 1–500 printable characters of single-line text.', evidence: { operation: 'desktop:notepad_write_and_save', inputValidated: false } };
           }
-          const focus = await this.desktopAgent.execute({ operation: 'desktop:focus_window', parameters: { pid: launched.windowPid } }, signal);
-          if (!focus.success) {
-            return {
-              success: false,
-              outcome: VerificationOutcome.PARTIAL_SUCCESS,
-              error: 'The application launched, but it could not be brought to the foreground, so no text was typed.',
-              failureKind: focus.failureKind ?? 'unavailable',
-              data: { launch: launch.data },
-              evidence: { launch: launch.evidence, focus: focus.evidence, typingSkipped: true },
-            };
+          let absolute: string;
+          try {
+            absolute = await this.fileAdapter.resolveNewFileForSave(path);
+          } catch (error) {
+            return { success: false, outcome: VerificationOutcome.VERIFIED_FAILURE, error: error instanceof Error ? error.message : 'The destination is not allowed.', failureKind: 'blocked', evidence: { operation: 'desktop:notepad_write_and_save', destinationChecked: true } };
           }
-          this.recentAppTargets.set(taskRecord.deviceId, {
-            processName: launched.windowProcess.replace(/\.exe$/i, ''),
-            appName: String(parameters.appId),
-            windowPid: launched.windowPid,
-            verifiedAt: Date.now(),
-          });
-          const typing = await this.desktopAgent.execute({
-            operation: 'desktop:type_text',
-            parameters: { text: parameters.text as string, expectProcess: launched.windowProcess },
-          } as unknown as DesktopAction, signal);
-          // The launch is a verified side effect, so a typing failure is never a clean
-          // failure of the whole request. Typing is VERIFIED only when the adapter's UI
-          // Automation readback matched; acknowledgement-only stays PARTIAL.
-          const typingFailedCleanly = !typing.success && typing.outcome === VerificationOutcome.VERIFIED_FAILURE;
-          return {
-            ...typing,
-            ...(typingFailedCleanly ? {
-              outcome: VerificationOutcome.PARTIAL_SUCCESS,
-              error: 'The application opened, but the text was not entered: ' + (typing.error || 'typing failed.'),
-            } : {}),
-            data: { launch: launch.data, typing: typing.data },
-            evidence: { launch: launch.evidence, focus: focus.evidence, typing: typing.evidence, independentlyVerified: typing.outcome === VerificationOutcome.VERIFIED_SUCCESS },
-          };
+          // The Save As dialog receives the resolved absolute path only after the workspace check above.
+          const typed = await launchAndType('notepad', text);
+          if (!typed.success || typed.outcome !== VerificationOutcome.VERIFIED_SUCCESS) {
+            return { ...typed, success: false, outcome: typed.outcome === VerificationOutcome.VERIFIED_FAILURE ? VerificationOutcome.PARTIAL_SUCCESS : typed.outcome, error: 'Notepad text entry was not verified, so nothing was saved: ' + (typed.error || 'unverified.'), evidence: { typing: typed.evidence, saveSkipped: true } };
+          }
+          const since = Date.now();
+          const steps: Array<{ operation: 'desktop:hotkey' | 'desktop:type_text'; parameters: Record<string, unknown> }> = [
+            { operation: 'desktop:hotkey', parameters: { keys: ['CTRL', 'SHIFT', 'S'], expectProcess: 'Notepad' } },
+            { operation: 'desktop:type_text', parameters: { text: absolute, expectProcess: 'Notepad' } },
+            { operation: 'desktop:hotkey', parameters: { keys: ['ENTER'], expectProcess: 'Notepad' } },
+          ];
+          for (const step of steps) {
+            const result = await this.desktopAgent.execute(step as unknown as DesktopAction, signal);
+            if (!result.success) {
+              return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'Text was typed in Notepad, but the Save As sequence was not confirmed. Check the Notepad window; the file was not verified.', evidence: { typing: typed.evidence, failedStep: step.operation, step: result.evidence } };
+            }
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 900));
+          const verification = await this.fileAdapter.verifySaved(absolute, since, text);
+          if (verification.success && verification.outcome === VerificationOutcome.VERIFIED_SUCCESS) {
+            return { success: true, outcome: VerificationOutcome.VERIFIED_SUCCESS, data: { path: (verification.data as { path?: string } | undefined)?.path, saved: true }, evidence: { typing: typed.evidence, durableFileVerification: verification.evidence, independentlyVerified: true } };
+          }
+          return { success: false, outcome: VerificationOutcome.PARTIAL_SUCCESS, error: 'Notepad received the save sequence, but the workspace file was not independently verified.', evidence: { typing: typed.evidence, durableFileVerification: verification.evidence, independentlyVerified: false } };
         }
         case 'desktop:type_text':
         case 'desktop:paste_text':
@@ -1682,6 +1731,41 @@ export class JarvisCoreService {
   }
 
   /**
+   * Reliable stop (D2.19): cancels everything pending and interrupts everything running for the
+   * requesting device, or for every device when an owner device asks for scope 'all'. Pending
+   * approvals are invalidated so nothing can run after the stop. Interrupted work is reported
+   * as needing reconciliation (side effects are not assumed undone). Schedules are not touched.
+   */
+  public stopAll(sessionId: SessionId, scope: 'device' | 'all' = 'device'): { cancelled: number; interrupted: number; scope: 'device' | 'all' } {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const requester = auth.device;
+    if (!auth.valid || !requester) throw new Error('Session is not authenticated');
+    if (scope === 'all' && !requester.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('STOP_ALL_DENIED_NOT_OWNER', {}, requester.id);
+      throw new Error('Only an owner device can stop all devices');
+    }
+    let cancelled = 0;
+    let interrupted = 0;
+    for (const task of [...this.tasks.values()]) {
+      if (scope === 'device' && task.deviceId !== requester.id) continue;
+      if (task.state === TaskState.EXECUTING) {
+        if (this.interruptTask(task.id)) interrupted += 1;
+      } else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
+        this.activePlanningTokens.get(task.id)?.abort();
+        this.policy.invalidateApprovals({ taskId: task.id }, 'STOP_ALL');
+        task.state = TaskState.CANCELLED;
+        this.#recordStep(task, 'cancelled', undefined, 'Stopped by user');
+        this.#skipRemainingSteps(task);
+        this.#persistTask(task);
+        cancelled += 1;
+      }
+    }
+    this.audit.record('STOP_ALL', { scope, cancelled, interrupted }, requester.id);
+    this.events.publish('ops.alert', { kind: 'stop_all', scope, cancelled, interrupted }, scope === 'device' ? requester.id : undefined);
+    return { cancelled, interrupted, scope };
+  }
+
+  /**
    * Derive conservative resource locks from operation semantics. Desktop input is
    * exclusive across the host; memory, registries and shared workspace operations
    * are serialized until finer-grained resource identity is proven.
@@ -1724,6 +1808,7 @@ export class JarvisCoreService {
   public onDeviceRevoked(deviceId: DeviceId, reason: DeviceRevokeReason = 'unspecified'): void {
     try { this.integrationSink?.deviceRevoked(reason); } catch { /* ecosystem events never affect revocation */ }
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
+    this.events.publish('device.revoked', { reason }, deviceId);
     this.deviceSecurity?.cancelPendingCreatedBy(deviceId);
     const schedules = this.scheduler.cancelForDevice(deviceId);
     // A revoked device's short-lived working context is discarded immediately.
@@ -1806,6 +1891,12 @@ export class JarvisCoreService {
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
         reliability: this.reliabilityMetrics(),
+      },
+      subsystems: {
+        taskJournalPersistent: this.taskJournal !== undefined,
+        eventsLatestSeq: this.events.latestSeq(),
+        routingMode: routingMode(),
+        ciProviderEnabled: createCiProvider().enabled,
       },
       schedules: { active: this.scheduler.activeCount },
       notifications: this.notifications.size,

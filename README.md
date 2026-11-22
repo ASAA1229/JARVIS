@@ -76,3 +76,10 @@ See `.env.example` for all settings.
 ## Project status
 
 JARVIS is an evolving development project and is **not declared production-ready**. Every validation claim must identify the exact commit, environment, command/scenario, result and limitations. Automated CI, Windows host acceptance, Android physical-device acceptance and production release approval are distinct gates.
+
+
+## Status and evidence — 2026-11-20
+
+JARVIS is **NOT ACCEPTED / NO-GO**. The observed `new` CI run passed (44727781030); no current `dev`/`main` workflow runs were found. Physical Windows/Android verification and live Jenkins/artifact lifecycle evidence remain open.
+
+See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for the dated evidence, outstanding gates and next actions. Workflow results are specific to their recorded run and commit; missing runs are not passes.

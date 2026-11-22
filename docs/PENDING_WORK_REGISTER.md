@@ -18,3 +18,15 @@ Map applicable requirements for shared architecture and integrations; data owner
 All answers were “all of the above”; these are candidate requirements, not implementation evidence or delivery commitments. Reconcile them to existing JARVIS epic IDs and stories, identify duplicates/conflicts, assign owners/dependencies, define measurable acceptance criteria and attach evidence. Preserve the current local/test/integration/acceptance distinctions.
 
 Master Requirements Baseline v1.0 remains unchanged. Documentation only: no code, tests, deployment, merge, paid services or release are authorized.
+
+
+## Organization verification update — 2026-11-20
+
+- Re-run and record CI on `dev` and `main`; the current organization audit found no workflow runs for those branches, so they remain NOT TESTED.
+- Apply and verify branch protection and required checks on `main`, `dev`, `new`, `fix`, and `test`.
+- Complete physical Windows 11 laptop and Android-device testing for wake word, voice commands, pairing, QR/authenticator, session isolation, privacy, offline/local operation and recovery.
+- Validate hybrid local/cloud routing and confirm no continuous cloud audio upload under the approved privacy design.
+- Verify Jenkins integration with an approved live endpoint, and test artifact publishing, retrieval, integrity, rollback and recovery; mock/fake-server tests are not live integration evidence.
+- Complete owner acceptance, security/privacy review and release operations evidence. Current state remains NO-GO / NOT ACCEPTED.
+
+No implementation, device test, deployment, merge or promotion was performed by this documentation refresh.

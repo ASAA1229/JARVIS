@@ -392,3 +392,8 @@ Source: `reports/epic-criteria.json` (commit 72965d7). Local automated verificat
 | JARVIS-US-025 | Meet reliability and performance targets | 3 / 2 / 0 / 0 / 0 | in progress (code agent still working) |
 
 Total 127 criteria: 105 complete and verified, 12 partially complete, 4 implemented not tested, 6 blocked by external dependency, 0 not implemented.
+
+
+## Story evidence reconciliation — 2026-11-20
+
+The observed `new` CI run passed (44727781030). No current `dev`/`main` run was found, and physical Windows/Android device acceptance, wake-word/voice, pairing, privacy/offline behavior, live Jenkins and artifact lifecycle remain unverified. Do not mark device-dependent or integrated stories accepted from CI alone. Update individual story states only when exact-commit, physical-device or live-integration evidence is attached.

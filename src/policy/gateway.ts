@@ -1,3 +1,4 @@
+import { findPaymentTarget } from './exclusions.js';
 import {
   OperationRequest,
   DeviceRecord,
@@ -108,6 +109,7 @@ export class PolicyGateway {
       ['desktop:launch_and_type', ['appId', 'text']],
       ['desktop:browser_search', ['appId', 'query']],
       ['desktop:save_and_verify', ['path', 'contains', 'expectProcess']],
+      ['desktop:notepad_write_and_save', ['path', 'text']],
       ['desktop:type_text', ['text', 'expectProcess']],
       ['desktop:paste_text', ['text', 'expectProcess']],
       ['desktop:hotkey', ['keys', 'expectProcess']],
@@ -368,6 +370,18 @@ export class PolicyGateway {
           };
         }
       }
+    }
+
+    // Rule 4b: Payment and financial applications are always excluded. No approval can override this.
+    const paymentParameter = findPaymentTarget(req.parameters as Record<string, unknown>);
+    if (paymentParameter) {
+      this.audit.record('POLICY_DENIED_PAYMENT_TARGET', { operation: req.operation, parameter: paymentParameter }, device.id, taskId);
+      return {
+        allowed: false,
+        requiresApproval: false,
+        riskTier: RiskTier.HIGH,
+        reason: 'Payment and financial applications are excluded from automation by owner policy',
+      };
     }
 
     // Rule 4: If approval is not required, evaluate as allowed

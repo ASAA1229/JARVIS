@@ -14,6 +14,12 @@ let cached: DesktopSessionInfo | undefined;
  * Never fakes a pass: callers must turn a non-interactive result into an explicit, counted SKIP.
  */
 export function detectDesktopSession(): DesktopSessionInfo {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    return {
+      interactive: false,
+      reason: 'GitHub Actions hosted runner (not a real interactive desktop session)',
+    };
+  }
   if (cached) return cached;
   if (process.platform !== 'win32') {
     return (cached = { interactive: true, reason: 'non-Windows host' });

@@ -83,6 +83,23 @@ export class WorkspaceFileAdapter {
     return target.absolute;
   }
 
+  /**
+   * Resolve a NEW file destination for an application "Save As" (Notepad automation).
+   * The path must be inside an approved root, its folder must already exist and the file must
+   * not exist: JARVIS never lets a GUI save dialog overwrite existing user data.
+   */
+  public async resolveNewFileForSave(input: unknown): Promise<string> {
+    const target = await this.resolveSafe(input, { mustExist: false });
+    if (target.relative === '.') throw new FileGuardError('unsupported', 'A file name is required.');
+    if (!(await fs.stat(dirname(target.absolute)).then((stat) => stat.isDirectory(), () => false))) {
+      throw new FileGuardError('unavailable', 'The destination folder does not exist.');
+    }
+    if (await fs.lstat(target.absolute).then(() => true, () => false)) {
+      throw new FileGuardError('blocked', 'The destination file already exists; JARVIS will not overwrite it through an application dialog.');
+    }
+    return target.absolute;
+  }
+
   // ───── path safety ─────
 
   private isInside(root: string, candidate: string): boolean {

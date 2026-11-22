@@ -15,8 +15,9 @@ export interface CiBuildIdentity {
 }
 
 export interface CiProvider {
-  readonly kind: 'jenkins';
-  readonly enabled: false;
+  /** 'jenkins' is always the disabled boundary; 'mock' is a local in-memory implementation. */
+  readonly kind: 'jenkins' | 'mock';
+  readonly enabled: boolean;
   /** Read the immutable identity of a finished build. Disabled: always refuses. */
   getBuildIdentity(buildNumber: string): Promise<CiBuildIdentity>;
   /** Trigger a build. Disabled: always refuses. */
@@ -36,8 +37,44 @@ export class DisabledCiProvider implements CiProvider {
   async triggerBuild(): Promise<{ buildNumber: string }> { throw new CiIntegrationDisabledError('triggerBuild'); }
 }
 
-/** Jenkins-looking environment never enables anything; the result is always the disabled provider. */
-export function createCiProvider(_env: Record<string, string | undefined> = process.env): CiProvider {
+/**
+ * Local, deterministic CI provider for development and dry runs (D2.16). It performs no network
+ * or process access: "triggering" a build records an immutable identity from explicitly supplied
+ * commit/repository parameters. It exists so the build-to-manifest handoff can be exercised
+ * without a Jenkins controller; it is never a substitute for a real approved controller.
+ */
+export class MockCiProvider implements CiProvider {
+  readonly kind = 'mock' as const;
+  readonly enabled = true;
+  private readonly builds = new Map<string, CiBuildIdentity>();
+  private next = 1;
+
+  async getBuildIdentity(buildNumber: string): Promise<CiBuildIdentity> {
+    const identity = this.builds.get(buildNumber);
+    if (!identity) throw new Error(`Mock CI has no build ${buildNumber}.`);
+    return { ...identity };
+  }
+
+  async triggerBuild(parameters: Record<string, string>): Promise<{ buildNumber: string }> {
+    const buildNumber = String(this.next);
+    const identity = validateBuildIdentity({
+      gitCommit: parameters['GIT_COMMIT'],
+      repository: parameters['REPOSITORY'],
+      buildNumber,
+      runUrl: `http://localhost/mock-ci/job/${buildNumber}/`,
+    });
+    this.next += 1;
+    this.builds.set(buildNumber, identity);
+    return { buildNumber };
+  }
+}
+
+/**
+ * The real Jenkins provider can never be enabled from environment variables: Jenkins-looking
+ * configuration is ignored. Only the explicit, local-only JARVIS_CI_PROVIDER=mock selects the mock.
+ */
+export function createCiProvider(env: Record<string, string | undefined> = process.env): CiProvider {
+  if (env['JARVIS_CI_PROVIDER'] === 'mock') return new MockCiProvider();
   return new DisabledCiProvider();
 }
 

@@ -405,6 +405,25 @@ export class DeviceIdentityManager {
     return persisted;
   }
 
+
+  /**
+   * Session recovery (D2.12): ends every live session of one ACTIVE device without revoking it,
+   * for a suspected leaked session token or lost browser. The device keeps its enrolled key and
+   * can sign a new session; nothing else about its pairing changes. Returns the number ended.
+   */
+  public endDeviceSessions(deviceId: DeviceId): { success: boolean; ended: number; error?: string } {
+    if (!this.stateHealthy) return { success: false, ended: 0, error: 'Identity state is unhealthy.' };
+    const device = this.devices.get(deviceId);
+    if (!device || device.status !== DeviceStatus.ACTIVE) return { success: false, ended: 0, error: 'Active device not found.' };
+    let ended = 0;
+    for (const session of this.sessions.values()) {
+      if (session.deviceId === deviceId && session.active) { session.active = false; ended += 1; }
+    }
+    const persisted = this.persistState();
+    this.audit.record('DEVICE_SESSIONS_ENDED', { ended, persisted }, deviceId);
+    return persisted ? { success: true, ended } : { success: false, ended, error: 'Session end could not be persisted.' };
+  }
+
   /**
    * Owner-only emergency revoke-all. Every ACTIVE device is revoked and every live session is
    * invalidated, INCLUDING the caller's, unless `keepSessionId` explicitly names the caller's
