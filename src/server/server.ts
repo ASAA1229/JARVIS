@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission, TaskState } from '../core/types.js';
+import { needsOwnerReview } from '../core/commandLifecycle.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
@@ -935,7 +936,8 @@ export class JarvisServer {
         // Local speech-to-text (whisper.cpp) availability: boolean only, never paths.
         let localStt = false;
         try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
-        return this.jsonResponse(res, 200, { localTts, localStt });
+        // Browser speech recognition may stream audio to a vendor cloud: it is only offered when the routing mode permits cloud (local-first).
+        return this.jsonResponse(res, 200, { localTts, localStt, browserSpeechAllowed: cloudRoutingAllowed() });
       }
       // Wake metrics: privacy-preserving counters only (no audio, no transcript text).
       if (req.method === 'POST' && url.pathname === '/api/voice/wake-event') {
@@ -1735,6 +1737,7 @@ export class JarvisServer {
             id: task.id,
             state: task.state,
             lifecycle: this.jarvis.lifecycleOf(task),
+            needsOwnerReview: needsOwnerReview(task.state),
             operation: task.operation,
             origin: task.origin,
             createdAt: task.createdAt,

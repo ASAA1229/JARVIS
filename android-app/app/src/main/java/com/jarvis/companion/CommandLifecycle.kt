@@ -22,5 +22,8 @@ object CommandLifecycle {
         else -> FAILED
     }
 
+    /** Uncertain outcome (the action may have partly happened): only the owner can settle it. Mirrors needsOwnerReview() in the core. */
+    fun needsOwnerReview(state: String): Boolean = state == "AWAITING_RECOVERY" || state == "INTERRUPTED"
+
     fun isInFlight(lifecycle: String): Boolean = lifecycle == QUEUED || lifecycle == RUNNING
 }

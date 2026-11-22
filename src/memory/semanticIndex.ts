@@ -12,6 +12,7 @@
  */
 import { createHash } from 'node:crypto';
 import { EncryptedJsonFile } from './encryptedJsonFile.js';
+import { ProviderRouter } from '../ai/providerRouter.js';
 
 export type RetrievalMethod = 'semantic' | 'lexical';
 
@@ -22,21 +23,17 @@ export interface Embedder {
 
 export class EmbeddingUnavailableError extends Error {}
 
-/** Resolve the local Ollama embedding endpoint; null when configuration is not loopback. */
+/**
+ * Resolve the local Ollama embedding endpoint; null when there is no loopback local provider.
+ * The endpoint comes from the provider router (E2:D4.7), so embeddings follow the same single
+ * routing policy as chat: loopback only, never a cloud or remote host, in every routing mode.
+ */
 export function resolveLocalEmbeddingEndpoint(env: NodeJS.ProcessEnv = process.env): { url: string; model: string } | null {
-  const raw = (env.OLLAMA_URL || env.JARVIS_AI_BASE_URL || 'http://localhost:11434').replace(/\/+$/, '').replace(/\/v1$/i, '');
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return null;
-  }
-  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
-  if (!loopback || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password ||
-      parsed.search || parsed.hash || parsed.pathname !== '/') return null;
+  const provider = new ProviderRouter(() => env).localProvider();
+  if (!provider) return null;
   const model = env.JARVIS_EMBED_MODEL || 'nomic-embed-text';
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model)) return null;
-  return { url: `${parsed.origin}/api/embed`, model };
+  return { url: `${provider.baseUrl}/api/embed`, model };
 }
 
 const MAX_EMBEDDING_RESPONSE_BYTES = 128 * 1024;

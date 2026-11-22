@@ -1,5 +1,5 @@
 import { routingMode } from '../ai/providerRouter.js';
-import { lifecycleFromTaskState, type CommandLifecycleState } from './commandLifecycle.js';
+import { lifecycleFromTaskState, needsOwnerReview, type CommandLifecycleState } from './commandLifecycle.js';
 import { createCiProvider } from '../release/ciProvider.js';
 import {
   TaskId,
@@ -597,7 +597,7 @@ export class JarvisCoreService {
     task.updatedAt = Date.now();
     if (this.#lastPublishedState.get(task.id) !== task.state) {
       this.#lastPublishedState.set(task.id, task.state);
-      this.events.publish('task.state', { taskId: task.id, state: task.state, lifecycle: this.lifecycleOf(task) }, task.deviceId);
+      this.events.publish('task.state', { taskId: task.id, state: task.state, lifecycle: this.lifecycleOf(task), needsOwnerReview: needsOwnerReview(task.state) }, task.deviceId);
     }
     if (!this.taskJournal) return true;
     try {
@@ -1155,10 +1155,15 @@ export class JarvisCoreService {
       // Adapter exceptions can contain local paths, command fragments, or other
       // implementation details. Keep the user-facing result generic and retain
       // only a non-sensitive error class for diagnostics.
+      // E2:D4.8: once dispatch has started a non-read-only adapter may have partly acted, so the
+      // outcome is uncertain (-> AWAITING_RECOVERY, owner review) rather than a clean failure.
+      const uncertain = dispatchStarted && !RETRYABLE_READ_ONLY.has(opRequest.operation);
       rawResult = {
         success: false,
-        outcome: VerificationOutcome.VERIFIED_FAILURE,
-        error: 'The operation failed inside its adapter; no verified success is reported.',
+        outcome: uncertain ? VerificationOutcome.UNCERTAIN : VerificationOutcome.VERIFIED_FAILURE,
+        error: uncertain
+          ? 'The operation failed inside its adapter after it had started; its effect is uncertain and needs owner review before any retry.'
+          : 'The operation failed inside its adapter; no verified success is reported.',
         evidence: { errorType: err instanceof Error ? err.name : 'UnknownError' },
       };
     } finally {

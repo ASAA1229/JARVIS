@@ -119,7 +119,7 @@ class OwnerPanels(
             tasksList.removeAllViews()
             if (tasks.isEmpty()) tasksList.addView(text("No recent tasks."))
             for (task in tasks.take(20)) {
-                tasksList.addView(text("${task.lifecycle} (${task.state}) - ${task.operation.ifBlank { "planning" }} (${time(task.updatedAt)})"))
+                tasksList.addView(text((if (task.needsOwnerReview) "NEEDS OWNER REVIEW" else task.lifecycle) + " (${task.state}) - ${task.operation.ifBlank { "planning" }} (${time(task.updatedAt)})"))
                 if (CommandLifecycle.isInFlight(task.lifecycle)) {
                     val actionRow: LinearLayout = newActionRow(tasksList)
                     rowButton(actionRow, if (task.lifecycle == CommandLifecycle.RUNNING) "Stop" else "Cancel") {
