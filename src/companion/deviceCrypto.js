@@ -209,7 +209,9 @@
     const timestamp = Date.now();
     const nonce = randomNonce();
     const bodyHash = hasBody ? await sha256Hex(stableStringify(options.body)) : await sha256Hex('');
-    const canonical = `${method}:${path}:${sessionId}:${timestamp}:${nonce}:${bodyHash}`;
+    // The server verifies the signature over the path only (no query string), like the Android client.
+    const signedPath = String(path).split('?')[0];
+    const canonical = `${method}:${signedPath}:${sessionId}:${timestamp}:${nonce}:${bodyHash}`;
     const signature = await signText(record.privateKey, canonical);
     const headers = new Headers(options.headers || {});
     headers.set('x-session-id', sessionId);
