@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cloudRoutingAllowed } from '../ai/providerRouter.js';
 
 /**
  * Replaceable voice provider boundaries.
@@ -54,7 +55,8 @@ export interface VoicePrivacySettings {
 }
 
 export function readVoicePrivacySettings(): VoicePrivacySettings {
-  return { allowCloudSpeech: process.env.JARVIS_ALLOW_CLOUD_SPEECH === '1' };
+  // Cloud speech needs the owner's explicit opt-in AND a routing mode that permits cloud (local-first only).
+  return { allowCloudSpeech: process.env.JARVIS_ALLOW_CLOUD_SPEECH === '1' && cloudRoutingAllowed() };
 }
 
 const MAX_WAV_BYTES = 3 * 1024 * 1024;
