@@ -1099,7 +1099,9 @@ export class JarvisServer {
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = await this.readJsonBody(req, 2 * 1024 * 1024 + 64 * 1024);
         if (!this.isJsonObject(body) || typeof body.sourceName !== 'string' || typeof body.content !== 'string' ||
-            (body.title !== undefined && typeof body.title !== 'string')) {
+            (body.title !== undefined && typeof body.title !== 'string') ||
+            (body.collection !== undefined && typeof body.collection !== 'string') ||
+            (body.replace !== undefined && typeof body.replace !== 'boolean')) {
           return this.jsonResponse(res, 400, { error: 'sourceName and UTF-8 text content are required' });
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
@@ -1110,6 +1112,8 @@ export class JarvisServer {
             ownerDeviceId: auth.device.id,
             sourceName: body.sourceName,
             ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            ...(typeof body.collection === 'string' ? { collection: body.collection } : {}),
+            ...(body.replace === true ? { replace: true } : {}),
             content: body.content,
           });
           this.jarvis.audit.record('DOCUMENT_INGESTED', { documentId: result.documentId, chunkCount: result.chunkCount, duplicate: result.duplicate }, auth.device.id);
@@ -1164,14 +1168,15 @@ export class JarvisServer {
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = await this.readJsonBody(req);
         if (!this.isJsonObject(body) || typeof body.query !== 'string' ||
-            (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit)))) {
+            (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit))) ||
+            (body.collection !== undefined && typeof body.collection !== 'string')) {
           return this.jsonResponse(res, 400, { error: 'A query and optional integer limit are required' });
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
         try {
-          const results = await this.documentRag.search(auth.device.id, body.query, body.limit ?? 5);
+          const results = await this.documentRag.search(auth.device.id, body.query, body.limit ?? 5, undefined, typeof body.collection === 'string' ? body.collection : undefined);
           return this.jsonResponse(res, 200, {
             method: results[0]?.method ?? (resolveLocalEmbeddingEndpoint() ? 'semantic_or_lexical_fallback' : 'lexical'),
             results: results.map((item) => ({ content: item.content, score: item.score, source: item.source })),
@@ -1189,7 +1194,7 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
-        return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id) });
+        return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id, typeof body.collection === 'string' ? body.collection : undefined) });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/documents/delete') {
