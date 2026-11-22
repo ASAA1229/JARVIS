@@ -12,7 +12,10 @@ import { createConfiguredPiperProvider } from '../voice/piperTts.js';
 import { JarvisPlatform, getCapability, listCapabilities, listCapabilitiesForPlatform } from '../capabilities/registry.js';
 import { PersonalMemoryStore, type MemoryCategory } from '../memory/personalMemoryStore.js';
 import { createOfficialStoreSearch, StorePlatform } from '../stores/officialStore.js';
-import { VoiceProviderRegistry } from '../voice/providers.js';
+import { VoiceProviderRegistry, readVoicePrivacySettings } from '../voice/providers.js';
+import { WakeSessionMachine } from '../voice/wakeSession.js';
+import { AudioIngressGuard, mayReceiveAudio } from '../voice/audioPrivacy.js';
+import { cloudRoutingAllowed } from '../ai/providerRouter.js';
 import { VoiceUtteranceGuard, WakeMetrics, isValidUtteranceId } from '../voice/utteranceGuard.js';
 import { answerConversationalMessageResult, isActionRequest } from '../conversation/conversationalAssistant.js';
 import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '../conversation/agentModelAdapter.js';
@@ -53,6 +56,8 @@ export class JarvisServer {
   private readonly voiceProviders = new VoiceProviderRegistry();
   private readonly utteranceGuard = new VoiceUtteranceGuard();
   private readonly wakeMetrics = new WakeMetrics();
+  private readonly wakeSessions = new WakeSessionMachine({ metrics: this.wakeMetrics });
+  private readonly audioIngress = new AudioIngressGuard();
   private readonly androidCommands = new AndroidCommandQueue();
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
@@ -83,6 +88,13 @@ export class JarvisServer {
       );
     }
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
+    // Revocation isolates per-device voice state immediately (wake window, audio budget).
+    this.jarvis.events.subscribe((event) => {
+      if (event.type === 'device.revoked' && event.deviceId) {
+        this.wakeSessions.forget(event.deviceId);
+        this.audioIngress.forget(event.deviceId);
+      }
+    });
     this.personalMemory = this.jarvis.personalMemory;
     // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
     if (this.ownerControlToken && this.personalMemory) {
@@ -915,6 +927,41 @@ export class JarvisServer {
         this.wakeMetrics.record(body.event);
         return this.jsonResponse(res, 202, { recorded: true });
       }
+      // Per-device wake/command state machine (D2.3). The wake never authorizes execution: a returned
+      // command is still only text that must be submitted as a normal request through the planner and gateway.
+      if (req.method === 'POST' && url.pathname === '/api/voice/wake-session') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        const actions = ['wake', 'transcript', 'complete', 'cancel', 'mute', 'unmute', 'state'];
+        if (!this.isJsonObject(body) || typeof body.action !== 'string' || !actions.includes(body.action)) return this.jsonResponse(res, 400, { error: 'A valid wake-session action is required' });
+        if (body.action === 'transcript' && (typeof body.text !== 'string' || body.text.length > 1200)) return this.jsonResponse(res, 400, { error: 'text must be a string up to 1200 characters' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const deviceId = auth.device.id;
+        let result: Record<string, unknown>;
+        switch (body.action) {
+          case 'wake': result = { ...this.wakeSessions.wake(deviceId) }; break;
+          case 'transcript': result = { ...this.wakeSessions.transcript(deviceId, body.text as string) }; break;
+          case 'complete': result = { state: this.wakeSessions.complete(deviceId) }; break;
+          case 'cancel': result = { state: this.wakeSessions.cancel(deviceId) }; break;
+          case 'mute': result = { state: this.wakeSessions.setMuted(deviceId, true) }; break;
+          case 'unmute': result = { state: this.wakeSessions.setMuted(deviceId, false) }; break;
+          default: result = { state: this.wakeSessions.state(deviceId) };
+        }
+        this.jarvis.events.publish('voice.state', { state: String(result.state) }, deviceId);
+        return this.jsonResponse(res, 200, result);
+      }
+      // Cross-module event stream (D2.20): incremental, device-isolated; owners (device-manage) see all devices.
+      if (req.method === 'GET' && url.pathname === '/api/events') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, undefined);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const since = Number(url.searchParams.get('since') ?? '0');
+        const limit = Number(url.searchParams.get('limit') ?? '200');
+        return this.jsonResponse(res, 200, this.jarvis.events.since(since, { deviceId: auth.device.id, owner: auth.device.permissions.includes(Permission.DEVICE_MANAGE) }, Number.isFinite(limit) ? limit : 200));
+      }
       if (req.method === 'GET' && url.pathname === '/api/voice/metrics') {
         const sessionId = req.headers['x-session-id'];
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
@@ -990,6 +1037,15 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         const provider = await this.voiceProviders.pickLocalStt();
         if (!provider) return this.jsonResponse(res, 503, { error: 'No local speech recognition engine is installed', code: 'LOCAL_STT_NOT_CONFIGURED' });
+        // Audio privacy (D2.6): only bounded, explicit clips; never a continuous stream; never to a non-local provider unless allowed.
+        if (!mayReceiveAudio(provider, { allowCloudSpeech: readVoicePrivacySettings().allowCloudSpeech, cloudRoutingAllowed: cloudRoutingAllowed() })) {
+          return this.jsonResponse(res, 403, { error: 'Audio may not be sent to a non-local speech provider under the current privacy settings' });
+        }
+        const admission = this.audioIngress.admit(auth.device.id, Buffer.from(body.audioBase64, 'base64'));
+        if (!admission.allowed) {
+          this.jarvis.audit.record('VOICE_AUDIO_REFUSED', { reason: admission.reason }, auth.device.id);
+          return this.jsonResponse(res, admission.reason === 'rate_limited' ? 429 : 400, { error: admission.reason === 'rate_limited' ? 'Audio capture budget exceeded; continuous audio upload is not allowed' : 'Audio must be a valid WAV clip within the clip length limit', code: admission.reason });
+        }
         const transcriptionAbort = new AbortController();
         const abortTranscription = (): void => {
           if (!res.writableEnded && !transcriptionAbort.signal.aborted) transcriptionAbort.abort();
@@ -1043,7 +1099,9 @@ export class JarvisServer {
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = await this.readJsonBody(req, 2 * 1024 * 1024 + 64 * 1024);
         if (!this.isJsonObject(body) || typeof body.sourceName !== 'string' || typeof body.content !== 'string' ||
-            (body.title !== undefined && typeof body.title !== 'string')) {
+            (body.title !== undefined && typeof body.title !== 'string') ||
+            (body.collection !== undefined && typeof body.collection !== 'string') ||
+            (body.replace !== undefined && typeof body.replace !== 'boolean')) {
           return this.jsonResponse(res, 400, { error: 'sourceName and UTF-8 text content are required' });
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
@@ -1054,6 +1112,8 @@ export class JarvisServer {
             ownerDeviceId: auth.device.id,
             sourceName: body.sourceName,
             ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            ...(typeof body.collection === 'string' ? { collection: body.collection } : {}),
+            ...(body.replace === true ? { replace: true } : {}),
             content: body.content,
           });
           this.jarvis.audit.record('DOCUMENT_INGESTED', { documentId: result.documentId, chunkCount: result.chunkCount, duplicate: result.duplicate }, auth.device.id);
@@ -1108,14 +1168,15 @@ export class JarvisServer {
         if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
         const body = await this.readJsonBody(req);
         if (!this.isJsonObject(body) || typeof body.query !== 'string' ||
-            (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit)))) {
+            (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit))) ||
+            (body.collection !== undefined && typeof body.collection !== 'string')) {
           return this.jsonResponse(res, 400, { error: 'A query and optional integer limit are required' });
         }
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
         try {
-          const results = await this.documentRag.search(auth.device.id, body.query, body.limit ?? 5);
+          const results = await this.documentRag.search(auth.device.id, body.query, body.limit ?? 5, undefined, typeof body.collection === 'string' ? body.collection : undefined);
           return this.jsonResponse(res, 200, {
             method: results[0]?.method ?? (resolveLocalEmbeddingEndpoint() ? 'semantic_or_lexical_fallback' : 'lexical'),
             results: results.map((item) => ({ content: item.content, score: item.score, source: item.source })),
@@ -1133,7 +1194,7 @@ export class JarvisServer {
         const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
-        return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id) });
+        return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id, typeof body.collection === 'string' ? body.collection : undefined) });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/documents/delete') {
@@ -1421,6 +1482,7 @@ export class JarvisServer {
         if (!target.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Target phone lacks read-only inventory permission' });
         const command = this.androidCommands.create(target.id, auth.device.id, 60_000);
         this.jarvis.audit.record('ANDROID_COMMAND_QUEUED', { commandId: command.id, operation: command.operation, targetDeviceId: target.id }, auth.device.id);
+        this.jarvis.events.publish('android.command', { commandId: command.id, status: 'queued', targetDeviceId: target.id }, auth.device.id);
         return this.jsonResponse(res, 201, { command });
       }
 
@@ -1463,6 +1525,7 @@ export class JarvisServer {
           return this.jsonResponse(res, 409, { error: 'Command result was not accepted', outcome });
         }
         this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
+        this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'completed' }, auth.device.id);
         return this.jsonResponse(res, 200, { success: true });
       }
 
@@ -1478,7 +1541,10 @@ export class JarvisServer {
         const outcome = this.androidCommands.cancel(auth.device.id, body.commandId);
         if (outcome === 'not_found') return this.jsonResponse(res, 404, { error: 'Command not found' });
         if (outcome === 'not_cancellable') return this.jsonResponse(res, 409, { error: 'Command already finished', outcome });
-        if (outcome === 'cancelled') this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+        if (outcome === 'cancelled') {
+          this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+          this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'cancelled' }, auth.device.id);
+        }
         return this.jsonResponse(res, 200, { success: true, outcome });
       }
 
@@ -1550,6 +1616,27 @@ export class JarvisServer {
           }, auth.device.id);
         }
         return this.jsonResponse(res, 200, { success: true });
+      }
+
+      // Session recovery: end all live sessions of one device without revoking its pairing.
+      if (req.method === 'POST' && url.pathname === '/api/device/sessions/end') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.deviceId !== 'string' || !body.deviceId) return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const targetId: string = body.deviceId;
+        const owner = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        if (targetId !== auth.device.id && !owner) return this.jsonResponse(res, 403, { error: 'Only an owner device can end the sessions of another device' });
+        if (owner && this.jarvis.deviceSecurity?.getTotpStatus() === 'ENABLED' && (typeof body.totpCode !== 'string' || !this.jarvis.deviceSecurity.verifyStepUp(auth.device, body.totpCode))) return this.jsonResponse(res, 401, { error: 'Fresh authenticator verification required' });
+        const result = this.jarvis.identity.endDeviceSessions(targetId);
+        if (!result.success) return this.jsonResponse(res, 409, { success: false, error: result.error });
+        this.jarvis.policy.invalidateApprovals({ deviceId: targetId }, 'SESSIONS_ENDED');
+        this.wakeSessions.forget(targetId);
+        this.audioIngress.forget(targetId);
+        this.jarvis.events.publish('session.ended', { ended: result.ended }, targetId);
+        return this.jsonResponse(res, 200, { success: true, ended: result.ended });
       }
 
       // Notifications for approvals, blocked actions, failures, uncertain outcomes and completions.
@@ -1675,6 +1762,19 @@ export class JarvisServer {
         return this.jsonResponse(res, result.success ? 200 : 409, result);
       }
 
+      // Reliable stop: cancels pending and interrupts running work for this device (or all devices for an owner).
+      if (req.method === 'POST' && url.pathname === '/api/stop') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || (body.scope !== undefined && body.scope !== 'device' && body.scope !== 'all')) return this.jsonResponse(res, 400, { error: 'scope must be device or all' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const scope = body.scope === 'all' ? 'all' : 'device';
+        if (scope === 'all' && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Only an owner device can stop all devices' });
+        this.wakeSessions.cancel(auth.device.id);
+        return this.jsonResponse(res, 200, this.jarvis.stopAll(sessionId, scope));
+      }
       // Audit logs (for dashboard monitoring)
       if (req.method === 'GET' && url.pathname === '/api/audit') {
         const sessionId = req.headers['x-session-id'] as string;

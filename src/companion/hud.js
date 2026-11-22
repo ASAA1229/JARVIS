@@ -197,6 +197,7 @@ function setupEventListeners() {
     isMicMuted = !isMicMuted;
     try { localStorage.setItem('jarvis.mic-muted', String(isMicMuted)); } catch { /* Keep the control usable without storage. */ }
     updateMuteControl();
+    void reportWakeSession(isMicMuted ? 'mute' : 'unmute');
     if (isMicMuted) {
       disableHandsFree();
       disableWakeDetection();
@@ -436,6 +437,7 @@ function highlightWakeConsent() {
 async function handleLocalWakeDetected(probability) {
   if (!handsFreeEnabled || !handsFreeStandby || isSubmitting || isListening) return;
   if (isSpeaking || Date.now() < speechGuardUntil) return;
+  void reportWakeSession('wake');
   wakeCommandRetryCount = 0;
   handsFreeStandby = false;
   stopHandsFreeStandby();
@@ -1326,6 +1328,7 @@ async function submitDirective(text) {
     }
     if (typeof data.message === 'string') data.message = normalizeUserFacingMessage(data.message);
     refreshTaskHistory(); // Keep the task timeline aligned with the server's authoritative state.
+    if (sourceWasTranscript) void reportWakeSession('complete');
     if (data.state === 'ANSWERED') {
       setAssistantState('JARVIS RESPONSE', data.message || 'I have a response for you.');
       addFeedItem('success', data.message || 'I have a response for you.');
@@ -2034,6 +2037,7 @@ async function ensureEnrolledDevice() {
     document.getElementById('hud-device-id').textContent = currentDevice.id;
     document.getElementById('enclave-tag').textContent = 'ENROLLED & AUTHENTICATED';
     setNode('session', 'ok', 'SESSION OK');
+    startEventSync();
     if (speechUnavailableReason) {
       setAssistantState(window.isSecureContext ? 'SPEECH API UNAVAILABLE' : 'SECURE CONTEXT REQUIRED', speechUnavailableReason);
     } else {
@@ -2664,3 +2668,54 @@ function arrayBufferToBase64(buffer) {
   for (let i = 0; i < bytes.length; i += step) binary += String.fromCharCode(...bytes.subarray(i, i + step));
   return btoa(binary);
 }
+
+/**
+ * Mirrors the local wake / mute / completion events into the server's per-device wake-session
+ * state machine. This is advisory telemetry for the authoritative state: it never gates or
+ * triggers a command, and a failure is ignored so voice input keeps working offline.
+ */
+async function reportWakeSession(action) {
+  if (!currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  try {
+    await window.JarvisDeviceCrypto.signedFetch('/api/voice/wake-session', { method: 'POST', body: { action } });
+  } catch { /* The server mirror is best-effort; local voice handling is unaffected. */ }
+}
+
+/**
+ * Incremental cross-module event sync: polls /api/events with the last sequence number. A task
+ * or voice event refreshes the task timeline immediately; a gap or a revocation forces a full
+ * refresh so the HUD never trusts a stale view.
+ */
+let eventSyncCursor = 0;
+let eventSyncTimer = null;
+let eventSyncInFlight = false;
+
+async function pollEvents() {
+  if (eventSyncInFlight || !currentSession || !window.JarvisDeviceCrypto?.signedFetch) return;
+  eventSyncInFlight = true;
+  try {
+    const res = await window.JarvisDeviceCrypto.signedFetch('/api/events?since=' + encodeURIComponent(String(eventSyncCursor)), { method: 'GET' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.events) || !Number.isFinite(data.latestSeq)) return;
+    const firstPoll = eventSyncCursor === 0;
+    const last = data.events.length ? data.events[data.events.length - 1].seq : null;
+    // Advance only as far as events were actually delivered, so a truncated page is continued next poll.
+    eventSyncCursor = last !== null ? last : (firstPoll ? data.latestSeq : eventSyncCursor);
+    if (data.gap || data.events.some((event) => event.type === 'task.state' || event.type === 'approval.requested' || event.type === 'approval.resolved')) {
+      void refreshTaskHistory();
+    }
+    if (data.events.some((event) => event.type === 'device.revoked' || event.type === 'session.ended')) {
+      void ensureEnrolledDevice();
+    }
+  } catch { /* Polling is retried on the next tick. */ } finally {
+    eventSyncInFlight = false;
+  }
+}
+
+function startEventSync() {
+  if (eventSyncTimer !== null) return;
+  void pollEvents();
+  eventSyncTimer = setInterval(pollEvents, 3000);
+}
+

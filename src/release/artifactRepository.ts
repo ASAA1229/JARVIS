@@ -77,3 +77,12 @@ export class MockArtifactRepository implements ArtifactRepository {
     if (entry) entry.bytes = Buffer.concat([entry.bytes, Buffer.from('x')]);
   }
 }
+
+/**
+ * Repository selection (D2.17). Nexus stays disabled; only the explicit, local-only
+ * JARVIS_ARTIFACT_REPOSITORY=mock selects the in-memory repository. No endpoint or credential
+ * variable can enable a live repository.
+ */
+export function createArtifactRepository(env: Record<string, string | undefined> = process.env): ArtifactRepository {
+  return env['JARVIS_ARTIFACT_REPOSITORY'] === 'mock' ? new MockArtifactRepository() : new DisabledArtifactRepository('nexus');
+}

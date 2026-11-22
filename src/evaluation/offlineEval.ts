@@ -27,13 +27,23 @@ export interface RetrievalReport {
   fixture: string; version: string; synthetic: boolean; k: number;
   queries: number; positiveQueries: number; negativeQueries: number;
   precisionAtK: number | null; recallAtK: number | null; mrr: number | null; hitRateAtK: number | null;
+  /** Binary-relevance normalized discounted cumulative gain at k. */
+  ndcgAtK: number | null;
   /** Fraction of negative queries that returned at least one result. */
   falseAcceptRate: number | null;
-  perQuery: Array<{ query: string; retrieved: string[]; relevant: string[]; precision: number; recall: number; reciprocalRank: number }>;
+  perQuery: Array<{ query: string; retrieved: string[]; relevant: string[]; precision: number; recall: number; reciprocalRank: number; ndcg: number }>;
 }
 
 const mean = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
 const round = (value: number | null) => (value === null ? null : Math.round(value * 10000) / 10000);
+
+function ndcg(retrieved: string[], relevant: Set<string>): number {
+  if (!relevant.size) return 0;
+  const dcg = retrieved.reduce((sum, id, index) => sum + (relevant.has(id) ? 1 / Math.log2(index + 2) : 0), 0);
+  let ideal = 0;
+  for (let index = 0; index < Math.min(relevant.size, retrieved.length || relevant.size); index += 1) ideal += 1 / Math.log2(index + 2);
+  return ideal > 0 ? dcg / ideal : 0;
+}
 
 export async function evaluateRetrieval(fixture: RetrievalFixture, k = 5): Promise<RetrievalReport> {
   if (!Number.isInteger(k) || k < 1 || k > 8) throw new Error('k must be an integer from 1 to 8.');
@@ -57,6 +67,7 @@ export async function evaluateRetrieval(fixture: RetrievalFixture, k = 5): Promi
         precision: retrieved.length ? good / retrieved.length : 0,
         recall: relevant.size ? good / relevant.size : 0,
         reciprocalRank: first < 0 ? 0 : 1 / (first + 1),
+        ndcg: ndcg(retrieved, relevant),
       });
     }
     const positives = perQuery.filter((q) => q.relevant.length > 0);
@@ -68,6 +79,7 @@ export async function evaluateRetrieval(fixture: RetrievalFixture, k = 5): Promi
       recallAtK: round(mean(positives.map((q) => q.recall))),
       mrr: round(mean(positives.map((q) => q.reciprocalRank))),
       hitRateAtK: round(mean(positives.map((q) => (q.reciprocalRank > 0 ? 1 : 0)))),
+      ndcgAtK: round(mean(positives.map((q) => q.ndcg))),
       falseAcceptRate: round(negatives.length ? negatives.filter((q) => q.retrieved.length > 0).length / negatives.length : null),
       perQuery,
     };
@@ -132,4 +144,61 @@ export function evaluateVoice(fixture: VoiceFixture, windowMs = 5000): VoiceRepo
     tasksPerAcceptedUtterance: round(accepted ? tasks.size / accepted : null),
     wake: { attempts: fixture.wakeAttempts.length, falseAccepts: snap.counts.false_accept, falseRejects: snap.counts.false_reject, falseAcceptRate: round(snap.falseAcceptRate), falseRejectRate: round(snap.falseRejectRate) },
   };
+}
+
+/**
+ * Configurable evaluation suite (D2.15). Which k values to measure and which minimum
+ * thresholds gate the run are owner configuration, never hardcoded: JARVIS_EVAL_K (comma list,
+ * 1-8, default "3,5") and JARVIS_EVAL_MIN_<METRIC> (recall, precision, mrr, ndcg, hit) as
+ * fractions in [0,1]; JARVIS_EVAL_MAX_FALSE_ACCEPT bounds the negative-query false-accept rate.
+ * Unset thresholds do not gate. The suite reports measurements of the supplied fixtures only.
+ */
+export interface RetrievalEvalConfig {
+  kValues: number[];
+  minimums: Partial<Record<'recall' | 'precision' | 'mrr' | 'ndcg' | 'hit', number>>;
+  maxFalseAccept?: number;
+}
+
+export function readRetrievalEvalConfig(env: Record<string, string | undefined> = process.env): RetrievalEvalConfig {
+  const kValues = (env['JARVIS_EVAL_K'] ?? '3,5').split(',').map((item) => Number(item.trim()));
+  if (!kValues.length || kValues.some((k) => !Number.isInteger(k) || k < 1 || k > 8)) throw new Error('JARVIS_EVAL_K must be a comma list of integers from 1 to 8.');
+  const fraction = (name: string): number | undefined => {
+    const raw = env[name];
+    if (raw === undefined || raw.trim() === '') return undefined;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be a number from 0 to 1.`);
+    return value;
+  };
+  const minimums: RetrievalEvalConfig['minimums'] = {};
+  for (const [key, name] of [['recall', 'RECALL'], ['precision', 'PRECISION'], ['mrr', 'MRR'], ['ndcg', 'NDCG'], ['hit', 'HIT']] as const) {
+    const value = fraction(`JARVIS_EVAL_MIN_${name}`);
+    if (value !== undefined) minimums[key] = value;
+  }
+  return { kValues: [...new Set(kValues)].sort((a, b) => a - b), minimums, maxFalseAccept: fraction('JARVIS_EVAL_MAX_FALSE_ACCEPT') };
+}
+
+export interface RetrievalSuiteResult {
+  reports: RetrievalReport[];
+  failures: string[];
+  passed: boolean;
+}
+
+export async function evaluateRetrievalSuite(fixtures: RetrievalFixture[], config: RetrievalEvalConfig = readRetrievalEvalConfig()): Promise<RetrievalSuiteResult> {
+  const reports: RetrievalReport[] = [];
+  const failures: string[] = [];
+  for (const fixture of fixtures) {
+    for (const k of config.kValues) {
+      const report = await evaluateRetrieval(fixture, k);
+      reports.push(report);
+      const measured: Record<keyof RetrievalEvalConfig['minimums'], number | null> = { recall: report.recallAtK, precision: report.precisionAtK, mrr: report.mrr, ndcg: report.ndcgAtK, hit: report.hitRateAtK };
+      for (const [metric, minimum] of Object.entries(config.minimums) as Array<[keyof typeof measured, number]>) {
+        const value = measured[metric];
+        if (value !== null && value < minimum) failures.push(`${fixture.name}@${k}: ${metric} ${value} is below the minimum ${minimum}`);
+      }
+      if (config.maxFalseAccept !== undefined && report.falseAcceptRate !== null && report.falseAcceptRate > config.maxFalseAccept) {
+        failures.push(`${fixture.name}@${k}: false-accept rate ${report.falseAcceptRate} exceeds ${config.maxFalseAccept}`);
+      }
+    }
+  }
+  return { reports, failures, passed: failures.length === 0 };
 }
