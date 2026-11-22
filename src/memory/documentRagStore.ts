@@ -28,6 +28,8 @@ interface StoredDocument {
   ownerDeviceId: string;
   title: string;
   sourceName: string;
+  /** Optional knowledge collection (slug) used to scope retrieval. */
+  collection?: string;
   contentHash: string;
   createdAt: number;
   updatedAt: number;
@@ -80,6 +82,8 @@ function lexicalScore(query: string, text: string): number {
   return matched / terms.length;
 }
 
+const COLLECTION_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
 export class DocumentRagStore {
   private readonly file: EncryptedJsonFile<DocumentPayload>;
   private readonly vectorFile: EncryptedJsonFile<VectorPayload>;
@@ -125,7 +129,7 @@ export class DocumentRagStore {
     if (typeof doc.id !== 'string' || typeof doc.ownerDeviceId !== 'string' || !doc.ownerDeviceId ||
         typeof doc.title !== 'string' || typeof doc.sourceName !== 'string' ||
         typeof doc.contentHash !== 'string' || typeof doc.createdAt !== 'number' ||
-        typeof doc.updatedAt !== 'number' || !Array.isArray(doc.chunks) || doc.chunks.length > MAX_CHUNKS) return false;
+        typeof doc.updatedAt !== 'number' || (doc.collection !== undefined && (typeof doc.collection !== 'string' || !COLLECTION_PATTERN.test(doc.collection))) || !Array.isArray(doc.chunks) || doc.chunks.length > MAX_CHUNKS) return false;
     return doc.chunks.every((chunk, index) => {
       const item = chunk as Record<string, unknown>;
       return typeof item.id === 'string' && item.index === index && typeof item.text === 'string' &&
@@ -149,7 +153,11 @@ export class DocumentRagStore {
     sourceName: string;
     title?: string;
     content: string;
-  }): { documentId: string; chunkCount: number; duplicate: boolean } {
+    collection?: string;
+    /** Replace this owner's earlier document with the same source name (knowledge refresh). */
+    replace?: boolean;
+  }): { documentId: string; chunkCount: number; duplicate: boolean; replaced?: boolean } {
+    if (input.collection !== undefined && !COLLECTION_PATTERN.test(input.collection)) throw new Error('Collection must be 1-40 lowercase letters, digits, hyphens or underscores.');
     if (!input.ownerDeviceId || input.ownerDeviceId.length > 256) throw new Error('A valid authenticated owner device is required.');
     if (typeof input.content !== 'string' || !input.content.trim()) throw new Error('Document content must not be empty.');
     if (Buffer.byteLength(input.content, 'utf8') > MAX_DOCUMENT_BYTES || input.content.length > MAX_DOCUMENT_CHARS) {
@@ -164,8 +172,11 @@ export class DocumentRagStore {
     const contentHash = hash(normalized);
     const duplicate = [...this.documents.values()].find((doc) => doc.ownerDeviceId === input.ownerDeviceId && doc.contentHash === contentHash);
     if (duplicate) return { documentId: duplicate.id, chunkCount: duplicate.chunks.length, duplicate: true };
-    if (this.documents.size >= MAX_DOCUMENTS) throw new Error('Document library limit reached; delete an existing document first.');
-    const currentLibraryChars = [...this.documents.values()].reduce((total, doc) => total + doc.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0), 0);
+    const superseded = input.replace
+      ? [...this.documents.values()].filter((doc) => doc.ownerDeviceId === input.ownerDeviceId && doc.sourceName === sourceName && (doc.collection ?? '') === (input.collection ?? ''))
+      : [];
+    if (this.documents.size - superseded.length >= MAX_DOCUMENTS) throw new Error('Document library limit reached; delete an existing document first.');
+    const currentLibraryChars = [...this.documents.values()].filter((doc) => !superseded.includes(doc)).reduce((total, doc) => total + doc.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0), 0);
     if (currentLibraryChars + normalized.length > MAX_LIBRARY_CHARS) throw new Error('Document library storage limit reached; delete existing documents first.');
     const parts = splitIntoChunks(normalized);
     if (!parts.length || parts.length > MAX_CHUNKS) throw new Error('Document could not be safely divided within the chunk limit.');
@@ -175,18 +186,24 @@ export class DocumentRagStore {
       id, ownerDeviceId: input.ownerDeviceId,
       title: (input.title?.trim() || sourceName).slice(0, 160),
       sourceName, contentHash, createdAt: now, updatedAt: now,
+      ...(input.collection ? { collection: input.collection } : {}),
       chunks: parts.map((text, index) => ({ id: id + ':' + index, index, text, hash: hash(text) })),
     };
+    for (const old of superseded) {
+      this.documents.delete(old.id);
+      for (const chunk of old.chunks) delete this.vectors.entries[chunk.id];
+    }
     this.documents.set(id, doc);
     this.persist();
-    return { documentId: id, chunkCount: parts.length, duplicate: false };
+    if (superseded.length) this.vectorFile.write(this.vectors);
+    return { documentId: id, chunkCount: parts.length, duplicate: false, ...(superseded.length ? { replaced: true } : {}) };
   }
 
-  public async search(ownerDeviceId: string, query: string, limit = 5, signal?: AbortSignal): Promise<Array<{ content: string; source: DocumentSource; score: number; method: 'semantic' | 'lexical' }>> {
+  public async search(ownerDeviceId: string, query: string, limit = 5, signal?: AbortSignal, collection?: string): Promise<Array<{ content: string; source: DocumentSource; score: number; method: 'semantic' | 'lexical' }>> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery || normalizedQuery.length > 2000) throw new Error('Search query must contain 1–2000 characters.');
     const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_RESULTS));
-    const docs = [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId);
+    const docs = [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId && (collection === undefined || doc.collection === collection));
     const chunks = docs.flatMap((doc) => doc.chunks.map((chunk) => ({ doc, chunk })));
     if (!chunks.length) return [];
 
@@ -224,9 +241,9 @@ export class DocumentRagStore {
     }).filter((item) => item.method === 'semantic' ? item.score >= 0.18 : item.score > 0).sort((a, b) => b.score - a.score).slice(0, boundedLimit);
   }
 
-  public list(ownerDeviceId: string): Array<{ id: string; title: string; sourceName: string; chunkCount: number; createdAt: number }> {
-    return [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId)
-      .map((doc) => ({ id: doc.id, title: doc.title, sourceName: doc.sourceName, chunkCount: doc.chunks.length, createdAt: doc.createdAt }));
+  public list(ownerDeviceId: string, collection?: string): Array<{ id: string; title: string; sourceName: string; collection?: string; chunkCount: number; createdAt: number }> {
+    return [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId && (collection === undefined || doc.collection === collection))
+      .map((doc) => ({ id: doc.id, title: doc.title, sourceName: doc.sourceName, ...(doc.collection ? { collection: doc.collection } : {}), chunkCount: doc.chunks.length, createdAt: doc.createdAt }));
   }
 
   public delete(ownerDeviceId: string, documentId: string): boolean {

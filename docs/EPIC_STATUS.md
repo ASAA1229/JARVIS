@@ -31,3 +31,17 @@ Sets 1–12 are complete; all questions were answered “all of the above.” Th
 
 ## Project-specific pending work carried forward (not a status promotion)
 Re-run exact-head CI after DAG hardening; verify physical MSI Windows voice/microphone/wake-word behavior; complete two-Android-phone per-device session acceptance; measure physical false-accept/false-reject voice rates; resolve remaining Notepad E2E environment sensitivity; complete owner-labelled retrieval corpus/thresholds; verify Jenkins/Nexus only with authorized live infrastructure; finish owner acceptance and release gates.
+
+
+## Evidence reconciliation — 2026-11-20
+
+| Area | Current verified state | Remaining evidence |
+|---|---|---|
+| CI on `new` | CI passed, run 44727781030 | Re-run on exact candidate SHA before promotion |
+| CI on `dev` / `main` | Not found in the current audit; NOT TESTED | Execute and record branch-specific workflows |
+| Windows 11 and Android hardware | Not device-verified | Physical-device tests and owner acceptance |
+| Wake word, voice, pairing and privacy | Not fully device-verified | End-to-end evidence on supported hardware |
+| Jenkins and artifact lifecycle | Not live-integration verified | Approved endpoint, publish/retrieve/integrity/recovery evidence |
+| Release acceptance | Not accepted | Close P0 security, privacy, device, operations and owner gates |
+
+A green `new` CI run must not be generalized to other branches or physical devices. See [Project Status](PROJECT_STATUS.md) and [Pending Work](PENDING_WORK_REGISTER.md).

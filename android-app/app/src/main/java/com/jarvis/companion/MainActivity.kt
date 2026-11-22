@@ -133,6 +133,26 @@ class MainActivity : Activity() {
             } }
         }, params())
         column.addView(Button(this).apply {
+            text = "Sync live events from laptop"
+            setOnClickListener { background {
+                val api = client ?: error("Reconnect the authenticated session first.")
+                val batch = api.events(session.eventCursor)
+                // Advance only past events actually delivered; a gap means the laptop's buffer rolled over.
+                session.eventCursor = batch.events.lastOrNull()?.seq ?: batch.latestSeq
+                (if (batch.gap) "Some events were missed; refresh task lists.
+" else "") +
+                    (if (batch.events.isEmpty()) "No new events." else batch.events.joinToString("
+") { it.type + " " + it.summary })
+            } }
+        }, params())
+        column.addView(Button(this).apply {
+            text = "Stop all activity from this phone"
+            setOnClickListener { background {
+                val api = client ?: error("Reconnect the authenticated session first.")
+                api.stopAll()
+            } }
+        }, params())
+        column.addView(Button(this).apply {
             text = "View recent remote inventory results"
             setOnClickListener { background {
                 val api = client ?: error("Reconnect the authenticated session first.")
@@ -224,6 +244,7 @@ class MainActivity : Activity() {
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(launcherIntent, 0)
             .filter { it.activityInfo.packageName != packageName }
+            .filterNot { PaymentExclusion.isExcluded(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
             .distinctBy { it.activityInfo.packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         if (apps.isEmpty()) {
@@ -261,6 +282,7 @@ class MainActivity : Activity() {
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(launcherIntent, 0)
             .filter { it.activityInfo.packageName != packageName }
+            .filterNot { PaymentExclusion.isExcluded(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
             .distinctBy { it.activityInfo.packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
             .take(300)

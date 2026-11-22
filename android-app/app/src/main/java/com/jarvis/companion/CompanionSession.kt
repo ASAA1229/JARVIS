@@ -34,6 +34,11 @@ class CompanionSession(private val context: Context) {
         get() = prefs.getStringSet("notified_approvals", emptySet()) ?: emptySet()
         set(value) { prefs.edit().putStringSet("notified_approvals", value.toList().takeLast(200).toSet()).apply() }
 
+    /** Last cross-module event sequence number this phone has seen. */
+    var eventCursor: Long
+        get() = prefs.getLong("event_cursor", 0L)
+        set(value) { prefs.edit().putLong("event_cursor", value).apply() }
+
     val syncQueueFile: File get() = File(context.filesDir, "jarvis-sync-queue.json")
 
     fun newClient(): JarvisApiClient = JarvisApiClient(serverUrl, keys)

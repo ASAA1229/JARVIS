@@ -16,9 +16,11 @@ data class JarvisReply(val state: String, val message: String)
 class SessionRevokedException(message: String) : IllegalStateException(message)
 
 data class PendingApproval(val taskId: String, val approvalId: String, val operation: String, val requestText: String)
-data class TaskSummary(val id: String, val state: String, val operation: String, val updatedAt: Long)
+data class TaskSummary(val id: String, val state: String, val operation: String, val updatedAt: Long, val lifecycle: String = CommandLifecycle.fromTaskState(state))
 data class DeviceSummary(val id: String, val name: String, val platform: String, val status: String, val sessionActive: Boolean)
 data class MemorySummary(val id: String, val category: String, val content: String, val updatedAt: Long)
+data class LiveEvent(val seq: Long, val type: String, val summary: String)
+data class EventBatch(val events: List<LiveEvent>, val latestSeq: Long, val gap: Boolean)
 data class LearningCandidate(val id: String, val category: String, val content: String, val source: String)
 
 class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeyStore) {
@@ -158,7 +160,7 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         val items = signedGet("/api/tasks").optJSONArray("tasks") ?: JSONArray()
         return (0 until items.length()).map { i ->
             val task = items.getJSONObject(i)
-            TaskSummary(task.optString("id"), task.optString("state"), task.optString("operation"), task.optLong("updatedAt"))
+            TaskSummary(task.optString("id"), task.optString("state"), task.optString("operation"), task.optLong("updatedAt"), task.optString("lifecycle").ifBlank { CommandLifecycle.fromTaskState(task.optString("state")) })
         }.reversed()
     }
 
@@ -188,6 +190,39 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
     fun cancelTask(taskId: String): String {
         require(taskId.isNotBlank() && taskId.length <= 100) { "Task id is invalid." }
         return signedPost("/api/task/cancel", JSONObject().put("taskId", taskId)).optString("message", "Cancellation requested.")
+    }
+
+    /**
+     * Mirrors a voice-state action (wake, transcript, complete, cancel, mute, unmute, state) into the
+     * laptop's per-device wake session. Returns the resulting state name. The wake never executes
+     * anything: a command still has to be sent through sendRequest and the policy gateway.
+     */
+    fun wakeSession(action: String, text: String? = null): String {
+        require(action in setOf("wake", "transcript", "complete", "cancel", "mute", "unmute", "state")) { "Unsupported wake-session action." }
+        val body = JSONObject().put("action", action)
+        if (text != null) {
+            require(text.length <= 1200) { "Transcript must be at most 1200 characters." }
+            body.put("text", text)
+        }
+        return signedPost("/api/voice/wake-session", body).optString("state", "unknown")
+    }
+
+    /** Cancels pending and interrupts running work started from this phone. Never touches other devices. */
+    fun stopAll(): String {
+        val result = signedPost("/api/stop", JSONObject().put("scope", "device"))
+        return "Stopped: " + result.optInt("cancelled") + " cancelled, " + result.optInt("interrupted") + " interrupted."
+    }
+
+    /** One batch of cross-module events after [since]. The laptop only returns this phone's own events (owner phones see all). */
+    fun events(since: Long): EventBatch {
+        require(since >= 0) { "since must not be negative." }
+        val result = signedGet("/api/events", "?since=" + since)
+        val items = result.optJSONArray("events") ?: JSONArray()
+        val events = (0 until items.length()).map { i ->
+            val e = items.getJSONObject(i)
+            LiveEvent(e.optLong("seq"), e.optString("type"), e.optJSONObject("data")?.toString().orEmpty())
+        }
+        return EventBatch(events, result.optLong("latestSeq", since), result.optBoolean("gap"))
     }
 
     fun notificationCount(): Int = signedGet("/api/notifications").optJSONArray("notifications")?.length() ?: 0
