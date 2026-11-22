@@ -16,6 +16,7 @@ import {
 import { cpus, freemem, totalmem } from 'node:os';
 import { DeviceIdentityManager } from '../core/identity.js';
 import { PolicyGateway } from '../policy/gateway.js';
+import { isRegisteredTool, validateToolParameters } from '../policy/toolRegistry.js';
 import { WindowsSystemAdapter } from '../adapters/windowsSystem.js';
 import { WindowsAppLauncherAdapter } from '../adapters/windowsAppLauncher.js';
 import { assessBrowserNavigation } from '../adapters/browserSearch.js';
@@ -276,6 +277,16 @@ export class JarvisCoreService {
    */
   public reconcileStaleTasks(now: number = Date.now()): number {
     let settled = 0;
+    // Undecided approvals (typically recovered after restart) whose task is gone, or is no longer
+    // waiting for them, can never be honoured: invalidate them rather than leave them decidable.
+    for (const approval of this.policy.listUndecidedApprovals()) {
+      const owner = this.tasks.get(approval.taskId);
+      if (!owner || (owner.state !== TaskState.AWAITING_APPROVAL && owner.state !== TaskState.CREATED) || owner.approvalId !== approval.id) {
+        if (owner?.state === TaskState.CREATED && !owner.approvalId) continue; // approval being issued right now
+        this.policy.invalidateApprovals({ taskId: approval.taskId }, 'ORPHANED_APPROVAL');
+        settled++;
+      }
+    }
     for (const task of this.tasks.values()) {
       if (task.state === TaskState.AWAITING_APPROVAL) {
         const approval = task.approvalId ? this.policy.getApproval(task.approvalId) : undefined;
@@ -481,6 +492,17 @@ export class JarvisCoreService {
       return { taskId, state: taskRecord.state, message: taskRecord.error };
     }
 
+    // Whatever planner is plugged in, the core itself refuses operations that are not in the
+    // shared tool registry or whose parameters do not match their declaration (E:D4.6).
+    const unregistered = plan.operations.findIndex((operation) => !isRegisteredTool(operation.operation) || validateToolParameters(operation.operation, operation.parameters) !== undefined);
+    if (unregistered >= 0) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Invalid plan proposal: an operation is not registered or its parameters do not match its declaration.';
+      this.audit.record('PLANNING_SCHEMA_VIOLATION', { reason: 'UNREGISTERED_OR_INVALID_OPERATION', index: unregistered }, device.id, taskId);
+      this.#persistTask(taskRecord);
+      return { taskId, state: taskRecord.state, message: taskRecord.error };
+    }
+
     if (!plan.operations || plan.operations.length === 0) {
       taskRecord.state = TaskState.FAILED;
       taskRecord.error = plan.explanation;
@@ -627,7 +649,16 @@ export class JarvisCoreService {
     }
 
     const device = this.identity.getDevice(deviceId);
-    if (!device) throw new Error('Device not found');
+    if (!device) {
+      // Never throw out of the pipeline and strand the task mid-state (E:D4.11).
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Device not found; nothing was executed.';
+      this.policy.invalidateApprovals({ taskId }, 'DEVICE_NOT_FOUND');
+      this.#recordStep(taskRecord, 'blocked', undefined, taskRecord.error);
+      this.#skipRemainingSteps(taskRecord);
+      this.#persistTask(taskRecord);
+      return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.VERIFIED_FAILURE, verified: true };
+    }
 
     const policyResult = this.policy.evaluate(opRequest, device, taskId, approvalId);
 
@@ -681,6 +712,19 @@ export class JarvisCoreService {
   ): Promise<TaskResult> {
     const taskRecord = this.tasks.get(taskId);
     if (!taskRecord) throw new Error('Task not found');
+
+    // The executor validates parameters against the registered declaration immediately before an
+    // adapter can run, independent of every earlier check (E:D4.6).
+    const parameterProblem = validateToolParameters(opRequest.operation, opRequest.parameters);
+    if (parameterProblem) {
+      taskRecord.state = TaskState.FAILED;
+      taskRecord.error = 'Execution blocked: ' + parameterProblem;
+      this.audit.record('EXECUTION_BLOCKED_INVALID_PARAMETERS', { operation: opRequest.operation }, taskRecord.deviceId, taskId);
+      this.#recordStep(taskRecord, 'failed', VerificationOutcome.VERIFIED_FAILURE, taskRecord.error);
+      this.#skipRemainingSteps(taskRecord);
+      this.#persistTask(taskRecord);
+      return { taskId, state: taskRecord.state, message: taskRecord.error, outcome: VerificationOutcome.VERIFIED_FAILURE, verified: true };
+    }
 
     // Persisted identity state is security-critical. If its integrity or write
     // status is unknown, fail closed before any execution.
@@ -1489,7 +1533,13 @@ export class JarvisCoreService {
     this.#assertApproverPermission(approval, approver, 'APPROVAL_FAILED_INSUFFICIENT_PERMISSION', approvalId);
 
     const pendingTask = this.tasks.get(approval.taskId);
-    if (!pendingTask) throw new Error('Associated task not found');
+    if (!pendingTask) {
+      // An orphaned approval (for example recovered after restart while its task is gone) must
+      // never stay decidable: invalidate it so it cannot linger or be replayed (E:D4.2).
+      this.policy.invalidateApprovals({ taskId: approval.taskId }, 'ORPHANED_APPROVAL');
+      this.audit.record('APPROVAL_FAILED_TASK_NOT_FOUND', { approvalId }, approver.id, approval.taskId);
+      throw new Error('Associated task not found');
+    }
     // An approval record alone is not enough: checkpoint/audit failure or a
     // concurrent cancellation may have moved the task out of AWAITING_APPROVAL.
     // Reject before consuming the approval or reaching any adapter.
@@ -1526,6 +1576,29 @@ export class JarvisCoreService {
         success: false,
         state: pendingTask.state,
         message: 'Approval has expired; no operation was started.',
+        outcome: VerificationOutcome.VERIFIED_FAILURE,
+        verified: true,
+      };
+    }
+
+    // If the device that asked for this work was revoked or removed while the approval waited,
+    // approving must not start anything: settle the task as cancelled instead (E:D4.2, E:D4.11).
+    const requestingDevice = this.identity.getDevice(pendingTask.deviceId);
+    if (!requestingDevice || requestingDevice.status !== 'ACTIVE') {
+      this.policy.invalidateApprovals({ taskId: pendingTask.id }, 'REQUESTING_DEVICE_INACTIVE');
+      pendingTask.state = TaskState.CANCELLED;
+      pendingTask.updatedAt = Date.now();
+      pendingTask.error = 'The requesting device is no longer active; nothing was executed.';
+      this.#recordStep(pendingTask, 'cancelled', undefined, pendingTask.error);
+      this.#skipRemainingSteps(pendingTask);
+      this.#persistTask(pendingTask);
+      this.audit.record('APPROVAL_FAILED_DEVICE_INACTIVE', { approvalId }, approver.id, pendingTask.id);
+      if (pendingTask.workflowParentTaskId) await this.#settleWorkflowBranchChild(pendingTask, 'verified_failure');
+      return {
+        taskId: pendingTask.id,
+        success: false,
+        state: pendingTask.state,
+        message: pendingTask.error,
         outcome: VerificationOutcome.VERIFIED_FAILURE,
         verified: true,
       };
@@ -1604,6 +1677,7 @@ export class JarvisCoreService {
     const pendingTask = this.tasks.get(approval.taskId);
     if (!pendingTask) {
       this.audit.record('REJECTION_FAILED_TASK_NOT_FOUND', { approvalId }, approver.id, approval.taskId);
+      this.policy.invalidateApprovals({ taskId: approval.taskId }, 'ORPHANED_APPROVAL');
       throw new Error('Associated task not found');
     }
     if (pendingTask.state !== TaskState.AWAITING_APPROVAL) {
@@ -1918,11 +1992,15 @@ export class JarvisCoreService {
     for (const task of this.tasks.values()) {
       if (task.deviceId !== deviceId) continue;
       if (task.state === TaskState.EXECUTING) this.interruptTask(task.id);
-      else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED) {
+      else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
         this.activePlanningTokens.get(task.id)?.abort();
         task.state = TaskState.CANCELLED;
         task.updatedAt = Date.now();
+        task.error = 'The requesting device was revoked; nothing further was executed.';
+        this.#recordStep(task, 'cancelled', undefined, task.error);
+        this.#skipRemainingSteps(task);
         this.#persistTask(task);
+        if (task.workflowParentTaskId) void this.#settleWorkflowBranchChild(task, 'verified_failure').catch(() => undefined);
       }
     }
     this.notifications.push('warning', 'device_revoked', `A device was revoked; ${invalidated} approval(s) and ${schedules} schedule(s) were cancelled.`, { deviceId });
