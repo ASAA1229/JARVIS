@@ -1613,6 +1613,27 @@ export class JarvisServer {
         return this.jsonResponse(res, 200, { success: true });
       }
 
+      // Session recovery: end all live sessions of one device without revoking its pairing.
+      if (req.method === 'POST' && url.pathname === '/api/device/sessions/end') {
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || typeof body.deviceId !== 'string' || !body.deviceId) return this.jsonResponse(res, 400, { error: 'deviceId is required' });
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const targetId: string = body.deviceId;
+        const owner = auth.device.permissions.includes(Permission.DEVICE_MANAGE);
+        if (targetId !== auth.device.id && !owner) return this.jsonResponse(res, 403, { error: 'Only an owner device can end the sessions of another device' });
+        if (owner && this.jarvis.deviceSecurity?.getTotpStatus() === 'ENABLED' && (typeof body.totpCode !== 'string' || !this.jarvis.deviceSecurity.verifyStepUp(auth.device, body.totpCode))) return this.jsonResponse(res, 401, { error: 'Fresh authenticator verification required' });
+        const result = this.jarvis.identity.endDeviceSessions(targetId);
+        if (!result.success) return this.jsonResponse(res, 409, { success: false, error: result.error });
+        this.jarvis.policy.invalidateApprovals({ deviceId: targetId }, 'SESSIONS_ENDED');
+        this.wakeSessions.forget(targetId);
+        this.audioIngress.forget(targetId);
+        this.jarvis.events.publish('session.ended', { ended: result.ended }, targetId);
+        return this.jsonResponse(res, 200, { success: true, ended: result.ended });
+      }
+
       // Notifications for approvals, blocked actions, failures, uncertain outcomes and completions.
       if (req.method === 'GET' && url.pathname === '/api/notifications') {
         const sessionId = req.headers['x-session-id'];
