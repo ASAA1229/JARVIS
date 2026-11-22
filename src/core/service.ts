@@ -39,6 +39,7 @@ import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
 import { TaskCoordinator } from './taskCoordinator.js';
+import { EventBus } from '../events/eventBus.js';
 import type { DeviceRevokeReason, IntegrationEventSink } from '../integration/asaaEvents.js';
 
 export type WorkflowStepStatus = 'completed' | 'failed' | 'uncertain' | 'blocked' | 'skipped' | 'awaiting_approval' | 'cancelled';
@@ -131,6 +132,9 @@ export class JarvisCoreService {
   /** Optional ecosystem event sink (ASAA events); undefined means standalone and nothing is emitted. */
   public integrationSink?: IntegrationEventSink;
   public readonly audit: AuditLogger;
+  /** Cross-module event/state synchronization (D2.20). Summaries only; never audio, transcripts or secrets. */
+  public readonly events = new EventBus();
+  readonly #lastPublishedState = new Map<string, string>();
   public readonly identity: DeviceIdentityManager;
   public readonly deviceSecurity?: DeviceSecurityService;
   public readonly policy: PolicyGateway;
@@ -482,6 +486,10 @@ export class JarvisCoreService {
   /** Persist a checkpoint before further work; a failed write stops dependent steps. */
   #persistTask(task: TaskLifecycleRecord): boolean {
     task.updatedAt = Date.now();
+    if (this.#lastPublishedState.get(task.id) !== task.state) {
+      this.#lastPublishedState.set(task.id, task.state);
+      this.events.publish('task.state', { taskId: task.id, state: task.state }, task.deviceId);
+    }
     if (!this.taskJournal) return true;
     try {
       this.taskJournal.save(task);
@@ -1724,6 +1732,7 @@ export class JarvisCoreService {
   public onDeviceRevoked(deviceId: DeviceId, reason: DeviceRevokeReason = 'unspecified'): void {
     try { this.integrationSink?.deviceRevoked(reason); } catch { /* ecosystem events never affect revocation */ }
     const invalidated = this.policy.invalidateApprovals({ deviceId }, 'DEVICE_REVOKED');
+    this.events.publish('device.revoked', { reason }, deviceId);
     this.deviceSecurity?.cancelPendingCreatedBy(deviceId);
     const schedules = this.scheduler.cancelForDevice(deviceId);
     // A revoked device's short-lived working context is discarded immediately.

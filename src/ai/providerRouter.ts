@@ -126,6 +126,26 @@ export function cloudAllowedTasks(env: Env = process.env): Set<TaskType> {
   return new Set(raw.filter((item): item is TaskType => (TASK_TYPES as string[]).includes(item)));
 }
 
+/**
+ * Explicit, owner-configured routing mode (JARVIS_ROUTING_MODE):
+ *  - local-first (default): local inference first; cloud only when owner-authorized per task.
+ *  - local-only: cloud providers are never used, even if configured and authorized.
+ *  - offline: like local-only, and additionally nothing but a loopback endpoint is contacted.
+ * An unrecognised value fails closed to local-only.
+ */
+export type RoutingMode = 'local-first' | 'local-only' | 'offline';
+
+export function routingMode(env: Env = process.env): RoutingMode {
+  const raw = (env['JARVIS_ROUTING_MODE'] || '').trim().toLowerCase();
+  if (raw === '') return 'local-first';
+  if (raw === 'local-first' || raw === 'local-only' || raw === 'offline') return raw;
+  return 'local-only';
+}
+
+export function cloudRoutingAllowed(env: Env = process.env): boolean {
+  return routingMode(env) === 'local-first';
+}
+
 export class ProviderRouter {
   private readonly unavailableUntil = new Map<ProviderId, number>();
   private lastDecision: { at: number; taskType: TaskType; provider: ProviderId | null; reason: string } | null = null;
@@ -170,7 +190,9 @@ export class ProviderRouter {
     else if (!formatOk(configuredLocal)) skipped.push({ id: 'local', reason: 'incompatible format' });
     else skipped.push({ id: 'local', reason: 'temporarily unavailable after a recent failure' });
 
+    const mode = routingMode(this.env());
     for (const provider of providers.filter((item) => !item.local)) {
+      if (mode !== 'local-first') { skipped.push({ id: provider.id, reason: `routing mode ${mode} forbids cloud providers` }); continue; }
       if (request.containsPrivateData !== false) { skipped.push({ id: provider.id, reason: 'request is private or privacy classification is missing/invalid; local only' }); continue; }
       if (!cloudOk) { skipped.push({ id: provider.id, reason: 'cloud use not authorized by the owner for this task' }); continue; }
       if (!formatOk(provider)) { skipped.push({ id: provider.id, reason: 'incompatible format' }); continue; }
@@ -186,10 +208,11 @@ export class ProviderRouter {
   }
 
   /** Safe status for owner views: no URLs or credentials. */
-  status(): { providers: ProviderStatus[]; cloudAllowedTasks: TaskType[]; lastDecision: ProviderRouter['lastDecision'] } {
+  status(): { mode: RoutingMode; providers: ProviderStatus[]; cloudAllowedTasks: TaskType[]; lastDecision: ProviderRouter['lastDecision'] } {
     const configured = this.providers();
     const ids: ProviderId[] = ['local', 'openai', 'anthropic'];
     return {
+      mode: routingMode(this.env()),
       providers: ids.map((id) => {
         const provider = configured.find((item) => item.id === id);
         const until = this.unavailableUntil.get(id);
