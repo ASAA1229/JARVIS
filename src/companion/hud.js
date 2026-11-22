@@ -1828,7 +1828,9 @@ function renderTaskHistory(tasks) {
     const lifecycle = String(task.lifecycle || '');
     const state = document.createElement('span');
     state.className = 'task-history-state state-' + rawState.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    state.textContent = (lifecycle ? lifecycle.replaceAll('_', ' ').toUpperCase() + ' · ' : '') + rawState.replaceAll('_', ' ');
+    state.textContent = task.needsOwnerReview === true || RECOVERY_TASK_STATES.has(rawState)
+      ? 'NEEDS OWNER REVIEW · ' + rawState.replaceAll('_', ' ')
+      : (lifecycle ? lifecycle.replaceAll('_', ' ').toUpperCase() + ' · ' : '') + rawState.replaceAll('_', ' ');
     header.append(operation, state);
 
     const meta = document.createElement('div');
