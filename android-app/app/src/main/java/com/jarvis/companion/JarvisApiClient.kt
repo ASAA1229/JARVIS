@@ -16,7 +16,7 @@ data class JarvisReply(val state: String, val message: String)
 class SessionRevokedException(message: String) : IllegalStateException(message)
 
 data class PendingApproval(val taskId: String, val approvalId: String, val operation: String, val requestText: String)
-data class TaskSummary(val id: String, val state: String, val operation: String, val updatedAt: Long, val lifecycle: String = CommandLifecycle.fromTaskState(state))
+data class TaskSummary(val id: String, val state: String, val operation: String, val updatedAt: Long, val lifecycle: String = CommandLifecycle.fromTaskState(state), val needsOwnerReview: Boolean = CommandLifecycle.needsOwnerReview(state))
 data class DeviceSummary(val id: String, val name: String, val platform: String, val status: String, val sessionActive: Boolean)
 data class MemorySummary(val id: String, val category: String, val content: String, val updatedAt: Long)
 data class LiveEvent(val seq: Long, val type: String, val summary: String)
@@ -138,7 +138,7 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
                 .append(item.optString("state"))
             val apps = item.optJSONArray("apps")
             if (apps != null) output.append(" (${apps.length()} apps)")
-            output.append("\\n")
+            output.append("\n")
         }
         return output.toString().trim()
     }
@@ -160,7 +160,8 @@ class JarvisApiClient(private val baseUrl: String, private val keys: DeviceKeySt
         val items = signedGet("/api/tasks").optJSONArray("tasks") ?: JSONArray()
         return (0 until items.length()).map { i ->
             val task = items.getJSONObject(i)
-            TaskSummary(task.optString("id"), task.optString("state"), task.optString("operation"), task.optLong("updatedAt"), task.optString("lifecycle").ifBlank { CommandLifecycle.fromTaskState(task.optString("state")) })
+            TaskSummary(task.optString("id"), task.optString("state"), task.optString("operation"), task.optLong("updatedAt"), task.optString("lifecycle").ifBlank { CommandLifecycle.fromTaskState(task.optString("state")) },
+                task.optBoolean("needsOwnerReview", CommandLifecycle.needsOwnerReview(task.optString("state"))))
         }.reversed()
     }
 

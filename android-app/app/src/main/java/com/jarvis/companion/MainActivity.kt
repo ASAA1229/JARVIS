@@ -139,10 +139,8 @@ class MainActivity : Activity() {
                 val batch = api.events(session.eventCursor)
                 // Advance only past events actually delivered; a gap means the laptop's buffer rolled over.
                 session.eventCursor = batch.events.lastOrNull()?.seq ?: batch.latestSeq
-                (if (batch.gap) "Some events were missed; refresh task lists.
-" else "") +
-                    (if (batch.events.isEmpty()) "No new events." else batch.events.joinToString("
-") { it.type + " " + it.summary })
+                val missed = if (batch.gap) "Some events were missed; refresh task lists.\n" else ""
+                missed + if (batch.events.isEmpty()) "No new events." else batch.events.joinToString("\n") { it.type + " " + it.summary }
             } }
         }, params())
         column.addView(Button(this).apply {
