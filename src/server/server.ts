@@ -1736,6 +1736,19 @@ export class JarvisServer {
         return this.jsonResponse(res, result.success ? 200 : 409, result);
       }
 
+      // Reliable stop: cancels pending and interrupts running work for this device (or all devices for an owner).
+      if (req.method === 'POST' && url.pathname === '/api/stop') {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body) || (body.scope !== undefined && body.scope !== 'device' && body.scope !== 'all')) return this.jsonResponse(res, 400, { error: 'scope must be device or all' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        const scope = body.scope === 'all' ? 'all' : 'device';
+        if (scope === 'all' && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Only an owner device can stop all devices' });
+        this.wakeSessions.cancel(auth.device.id);
+        return this.jsonResponse(res, 200, this.jarvis.stopAll(sessionId, scope));
+      }
       // Audit logs (for dashboard monitoring)
       if (req.method === 'GET' && url.pathname === '/api/audit') {
         const sessionId = req.headers['x-session-id'] as string;

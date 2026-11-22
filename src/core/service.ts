@@ -1,3 +1,5 @@
+import { routingMode } from '../ai/providerRouter.js';
+import { createCiProvider } from '../release/ciProvider.js';
 import {
   TaskId,
   TaskState,
@@ -1729,6 +1731,41 @@ export class JarvisCoreService {
   }
 
   /**
+   * Reliable stop (D2.19): cancels everything pending and interrupts everything running for the
+   * requesting device, or for every device when an owner device asks for scope 'all'. Pending
+   * approvals are invalidated so nothing can run after the stop. Interrupted work is reported
+   * as needing reconciliation (side effects are not assumed undone). Schedules are not touched.
+   */
+  public stopAll(sessionId: SessionId, scope: 'device' | 'all' = 'device'): { cancelled: number; interrupted: number; scope: 'device' | 'all' } {
+    const auth = this.identity.validateDeviceSession(sessionId);
+    const requester = auth.device;
+    if (!auth.valid || !requester) throw new Error('Session is not authenticated');
+    if (scope === 'all' && !requester.permissions.includes(Permission.DEVICE_MANAGE)) {
+      this.audit.record('STOP_ALL_DENIED_NOT_OWNER', {}, requester.id);
+      throw new Error('Only an owner device can stop all devices');
+    }
+    let cancelled = 0;
+    let interrupted = 0;
+    for (const task of [...this.tasks.values()]) {
+      if (scope === 'device' && task.deviceId !== requester.id) continue;
+      if (task.state === TaskState.EXECUTING) {
+        if (this.interruptTask(task.id)) interrupted += 1;
+      } else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
+        this.activePlanningTokens.get(task.id)?.abort();
+        this.policy.invalidateApprovals({ taskId: task.id }, 'STOP_ALL');
+        task.state = TaskState.CANCELLED;
+        this.#recordStep(task, 'cancelled', undefined, 'Stopped by user');
+        this.#skipRemainingSteps(task);
+        this.#persistTask(task);
+        cancelled += 1;
+      }
+    }
+    this.audit.record('STOP_ALL', { scope, cancelled, interrupted }, requester.id);
+    this.events.publish('ops.alert', { kind: 'stop_all', scope, cancelled, interrupted }, scope === 'device' ? requester.id : undefined);
+    return { cancelled, interrupted, scope };
+  }
+
+  /**
    * Derive conservative resource locks from operation semantics. Desktop input is
    * exclusive across the host; memory, registries and shared workspace operations
    * are serialized until finer-grained resource identity is proven.
@@ -1854,6 +1891,12 @@ export class JarvisCoreService {
         awaitingRecovery: tasks.filter((task) => task.state === TaskState.AWAITING_RECOVERY).length,
         failed: tasks.filter((task) => task.state === TaskState.FAILED).length,
         reliability: this.reliabilityMetrics(),
+      },
+      subsystems: {
+        taskJournalPersistent: this.taskJournal !== undefined,
+        eventsLatestSeq: this.events.latestSeq(),
+        routingMode: routingMode(),
+        ciProviderEnabled: createCiProvider().enabled,
       },
       schedules: { active: this.scheduler.activeCount },
       notifications: this.notifications.size,
