@@ -546,7 +546,12 @@ function scheduleBrowserWakeRetry() {
   }, delay);
 }
 
+const CONTINUOUS_BROWSER_WAKE_ALLOWED = false;
 function startHandsFreeStandby() {
+  // Privacy: a continuous browser SpeechRecognition session may stream audio to a vendor cloud, so it
+  // is never opened for wake detection. Wake detection is local-only (on-device engine); this legacy
+  // path is intentionally disabled and nothing else may re-enable continuous browser capture.
+  if (!CONTINUOUS_BROWSER_WAKE_ALLOWED) return;
   // The browser-based fallback must follow the same foreground-only rule as
   // the local wake engine. Do not open a recognition session from a delayed
   // callback while the HUD is hidden.
@@ -1819,9 +1824,11 @@ function renderTaskHistory(tasks) {
     const operation = document.createElement('strong');
     operation.textContent = String(task.operation || 'Task');
     const rawState = String(task.state || 'UNKNOWN');
+    // One shared lifecycle (queued, running, completed, failed, cancelled, timed_out) alongside the detailed state.
+    const lifecycle = String(task.lifecycle || '');
     const state = document.createElement('span');
     state.className = 'task-history-state state-' + rawState.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    state.textContent = rawState.replaceAll('_', ' ');
+    state.textContent = (lifecycle ? lifecycle.replaceAll('_', ' ').toUpperCase() + ' · ' : '') + rawState.replaceAll('_', ' ');
     header.append(operation, state);
 
     const meta = document.createElement('div');

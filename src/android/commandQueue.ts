@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { isPaymentTarget } from '../policy/exclusions.js';
+import { lifecycleFromAndroidState, type CommandLifecycleState } from '../core/commandLifecycle.js';
 
 export interface AndroidInventoryApp {
   label: string;
@@ -23,6 +25,9 @@ export interface AndroidInventoryCommand {
   apps?: AndroidInventoryApp[];
 }
 
+/** Called after every state change (including expiry), so the event bus mirrors the queue exactly. */
+export type AndroidCommandTransitionListener = (command: Readonly<AndroidInventoryCommand>, lifecycle: CommandLifecycleState) => void;
+
 export type AndroidCompletionResult = 'completed' | 'duplicate' | 'expired' | 'cancelled' | 'not_found' | 'invalid';
 export type AndroidCancelResult = 'cancelled' | 'already_cancelled' | 'not_cancellable' | 'not_found';
 
@@ -45,6 +50,13 @@ export class AndroidCommandQueue {
   private readonly maxAppsPerCommand = 300;
   private readonly retentionMs = 10 * 60_000;
 
+  constructor(private readonly onTransition?: AndroidCommandTransitionListener) {}
+
+  private notify(command: AndroidInventoryCommand): void {
+    if (!this.onTransition) return;
+    try { this.onTransition({ ...command }, lifecycleFromAndroidState(command.state)); } catch { /* observers never affect the queue */ }
+  }
+
   create(targetDeviceId: string, requesterDeviceId: string, ttlMs = 60_000): AndroidInventoryCommand {
     this.prune();
     if (this.commands.size >= this.maxCommands) throw new Error('Android command queue is full');
@@ -59,6 +71,7 @@ export class AndroidCommandQueue {
       createdAt: now, expiresAt: now + Math.min(Math.max(requestedTtl, 1000), 60_000), state: 'PENDING',
     };
     this.commands.set(command.id, command);
+    this.notify(command);
     return { ...command };
   }
 
@@ -74,6 +87,7 @@ export class AndroidCommandQueue {
       }
       command.state = 'CLAIMED';
       command.claimedAt = Date.now();
+      this.notify(command);
       return { ...command };
     }
     return undefined;
@@ -99,6 +113,7 @@ export class AndroidCommandQueue {
     if (Date.now() >= command.expiresAt) {
       command.state = 'EXPIRED';
       delete command.apps;
+      this.notify(command);
       return 'expired';
     }
     // Reject malformed entries instead of storing partial or attacker-shaped inventory.
@@ -107,12 +122,16 @@ export class AndroidCommandQueue {
       this.markCancelled(command, 'revalidation_failed');
       return 'cancelled';
     }
-    command.apps = apps.map(({ label, packageName }) => ({
-      label: label.trim().slice(0, 120),
-      packageName: packageName.trim().slice(0, 240),
-    }));
+    // Payment and financial apps are never retained, even if a client sends them.
+    command.apps = apps
+      .filter(({ label, packageName }) => !isPaymentTarget(label) && !isPaymentTarget(packageName))
+      .map(({ label, packageName }) => ({
+        label: label.trim().slice(0, 120),
+        packageName: packageName.trim().slice(0, 240),
+      }));
     command.state = 'COMPLETED';
     command.completedAt = Date.now();
+    this.notify(command);
     return 'completed';
   }
 
@@ -125,6 +144,23 @@ export class AndroidCommandQueue {
     if (command.state !== 'PENDING' && command.state !== 'CLAIMED') return 'not_cancellable';
     this.markCancelled(command, 'requester_cancelled');
     return 'cancelled';
+  }
+
+  /** Expire overdue commands (and drop old terminal ones); called periodically by the server. */
+  sweep(): void { this.prune(); }
+
+  /** Cancel every queued or in-flight command requested by one device, or by all devices (stop). */
+  cancelForStop(requesterDeviceId?: string): number {
+    this.prune();
+    let cancelled = 0;
+    for (const command of this.commands.values()) {
+      if (requesterDeviceId !== undefined && command.requesterDeviceId !== requesterDeviceId) continue;
+      if (command.state === 'PENDING' || command.state === 'CLAIMED') {
+        this.markCancelled(command, 'requester_cancelled');
+        cancelled++;
+      }
+    }
+    return cancelled;
   }
 
   /** Cancel work involving a revoked device, whether it requested or was targeted by it. */
@@ -146,6 +182,7 @@ export class AndroidCommandQueue {
     id: string; targetDeviceId: string; state: AndroidInventoryCommandState;
     createdAt: number; expiresAt: number; completedAt?: number; cancelledAt?: number;
     cancelReason?: AndroidInventoryCommand['cancelReason']; apps?: AndroidInventoryApp[];
+    lifecycle: CommandLifecycleState;
   }> {
     this.prune();
     if (!this.isDeviceId(requesterDeviceId)) return [];
@@ -153,7 +190,7 @@ export class AndroidCommandQueue {
       .filter((item) => item.requesterDeviceId === requesterDeviceId)
       .slice(-30)
       .map(({ id, targetDeviceId, state, createdAt, expiresAt, completedAt, cancelledAt, cancelReason, apps }) => ({
-        id, targetDeviceId, state, createdAt, expiresAt,
+        id, targetDeviceId, state, lifecycle: lifecycleFromAndroidState(state), createdAt, expiresAt,
         ...(completedAt ? { completedAt } : {}),
         ...(cancelledAt ? { cancelledAt } : {}),
         ...(cancelReason ? { cancelReason } : {}),
@@ -166,6 +203,7 @@ export class AndroidCommandQueue {
     command.cancelledAt = Date.now();
     command.cancelReason = reason;
     delete command.apps;
+    this.notify(command);
   }
 
   private isDeviceId(value: unknown): value is string {
@@ -188,6 +226,7 @@ export class AndroidCommandQueue {
       if (now >= command.expiresAt && (command.state === 'PENDING' || command.state === 'CLAIMED')) {
         command.state = 'EXPIRED';
         delete command.apps;
+        this.notify(command);
       }
       const terminalAt = command.completedAt ?? command.cancelledAt ?? command.expiresAt;
       if (['COMPLETED', 'EXPIRED', 'CANCELLED'].includes(command.state) && now - terminalAt > this.retentionMs) {

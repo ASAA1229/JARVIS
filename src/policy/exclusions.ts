@@ -6,7 +6,17 @@
  * the exclusion holds no matter which path produced the operation, and so an approval can
  * never turn a payment target into an allowed action. There is no override.
  */
-const PAYMENT_TARGET = /\b(?:phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|bank|payment|payments)\b/i;
+/**
+ * Single source of truth for payment/financial terms. The planner, gateway, executor, desktop
+ * launcher/agent adapters, window enumeration and the Android inventory all derive their
+ * matching from this list so no path can drift from the exclusion.
+ */
+export const PAYMENT_TERMS_SOURCE = 'phonepe|paytm|google\\s*pay|gpay|paisa|paypal|wallet|banking|bank|payment|payments';
+const PAYMENT_TARGET = new RegExp(`\\b(?:${PAYMENT_TERMS_SOURCE})\\b`, 'i');
+/** Substring form for process names and window titles that are not word-delimited. */
+export const PAYMENT_SUBSTRING_PATTERN = new RegExp(`(?:${PAYMENT_TERMS_SOURCE})`, 'i');
+/** The same terms as a case-insensitive .NET/PowerShell pattern (single-quote safe). */
+export const PAYMENT_POWERSHELL_PATTERN = `(?i)${PAYMENT_TERMS_SOURCE}`;
 
 /** Parameter names that identify the application or window an operation acts on. */
 export const TARGET_PARAMETER_KEYS = ['appId', 'expectProcess', 'processName', 'titleContains'] as const;

@@ -39,7 +39,17 @@ export class TaskJournal {
   private readonly records = new Map<string, TaskLifecycleRecord>();
   private healthy = true;
 
-  constructor(private readonly filePath: string, ownerControlToken: string) {
+  /**
+   * @param isApprovalRecoverable Reports whether a persisted, still-undecided approval exists for
+   *   an approval id. A task that was only waiting for a human decision has dispatched nothing, so
+   *   when its approval was recovered it keeps waiting (never auto-approved); otherwise it is
+   *   moved to recovery like any other non-terminal task.
+   */
+  constructor(
+    private readonly filePath: string,
+    ownerControlToken: string,
+    private readonly isApprovalRecoverable: (approvalId: string, record: TaskLifecycleRecord) => boolean = () => false,
+  ) {
     if (ownerControlToken.length < 32) {
       throw new Error('Task journal requires an owner control token of at least 32 characters.');
     }
@@ -98,10 +108,18 @@ export class TaskJournal {
       if (payload.version !== 1 || !Array.isArray(payload.records) || payload.records.length > MAX_RECORDS) {
         throw new Error('Invalid task journal payload.');
       }
+      let changed = false;
       for (const record of payload.records) {
         if (!this.isValidRecord(record) || this.records.has(record.id)) throw new Error('Invalid or duplicate task checkpoint.');
         const restored = this.clone(record);
+        const keepsWaiting = restored.state === TaskState.AWAITING_APPROVAL && !restored.workflowRun && !restored.workflowParentTaskId &&
+          typeof restored.approvalId === 'string' && this.isApprovalRecoverable(restored.approvalId, restored);
+        if (keepsWaiting) {
+          this.records.set(restored.id, restored);
+          continue;
+        }
         if (!TERMINAL_STATES.has(restored.state)) {
+          changed = true;
           restored.state = TaskState.AWAITING_RECOVERY;
           restored.interrupted = true;
           restored.updatedAt = Date.now();
@@ -111,7 +129,7 @@ export class TaskJournal {
         }
         this.records.set(restored.id, restored);
       }
-      if (payload.records.some((record) => !TERMINAL_STATES.has(record.state))) this.persist();
+      if (changed) this.persist();
     } catch {
       this.healthy = false;
       this.records.clear();
