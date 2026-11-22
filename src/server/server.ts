@@ -936,7 +936,8 @@ export class JarvisServer {
         // Local speech-to-text (whisper.cpp) availability: boolean only, never paths.
         let localStt = false;
         try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
-        return this.jsonResponse(res, 200, { localTts, localStt });
+        // Browser speech recognition may stream audio to a vendor cloud: it is only offered when the routing mode permits cloud (local-first).
+        return this.jsonResponse(res, 200, { localTts, localStt, browserSpeechAllowed: cloudRoutingAllowed() });
       }
       // Wake metrics: privacy-preserving counters only (no audio, no transcript text).
       if (req.method === 'POST' && url.pathname === '/api/voice/wake-event') {

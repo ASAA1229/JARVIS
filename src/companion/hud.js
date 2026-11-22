@@ -38,6 +38,8 @@ let localTtsUnavailable = false;
 // this laptop via /api/voice/transcribe; audio never leaves the machine).
 let sttProvider = 'browser';
 let localSttAvailable = false;
+// Fail closed: browser speech (possible vendor cloud) is blocked until the server says routing permits it (local-only/offline never do).
+let browserSpeechAllowed = false;
 // Two-phase wake flow: a short same-utterance window ("Hey Jarvis, open Notepad"),
 // then, if nothing was said, the acknowledgement and a command window.
 let wakePhase = null;
@@ -78,6 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     .then((status) => {
       if (status && status.localTts === false) localTtsUnavailable = true;
       localSttAvailable = status?.localStt === true;
+      browserSpeechAllowed = status?.browserSpeechAllowed === true;
       updateSpeechEngineNotes();
     })
     .catch(() => { updateSpeechEngineNotes(); /* keep trying local TTS; it falls back on failure */ });
@@ -1120,6 +1123,7 @@ function disableHandsFree() {
 function hasSpeechConsent(mode) {
   // Local Whisper keeps audio on this laptop, so the browser/vendor consent does not apply.
   if (sttProvider === 'local' && localSttAvailable) return true;
+  if (!browserSpeechAllowed) return false;
   const consentId = mode === 'wake' ? 'allow-wake-browser-speech' : 'allow-browser-speech';
   return document.getElementById(consentId)?.checked === true;
 }
@@ -2459,6 +2463,8 @@ function updateSpeechEngineNotes() {
       note.textContent = localSttAvailable
         ? 'Local Whisper is installed: speech is transcribed on this laptop and never uploaded. No browser-speech consent is needed.'
         : 'Local Whisper is not installed (set JARVIS_WHISPER_CLI and JARVIS_WHISPER_MODEL, then restart JARVIS). Voice commands are unavailable with this setting; switch to browser recognition or type.';
+    } else if (!browserSpeechAllowed) {
+      note.textContent = 'Browser speech recognition is disabled: the routing mode is local-only/offline (or not yet confirmed), so audio is never sent to a vendor. Use local Whisper or type.';
     } else {
       note.textContent = 'Browser speech recognition may send your audio to the browser vendor (for example Microsoft or Google). It is not local or offline and needs the session consent boxes above.';
     }
