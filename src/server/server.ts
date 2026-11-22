@@ -1477,6 +1477,7 @@ export class JarvisServer {
         if (!target.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Target phone lacks read-only inventory permission' });
         const command = this.androidCommands.create(target.id, auth.device.id, 60_000);
         this.jarvis.audit.record('ANDROID_COMMAND_QUEUED', { commandId: command.id, operation: command.operation, targetDeviceId: target.id }, auth.device.id);
+        this.jarvis.events.publish('android.command', { commandId: command.id, status: 'queued', targetDeviceId: target.id }, auth.device.id);
         return this.jsonResponse(res, 201, { command });
       }
 
@@ -1519,6 +1520,7 @@ export class JarvisServer {
           return this.jsonResponse(res, 409, { error: 'Command result was not accepted', outcome });
         }
         this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
+        this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'completed' }, auth.device.id);
         return this.jsonResponse(res, 200, { success: true });
       }
 
@@ -1534,7 +1536,10 @@ export class JarvisServer {
         const outcome = this.androidCommands.cancel(auth.device.id, body.commandId);
         if (outcome === 'not_found') return this.jsonResponse(res, 404, { error: 'Command not found' });
         if (outcome === 'not_cancellable') return this.jsonResponse(res, 409, { error: 'Command already finished', outcome });
-        if (outcome === 'cancelled') this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+        if (outcome === 'cancelled') {
+          this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
+          this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'cancelled' }, auth.device.id);
+        }
         return this.jsonResponse(res, 200, { success: true, outcome });
       }
 
