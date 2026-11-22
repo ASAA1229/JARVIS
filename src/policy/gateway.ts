@@ -108,6 +108,7 @@ export class PolicyGateway {
       ['desktop:launch_and_type', ['appId', 'text']],
       ['desktop:browser_search', ['appId', 'query']],
       ['desktop:save_and_verify', ['path', 'contains', 'expectProcess']],
+      ['desktop:notepad_write_and_save', ['path', 'text']],
       ['desktop:type_text', ['text', 'expectProcess']],
       ['desktop:paste_text', ['text', 'expectProcess']],
       ['desktop:hotkey', ['keys', 'expectProcess']],

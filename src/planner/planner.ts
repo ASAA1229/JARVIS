@@ -81,6 +81,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'desktop:launch_and_type',
     'desktop:browser_search',
     'desktop:save_and_verify',
+    'desktop:notepad_write_and_save',
     'desktop:type_text',
     'desktop:paste_text',
     'desktop:hotkey',
@@ -502,6 +503,16 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
       };
     }
 
+    // "open Notepad, write <text> and save it as <workspace path>": Notepad only, new workspace file only.
+    const notepadSave = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?note\s*pad\s*(?:and|then|,)\s*(?:please\s+)?(?:write|type|enter)\s+["“]?(.+?)["”]?\s+(?:and|then)\s+save(?:\s+it)?\s+(?:as|to|into)\s+["“]?([^"”]+?)["”]?\s*$/i);
+    if (notepadSave) {
+      const noteText = notepadSave[1].trim();
+      const notePath = notepadSave[2].trim();
+      if (!noteText || noteText.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(noteText) || !notePath || notePath.length > 260) {
+        return { intent: 'Notepad write-and-save needs clearer input', operations: [], confidence: 0.96, explanation: 'Provide 1–500 printable characters of text and a workspace file path. Nothing was opened or saved.', uncertainty: 'Text or destination path is empty, too long, or contains unsupported characters.' };
+      }
+      return { intent: 'Open Notepad, enter explicit text and save it as a new workspace file', operations: [{ operation: 'desktop:notepad_write_and_save', parameters: { path: notePath, text: noteText }, justification: 'User supplied the exact text and destination inside the approved workspace' }], confidence: 0.9, explanation: 'Will open Notepad, enter the text and save it as a new file inside the approved workspace after approval, then verify the file. Existing files are never overwritten.' };
+    }
     const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}?)\s+(?:and|then|,)\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
     if (launchAndType) {
       const requestedApp = launchAndType[1].trim();
