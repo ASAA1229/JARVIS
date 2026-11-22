@@ -38,6 +38,10 @@ export class PolicyGateway {
   private readonly grantPath: string;
   private readonly grantKey?: Buffer;
   private grantStateHealthy = true;
+  /** Pending (undecided) approvals survive restart in an HMAC-protected sibling file (D2.18). */
+  private readonly pendingPath: string;
+  private readonly pendingKey?: Buffer;
+  private pendingStateHealthy = true;
   // Remembered approvals are enabled for app launches only, for 30 minutes by
   // default. Set JARVIS_REMEMBER_LAUNCH_MINUTES=0 to disable or 1-240 to choose
   // a duration. Grants are bound to the exact device, operation and app parameters.
@@ -242,8 +246,11 @@ export class PolicyGateway {
     this.grantPath = grantPath;
     if (ownerControlToken && ownerControlToken.length >= 32) {
       this.grantKey = createHmac('sha256', ownerControlToken).update('JARVIS-APPROVAL-GRANTS-V1').digest();
+      this.pendingKey = createHmac('sha256', ownerControlToken).update('JARVIS-PENDING-APPROVALS-V1').digest();
     }
+    this.pendingPath = `${grantPath}.pending`;
     this.loadRememberedGrants();
+    this.loadPendingApprovals();
   }
 
   private grantIdentity(grant: Pick<RememberedGrant, 'deviceId' | 'operation' | 'parametersHash'>): string {
@@ -295,6 +302,68 @@ export class PolicyGateway {
       this.audit.record('REMEMBERED_APPROVAL_PERSIST_FAILED', { reason: 'WRITE_FAILED' });
       return false;
     }
+  }
+
+  /**
+   * Recover approvals that were still waiting for a human decision when the process stopped.
+   * Recovery is strictly conservative: only undecided, unexpired approvals come back, and they
+   * come back undecided. Anything already approved, rejected, consumed or expired is dropped, so
+   * a restart can never turn into an approval and a stale request can never be approved late.
+   */
+  private loadPendingApprovals(): void {
+    if (!this.pendingKey || !existsSync(this.pendingPath)) return;
+    try {
+      const envelope = JSON.parse(readFileSync(this.pendingPath, 'utf8')) as { payload: string; mac: string };
+      if (typeof envelope.payload !== 'string' || typeof envelope.mac !== 'string') throw new Error('Invalid pending approval envelope');
+      const expected = createHmac('sha256', this.pendingKey).update(envelope.payload).digest();
+      const supplied = Buffer.from(envelope.mac, 'hex');
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new Error('Pending approval integrity check failed');
+      const parsed = JSON.parse(envelope.payload) as { approvals?: ApprovalRecord[] };
+      if (!Array.isArray(parsed.approvals) || parsed.approvals.length > 500) throw new Error('Invalid pending approval state');
+      const now = Date.now();
+      let recovered = 0;
+      let dropped = 0;
+      for (const item of parsed.approvals) {
+        const valid = item && typeof item.id === 'string' && typeof item.taskId === 'string' && typeof item.deviceId === 'string' &&
+          typeof item.operation === 'string' && typeof item.parametersHash === 'string' && typeof item.expiresAt === 'number' &&
+          typeof item.createdAt === 'number' && Object.values(RiskTier).includes(item.riskTier);
+        if (!valid || item.approved || item.rejected || item.consumed || item.expiresAt <= now) { dropped++; continue; }
+        this.pendingApprovals.set(item.id, { ...item, approved: false });
+        recovered++;
+      }
+      try { this.audit.record('PENDING_APPROVALS_RECOVERED', { recovered, dropped }); } catch { /* recovery stays conservative without audit */ }
+      if (dropped > 0) this.persistPendingApprovals();
+    } catch {
+      this.pendingStateHealthy = false;
+      try { this.audit.record('PENDING_APPROVAL_STATE_INVALID', { reason: 'INTEGRITY_OR_FORMAT_FAILURE' }); } catch { /* fail closed */ }
+    }
+  }
+
+  /** Best-effort durable copy of undecided approvals. A failure never grants anything. */
+  private persistPendingApprovals(): boolean {
+    if (!this.pendingKey) return true;
+    const now = Date.now();
+    const approvals = Array.from(this.pendingApprovals.values())
+      .filter((item) => !item.approved && !item.rejected && !item.consumed && item.expiresAt > now);
+    const payload = JSON.stringify({ version: 1, approvals, persistedAt: now });
+    const mac = createHmac('sha256', this.pendingKey).update(payload).digest('hex');
+    const temporaryPath = `${this.pendingPath}.tmp-${CryptoUtil.randomToken(4)}`;
+    try {
+      mkdirSync(dirname(this.pendingPath), { recursive: true });
+      writeFileSync(temporaryPath, JSON.stringify({ payload, mac }), { encoding: 'utf8', mode: 0o600 });
+      renameSync(temporaryPath, this.pendingPath);
+      this.pendingStateHealthy = true;
+      return true;
+    } catch {
+      this.pendingStateHealthy = false;
+      try { this.audit.record('PENDING_APPROVAL_PERSIST_FAILED', { reason: 'WRITE_FAILED' }); } catch { /* ignore */ }
+      return false;
+    }
+  }
+
+  /** Approvals that are still waiting for a human decision (used by startup reconciliation). */
+  public listUndecidedApprovals(): ApprovalRecord[] {
+    return Array.from(this.pendingApprovals.values()).filter((item) => !item.approved && !item.rejected && !item.consumed);
   }
 
   /**
@@ -500,6 +569,7 @@ export class PolicyGateway {
         // Mark approval as consumed for single-use execution
         approval.consumed = true;
         approval.consumedAt = Date.now();
+        this.persistPendingApprovals();
         return {
           allowed: true,
           requiresApproval: false,
@@ -546,6 +616,7 @@ export class PolicyGateway {
 
     this.pruneApprovals();
     this.pendingApprovals.set(approvalId, record);
+    this.persistPendingApprovals();
 
     this.audit.record('APPROVAL_REQUESTED', {
       approvalId,
@@ -604,6 +675,7 @@ export class PolicyGateway {
 
     approval.approved = approved;
     approval.rejected = !approved;
+    this.persistPendingApprovals();
 
     this.audit.record(
       approved ? 'APPROVAL_GRANTED' : 'APPROVAL_REJECTED',
@@ -630,6 +702,7 @@ export class PolicyGateway {
         removed++;
       }
     }
+    if (removed > 0) this.persistPendingApprovals();
     return removed;
   }
 
@@ -649,6 +722,7 @@ export class PolicyGateway {
       invalidated++;
       this.audit.record('APPROVAL_INVALIDATED', { approvalId: approval.id, operation: approval.operation, reason }, approval.deviceId, approval.taskId);
     }
+    if (invalidated > 0) this.persistPendingApprovals();
     if (filter.deviceId !== undefined) {
       for (const [key, grant] of this.rememberedGrants) {
         if (grant.deviceId === filter.deviceId) this.rememberedGrants.delete(key);
