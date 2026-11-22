@@ -12,7 +12,9 @@ const OWNER_TOKEN = 'device-revocation-sweep-token-0123456789abcdef';
 const previousToken = process.env.JARVIS_OWNER_CONTROL_TOKEN;
 const dir = mkdtempSync(join(tmpdir(), 'jarvis-revocation-sweep-'));
 process.env.JARVIS_OWNER_CONTROL_TOKEN = OWNER_TOKEN;
-after(() => {
+const started: JarvisServer[] = [];
+after(async () => {
+  for (const s of started) await s.stop().catch(() => undefined);
   if (previousToken === undefined) delete process.env.JARVIS_OWNER_CONTROL_TOKEN;
   else process.env.JARVIS_OWNER_CONTROL_TOKEN = previousToken;
   rmSync(dir, { recursive: true, force: true });
@@ -53,6 +55,7 @@ test('E2:D4.5 a revoked device loses tokens, event stream, wake session, approva
   const paths = [join(dir, 'audit.log'), join(dir, 'devices.json')] as const;
   const port1 = await freePort();
   const first = new JarvisServer(port1, ...paths);
+  started.push(first);
   await first.start();
   const service1 = first.getService();
 
@@ -85,13 +88,14 @@ test('E2:D4.5 a revoked device loses tokens, event stream, wake session, approva
   }
   assert.equal(service1.identity.validateDeviceSession(requesterWho.sessionId).valid, false);
   // Pending approval is invalid and its task is cancelled; the approval can no longer be granted.
-  assert.equal(service1.policy.getApproval(pending.approvalId!), undefined);
+  const dead = (a: { approved: boolean; rejected?: boolean } | undefined) => a === undefined || (a.rejected === true && a.approved === false);
+  assert.ok(dead(service1.policy.getApproval(pending.approvalId!)));
   assert.equal(service1.getTask(pending.taskId)?.state, TaskState.CANCELLED);
-  assert.equal((await service1.approveTask(pending.approvalId!, ownerWho.sessionId)).success, false);
+  await assert.rejects(() => service1.approveTask(pending.approvalId!, ownerWho.sessionId), /no longer awaiting approval/);
   // The queued phone command from the revoked requester is cancelled and never handed to the phone.
   const next = await call(port1, phoneWho, 'GET', '/api/android/commands/next');
   assert.equal(next.status, 200);
-  assert.equal(((await next.json()) as { command: unknown }).command, null);
+  assert.ok(((await next.json()) as { command?: unknown }).command == null, 'no command is delivered to the phone');
   const results = await call(port1, ownerWho, 'GET', '/api/android/commands/results');
   assert.equal(results.status, 200);
   assert.ok(!((await results.json()) as { results: Array<{ id: string; state: string }> }).results.some((r) => r.id === commandId && r.state === 'PENDING'));
@@ -102,6 +106,7 @@ test('E2:D4.5 a revoked device loses tokens, event stream, wake session, approva
   // Restart: revocation is durable; no session is restored; the device cannot sign a new one.
   const port2 = await freePort();
   const second = new JarvisServer(port2, ...paths);
+  started.push(second);
   await second.start();
   try {
     const service2 = second.getService();
@@ -112,7 +117,7 @@ test('E2:D4.5 a revoked device loses tokens, event stream, wake session, approva
     const relogin = service2.identity.createSession(requester.deviceId, CryptoUtil.signData(`SESSION_REQUEST:${timestamp}:${nonce}`, requester.keys.privateKey), timestamp, nonce);
     assert.equal(relogin.success, false);
     assert.notEqual(service2.getTask(pending.taskId)?.state, TaskState.AWAITING_APPROVAL);
-    assert.equal(service2.policy.getApproval(pending.approvalId!), undefined);
+    assert.ok(dead(service2.policy.getApproval(pending.approvalId!)));
     assert.equal(service2.identity.getDevice(owner.deviceId)?.status, 'ACTIVE');
   } finally {
     await second.stop();
