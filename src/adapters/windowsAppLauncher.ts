@@ -3,6 +3,7 @@ import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WindowInfo, WindowsWindowManager } from './windowsWindows.js';
+import { isPaymentTarget } from '../policy/exclusions.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -514,7 +515,7 @@ export class WindowsAppLauncherAdapter {
   }
 
   private isFinancialAppName(name: string): boolean {
-    return /\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(name);
+    return isPaymentTarget(name);
   }
 
   private async launchDiscoveredStartMenuApp(query: string, signal?: AbortSignal): Promise<ExecutionResult> {
