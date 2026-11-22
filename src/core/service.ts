@@ -1,4 +1,5 @@
 import { routingMode } from '../ai/providerRouter.js';
+import { lifecycleFromTaskState, type CommandLifecycleState } from './commandLifecycle.js';
 import { createCiProvider } from '../release/ciProvider.js';
 import {
   TaskId,
@@ -81,6 +82,8 @@ export interface TaskLifecycleRecord {
   workflowSteps?: WorkflowStep[];
   workflowParentTaskId?: TaskId;
   workflowStepId?: string;
+  /** True when the task ended because a planning or execution deadline passed (lifecycle timed_out). */
+  timedOut?: boolean;
 }
 
 export interface TaskResult {
@@ -95,6 +98,12 @@ export interface TaskResult {
 
 /** Hard ceiling for any single adapter call; adapters that honour AbortSignal stop at this point. */
 const EXECUTION_TIMEOUT_MS = 60_000;
+/** Extra time after the abort signal for an adapter to return before the task is force-settled. */
+const EXECUTION_GRACE_MS = 10_000;
+/** Hard ceiling for planner/provider work so a task can never stay in CREATED forever. */
+const PLANNING_TIMEOUT_MS = 120_000;
+/** Tasks left in a non-terminal in-flight state with no live controller are settled by the sweep. */
+const STALE_TASK_MS = 5 * 60_000;
 
 /**
  * Read-only operations that may be retried once after a TIMEOUT. State-changing
@@ -229,17 +238,83 @@ export class JarvisCoreService {
         statePath ? statePath + '.memory-candidates' : './data/memory-candidates.enc',
         ownerControlToken,
       );
-      this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken);
+      // A task that was only waiting for a human decision keeps waiting when its persisted approval
+      // was recovered (undecided, unexpired, device still active); it is never auto-approved.
+      this.taskJournal = new TaskJournal(statePath ? statePath + '.tasks' : './data/tasks.enc', ownerControlToken, (approvalId, record) => {
+        const approval = this.policy.getApproval(approvalId);
+        const device = this.identity.getDevice(record.deviceId);
+        return Boolean(approval && approval.taskId === record.id && approval.deviceId === record.deviceId &&
+          !approval.approved && !approval.rejected && !approval.consumed && approval.expiresAt > Date.now() &&
+          device && device.status === 'ACTIVE');
+      });
       for (const record of this.taskJournal.list()) this.tasks.set(record.id, record);
+      this.reconcileStaleTasks();
     }
   }
 
   /** Start the scheduler loop. Called by the server on start; never runs implicitly. */
   public startBackgroundServices(): void {
     this.scheduler.start();
+    this.reconcileStaleTasks();
+    if (!this.reconcileTimer) {
+      this.reconcileTimer = setInterval(() => this.reconcileStaleTasks(), 30_000);
+      this.reconcileTimer.unref?.();
+    }
+  }
+
+  private reconcileTimer?: ReturnType<typeof setInterval>;
+
+  /** The single client-facing lifecycle (queued/running/completed/failed/cancelled/timed_out) for a task. */
+  public lifecycleOf(task: Pick<TaskLifecycleRecord, 'state' | 'timedOut'>): CommandLifecycleState {
+    return task.timedOut ? 'timed_out' : lifecycleFromTaskState(task.state);
+  }
+
+  /**
+   * Settles work that can no longer progress, so nothing stays queued or running forever:
+   * approvals past their expiry (or whose persisted approval is gone) expire safely, and in-flight
+   * tasks with no live controller are moved to recovery. Never approves or executes anything.
+   */
+  public reconcileStaleTasks(now: number = Date.now()): number {
+    let settled = 0;
+    for (const task of this.tasks.values()) {
+      if (task.state === TaskState.AWAITING_APPROVAL) {
+        const approval = task.approvalId ? this.policy.getApproval(task.approvalId) : undefined;
+        const undecided = Boolean(approval && !approval.approved && !approval.rejected && !approval.consumed);
+        const device = this.identity.getDevice(task.deviceId);
+        const deviceActive = Boolean(device && device.status === 'ACTIVE');
+        if (undecided && approval!.expiresAt > now && deviceActive) continue;
+        if (approval && (approval.approved || approval.consumed)) continue; // a decision is in progress
+        this.policy.invalidateApprovals({ taskId: task.id }, 'STALE_APPROVAL');
+        task.state = deviceActive ? TaskState.EXPIRED : TaskState.CANCELLED;
+        task.timedOut = deviceActive || undefined;
+        task.error = deviceActive ? 'Approval expired before a decision; nothing was executed.' : 'Device is no longer active; nothing was executed.';
+        this.#skipRemainingSteps(task);
+        this.#persistTask(task);
+        try { this.audit.record('APPROVAL_EXPIRED_SWEEP', { approvalId: task.approvalId ?? null }, task.deviceId, task.id); } catch { /* state already terminal */ }
+        if (task.workflowParentTaskId) void this.#settleWorkflowBranchChild(task, 'verified_failure').catch(() => undefined);
+        settled++;
+      } else if (task.state === TaskState.EXECUTING && !this.activeExecutionTokens.has(task.id) &&
+          now - task.updatedAt > EXECUTION_TIMEOUT_MS + EXECUTION_GRACE_MS) {
+        task.state = TaskState.AWAITING_RECOVERY;
+        task.interrupted = true;
+        task.timedOut = true;
+        task.error = 'Execution had no live controller past its deadline; reconcile external state before retrying.';
+        this.#persistTask(task);
+        settled++;
+      } else if ((task.state === TaskState.CREATED || task.state === TaskState.APPROVED) &&
+          !this.activePlanningTokens.has(task.id) && !this.activeExecutionTokens.has(task.id) && now - task.updatedAt > STALE_TASK_MS) {
+        task.state = TaskState.FAILED;
+        task.timedOut = true;
+        task.error = 'Task did not progress before its deadline; nothing was executed.';
+        this.#persistTask(task);
+        settled++;
+      }
+    }
+    return settled;
   }
 
   public stopBackgroundServices(): void {
+    if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = undefined; }
     this.scheduler.stop();
     for (const controller of this.activeExecutionTokens.values()) controller.abort();
     for (const controller of this.activePlanningTokens.values()) controller.abort();
@@ -345,17 +420,27 @@ export class JarvisCoreService {
     let plan: PlanProposal;
     const planningController = new AbortController();
     this.activePlanningTokens.set(taskId, planningController);
+    let planningTimedOut = false;
+    const planningTimer = setTimeout(() => { planningTimedOut = true; planningController.abort(); }, PLANNING_TIMEOUT_MS);
     try {
-      plan = presetPlan ?? await this.planningCoordinator.run({
+      const planning: Promise<PlanProposal> = presetPlan ? Promise.resolve(presetPlan) : this.planningCoordinator.run({
         taskId,
         deviceId: device.id,
         priority: origin === 'schedule' ? 10 : 100,
         queueTimeoutMs: 30_000,
         signal: planningController.signal,
       }, () => this.planner.generatePlan(requestText, context));
+      planning.catch(() => undefined);
+      const deadline = new Promise<never>((_, reject) => {
+        planningController.signal.addEventListener('abort', () => { if (planningTimedOut) reject(new Error('Planning deadline exceeded')); }, { once: true });
+      });
+      plan = await Promise.race([planning, deadline]);
+      clearTimeout(planningTimer);
     } catch (error: unknown) {
+      clearTimeout(planningTimer);
       this.activePlanningTokens.delete(taskId);
-      if (planningController.signal.aborted || taskRecord.state === TaskState.CANCELLED) {
+      if (planningTimedOut) taskRecord.timedOut = true;
+      if (!planningTimedOut && (planningController.signal.aborted || taskRecord.state === TaskState.CANCELLED)) {
         return { taskId, state: TaskState.CANCELLED, message: 'Task cancelled before execution; no operation was started.', verified: false };
       }
       taskRecord.state = TaskState.FAILED;
@@ -490,7 +575,7 @@ export class JarvisCoreService {
     task.updatedAt = Date.now();
     if (this.#lastPublishedState.get(task.id) !== task.state) {
       this.#lastPublishedState.set(task.id, task.state);
-      this.events.publish('task.state', { taskId: task.id, state: task.state }, task.deviceId);
+      this.events.publish('task.state', { taskId: task.id, state: task.state, lifecycle: this.lifecycleOf(task) }, task.deviceId);
     }
     if (!this.taskJournal) return true;
     try {
@@ -992,13 +1077,14 @@ export class JarvisCoreService {
     };
 
     let executionError: unknown;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       if (signal.aborted) {
         throw new Error('Task was aborted before execution');
       }
       let attempts = 0;
       const resources = this.#executionResources(taskRecord, opRequest);
-      rawResult = await this.taskCoordinator.run({
+      const run = this.taskCoordinator.run({
         taskId,
         deviceId: taskRecord.deviceId,
         priority: taskRecord.origin === 'schedule' ? 10 : 100,
@@ -1014,6 +1100,12 @@ export class JarvisCoreService {
         } while (RETRYABLE_READ_ONLY.has(opRequest.operation) && rawResult.failureKind === 'timeout' && attempts < 2 && !signal.aborted);
         return rawResult;
       });
+      run.catch(() => undefined);
+      // An adapter that ignores AbortSignal must not keep the task running forever.
+      const hardDeadline = new Promise<never>((_, reject) => {
+        deadlineTimer = setTimeout(() => reject(Object.assign(new Error('Execution deadline exceeded'), { name: 'ExecutionDeadlineError' })), EXECUTION_TIMEOUT_MS + EXECUTION_GRACE_MS);
+      });
+      rawResult = await Promise.race([run, hardDeadline]);
     } catch (err: unknown) {
       executionError = err;
       // Adapter exceptions can contain local paths, command fragments, or other
@@ -1027,8 +1119,10 @@ export class JarvisCoreService {
       };
     } finally {
       clearTimeout(timeoutHandle);
+      if (deadlineTimer) clearTimeout(deadlineTimer);
       this.activeExecutionTokens.delete(taskId);
     }
+    if (executionTimedOut || (executionError instanceof Error && executionError.name === 'ExecutionDeadlineError')) taskRecord.timedOut = true;
 
     if ((signal.aborted || taskRecord.interrupted || executionError !== undefined) && !dispatchStarted) {
       // A task cancelled or timed out while queued has not invoked an adapter.
@@ -1750,6 +1844,14 @@ export class JarvisCoreService {
       if (scope === 'device' && task.deviceId !== requester.id) continue;
       if (task.state === TaskState.EXECUTING) {
         if (this.interruptTask(task.id)) interrupted += 1;
+        else {
+          // No live controller: the task must still reach a recovery state, never stay running.
+          task.state = TaskState.AWAITING_RECOVERY;
+          task.interrupted = true;
+          task.error = 'Stopped by user; reconcile external state before retrying.';
+          this.#persistTask(task);
+          interrupted += 1;
+        }
       } else if (task.state === TaskState.AWAITING_APPROVAL || task.state === TaskState.CREATED || task.state === TaskState.APPROVED) {
         this.activePlanningTokens.get(task.id)?.abort();
         this.policy.invalidateApprovals({ taskId: task.id }, 'STOP_ALL');

@@ -159,6 +159,14 @@ export class ProviderRouter {
     return loadProviders(this.env());
   }
 
+  /**
+   * The loopback Ollama provider, for health checks and diagnostics. Goes through the same
+   * provider list (and loopback rule) as route(), so no caller picks an endpoint on its own.
+   */
+  localProvider(): ProviderConfig | undefined {
+    return this.providers().find((provider) => provider.id === 'local' && provider.format === 'ollama' && provider.local);
+  }
+
   /** Mark a provider failed (network/5xx/timeout) so routing avoids it for a cooldown period. */
   reportFailure(id: ProviderId): void {
     this.unavailableUntil.set(id, this.now() + UNAVAILABLE_COOLDOWN_MS);

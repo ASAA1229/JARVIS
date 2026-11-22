@@ -3,6 +3,7 @@ import { planDeveloperRequest } from '../developer/developerPlanner.js';
 import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
 import { GATEWAY_SITE_OPERATIONS } from '../gateway/siteAdminOperations.js';
 import { planWorkflowRequest } from '../workflows/workflowPlanner.js';
+import { isPaymentTarget } from '../policy/exclusions.js';
 
 export interface ProposedOperation {
   operation: string;
@@ -516,7 +517,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const launchAndType = requestText.match(/\b(?:open|launch|start)\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}?)\s+(?:and|then|,)\s*(?:please\s+)?(?:write|type|enter)\s+(.+?)\s*$/i);
     if (launchAndType) {
       const requestedApp = launchAndType[1].trim();
-      if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(requestedApp)) {
+      if (isPaymentTarget(requestedApp)) {
         return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
       }
       const appId = /^(?:note\s*pad)$/i.test(requestedApp) ? 'notepad'
@@ -646,7 +647,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     const genericOpen = /^[A-Za-z0-9][A-Za-z0-9 ._+()\-]{0,79}$/.test(launchTarget);
     if (genericOpen && launchTarget) {
       const appName = launchTarget;
-      if (/\b(phonepe|paytm|google\s*pay|gpay|paypal|wallet|banking|payment)\b/i.test(appName)) {
+      if (isPaymentTarget(appName)) {
         return { intent: 'Application excluded by owner policy', operations: [], confidence: 0.99, explanation: 'JARVIS does not launch or automate payment and financial applications.', uncertainty: 'Application is excluded by owner policy.' };
       }
       return { intent: 'Launch installed Windows application', operations: [{ operation: 'app:launch', parameters: { appId: appName }, justification: 'User requested an installed application by name' }], confidence: 0.78, explanation: 'Will search the Windows Start menu for a unique application match and request approval before launching it.' };

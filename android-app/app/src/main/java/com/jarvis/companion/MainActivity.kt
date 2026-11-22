@@ -244,6 +244,7 @@ class MainActivity : Activity() {
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(launcherIntent, 0)
             .filter { it.activityInfo.packageName != packageName }
+            .filterNot { PaymentExclusion.isExcluded(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
             .distinctBy { it.activityInfo.packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         if (apps.isEmpty()) {
@@ -281,6 +282,7 @@ class MainActivity : Activity() {
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(launcherIntent, 0)
             .filter { it.activityInfo.packageName != packageName }
+            .filterNot { PaymentExclusion.isExcluded(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
             .distinctBy { it.activityInfo.packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
             .take(300)

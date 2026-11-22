@@ -4,7 +4,7 @@
  * continue through the shared provider client.
  */
 import { chatCompletion, ProviderCallError } from '../ai/providerClient.js';
-import { providerRouter, type ProviderId } from '../ai/providerRouter.js';
+import { providerRouter, routingMode, type ProviderId } from '../ai/providerRouter.js';
 import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.js';
 
 const MAX_MODEL_CONTENT_LENGTH = 32 * 1024;
@@ -35,7 +35,8 @@ function readConfiguration() {
   if (!local && endpoint.protocol !== 'https:') {
     return { status: { status: 'disabled', reason: 'insecure_remote_url' } as AgentModelConfigStatus };
   }
-  if (!local && process.env.JARVIS_AI_ALLOW_REMOTE !== 'true') {
+  // The routing mode (providerRouter) is the single policy: a non-local endpoint is never ready outside local-first.
+  if (!local && (process.env.JARVIS_AI_ALLOW_REMOTE !== 'true' || routingMode() !== 'local-first')) {
     return { status: { status: 'disabled', reason: 'remote_not_opted_in' } as AgentModelConfigStatus };
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model)) {

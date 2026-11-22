@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { ExecutionResult, VerificationOutcome } from '../core/types.js';
+import { PAYMENT_POWERSHELL_PATTERN } from '../policy/exclusions.js';
 import { LOCKED_DESKTOP_GUARD, WindowTarget, WindowsWindowManager, classifyPowerShellError, failureResult } from './windowsWindows.js';
 
 // Per-call expected foreground process, carried through async calls so concurrent
@@ -285,7 +286,7 @@ export class WindowsDesktopAgent {
       "$foregroundPid = [uint32]0",
       "[void][JarvisForeground]::GetWindowThreadProcessId($foregroundHwnd, [ref]$foregroundPid)",
       "$foreground = Get-Process -Id $foregroundPid -ErrorAction Stop",
-      "if (($foreground.ProcessName + ' ' + $foreground.MainWindowTitle) -match '(?i)phonepe|paytm|google\\s*pay|gpay|paypal|wallet|bank|payment') { throw 'JARVIS policy blocks interaction with financial/payment applications or windows.' }",
+      "if (($foreground.ProcessName + ' ' + $foreground.MainWindowTitle) -match '" + PAYMENT_POWERSHELL_PATTERN + "') { throw 'JARVIS policy blocks interaction with financial/payment applications or windows.' }",
       LOCKED_DESKTOP_GUARD,
       ...(expectProcess ? ["if ($foreground.ProcessName -ne '" + expectProcess + "') { throw 'TARGET_MISMATCH' }"] : []),
     ].join('; ');

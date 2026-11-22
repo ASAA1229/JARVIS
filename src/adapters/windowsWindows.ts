@@ -2,11 +2,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ExecutionResult, FailureKind, VerificationOutcome } from '../core/types.js';
+import { PAYMENT_SUBSTRING_PATTERN } from '../policy/exclusions.js';
 
 const execFileAsync = promisify(execFile);
 
 /** Payment and financial software is excluded from general-purpose control. */
-export const FINANCIAL_APP_PATTERN = /(phonepe|paytm|google\s*pay|gpay|paypal|wallet|bank|payment)/i;
+export const FINANCIAL_APP_PATTERN = PAYMENT_SUBSTRING_PATTERN;
 
 /** Thrown by Windows adapters; carries a machine-readable failure kind. */
 export class WindowsAgentError extends Error {

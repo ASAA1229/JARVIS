@@ -225,6 +225,13 @@ export class DeviceSecurityService {
     if (!tx || tx.state !== 'AWAITING_OWNER_AUTHORIZATION' || tx.expiresAt <= Date.now() || !tx.request || tx.request.requestHash !== requestHash) throw new Error('Enrollment request expired or changed');
     this.audit.record('ENROLLMENT_OWNER_APPROVED', { transactionId, requestHash, permissions: tx.permissions }, device.id);
     const challenge = await this.identity.createEnrollmentChallenge(tx.permissions, 120);
+    // The transaction may have been cancelled/expired (revoke-all, owner recovery) or the approver
+    // revoked while the challenge was created; never complete enrollment from a stale approval.
+    const approver = this.identity.getDevice(device.id);
+    if (tx.state !== 'AWAITING_OWNER_AUTHORIZATION' || tx.expiresAt <= Date.now() || !approver || approver.status !== 'ACTIVE') {
+      this.audit.record('ENROLLMENT_APPROVAL_STALE', { transactionId }, device.id);
+      throw new Error('Enrollment request expired or changed');
+    }
     const enrolled = this.identity.enrollDevice(challenge.challengeToken, tx.request.name, tx.request.publicKey, tx.request.platform);
     if (!enrolled.success || !enrolled.deviceId) throw new Error(enrolled.error || 'Enrollment could not be completed');
     tx.state = 'ENROLLED'; tx.deviceId = enrolled.deviceId;

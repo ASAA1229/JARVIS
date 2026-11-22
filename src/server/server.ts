@@ -58,7 +58,13 @@ export class JarvisServer {
   private readonly wakeMetrics = new WakeMetrics();
   private readonly wakeSessions = new WakeSessionMachine({ metrics: this.wakeMetrics });
   private readonly audioIngress = new AudioIngressGuard();
-  private readonly androidCommands = new AndroidCommandQueue();
+  /** Every queue transition (queued, running, completed, timed_out, cancelled) is mirrored onto the event bus. */
+  private readonly androidCommands = new AndroidCommandQueue((command, lifecycle) => {
+    this.jarvis.events.publish('android.command', {
+      commandId: command.id, status: lifecycle, lifecycle, targetDeviceId: command.targetDeviceId,
+      ...(command.cancelReason ? { reason: command.cancelReason } : {}),
+    }, command.requesterDeviceId);
+  });
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
@@ -134,6 +140,11 @@ export class JarvisServer {
       const onListening = () => {
         this.server.off('error', onError);
         this.jarvis.startBackgroundServices();
+        // Expire phone commands that nobody touches, so none stays queued or running past its deadline.
+        if (!this.androidSweepTimer) {
+          this.androidSweepTimer = setInterval(() => this.androidCommands.sweep(), 15_000);
+          this.androidSweepTimer.unref?.();
+        }
         this.asaaEvents.start();
         // An audit failure that happened before the listener existed (startup verification) is still reported.
         const startupAuditFailure = this.jarvis.audit.getFailureReason();
@@ -159,7 +170,10 @@ export class JarvisServer {
     });
   }
 
+  private androidSweepTimer?: ReturnType<typeof setInterval>;
+
   public stop(): Promise<void> {
+    if (this.androidSweepTimer) { clearInterval(this.androidSweepTimer); this.androidSweepTimer = undefined; }
     this.jarvis.stopBackgroundServices();
     this.asaaEvents.stop();
     this.peerDiscovery?.stop();
@@ -715,7 +729,7 @@ export class JarvisServer {
           return this.jsonResponse(res, 200, providerRouter.status());
         }
         if (req.method === 'GET' && url.pathname === '/api/ai/health') {
-          const ollama = providerRouter.providers().find((item) => item.id === 'local' && item.format === 'ollama');
+          const ollama = providerRouter.localProvider();
           if (!ollama) return this.jsonResponse(res, 503, { available: false, modelAvailable: false, error: 'Ollama is not configured' });
           const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
           const health = await new OllamaProvider({
@@ -1482,7 +1496,6 @@ export class JarvisServer {
         if (!target.permissions.includes(Permission.SYSTEM_INFO_READ)) return this.jsonResponse(res, 403, { error: 'Target phone lacks read-only inventory permission' });
         const command = this.androidCommands.create(target.id, auth.device.id, 60_000);
         this.jarvis.audit.record('ANDROID_COMMAND_QUEUED', { commandId: command.id, operation: command.operation, targetDeviceId: target.id }, auth.device.id);
-        this.jarvis.events.publish('android.command', { commandId: command.id, status: 'queued', targetDeviceId: target.id }, auth.device.id);
         return this.jsonResponse(res, 201, { command });
       }
 
@@ -1525,7 +1538,6 @@ export class JarvisServer {
           return this.jsonResponse(res, 409, { error: 'Command result was not accepted', outcome });
         }
         this.jarvis.audit.record('ANDROID_COMMAND_COMPLETED', { commandId: body.commandId, appCount: body.apps.length }, auth.device.id);
-        this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'completed' }, auth.device.id);
         return this.jsonResponse(res, 200, { success: true });
       }
 
@@ -1543,7 +1555,6 @@ export class JarvisServer {
         if (outcome === 'not_cancellable') return this.jsonResponse(res, 409, { error: 'Command already finished', outcome });
         if (outcome === 'cancelled') {
           this.jarvis.audit.record('ANDROID_COMMAND_CANCELLED', { commandId: body.commandId }, auth.device.id);
-          this.jarvis.events.publish('android.command', { commandId: body.commandId, status: 'cancelled' }, auth.device.id);
         }
         return this.jsonResponse(res, 200, { success: true, outcome });
       }
@@ -1690,6 +1701,7 @@ export class JarvisServer {
           .map((task) => ({
             id: task.id,
             state: task.state,
+            lifecycle: this.jarvis.lifecycleOf(task),
             operation: task.operation,
             origin: task.origin,
             createdAt: task.createdAt,
@@ -1773,7 +1785,10 @@ export class JarvisServer {
         const scope = body.scope === 'all' ? 'all' : 'device';
         if (scope === 'all' && !auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Only an owner device can stop all devices' });
         this.wakeSessions.cancel(auth.device.id);
-        return this.jsonResponse(res, 200, this.jarvis.stopAll(sessionId, scope));
+        const stopped = this.jarvis.stopAll(sessionId, scope);
+        // Queued and in-flight phone commands are in-flight commands too: stop moves them to cancelled.
+        const androidCancelled = this.androidCommands.cancelForStop(scope === 'all' ? undefined : auth.device.id);
+        return this.jsonResponse(res, 200, { ...stopped, androidCancelled });
       }
       // Audit logs (for dashboard monitoring)
       if (req.method === 'GET' && url.pathname === '/api/audit') {
