@@ -4,6 +4,7 @@ import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
 import { GATEWAY_SITE_OPERATIONS } from '../gateway/siteAdminOperations.js';
 import { planWorkflowRequest } from '../workflows/workflowPlanner.js';
 import { isPaymentTarget } from '../policy/exclusions.js';
+import { isRegisteredTool, validateToolParameters } from '../policy/toolRegistry.js';
 
 export interface ProposedOperation {
   operation: string;
@@ -143,11 +144,16 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
           continue;
         }
         const opObj = op as Record<string, unknown>;
-        if (typeof opObj.operation !== 'string' || !LocalHeuristicPlanner.ALLOWED_OPERATIONS.has(opObj.operation)) {
+        // The planner may only emit tools in the shared registry (E:D4.6); its own allowlist can
+        // only narrow that set, never widen it.
+        if (typeof opObj.operation !== 'string' || !LocalHeuristicPlanner.ALLOWED_OPERATIONS.has(opObj.operation) || !isRegisteredTool(opObj.operation)) {
           errors.push(`Operation '${String(opObj.operation)}' at index ${i} is not allowlisted`);
         }
         if (!opObj.parameters || typeof opObj.parameters !== 'object' || Array.isArray(opObj.parameters)) {
           errors.push(`Parameters for operation at index ${i} must be an object`);
+        } else if (isRegisteredTool(opObj.operation)) {
+          const problem = validateToolParameters(opObj.operation, opObj.parameters);
+          if (problem) errors.push(`Operation at index ${i}: ${problem}`);
         }
       }
     }

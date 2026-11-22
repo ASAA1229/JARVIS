@@ -22,6 +22,7 @@ import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '..
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { DocumentRagStore } from '../memory/documentRagStore.js';
+import { KnowledgeSourceRegistry } from '../memory/knowledgeSources.js';
 import { DocumentParser } from '../memory/documentParser.js';
 import { OllamaEmbedder, resolveLocalEmbeddingEndpoint } from '../memory/semanticIndex.js';
 import { SyncStateStore } from '../sync/syncStateStore.js';
@@ -69,6 +70,8 @@ export class JarvisServer {
   private recoveryFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
   private readonly documentRag?: DocumentRagStore;
+  /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
+  private readonly knowledgeSources?: KnowledgeSourceRegistry;
   private readonly documentParser = new DocumentParser();
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
@@ -87,10 +90,14 @@ export class JarvisServer {
       : new ConversationSessionStore();
     if (this.ownerControlToken) {
       const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
+      if (process.env.JARVIS_KNOWLEDGE_SOURCES_ENFORCED === '1') {
+        this.knowledgeSources = new KnowledgeSourceRegistry(statePath ? statePath + '.knowledge-sources' : './data/knowledge-sources.enc', this.ownerControlToken);
+      }
       this.documentRag = new DocumentRagStore(
         statePath ? statePath + '.documents' : './data/documents.enc',
         this.ownerControlToken,
         embeddingEndpoint ? new OllamaEmbedder(embeddingEndpoint) : null,
+        this.knowledgeSources,
       );
     }
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
@@ -1209,6 +1216,32 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
         return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id, typeof body.collection === 'string' ? body.collection : undefined) });
+      }
+
+      // Owner-managed registry of approved knowledge collections (E:D4.8).
+      if (req.method === 'POST' && ['/api/knowledge/sources/list', '/api/knowledge/sources/approve', '/api/knowledge/sources/revoke'].includes(url.pathname)) {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON object body is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Knowledge sources require device-management permission' });
+        if (!this.knowledgeSources) return this.jsonResponse(res, 503, { error: 'Knowledge source enforcement is not enabled' });
+        if (url.pathname.endsWith('/list')) return this.jsonResponse(res, 200, { sources: this.knowledgeSources.list() });
+        if (typeof body.collection !== 'string') return this.jsonResponse(res, 400, { error: 'collection is required' });
+        try {
+          if (url.pathname.endsWith('/approve')) {
+            const source = this.knowledgeSources.approve(body.collection, auth.device.id);
+            this.jarvis.audit.record('KNOWLEDGE_SOURCE_APPROVED', { collection: source.collection }, auth.device.id);
+            return this.jsonResponse(res, 200, { source });
+          }
+          const revoked = this.knowledgeSources.revoke(body.collection);
+          if (revoked) this.jarvis.audit.record('KNOWLEDGE_SOURCE_REVOKED', { collection: body.collection.slice(0, 40) }, auth.device.id);
+          return this.jsonResponse(res, revoked ? 200 : 404, { success: revoked });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Knowledge source update failed' });
+        }
       }
 
       if (req.method === 'POST' && url.pathname === '/api/documents/delete') {

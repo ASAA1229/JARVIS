@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { EncryptedJsonFile } from './encryptedJsonFile.js';
 import type { Embedder } from './semanticIndex.js';
 import { cosineSimilarity } from './semanticIndex.js';
+import type { KnowledgeSourceRegistry } from './knowledgeSources.js';
 
 export interface DocumentSource {
   documentId: string;
@@ -94,6 +95,8 @@ export class DocumentRagStore {
     filePath: string,
     ownerControlToken: string,
     private readonly embedder: Embedder | null = null,
+    /** When set, ingestion and retrieval are restricted to owner-approved collections (E:D4.8). */
+    private readonly sourceRegistry?: KnowledgeSourceRegistry,
   ) {
     this.file = new EncryptedJsonFile(filePath, ownerControlToken, 'JARVIS-DOCUMENT-RAG-V1');
     this.vectorFile = new EncryptedJsonFile(filePath + '.vectors', ownerControlToken, 'JARVIS-DOCUMENT-RAG-VECTORS-V1');
@@ -158,6 +161,7 @@ export class DocumentRagStore {
     replace?: boolean;
   }): { documentId: string; chunkCount: number; duplicate: boolean; replaced?: boolean } {
     if (input.collection !== undefined && !COLLECTION_PATTERN.test(input.collection)) throw new Error('Collection must be 1-40 lowercase letters, digits, hyphens or underscores.');
+    if (this.sourceRegistry && !this.sourceRegistry.isApproved(input.collection)) throw new Error('Documents can only be added to a collection the owner has approved as a knowledge source.');
     if (!input.ownerDeviceId || input.ownerDeviceId.length > 256) throw new Error('A valid authenticated owner device is required.');
     if (typeof input.content !== 'string' || !input.content.trim()) throw new Error('Document content must not be empty.');
     if (Buffer.byteLength(input.content, 'utf8') > MAX_DOCUMENT_BYTES || input.content.length > MAX_DOCUMENT_CHARS) {
@@ -203,7 +207,8 @@ export class DocumentRagStore {
     const normalizedQuery = query.trim();
     if (!normalizedQuery || normalizedQuery.length > 2000) throw new Error('Search query must contain 1–2000 characters.');
     const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_RESULTS));
-    const docs = [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId && (collection === undefined || doc.collection === collection));
+    const docs = [...this.documents.values()].filter((doc) => doc.ownerDeviceId === ownerDeviceId && (collection === undefined || doc.collection === collection) &&
+      (!this.sourceRegistry || this.sourceRegistry.isApproved(doc.collection)));
     const chunks = docs.flatMap((doc) => doc.chunks.map((chunk) => ({ doc, chunk })));
     if (!chunks.length) return [];
 
