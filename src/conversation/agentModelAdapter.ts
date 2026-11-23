@@ -4,7 +4,7 @@
  * continue through the shared provider client.
  */
 import { chatCompletion, ProviderCallError } from '../ai/providerClient.js';
-import { providerRouter, routingMode, type ProviderId } from '../ai/providerRouter.js';
+import { providerRouter, routingMode, type ProviderId, type RoutingMode } from '../ai/providerRouter.js';
 import { AgentModelAdapter, AgentModelProviderError } from './agentOrchestrator.js';
 
 const MAX_MODEL_CONTENT_LENGTH = 32 * 1024;
@@ -12,8 +12,8 @@ const MAX_RATE_LIMIT_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 250;
 
 export type AgentModelConfigStatus =
-  | { status: 'ready'; mode: 'local' | 'remote'; model: string; apiKeyConfigured: boolean }
-  | { status: 'disabled'; reason: 'invalid_url' | 'remote_not_opted_in' | 'insecure_remote_url' | 'invalid_model' };
+  | { status: 'ready'; mode: 'local' | 'remote'; model: string; apiKeyConfigured: boolean; provider: ProviderId; routingMode: RoutingMode }
+  | { status: 'disabled'; reason: 'no_eligible_provider' | 'invalid_url' | 'remote_not_opted_in' | 'insecure_remote_url' | 'invalid_model' };
 
 function readConfiguration() {
   const rawUrl = process.env.OLLAMA_URL ||
@@ -70,8 +70,24 @@ export function getModelEndpoint(): { id: ProviderId; format: 'openai' | 'anthro
   return { id: provider.id, format, baseUrl, model: provider.model, ...(provider.apiKey ? { apiKey: provider.apiKey } : {}) };
 }
 
+/**
+ * Reported status follows the provider router (the single routing policy): the model and provider
+ * are those the router would select for an advisory-agent request under the current routing mode.
+ * Endpoint validation failures from the environment still report their own disabled reason.
+ */
 export function getAgentModelConfigStatus(): AgentModelConfigStatus {
-  return readConfiguration().status;
+  const configured = readConfiguration().status;
+  if (configured.status !== 'ready') return configured;
+  const provider = providerRouter.route({ ...AGENT_ROUTE, formats: [...AGENT_ROUTE.formats] }).provider;
+  if (!provider) return { status: 'disabled', reason: 'no_eligible_provider' };
+  return {
+    status: 'ready',
+    mode: provider.local ? 'local' : 'remote',
+    model: provider.model,
+    apiKeyConfigured: Boolean(provider.apiKey),
+    provider: provider.id,
+    routingMode: routingMode(),
+  };
 }
 
 function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {

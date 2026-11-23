@@ -1,3 +1,5 @@
+import { REQUEST_ID_HEADER, resolveRequestId } from '../gateway/siteAiGateway.js';
+import { runWithRequestId } from '../core/requestContext.js';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
@@ -273,6 +275,12 @@ export class JarvisServer {
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Set secure security headers
+    const requestId = resolveRequestId(req.headers[REQUEST_ID_HEADER]);
+    res.setHeader('X-Request-ID', requestId);
+    return runWithRequestId(requestId, () => this.handleRequestInContext(req, res, requestId));
+  }
+
+  private async handleRequestInContext(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Cache-Control', 'no-store');
@@ -1880,6 +1888,7 @@ export class JarvisServer {
         return this.jsonResponse(res, 403, { error: message });
       }
       // Keep internal exception details in server-side diagnostics only.
+      console.error(`[JARVIS] Request failed requestId=${requestId} ${req.method ?? ''} ${url.pathname}`);
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
   }
