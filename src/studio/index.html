@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>JARVIS Studio</title>
+  <link rel="stylesheet" href="/studio/studio.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- Sign-in gate: the Studio is unusable until the HUD owner session is restored. -->
+  <section id="gate" class="gate" aria-labelledby="gate-title">
+    <div class="gate-card">
+      <div class="brand-mark" aria-hidden="true">J</div>
+      <h1 id="gate-title">JARVIS Studio</h1>
+      <p id="gate-message" role="status">Checking for your owner session...</p>
+      <div class="gate-actions">
+        <button id="gate-retry" type="button" class="btn primary">Sign in with this device</button>
+        <a class="btn" href="/companion">Enroll this browser</a>
+      </div>
+      <p class="muted small">Owner only. This uses the same device-bound session as the JARVIS HUD; no password is typed here.</p>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <aside id="sidebar" class="sidebar" aria-label="Studio navigation">
+      <div class="sidebar-top">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">J</span><span class="brand-name">JARVIS Studio</span></div>
+        <button id="sidebar-close" type="button" class="icon-btn only-mobile" aria-label="Close menu">&times;</button>
+      </div>
+      <button id="new-chat" type="button" class="btn primary block">+ New chat</button>
+      <nav class="nav" aria-label="Sections">
+        <button type="button" class="nav-item" data-view="chat" aria-current="page">Chat</button>
+        <button type="button" class="nav-item" data-view="code">Code</button>
+        <button type="button" class="nav-item" data-view="keys">API keys</button>
+        <button type="button" class="nav-item" data-view="learning">Learning</button>
+      </nav>
+      <div class="search-wrap">
+        <label for="chat-search" class="sr-only">Search conversations</label>
+        <input id="chat-search" type="search" placeholder="Search conversations" autocomplete="off">
+      </div>
+      <div id="conversation-list" class="conversation-list" role="list" aria-label="Conversations"></div>
+      <div class="sidebar-bottom">
+        <button id="theme-toggle" type="button" class="btn small" aria-pressed="false">Dark theme</button>
+        <span id="device-label" class="muted small"></span>
+      </div>
+    </aside>
+    <div id="scrim" class="scrim" hidden></div>
+
+    <main id="main" class="main" tabindex="-1">
+      <header class="topbar">
+        <button id="sidebar-open" type="button" class="icon-btn only-mobile" aria-label="Open menu" aria-controls="sidebar">&#9776;</button>
+        <h2 id="view-title" class="view-title">Chat</h2>
+        <div class="topbar-spacer"></div>
+        <label class="inline-check" id="train-toggle-wrap">
+          <input id="train-toggle" type="checkbox"> <span>Use this chat for training</span>
+        </label>
+      </header>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+      <section id="chat-view" class="view" aria-label="Chat">
+        <div id="thread" class="thread" role="log" aria-live="off" aria-label="Messages" tabindex="0">
+          <div id="empty-state" class="empty-state">
+            <h3>How can I help?</h3>
+            <p class="muted">Replies come from your local model. Approved memory and your documents are used as context. Nothing leaves this computer.</p>
+          </div>
+        </div>
+        <form id="composer" class="composer" autocomplete="off">
+          <div id="attachments" class="attachments" aria-live="polite"></div>
+          <label for="prompt" class="sr-only">Message JARVIS</label>
+          <textarea id="prompt" rows="1" maxlength="8000" placeholder="Message JARVIS (Enter to send, Shift+Enter for a new line)"></textarea>
+          <div class="composer-row">
+            <input id="file-input" type="file" class="sr-only" tabindex="-1" aria-hidden="true">
+            <button id="attach" type="button" class="btn small" aria-label="Attach a file for JARVIS to read">Attach file</button>
+            <label for="model-select" class="sr-only">Model</label>
+            <select id="model-select" class="model-select"></select>
+            <span class="topbar-spacer"></span>
+            <button id="stop" type="button" class="btn danger" hidden>Stop</button>
+            <button id="send" type="submit" class="btn primary">Send</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Mount point owned by the Code view (src/studio/code/code.js). -->
+      <section id="code-view" class="view" aria-label="Code" hidden></section>
+
+      <section id="keys-view" class="view scroll" aria-label="API keys" hidden></section>
+      <section id="learning-view" class="view scroll" aria-label="Learning" hidden></section>
+    </main>
+  </div>
+
+  <dialog id="text-dialog" class="dialog" aria-labelledby="text-dialog-title">
+    <form method="dialog" id="text-dialog-form">
+      <h3 id="text-dialog-title"></h3>
+      <p id="text-dialog-body" class="muted"></p>
+      <input id="text-dialog-input" type="text" maxlength="80" aria-labelledby="text-dialog-title">
+      <div class="dialog-actions">
+        <button type="button" id="text-dialog-cancel" class="btn">Cancel</button>
+        <button type="submit" id="text-dialog-ok" class="btn primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/deviceCrypto.js"></script>
+  <script type="module" src="/studio/studio.js"></script>
+</body>
+</html>

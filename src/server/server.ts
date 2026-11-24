@@ -35,6 +35,8 @@ import { PeerRegistry } from '../peers/peerRegistry.js';
 import { PeerDiscoveryService } from '../peers/peerDiscovery.js';
 import { handlePeerRoute } from '../peers/peerRoutes.js';
 import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js';
+import { isStudioApiPath, isStudioStaticPath, serveStudioStatic, StudioRoutes, type StudioDeps } from './studioRoutes.js';
+import { StudioStore } from '../studio/studioStore.js';
 import { DuplicateMemoryError } from '../memory/memoryManager.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
@@ -78,6 +80,8 @@ export class JarvisServer {
   /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
   private readonly knowledgeSources?: KnowledgeSourceRegistry;
   private readonly documentParser = new DocumentParser();
+  /** JARVIS Studio (/studio): owner-only chat, API keys and learning. */
+  private studio?: StudioRoutes;
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
 
@@ -114,6 +118,14 @@ export class JarvisServer {
       }
     });
     this.personalMemory = this.jarvis.personalMemory;
+    this.studio = new StudioRoutes({
+      jarvis: this.jarvis,
+      ...(this.ownerControlToken ? { store: new StudioStore(statePath ? statePath + '.studio' : './data/studio.enc', this.ownerControlToken) } : {}),
+      readJsonBody: (request, maxBytes) => this.readJsonBody(request, maxBytes),
+      authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+      json: (response, status, data) => this.jsonResponse(response, status, data),
+      searchDocuments: async (deviceId, query, limit) => (this.documentRag ? await this.documentRag.search(deviceId, query, limit) : []),
+    });
     // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
     if (this.ownerControlToken && this.personalMemory) {
       this.syncStore = new SyncStateStore(statePath ? statePath + '.sync' : './data/device-sync.enc', this.ownerControlToken);
@@ -272,6 +284,11 @@ export class JarvisServer {
     return this.asaaEvents.manifestCheck();
   }
 
+  /** Test seam: replace the Studio chat provider (the default is the router's local Ollama). */
+  public setStudioProviderFactory(factory: StudioDeps['providerFactory']): void {
+    this.studio?.setProviderFactory(factory);
+  }
+
   public getService(): JarvisCoreService {
     return this.jarvis;
   }
@@ -314,6 +331,10 @@ export class JarvisServer {
         res.end(JSON.stringify({ capabilities }));
         return;
       }
+
+      // JARVIS Studio shell and API (owner-only; the API needs a signed DEVICE_MANAGE session).
+      if (req.method === 'GET' && isStudioStaticPath(url.pathname)) return serveStudioStatic(url, res);
+      if (isStudioApiPath(url.pathname) && this.studio) return await this.studio.handle(req, res, url);
 
       // 1. Static UI routes (Companion & HUD)
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/hud')) {

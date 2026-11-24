@@ -116,6 +116,8 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     ...DEVELOPER_OPERATIONS,
     ...WORKFLOW_OPERATIONS,
     ...GATEWAY_SITE_OPERATIONS,
+    // JARVIS Studio local persona model; only submitted explicitly by the owner's Studio, never planned from text.
+    'ai:model_build',
   ]);
 
   public validatePlanSchema(plan: unknown): { valid: boolean; errors?: string[] } {
