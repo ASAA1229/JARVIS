@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JARVIS Studio - Code (standalone)</title>
+  <link rel="stylesheet" href="/studio/code/code.css">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: var(--studio-bg, #f6f7f9); }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) body { background: var(--studio-bg, #12151b); } }
+    :root[data-theme='dark'] body { background: var(--studio-bg, #12151b); }
+    #host { height: 100%; }
+    #signin { font: 14px system-ui, sans-serif; padding: 8px 12px; background: #fff3cd; color: #3b2e00; display: none; }
+  </style>
+</head>
+<body>
+  <div id="signin" role="alert"></div>
+  <div id="host"></div>
+  <script src="/deviceCrypto.js"></script>
+  <script>
+    // Minimal stand-in for the Studio shell: same registerView/mount contract.
+    (function () {
+      var views = {};
+      if (!window.JarvisStudio) window.JarvisStudio = {};
+      window.JarvisStudio.registerView = function (name, mount) { views[name] = mount; };
+      window.__devViews = views;
+    })();
+  </script>
+  <script src="/studio/code/code.js"></script>
+  <script>
+    (function () {
+      var host = document.getElementById('host');
+      var banner = document.getElementById('signin');
+      function start() { (window.__devViews.code || window.JarvisStudioCode.mount)(host); }
+      if (window.JarvisDeviceCrypto && typeof window.JarvisDeviceCrypto.restoreSession === 'function') {
+        window.JarvisDeviceCrypto.restoreSession().then(start, function (error) {
+          banner.style.display = 'block';
+          banner.textContent = 'Not signed in: ' + error.message + '. Enroll this browser from the JARVIS HUD, then reload.';
+          start();
+        });
+      } else { start(); }
+    })();
+  </script>
+</body>
+</html>

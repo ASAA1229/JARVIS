@@ -11,6 +11,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+export const TEST_DATA_COMMENT = '# TEMPORARY / TEST DATA – local demo admin login, never use in production'; // E3:D4.14
+
 export const DEFAULTS = {
   JARVIS_OIDC_ISSUER: 'http://127.0.0.1:8280/realms/asaa',
   JARVIS_OIDC_CLIENT_ID: 'jarvis-companion',
@@ -35,11 +37,14 @@ export function planDemoLogin(env, envText) {
   try { url = new URL(issuer); } catch { return { ok: false, error: 'JARVIS_OIDC_ISSUER is not a valid URL.', text: envText, changed: [] }; }
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return { ok: false, error: 'Demo login only targets a loopback identity provider.', text: envText, changed: [] };
   let text = envText;
+  let labelled = text.includes(TEST_DATA_COMMENT);
   const changed = [];
   for (const [key, value] of Object.entries(DEFAULTS)) {
     if (readKey(text, key)) continue;
     const re = new RegExp(`^${key}=[^\r\n]*$`, 'm');
-    const line = `${key}=${value}`;
+    // One marker comment directly above the first key this script adds (not repeated on later runs).
+    const line = `${labelled ? '' : TEST_DATA_COMMENT + '\n'}${key}=${value}`;
+    labelled = true;
     text = re.test(text) ? text.replace(re, line) : `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}${line}\n`;
     changed.push(key);
   }
