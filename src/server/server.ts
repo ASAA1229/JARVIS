@@ -1,3 +1,5 @@
+import { REQUEST_ID_HEADER, resolveRequestId } from '../gateway/siteAiGateway.js';
+import { runWithRequestId } from '../core/requestContext.js';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
@@ -6,6 +8,7 @@ import QRCode from 'qrcode';
 import { JarvisCoreService } from '../core/service.js';
 import { LocalHeuristicPlanner } from '../planner/planner.js';
 import { Permission, TaskState } from '../core/types.js';
+import { needsOwnerReview } from '../core/commandLifecycle.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { readOwnerTokenConfig } from '../config/runtimeConfig.js';
 import { createConfiguredPiperProvider } from '../voice/piperTts.js';
@@ -22,6 +25,7 @@ import { createConfiguredAgentModelAdapter, getAgentModelConfigStatus } from '..
 import { routeAgentRequest, runAgent } from '../conversation/agentOrchestrator.js';
 import { ConversationSessionStore } from '../conversation/conversationSessionStore.js';
 import { DocumentRagStore } from '../memory/documentRagStore.js';
+import { KnowledgeSourceRegistry } from '../memory/knowledgeSources.js';
 import { DocumentParser } from '../memory/documentParser.js';
 import { OllamaEmbedder, resolveLocalEmbeddingEndpoint } from '../memory/semanticIndex.js';
 import { SyncStateStore } from '../sync/syncStateStore.js';
@@ -67,8 +71,12 @@ export class JarvisServer {
   });
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
+  /** Failed owner-token attempts against bootstrap enrollment (separate from the recovery lockout). */
+  private enrollmentTokenFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
   private readonly documentRag?: DocumentRagStore;
+  /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
+  private readonly knowledgeSources?: KnowledgeSourceRegistry;
   private readonly documentParser = new DocumentParser();
   // Advisory-agent budget follows the active resource profile (US-061).
   private readonly agentRequestLimiter = new AgentRequestLimiter(() => resourceManager.limits().agentRequestsPer5Min);
@@ -87,10 +95,14 @@ export class JarvisServer {
       : new ConversationSessionStore();
     if (this.ownerControlToken) {
       const embeddingEndpoint = resolveLocalEmbeddingEndpoint();
+      if (process.env.JARVIS_KNOWLEDGE_SOURCES_ENFORCED === '1') {
+        this.knowledgeSources = new KnowledgeSourceRegistry(statePath ? statePath + '.knowledge-sources' : './data/knowledge-sources.enc', this.ownerControlToken);
+      }
       this.documentRag = new DocumentRagStore(
         statePath ? statePath + '.documents' : './data/documents.enc',
         this.ownerControlToken,
         embeddingEndpoint ? new OllamaEmbedder(embeddingEndpoint) : null,
+        this.knowledgeSources,
       );
     }
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
@@ -196,6 +208,7 @@ export class JarvisServer {
   }
 
   private static readonly SSO_COOKIE = 'jarvis_sso';
+  private static readonly LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
 
   /** Starts the OIDC login. The state is also bound to this browser by a short-lived HttpOnly cookie (login CSRF defence). */
   private async handleSsoLogin(res: ServerResponse): Promise<void> {
@@ -265,11 +278,23 @@ export class JarvisServer {
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Set secure security headers
+    const requestId = resolveRequestId(req.headers[REQUEST_ID_HEADER]);
+    res.setHeader('X-Request-ID', requestId);
+    return runWithRequestId(requestId, () => this.handleRequestInContext(req, res, requestId));
+  }
+
+  private async handleRequestInContext(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
+    // DNS-rebinding defence: the listener is loopback-only, so only loopback host names are valid.
+    if (req.headers.host !== undefined && !JarvisServer.LOOPBACK_HOST.test(req.headers.host)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Host not allowed' }));
+      return;
+    }
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
@@ -505,7 +530,14 @@ export class JarvisServer {
         if (!this.ownerControlToken) {
           return this.jsonResponse(res, 503, { error: 'Owner enrollment control is not configured', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
         }
+        const attemptAt = Date.now();
+        this.enrollmentTokenFailures = this.enrollmentTokenFailures.filter((at) => attemptAt - at < 15 * 60_000);
+        if (this.enrollmentTokenFailures.length >= 5) {
+          return this.jsonResponse(res, 429, { error: 'Too many failed owner authorization attempts; wait 15 minutes' });
+        }
         if (!this.isOwnerControlAuthorized(req)) {
+          this.enrollmentTokenFailures.push(attemptAt);
+          this.jarvis.audit.record('OWNER_ENROLLMENT_AUTH_REJECTED', { reason: 'invalid_owner_token' });
           return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
         }
         if (this.jarvis.identity.listDevices().some((device) => device.status === 'ACTIVE')) {
@@ -928,7 +960,8 @@ export class JarvisServer {
         // Local speech-to-text (whisper.cpp) availability: boolean only, never paths.
         let localStt = false;
         try { localStt = Boolean(await this.voiceProviders.pickLocalStt()); } catch { localStt = false; }
-        return this.jsonResponse(res, 200, { localTts, localStt });
+        // Browser speech recognition may stream audio to a vendor cloud: it is only offered when the routing mode permits cloud (local-first).
+        return this.jsonResponse(res, 200, { localTts, localStt, browserSpeechAllowed: cloudRoutingAllowed() });
       }
       // Wake metrics: privacy-preserving counters only (no audio, no transcript text).
       if (req.method === 'POST' && url.pathname === '/api/voice/wake-event') {
@@ -1209,6 +1242,32 @@ export class JarvisServer {
         if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
         if (!this.documentRag) return this.jsonResponse(res, 503, { error: 'Encrypted document storage is unavailable; configure owner control first' });
         return this.jsonResponse(res, 200, { documents: this.documentRag.list(auth.device.id, typeof body.collection === 'string' ? body.collection : undefined) });
+      }
+
+      // Owner-managed registry of approved knowledge collections (E:D4.8).
+      if (req.method === 'POST' && ['/api/knowledge/sources/list', '/api/knowledge/sources/approve', '/api/knowledge/sources/revoke'].includes(url.pathname)) {
+        const sessionId = req.headers['x-session-id'];
+        if (typeof sessionId !== 'string') return this.jsonResponse(res, 401, { error: 'Missing authenticated device session' });
+        const body = await this.readJsonBody(req);
+        if (!this.isJsonObject(body)) return this.jsonResponse(res, 400, { error: 'JSON object body is required' });
+        const auth = this.authorizeSignedRequest(req, sessionId, url.pathname, body);
+        if (!auth.valid || !auth.device) return this.jsonResponse(res, 401, { error: auth.error || 'Signed request authentication failed' });
+        if (!auth.device.permissions.includes(Permission.DEVICE_MANAGE)) return this.jsonResponse(res, 403, { error: 'Knowledge sources require device-management permission' });
+        if (!this.knowledgeSources) return this.jsonResponse(res, 503, { error: 'Knowledge source enforcement is not enabled' });
+        if (url.pathname.endsWith('/list')) return this.jsonResponse(res, 200, { sources: this.knowledgeSources.list() });
+        if (typeof body.collection !== 'string') return this.jsonResponse(res, 400, { error: 'collection is required' });
+        try {
+          if (url.pathname.endsWith('/approve')) {
+            const source = this.knowledgeSources.approve(body.collection, auth.device.id);
+            this.jarvis.audit.record('KNOWLEDGE_SOURCE_APPROVED', { collection: source.collection }, auth.device.id);
+            return this.jsonResponse(res, 200, { source });
+          }
+          const revoked = this.knowledgeSources.revoke(body.collection);
+          if (revoked) this.jarvis.audit.record('KNOWLEDGE_SOURCE_REVOKED', { collection: body.collection.slice(0, 40) }, auth.device.id);
+          return this.jsonResponse(res, revoked ? 200 : 404, { success: revoked });
+        } catch (error) {
+          return this.jsonResponse(res, 400, { error: error instanceof Error ? error.message : 'Knowledge source update failed' });
+        }
       }
 
       if (req.method === 'POST' && url.pathname === '/api/documents/delete') {
@@ -1702,6 +1761,7 @@ export class JarvisServer {
             id: task.id,
             state: task.state,
             lifecycle: this.jarvis.lifecycleOf(task),
+            needsOwnerReview: needsOwnerReview(task.state),
             operation: task.operation,
             origin: task.origin,
             createdAt: task.createdAt,
@@ -1844,6 +1904,7 @@ export class JarvisServer {
         return this.jsonResponse(res, 403, { error: message });
       }
       // Keep internal exception details in server-side diagnostics only.
+      console.error(`[JARVIS] Request failed requestId=${requestId} ${req.method ?? ''} ${url.pathname}`);
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
   }

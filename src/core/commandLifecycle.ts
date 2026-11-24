@@ -66,3 +66,11 @@ export function lifecycleFromAndroidState(state: string): CommandLifecycleState 
     default: return 'failed';
   }
 }
+
+/**
+ * True when the outcome is uncertain and only the owner can settle it (the action may have
+ * partly happened). Lifecycle stays `failed`; this flag is the explicit review marker.
+ */
+export function needsOwnerReview(state: TaskState | string): boolean {
+  return state === TaskState.AWAITING_RECOVERY || state === TaskState.INTERRUPTED;
+}

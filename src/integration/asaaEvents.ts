@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { currentRequestId } from '../core/requestContext.js';
 import { EncryptedJsonFile } from '../memory/encryptedJsonFile.js';
 import type { CheckValue } from './serviceManifest.js';
 
@@ -493,7 +494,7 @@ export class AsaaEventProducer implements IntegrationEventSink {
   private emit(input: Omit<EnvelopeInput, 'now'>): void {
     if (!this.config) return;
     try {
-      this.enqueue(buildEnvelope(this.config, { ...input, now: new Date(this.now()) }));
+      this.enqueue(buildEnvelope(this.config, { ...input, correlationId: input.correlationId ?? currentRequestId(), now: new Date(this.now()) }));
     } catch {
       // A malformed event is dropped; producing events must never affect the assistant.
     }

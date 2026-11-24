@@ -1,3 +1,4 @@
+import { currentRequestId } from '../core/requestContext.js';
 import { CryptoUtil } from '../crypto/crypto.js';
 import { AuditRecord, DeviceId, TaskId } from '../core/types.js';
 import { existsSync, mkdirSync, readFileSync, appendFileSync } from 'node:fs';
@@ -75,7 +76,9 @@ export class AuditLogger {
       throw new Error(`Audit log is unhealthy: ${currentIntegrity.reason}`);
     }
 
-    const sanitizedDetails = this.redactSecrets(details) as Record<string, unknown>;
+    const requestId = currentRequestId();
+    const withRequest = requestId && details['requestId'] === undefined ? { ...details, requestId } : details;
+    const sanitizedDetails = this.redactSecrets(withRequest) as Record<string, unknown>;
 
     const index = this.records.length;
     const timestamp = Date.now();
