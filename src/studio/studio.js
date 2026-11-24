@@ -635,6 +635,57 @@ async function mountLearning() {
     );
   } catch (error) { failure(candidatesCard, error); }
 
+  // Development episodes from the JARVIS Learn VS Code extension (E3:D4.17)
+  const episodesCard = section('From VS Code (JARVIS Learn)', h('p', { class: 'muted', text: 'Prompts, file changes, commands and results captured by the extension arrive here redacted and pending. Only episodes you approve become searchable knowledge.' }));
+  try {
+    const [{ episodes }, { keys }, { recipes }] = await Promise.all([
+      api('/api/learning/episodes?status=pending'), api('/api/learning/ingest-keys'), api('/api/learning/recipes'),
+    ]);
+    episodesCard.append(h('div', { class: 'stat-grid' }, [stat('Pending episodes', String(episodes.length)), stat('Approved recipes', String(recipes.length)), stat('Active ingest keys', String(keys.filter((key) => !key.revokedAt).length))]));
+    if (!episodes.length) episodesCard.append(h('p', { class: 'muted', text: 'Nothing waiting. Install the extension and set its ingest key to start capturing.' }));
+    for (const stored of episodes.slice(0, 25)) {
+      const ep = stored.episode;
+      const commands = ep.steps.filter((step) => step.kind === 'command').map((step) => `${step.command}${step.exitCode === undefined ? '' : ` (exit ${step.exitCode})`}`);
+      const files = [...new Set(ep.steps.map((step) => step.path).filter(Boolean))];
+      const decide = async (decision) => {
+        try { await api(`/api/learning/episodes/${decision}`, { method: 'POST', body: { id: stored.id } }); mountLearning(); } catch (error) { notice(error.message, 'error'); }
+      };
+      const details = h('details', {}, [
+        h('summary', { text: `${ep.source} · ${fmtDate(Date.parse(stored.receivedAt))} · ${ep.steps.length} step(s)${ep.outcome ? ' · ' + ep.outcome.status : ''}` }),
+        ...(ep.prompt ? [h('p', { text: 'Prompt: ' + ep.prompt })] : []),
+        ...(files.length ? [h('p', { class: 'muted small', text: 'Files: ' + files.slice(0, 12).join(', ') })] : []),
+        ...(commands.length ? [h('pre', {}, [h('code', { text: commands.slice(0, 12).join('\n') })])] : []),
+        ...(ep.assistantGenerated ? [h('p', { class: 'muted small', text: 'Contains AI-assistant content: kept for search, excluded from training export by default.' })] : []),
+      ]);
+      episodesCard.append(h('div', { class: 'stack' }, [details, h('div', { class: 'row' }, [
+        h('button', { type: 'button', class: 'btn small primary', text: 'Approve', onclick: () => decide('approve') }),
+        h('button', { type: 'button', class: 'btn small', text: 'Reject', onclick: () => decide('reject') }),
+      ])]));
+    }
+    // Ingest keys: scoped only to submitting episodes; shown once.
+    const keyOut = h('div', { role: 'status', 'aria-live': 'polite' });
+    const keyName = h('input', { type: 'text', id: 'ingest-key-name', placeholder: 'vscode-laptop', 'aria-label': 'Ingest key name' });
+    const create = h('button', { type: 'button', class: 'btn', text: 'Create ingest key', onclick: async () => {
+      try {
+        const done = await api('/api/learning/ingest-keys/create', { method: 'POST', body: { name: keyName.value.trim() } });
+        const value = h('code', { text: done.ingestKey });
+        keyOut.replaceChildren(h('p', { text: 'Copy this key into VS Code ("JARVIS: Set ingest key"). It is shown once.' }), h('pre', {}, [value]),
+          h('button', { type: 'button', class: 'btn small', text: 'Copy', onclick: () => navigator.clipboard?.writeText(done.ingestKey).then(() => notice('Copied.', 'ok')) }));
+      } catch (error) { keyOut.replaceChildren(h('p', { class: 'muted', text: error.message })); }
+    } });
+    episodesCard.append(h('label', { for: 'ingest-key-name', text: 'New ingest key name (lowercase letters, digits, hyphens)' }), h('div', { class: 'row' }, [keyName, create]), keyOut);
+    for (const key of keys.filter((k) => !k.revokedAt)) {
+      episodesCard.append(h('div', { class: 'row' }, [
+        h('strong', { text: key.name }), h('span', { class: 'muted small', text: `created ${fmtDate(Date.parse(key.createdAt))} · ${key.usage.accepted} accepted${key.usage.lastUsedAt ? ' · last used ' + fmtDate(Date.parse(key.usage.lastUsedAt)) : ''}` }),
+        h('span', { class: 'topbar-spacer' }),
+        h('button', { type: 'button', class: 'btn small', text: 'Revoke', onclick: async () => {
+          if (!await confirmAction('Revoke ingest key?', `The extension using "${key.name}" stops sending episodes.`, 'Revoke')) return;
+          try { await api('/api/learning/ingest-keys/revoke', { method: 'POST', body: { id: key.id } }); mountLearning(); } catch (error) { notice(error.message, 'error'); }
+        } }),
+      ]));
+    }
+  } catch (error) { failure(episodesCard, error); }
+
   // Knowledge sources
   const sourcesCard = section('Approved knowledge sources', h('p', { class: 'muted', text: 'JARVIS learns new knowledge only from sources you approve. It never learns from the internet automatically.' }));
   try {

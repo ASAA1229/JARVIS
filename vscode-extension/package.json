@@ -1,0 +1,50 @@
+{
+  "name": "jarvis-learn",
+  "displayName": "JARVIS Learn",
+  "description": "Sends redacted, owner-approved learning episodes from your VS Code sessions to your local JARVIS.",
+  "version": "0.1.0",
+  "publisher": "jarvis-local",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.95.0" },
+  "categories": ["Other"],
+  "main": "./out/src/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "tsc -p . && node --test out/test/extension.test.js",
+    "package": "npm run build && vsce package --no-dependencies --skip-license --allow-missing-repository",
+    "clean": "node -e \"require('node:fs').rmSync('out',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "20.17.10",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "3.2.1",
+    "typescript": "5.7.2"
+  },
+  "contributes": {
+    "commands": [
+      { "command": "jarvisLearn.togglePause", "title": "JARVIS: Pause/Resume capture" },
+      { "command": "jarvisLearn.setIngestKey", "title": "JARVIS: Set ingest key" },
+      { "command": "jarvisLearn.showPending", "title": "JARVIS: Show pending episodes" }
+    ],
+    "configuration": {
+      "title": "JARVIS Learn",
+      "properties": {
+        "jarvisLearn.jarvisUrl": { "type": "string", "default": "http://127.0.0.1:3000", "description": "JARVIS base URL. Must be http on loopback (127.0.0.1, localhost or [::1]); anything else is refused." },
+        "jarvisLearn.capture.transcripts": { "type": "boolean", "default": true, "description": "Read AI assistant session transcripts already stored locally (Claude Code)." },
+        "jarvisLearn.capture.git": { "type": "boolean", "default": true, "description": "Capture commits (message, changed files, diff stats and a size-limited diff)." },
+        "jarvisLearn.capture.terminal": { "type": "boolean", "default": true, "description": "Capture terminal commands run with shell integration (command, cwd, exit code, output tail)." },
+        "jarvisLearn.capture.diagnostics": { "type": "boolean", "default": true, "description": "Capture error-to-fix pairs from editor diagnostics." },
+        "jarvisLearn.capture.saves": { "type": "boolean", "default": true, "description": "Capture file saves (path and diff statistics only)." },
+        "jarvisLearn.transcripts.projects": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Claude Code project folders to capture (folder names under ~/.claude/projects, or workspace paths). Empty means the current workspace folders only." },
+        "jarvisLearn.transcripts.backfill": { "type": "boolean", "default": false, "description": "Also read transcripts that existed before the extension was first run." },
+        "jarvisLearn.redaction.emails": { "type": "boolean", "default": true, "description": "Redact email addresses." },
+        "jarvisLearn.redaction.phones": { "type": "boolean", "default": true, "description": "Redact phone numbers." },
+        "jarvisLearn.excludePaths": { "type": "array", "items": { "type": "string" }, "default": ["node_modules", ".git"], "description": "Extra path segments or globs to drop entirely. Secret files (.env*, *.pem, *.key, id_*, Token.txt, credentials*) are always excluded and cannot be re-enabled." },
+        "jarvisLearn.queue.maxMegabytes": { "type": "number", "default": 5, "minimum": 1, "maximum": 100, "description": "Cap for the offline queue; the oldest episodes are dropped first." },
+        "jarvisLearn.git.maxDiffBytes": { "type": "number", "default": 20000, "minimum": 0, "maximum": 20000, "description": "Maximum diff size captured per commit." }
+      }
+    }
+  }
+}

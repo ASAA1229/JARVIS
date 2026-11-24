@@ -35,6 +35,9 @@ import { PeerRegistry } from '../peers/peerRegistry.js';
 import { PeerDiscoveryService } from '../peers/peerDiscovery.js';
 import { handlePeerRoute } from '../peers/peerRoutes.js';
 import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js';
+import { handleLearningRoute, LEARNING_PREFIX, LEARNING_COLLECTION } from './learningIngestRoutes.js';
+import { EpisodeStore } from '../learning/episodeStore.js';
+import { IngestKeyStore } from '../learning/ingestKeys.js';
 import { handleWorkspaceRoute, isWorkspaceRoute } from './workspaceRoutes.js';
 import { isStudioApiPath, isStudioStaticPath, serveStudioStatic, StudioRoutes, type StudioDeps } from './studioRoutes.js';
 import { StudioStore } from '../studio/studioStore.js';
@@ -78,6 +81,8 @@ export class JarvisServer {
   private enrollmentTokenFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
   private readonly documentRag?: DocumentRagStore;
+  private readonly episodeStore?: EpisodeStore;
+  private readonly ingestKeys: IngestKeyStore;
   /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
   private readonly knowledgeSources?: KnowledgeSourceRegistry;
   private readonly documentParser = new DocumentParser();
@@ -110,6 +115,8 @@ export class JarvisServer {
         this.knowledgeSources,
       );
     }
+    this.ingestKeys = new IngestKeyStore(process.env.JARVIS_INGEST_KEYS_PATH || (statePath ? statePath + '.ingest-keys.json' : './data/ingest-keys.json'));
+    if (this.ownerControlToken) this.episodeStore = new EpisodeStore(process.env.JARVIS_EPISODES_PATH || (statePath ? statePath + '.episodes' : './data/learning-episodes.enc'), this.ownerControlToken);
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     // Revocation isolates per-device voice state immediately (wake window, audio budget).
     this.jarvis.events.subscribe((event) => {
@@ -316,6 +323,22 @@ export class JarvisServer {
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
+      // Learning episodes from the VS Code extension: ingest-key POST plus owner-session management.
+      if (url.pathname.startsWith(LEARNING_PREFIX)) {
+        return handleLearningRoute(req, res, url, {
+          store: this.episodeStore,
+          keys: this.ingestKeys,
+          audit: this.jarvis.audit,
+          readJsonBody: (request, maxBytes) => this.readJsonBody(request, maxBytes),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+          indexEpisode: (deviceId, stored, text) => this.documentRag?.ingest({
+            ownerDeviceId: deviceId, sourceName: `episode-${stored.id}`, title: (stored.episode.prompt ?? 'Episode').slice(0, 80),
+            collection: LEARNING_COLLECTION, replace: true, content: text,
+          }).documentId,
+          removeDocuments: (deviceId, ids) => { for (const id of ids) this.documentRag?.delete(deviceId, id); },
+        });
+      }
       // Capability metadata is descriptive only; it does not grant action permissions.
       if (req.method === 'GET' && url.pathname === '/api/capabilities') {
         const requestedPlatform = url.searchParams.get('platform');
