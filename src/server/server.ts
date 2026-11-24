@@ -133,6 +133,7 @@ export class JarvisServer {
       authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
       json: (response, status, data) => this.jsonResponse(response, status, data),
       searchDocuments: async (deviceId, query, limit) => (this.documentRag ? await this.documentRag.search(deviceId, query, limit) : []),
+      searchEpisodes: (query, limit) => this.episodeStore?.search(query, limit) ?? [],
     });
     // Laptop-hub device sync (US-060/027); needs the owner token for encrypted sync state.
     if (this.ownerControlToken && this.personalMemory) {

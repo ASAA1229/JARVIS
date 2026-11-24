@@ -377,3 +377,27 @@ test('the TOTP status endpoint the Studio consults answers for the owner device'
   assert.equal(response.status, 200);
   assert.ok(['ENABLED', 'DISABLED'].includes(((await response.json()) as { status: string }).status));
 });
+
+test('chat answers about past work use approved development episodes only, with the fix and error included', async () => {
+  const store = (server as unknown as { episodeStore: import('../src/learning/episodeStore.js').EpisodeStore }).episodeStore;
+  const base = { schemaVersion: 1 as const, source: 'claude-code', startedAt: '2026-01-03T10:00:00.000Z', workspace: 'demo-app', assistantGenerated: true };
+  store.ingest({ ...base, id: 'epapproved0001', prompt: 'TEMPORARY / TEST DATA: make widgetize reject empty names', steps: [
+    { kind: 'command', command: 'python test_widget.py', commandClass: 'test', exitCode: 1, assistantGenerated: true, outputTail: "AttributeError: 'NoneType' object has no attribute 'strip'" },
+    { kind: 'edit', path: 'widget.py', assistantGenerated: true, diff: '- if not name.strip():\n+ if not isinstance(name, str) or not name.strip():' },
+    { kind: 'command', command: 'python test_widget.py', commandClass: 'test', exitCode: 0, assistantGenerated: true },
+  ], assistantSummary: 'Guarded widgetize against None.', outcome: { status: 'success' } }, 'k');
+  store.approve('epapproved0001');
+  store.ingest({ ...base, id: 'eppending00001', prompt: 'TEMPORARY / TEST DATA: widgetize secret pending plan', steps: [], assistantSummary: 'pending widgetize note', outcome: { status: 'unknown' } }, 'k');
+
+  const { conversation } = await (await call('POST', '/api/studio/conversations', owner, {})).json() as { conversation: { id: string } };
+  seenPrompts.length = 0;
+  const response = await call('POST', `/api/studio/conversations/${conversation.id}/send`, owner, { text: 'Why did widgetize fail and how was it fixed?' });
+  const events = sseEvents(await response.text());
+  assert.ok(events[0]!.data.sources.includes('episode:epapproved0001'));
+  const context = seenPrompts[0]!.map((message) => message.content).join('\n');
+  assert.ok(context.includes('isinstance(name, str)'), 'the fix diff reaches the model');
+  assert.ok(context.includes('AttributeError'), 'the failing error output reaches the model');
+  assert.ok(context.includes('Guarded widgetize against None.'));
+  assert.equal(context.includes('pending widgetize note'), false, 'pending episodes are never used');
+  assert.ok(context.includes('never invent code, commits, tests or history'), 'the no-invention rule is in the system prompt');
+});
