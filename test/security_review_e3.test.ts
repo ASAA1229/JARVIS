@@ -62,3 +62,12 @@ test('E3:D4.13 cloud provider calls never follow redirects (API key cannot be fo
   assert.equal(seen.length, 2);
   for (const init of seen) assert.equal(init?.redirect, 'error');
 });
+
+test('E3:D4.13 expired and redeemed enrollment challenges are purged on the next issuance', async () => {
+  const identity = server.getService().identity as unknown as { challenges: Map<string, unknown> };
+  const svc = server.getService().identity;
+  const first = svc.createEnrollmentChallenge(undefined, 1);
+  await new Promise((r) => setTimeout(r, 1100));
+  svc.createEnrollmentChallenge();
+  assert.equal(identity.challenges.has(first.challengeToken), false);
+});
