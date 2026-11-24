@@ -63,6 +63,7 @@ export async function chatCompletion(provider: ProviderConfig, messages: ChatMes
           ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
           messages: messages.filter((message) => message.role === 'user' || message.role === 'assistant'),
         }),
+        redirect: 'error',
         signal,
       });
     } else {
@@ -79,6 +80,7 @@ export async function chatCompletion(provider: ProviderConfig, messages: ChatMes
           ...(options.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
           ...(options.json ? { response_format: { type: 'json_object' } } : {}),
         }),
+        redirect: 'error',
         signal,
       });
     }
