@@ -119,6 +119,10 @@ export class DeviceIdentityManager {
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 3600) {
       throw new Error('Enrollment challenge TTL must be an integer between 1 and 3600 seconds');
     }
+    // Drop spent or expired challenges so repeated issuance cannot grow memory without bound.
+    for (const [token, existing] of this.challenges) {
+      if (existing.redeemed || existing.expiresAt <= Date.now()) this.challenges.delete(token);
+    }
     const challengeToken = CryptoUtil.randomToken(16);
     const expiresAt = Date.now() + ttlSeconds * 1000;
     const uri = `jarvis://enroll?challengeToken=${encodeURIComponent(challengeToken)}`;

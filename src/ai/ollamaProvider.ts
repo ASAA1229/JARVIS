@@ -131,6 +131,7 @@ export class OllamaProvider implements AIProvider {
               ...(options.maxTokens !== undefined ? { num_predict: options.maxTokens } : {}),
             },
           }),
+          redirect: 'error',
           signal: requestAbort,
         });
       } catch {
@@ -196,6 +197,7 @@ export class OllamaProvider implements AIProvider {
             ...(options.maxTokens !== undefined ? { num_predict: options.maxTokens } : {}),
           },
         }),
+        redirect: 'error',
         signal: requestAbort,
       });
     } catch {
@@ -280,6 +282,7 @@ export class OllamaProvider implements AIProvider {
       const response = await this.fetchImpl(this.baseUrl + '/api/tags', {
         method: 'GET',
         headers: { Accept: 'application/json' },
+        redirect: 'error',
         signal: requestAbort,
       });
       if (!response.ok) {
