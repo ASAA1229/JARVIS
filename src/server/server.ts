@@ -1,3 +1,5 @@
+import { REQUEST_ID_HEADER, resolveRequestId } from '../gateway/siteAiGateway.js';
+import { runWithRequestId } from '../core/requestContext.js';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
@@ -69,6 +71,8 @@ export class JarvisServer {
   });
   /** Failed owner-recovery attempts (timestamps) for rate limiting. */
   private recoveryFailures: number[] = [];
+  /** Failed owner-token attempts against bootstrap enrollment (separate from the recovery lockout). */
+  private enrollmentTokenFailures: number[] = [];
   private readonly conversationSessions: ConversationSessionStore;
   private readonly documentRag?: DocumentRagStore;
   /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
@@ -204,6 +208,7 @@ export class JarvisServer {
   }
 
   private static readonly SSO_COOKIE = 'jarvis_sso';
+  private static readonly LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
 
   /** Starts the OIDC login. The state is also bound to this browser by a short-lived HttpOnly cookie (login CSRF defence). */
   private async handleSsoLogin(res: ServerResponse): Promise<void> {
@@ -273,11 +278,23 @@ export class JarvisServer {
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Set secure security headers
+    const requestId = resolveRequestId(req.headers[REQUEST_ID_HEADER]);
+    res.setHeader('X-Request-ID', requestId);
+    return runWithRequestId(requestId, () => this.handleRequestInContext(req, res, requestId));
+  }
+
+  private async handleRequestInContext(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 
+    // DNS-rebinding defence: the listener is loopback-only, so only loopback host names are valid.
+    if (req.headers.host !== undefined && !JarvisServer.LOOPBACK_HOST.test(req.headers.host)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Host not allowed' }));
+      return;
+    }
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     try {
@@ -513,7 +530,14 @@ export class JarvisServer {
         if (!this.ownerControlToken) {
           return this.jsonResponse(res, 503, { error: 'Owner enrollment control is not configured', code: 'OWNER_CONTROL_NOT_CONFIGURED' });
         }
+        const attemptAt = Date.now();
+        this.enrollmentTokenFailures = this.enrollmentTokenFailures.filter((at) => attemptAt - at < 15 * 60_000);
+        if (this.enrollmentTokenFailures.length >= 5) {
+          return this.jsonResponse(res, 429, { error: 'Too many failed owner authorization attempts; wait 15 minutes' });
+        }
         if (!this.isOwnerControlAuthorized(req)) {
+          this.enrollmentTokenFailures.push(attemptAt);
+          this.jarvis.audit.record('OWNER_ENROLLMENT_AUTH_REJECTED', { reason: 'invalid_owner_token' });
           return this.jsonResponse(res, 401, { error: 'Owner control authorization required' });
         }
         if (this.jarvis.identity.listDevices().some((device) => device.status === 'ACTIVE')) {
@@ -1880,6 +1904,7 @@ export class JarvisServer {
         return this.jsonResponse(res, 403, { error: message });
       }
       // Keep internal exception details in server-side diagnostics only.
+      console.error(`[JARVIS] Request failed requestId=${requestId} ${req.method ?? ''} ${url.pathname}`);
       return this.jsonResponse(res, 500, { error: 'Internal server error' });
     }
   }

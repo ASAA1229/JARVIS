@@ -87,7 +87,8 @@ test('the first-party agent model refuses remote endpoints unless the owner opts
     process.env.OLLAMA_URL = 'https://models.example.com';
     assert.deepEqual(getAgentModelConfigStatus(), { status: 'disabled', reason: 'remote_not_opted_in' });
     process.env.JARVIS_AI_ALLOW_REMOTE = 'true';
-    assert.equal((getAgentModelConfigStatus() as { mode: string }).mode, 'remote');
+    // The router never selects a remote Ollama endpoint for private agent requests, so it is not reported ready.
+    assert.deepEqual(getAgentModelConfigStatus(), { status: 'disabled', reason: 'no_eligible_provider' });
     process.env.OLLAMA_URL = 'http://models.example.com';
     assert.deepEqual(getAgentModelConfigStatus(), { status: 'disabled', reason: 'insecure_remote_url' });
   } finally {
