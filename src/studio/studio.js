@@ -4,6 +4,7 @@
 // API keys live only in a local variable while shown once and are never put in
 // browser storage, the URL or the console.
 import { parseMarkdown } from '/studio/markdown.js';
+import { isValidTotpCode, withStepUp } from '/studio/stepup.js';
 
 const OWNER_PERMISSION = 'device:manage:execute';
 const $ = (id) => document.getElementById(id);
@@ -94,6 +95,37 @@ function askText({ title, body = '', value = '', confirmOnly = false, okLabel = 
   });
 }
 const confirmAction = (title, body, okLabel = 'Confirm') => askText({ title, body, confirmOnly: true, okLabel });
+
+// ---------- authenticator step-up ----------
+function askTotpCode(error) {
+  const dialog = $('totp-dialog');
+  const input = $('totp-input');
+  const box = $('totp-error');
+  box.textContent = error || '';
+  box.hidden = !error;
+  input.value = '';
+  return new Promise((resolve) => {
+    const onClose = () => {
+      dialog.removeEventListener('close', onClose);
+      const code = dialog.returnValue === 'ok' && isValidTotpCode(input.value) ? input.value.trim() : null;
+      input.value = ''; // the code is never kept
+      resolve(code);
+    };
+    dialog.addEventListener('close', onClose);
+    dialog.returnValue = '';
+    dialog.showModal();
+    input.focus();
+  });
+}
+
+/** POST a step-up action; when TOTP is enabled, ask for a fresh code and send it as totpCode. */
+function stepUpPost(path, body = {}) {
+  return withStepUp({
+    getStatus: async () => (await api('/api/security/totp/status')).status,
+    askCode: askTotpCode,
+    send: (payload) => api(path, { method: 'POST', body: payload }),
+  }, body);
+}
 
 // ---------- date grouping ----------
 function groupLabel(timestamp) {
@@ -445,7 +477,7 @@ function fmtDate(value) {
 async function approveTask(approvalId, button) {
   button.disabled = true;
   try {
-    const result = await api('/api/approval/approve', { method: 'POST', body: { approvalId } });
+    const result = await stepUpPost('/api/approval/approve', { approvalId });
     return result;
   } finally { button.disabled = false; }
 }
@@ -514,7 +546,7 @@ async function mountKeys() {
     const latest = await api('/api/gateway/sites');
     const pending = latest.pendingReveals?.[0];
     if (!pending) { status.textContent = 'No new key is waiting. If you just approved, try again in a moment.'; return; }
-    const revealed = await api('/api/gateway/sites/reveal', { method: 'POST', body: { revealToken: pending.revealToken } });
+    const revealed = await stepUpPost('/api/gateway/sites/reveal', { revealToken: pending.revealToken });
     showSecret(revealed.apiKey);
   };
   create.append(h('label', { for: 'key-name', class: 'sr-only', text: 'Key name' }), h('div', { class: 'row' }, [nameInput, createButton]), approvalBox, status);
@@ -791,6 +823,12 @@ function bind() {
   $('stop').addEventListener('click', stopStreaming);
   $('attach').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', async (event) => { const [file] = event.target.files; event.target.value = ''; await attachFile(file); });
+  $('totp-cancel').addEventListener('click', () => $('totp-dialog').close('cancel'));
+  $('totp-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!isValidTotpCode($('totp-input').value)) { $('totp-error').textContent = 'Enter the 6-digit code from your authenticator app.'; $('totp-error').hidden = false; return; }
+    $('totp-dialog').close('ok');
+  });
   $('text-dialog-cancel').addEventListener('click', () => $('text-dialog').close('cancel'));
   $('text-dialog-form').addEventListener('submit', (event) => { event.preventDefault(); $('text-dialog').close('ok'); });
 }

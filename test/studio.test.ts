@@ -10,6 +10,7 @@ import { CryptoUtil } from '../src/crypto/crypto.js';
 import { Permission } from '../src/core/types.js';
 import type { AIMessage, AIProvider } from '../src/ai/aiProvider.js';
 import { escapeHtml, parseMarkdown, safeUrl } from '../src/studio/markdown.js';
+import { isValidTotpCode, withStepUp } from '../src/studio/stepup.js';
 import { buildModelfile } from '../src/studio/modelBuilder.js';
 import { conversationToTrainingRecord, looksSensitive, mergeTrainingRecords, validateTrainingRecord } from '../src/studio/training.js';
 
@@ -330,4 +331,49 @@ test('Studio code mount point is an empty section and nothing under src/studio/c
   const html = readFileSync(join(process.cwd(), 'src', 'studio', 'index.html'), 'utf8');
   assert.match(html, /<section id="code-view"[^>]*><\/section>/);
   assert.match(readFileSync(join(process.cwd(), 'src', 'studio', 'studio.js'), 'utf8'), /registerView/);
+});
+
+test('step-up: totpCode is sent only when TOTP is ENABLED, validated as 6 digits, retried on 401, never stored', async () => {
+  const sent: Array<Record<string, unknown>> = [];
+  const send = async (body: Record<string, unknown>) => { sent.push(body); return { ok: true }; };
+
+  await withStepUp({ getStatus: async () => 'DISABLED', askCode: async () => { throw new Error('must not prompt'); }, send }, { approvalId: 'a1' });
+  assert.deepEqual(sent[0], { approvalId: 'a1' }, 'no code is sent when TOTP is disabled');
+
+  const answers = ['12ab56', '123', '123456'];
+  const errors: string[] = [];
+  await withStepUp({ getStatus: async () => 'ENABLED', askCode: async (error) => { errors.push(error); return answers.shift()!; }, send }, { approvalId: 'a2' });
+  assert.deepEqual(sent[1], { approvalId: 'a2', totpCode: '123456' });
+  assert.equal(sent.length, 2, 'invalid codes never reach the server');
+  assert.equal(errors.length, 3);
+  assert.match(errors[1]!, /6-digit/);
+
+  // A 401 shows the verification message and lets the owner retry.
+  let attempts = 0;
+  const codes = ['111111', '222222'];
+  const seenErrors: string[] = [];
+  const result = await withStepUp({
+    getStatus: async () => 'ENABLED',
+    askCode: async (error) => { seenErrors.push(error); return codes.shift()!; },
+    send: async (body) => { attempts += 1; if (body['totpCode'] === '111111') throw Object.assign(new Error('x'), { status: 401 }); return body; },
+  }, {});
+  assert.equal(attempts, 2);
+  assert.equal(seenErrors[1], 'Fresh authenticator verification required');
+  assert.deepEqual(result, { totpCode: '222222' });
+
+  await assert.rejects(withStepUp({ getStatus: async () => 'ENABLED', askCode: async () => null, send }, {}), /cancelled/);
+  assert.equal(isValidTotpCode('123456'), true);
+  assert.equal(isValidTotpCode('12345'), false);
+  assert.equal(isValidTotpCode('1234567'), false);
+
+  const source = readFileSync(join(process.cwd(), 'src', 'studio', 'studio.js'), 'utf8');
+  assert.match(source, /stepUpPost\('\/api\/approval\/approve'/);
+  assert.match(source, /stepUpPost\('\/api\/gateway\/sites\/reveal'/);
+  assert.match(source, /input\.value = ''; \/\/ the code is never kept/);
+});
+
+test('the TOTP status endpoint the Studio consults answers for the owner device', async () => {
+  const response = await call('GET', '/api/security/totp/status', owner);
+  assert.equal(response.status, 200);
+  assert.ok(['ENABLED', 'DISABLED'].includes(((await response.json()) as { status: string }).status));
 });

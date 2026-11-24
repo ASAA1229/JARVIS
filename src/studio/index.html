@@ -103,6 +103,20 @@
     </form>
   </dialog>
 
+  <dialog id="totp-dialog" class="dialog" aria-labelledby="totp-title" aria-describedby="totp-error">
+    <form method="dialog" id="totp-form">
+      <h3 id="totp-title">Authenticator code</h3>
+      <p class="muted">Enter the 6-digit code from your authenticator app to continue.</p>
+      <label for="totp-input" class="sr-only">6-digit authenticator code</label>
+      <input id="totp-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" spellcheck="false">
+      <p id="totp-error" class="notice error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="totp-cancel" class="btn">Cancel</button>
+        <button type="submit" id="totp-ok" class="btn primary">Verify</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/deviceCrypto.js"></script>
   <script type="module" src="/studio/studio.js"></script>
 </body>
