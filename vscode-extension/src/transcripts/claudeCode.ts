@@ -30,6 +30,14 @@ function textOf(content: unknown): string {
   return content.map((part) => (isObject(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : '')).filter(Boolean).join('\n');
 }
 
+/** Editor context the IDE adds around the owner's words (open file, selection, reminders) is not part of the prompt. */
+function stripContextTags(text: string): string {
+  return text
+    .replace(/<(ide_[a-z_]+|system-reminder)\b[^>]*>[\s\S]*?<\/\1>/g, '')
+    .replace(/<(ide_[a-z_]+|system-reminder)\b[^>]*\/>/g, '')
+    .trim();
+}
+
 /** Slash-command echoes, hook output and caveats are not owner prompts. */
 function isSyntheticPrompt(text: string): boolean {
   return /^\s*<(?:command-name|command-message|local-command|system-reminder|user-prompt-submit-hook)/.test(text) || /^\s*Caveat:/.test(text) || /^\s*\[Request interrupted/.test(text);
@@ -73,8 +81,11 @@ export const claudeCodeParser: TranscriptParser<ClaudeState> = {
       const parsed: unknown = JSON.parse(firstLine);
       if (!isObject(parsed)) return false;
       const type = parsed['type'];
-      return typeof type === 'string' && ['user', 'assistant', 'summary', 'system', 'file-history-snapshot', 'queue-operation'].includes(type) &&
-        (typeof parsed['sessionId'] === 'string' || type === 'summary' || type === 'file-history-snapshot' || isObject(parsed['message']));
+      if (typeof type !== 'string') return false;
+      // Every Claude Code record (messages and housekeeping such as api-request, mode, attachment, ai-title) carries a sessionId.
+      if (typeof parsed['sessionId'] === 'string') return true;
+      return ['user', 'assistant', 'summary', 'system', 'file-history-snapshot', 'queue-operation'].includes(type) &&
+        (type === 'summary' || type === 'file-history-snapshot' || isObject(parsed['message']));
     } catch { return false; }
   },
 
@@ -112,7 +123,7 @@ export const claudeCodeParser: TranscriptParser<ClaudeState> = {
         }
         if (content.some((b) => isObject(b) && b['type'] === 'tool_result')) return [];
       }
-      const prompt = textOf(content).trim();
+      const prompt = stripContextTags(textOf(content));
       if (!prompt || isSyntheticPrompt(prompt)) return [];
       const closed = closeOpen(state);
       const episode: Episode = {

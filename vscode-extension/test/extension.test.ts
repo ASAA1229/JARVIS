@@ -234,3 +234,53 @@ test('git output parsing, diff filtering and assistant-commit detection', () => 
 test('save diff statistics never contain content', () => {
   assert.deepEqual(lineDiffStat('a\nb\nc', 'a\nb2\nc\nd'), { insertions: 2, deletions: 1 });
 });
+
+// Real Claude Code transcripts interleave housekeeping records (api-request, mode, attachment, ai-title, ...) with
+// messages, write one content block per assistant line, and wrap IDE prompts in context tags. Fictional data only.
+test('current Claude Code transcript layout is recognised even when it starts with housekeeping records', () => {
+  const dir = tmp();
+  const file = join(dir, 'live.jsonl');
+  const s = 'sess-test-0002';
+  const rec = (o: Record<string, unknown>) => JSON.stringify({ sessionId: s, timestamp: '2026-01-02T10:00:00.000Z', ...o });
+  writeFileSync(file, [
+    rec({ type: 'api-request', id: 'r1', params: {} }),
+    rec({ type: 'mode', mode: 'default' }),
+    rec({ type: 'ai-title', aiTitle: 'TEMPORARY / TEST DATA' }),
+    rec({ type: 'user', uuid: 'u1', cwd: 'C:\fictional\demo', message: { role: 'user', content: [
+      { type: 'text', text: '<ide_opened_file>The user opened C:\fictional\demo\a.py</ide_opened_file>' },
+      { type: 'text', text: 'TEMPORARY / TEST DATA: fix the crash in a.py' }] } }),
+    rec({ type: 'attachment', attachment: { kind: 'note' } }),
+    rec({ type: 'assistant', uuid: 'a1', message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'x' }] } }),
+    rec({ type: 'assistant', uuid: 'a2', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'python a.py' } }] } }),
+    rec({ type: 'user', uuid: 'u2', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'Exit code 1\nTypeError' }] } }),
+    rec({ type: 'assistant', uuid: 'a3', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: 'C:\fictional\demo\a.py', old_string: 'x + 1', new_string: 'f"{x}"' } }] } }),
+    rec({ type: 'user', uuid: 'u3', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', content: 'ok' }] } }),
+    rec({ type: 'assistant', uuid: 'a4', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'python a.py' } }] } }),
+    rec({ type: 'user', uuid: 'u4', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't3', content: 'done' }] } }),
+    rec({ type: 'assistant', uuid: 'a5', message: { role: 'assistant', content: [{ type: 'text', text: 'Fixed the crash.' }] } }),
+    rec({ type: 'last-prompt', lastPrompt: 'x' }),
+  ].join('\n') + '\n');
+  const result = tailTranscript(file, { offset: 0 }, { idle: true });
+  assert.equal(result.cursor.unknown, undefined);
+  assert.equal(result.episodes.length, 1);
+  const ep = result.episodes[0];
+  assert.equal(ep.prompt, 'TEMPORARY / TEST DATA: fix the crash in a.py');
+  assert.deepEqual(ep.steps.map((step) => `${step.kind}${step.exitCode === undefined ? '' : ':' + step.exitCode}`), ['command:1', 'edit', 'command:0']);
+  assert.equal(ep.outcome?.status, 'success');
+  assert.equal(ep.assistantSummary, 'Fixed the crash.');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a file previously judged unknown is re-checked when new lines arrive', () => {
+  const dir = tmp();
+  const file = join(dir, 'resume.jsonl');
+  writeFileSync(file, '{"note":"not a transcript line"}\n');
+  const first = tailTranscript(file, { offset: 0 }, { idle: true });
+  assert.equal(first.cursor.unknown, true);
+  appendFileSync(file, JSON.stringify({ type: 'user', uuid: 'u1', sessionId: 's3', message: { role: 'user', content: 'TEMPORARY / TEST DATA: run tests' } }) + '\n' +
+    JSON.stringify({ type: 'assistant', uuid: 'a1', sessionId: 's3', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } }) + '\n');
+  const second = tailTranscript(file, first.cursor, { idle: true });
+  assert.equal(second.cursor.unknown, undefined);
+  assert.equal(second.episodes.length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
