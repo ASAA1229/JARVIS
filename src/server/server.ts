@@ -35,6 +35,7 @@ import { PeerRegistry } from '../peers/peerRegistry.js';
 import { PeerDiscoveryService } from '../peers/peerDiscovery.js';
 import { handlePeerRoute } from '../peers/peerRoutes.js';
 import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js';
+import { handleWorkspaceRoute, isWorkspaceRoute } from './workspaceRoutes.js';
 import { DuplicateMemoryError } from '../memory/memoryManager.js';
 import { AgentRequestLimiter } from '../conversation/agentRequestLimiter.js';
 import { resourceManager, type ProfileMode } from '../resources/resourceManager.js';
@@ -737,6 +738,16 @@ export class JarvisServer {
         return handleOwnerPanelRoute(req, res, url, {
           jarvis: this.jarvis,
           readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
+      // JARVIS Studio Code view: workspace roots, files, coding helper (owner session + approvals).
+      if (isWorkspaceRoute(url.pathname)) {
+        return handleWorkspaceRoute(req, res, url, {
+          jarvis: this.jarvis,
+          readJsonBody: (request, maxBytes) => this.readJsonBody(request, maxBytes),
           authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
           json: (response, status, data) => this.jsonResponse(response, status, data),
         });
