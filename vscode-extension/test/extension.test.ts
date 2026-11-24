@@ -284,3 +284,21 @@ test('a file previously judged unknown is re-checked when new lines arrive', () 
   assert.equal(second.episodes.length, 1);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('git capture watches the workspace repository and repositories one level inside it', () => {
+  const { repositoryRoots, repoRootFromHeadLog } = require('../src/gitRepos') as typeof import('../src/gitRepos');
+  const dir = tmp();
+  mkdirSync(join(dir, 'app-one', '.git', 'logs'), { recursive: true });
+  mkdirSync(join(dir, 'app-two', '.git'), { recursive: true });
+  mkdirSync(join(dir, 'notes'), { recursive: true });
+  mkdirSync(join(dir, 'node_modules', 'pkg', '.git'), { recursive: true });
+  mkdirSync(join(dir, 'worktree'), { recursive: true });
+  writeFileSync(join(dir, 'worktree', '.git'), 'gitdir: elsewhere\n');
+  const roots = repositoryRoots(dir).map((root) => root.slice(dir.length + 1)).sort();
+  assert.deepEqual(roots, ['app-one', 'app-two']);
+  mkdirSync(join(dir, '.git'));
+  assert.ok(repositoryRoots(dir).includes(dir));
+  assert.equal(repoRootFromHeadLog(join(dir, 'app-one', '.git', 'logs', 'HEAD')), join(dir, 'app-one'));
+  assert.equal(repoRootFromHeadLog(join(dir, 'app-one', 'src', 'HEAD')), null);
+  rmSync(dir, { recursive: true, force: true });
+});

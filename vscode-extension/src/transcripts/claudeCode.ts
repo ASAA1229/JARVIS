@@ -158,7 +158,8 @@ export const claudeCodeParser: TranscriptParser<ClaudeState> = {
         } else if (name === 'Write') {
           const path = String(input['file_path'] ?? '');
           if (!path) continue;
-          step = { kind: 'write', assistantGenerated: true, path, summary: `wrote ${typeof input['content'] === 'string' ? input['content'].split('\n').length : '?'} lines` };
+          step = { kind: 'write', assistantGenerated: true, path, summary: `wrote ${typeof input['content'] === 'string' ? input['content'].split('\n').length : '?'} lines`,
+            ...(typeof input['content'] === 'string' && input['content'] ? { diff: diffOf(undefined, input['content']) } : {}) };
         } else if (name === 'Bash' && typeof input['command'] === 'string') {
           step = { kind: 'command', assistantGenerated: true, command: head(input['command'], 2000), commandClass: classifyCommand(input['command']),
             ...(typeof input['description'] === 'string' ? { summary: head(input['description'], 300) } : {}) };
