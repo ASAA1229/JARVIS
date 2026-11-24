@@ -196,6 +196,26 @@ export const TOOL_REGISTRY: ReadonlyMap<string, PolicyRule> = new Map<string, Po
     requiresApproval,
     allowedParameters,
   }] as [string, PolicyRule]),
+  // JARVIS Studio Code view: owner-approved workspace roots. Reads need no approval; adding a root and
+  // every write, create, rename, delete or diff apply needs fresh approval. Secret files stay denied by the adapter.
+  ...([
+    ['workspace:root_list', RiskTier.LOW, false, []],
+    ['workspace:root_add', RiskTier.HIGH, true, ['name', 'path']],
+    ['workspace:root_remove', RiskTier.MEDIUM, true, ['name']],
+    ['workspace:read', RiskTier.LOW, false, ['root', 'path']],
+    ['workspace:search', RiskTier.LOW, false, ['root', 'query']],
+    ['workspace:write', RiskTier.HIGH, true, ['root', 'path', 'content', 'baseHash']],
+    ['workspace:create', RiskTier.HIGH, true, ['root', 'path', 'content']],
+    ['workspace:rename', RiskTier.HIGH, true, ['root', 'path', 'to']],
+    ['workspace:delete', RiskTier.HIGH, true, ['root', 'path']],
+    ['workspace:apply_diff', RiskTier.HIGH, true, ['root', 'diff']],
+  ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
+    operation,
+    requiredPermission: Permission.DEVICE_MANAGE,
+    riskTier,
+    requiresApproval,
+    allowedParameters,
+  }] as [string, PolicyRule]),
   ...['device:enrollment:create', 'device:enrollment:list', 'device:enrollment:approve', 'device:enrollment:reject', 'device:enrollment:cancel', 'device:list', 'security:totp:setup', 'security:totp:verify', 'security:totp:disable', 'device:revoke'].map((operation) => [operation, {
     operation,
     requiredPermission: Permission.DEVICE_MANAGE,
@@ -220,7 +240,7 @@ const PARAMETER_TYPES: Readonly<Record<string, ParameterType>> = {
   appId: 'string', expectProcess: 'string', processName: 'string', titleContains: 'string',
   path: 'string', query: 'string', text: 'string', content: 'string', find: 'string', replace: 'string',
   command: 'string', cwd: 'string', quarantineId: 'string', requestText: 'string', automationId: 'string',
-  repo: 'string', branch: 'string', script: 'string', suggestionId: 'string', direction: 'string',
+  repo: 'string', root: 'string', to: 'string', diff: 'string', baseHash: 'string', branch: 'string', script: 'string', suggestionId: 'string', direction: 'string',
   args: 'array', keys: 'array',
 };
 

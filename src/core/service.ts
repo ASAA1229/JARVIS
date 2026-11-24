@@ -25,6 +25,7 @@ import { WorkspaceFileAdapter } from '../adapters/workspaceFiles.js';
 import { TerminalRunner } from '../adapters/terminalRunner.js';
 import { OutcomeVerifier } from '../verification/verifier.js';
 import { DeveloperAssistant } from '../developer/developerAssistant.js';
+import { WorkspaceService } from '../workspace/workspaceService.js';
 import { WorkflowEngine } from '../workflows/workflowEngine.js';
 import { WorkflowBranchExecutor, type WorkflowRunCheckpoint } from '../workflows/workflowExecution.js';
 import type { WorkflowStep } from '../workflows/workflowStore.js';
@@ -160,6 +161,8 @@ export class JarvisCoreService {
   public readonly verifier: OutcomeVerifier;
   /** Developer and coding assistant (JARVIS-US-063). */
   public readonly developer: DeveloperAssistant;
+  /** JARVIS Studio Code view: owner-approved workspace roots and file operations. */
+  public readonly workspace: WorkspaceService;
   /** Permissioned plugins and versioned workflows (JARVIS-US-062). */
   public readonly workflows: WorkflowEngine;
   /** Owner management of personal-AI-gateway site keys (J-E09); the JSON store is shared with the gateway. */
@@ -204,6 +207,7 @@ export class JarvisCoreService {
     this.terminal = new TerminalRunner(this.fileAdapter);
     this.communications = new CommunicationsAdapter();
     this.verifier = new OutcomeVerifier();
+    this.workspace = new WorkspaceService(statePath ? statePath + '.workspace' : './data/workspace');
     this.developer = new DeveloperAssistant(statePath ? statePath + '.developer' : './data/developer', createConfiguredAgentModelAdapter);
     this.workflows = new WorkflowEngine({
       pluginStatePath: statePath ? statePath + '.plugins.json' : './data/plugins.json',
@@ -1104,7 +1108,13 @@ export class JarvisCoreService {
         case 'dev:read': case 'dev:grep': case 'dev:git_status': case 'dev:git_log': case 'dev:git_diff':
         case 'dev:explain': case 'dev:suggest_change': case 'dev:suggestion_list': case 'dev:apply_suggestion':
         case 'dev:branch_create': case 'dev:commit': case 'dev:push': case 'dev:pr_draft': case 'dev:ci_status':
+          case 'dev:run_script':
           return this.developer.execute(opRequest.operation, parameters, signal);
+          // JARVIS Studio Code view: workspace roots and file edits (policy-gated, approval for every change).
+          case 'workspace:root_list': case 'workspace:root_add': case 'workspace:root_remove': case 'workspace:read':
+          case 'workspace:search': case 'workspace:write': case 'workspace:create': case 'workspace:rename':
+          case 'workspace:delete': case 'workspace:apply_diff':
+          return this.workspace.execute(opRequest.operation, parameters);
         // Plugins and workflows (JARVIS-US-062). Only plugin/template state changes here;
         // workflow:run returns steps that are spliced into this task below.
         case 'plugin:install': case 'plugin:list': case 'plugin:enable': case 'plugin:disable':
@@ -1507,7 +1517,7 @@ export class JarvisCoreService {
     const isMemory = approval.operation.startsWith('memory:');
     const needsManage = isMemory || approval.operation.startsWith('schedule:') ||
       approval.operation.startsWith('plugin:') || approval.operation.startsWith('workflow:') || approval.operation.startsWith('dev:') ||
-      approval.operation.startsWith('gateway:');
+      approval.operation.startsWith('gateway:') || approval.operation.startsWith('workspace:');
     const needsApp = approval.operation === 'app:launch' || approval.operation.startsWith('desktop:') ||
       approval.operation.startsWith('file:') || approval.operation.startsWith('terminal:') ||
       approval.operation.startsWith('comms:');
@@ -1961,7 +1971,7 @@ export class JarvisCoreService {
     if (/^(app:|desktop:)/.test(operation)) resources.add('desktop:host');
     if (/^memory:/.test(operation)) resources.add('memory:personal-store');
     if (/^(plugin:|workflow:)/.test(operation)) resources.add('workflow:plugin-registry');
-    if (/^(file:|dev:)/.test(operation)) resources.add('workspace:shared');
+    if (/^(file:|dev:|workspace:)/.test(operation)) resources.add('workspace:shared');
     return [...resources];
   }
 

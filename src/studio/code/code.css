@@ -1,0 +1,198 @@
+/* JARVIS Studio - Code view. Colors come from --studio-* variables set by the Studio shell;
+   each has a built-in fallback so the view also works standalone (dev.html). */
+.jvc {
+  --jvc-bg: var(--studio-bg, #f6f7f9);
+  --jvc-surface: var(--studio-surface, #ffffff);
+  --jvc-surface-2: var(--studio-surface-2, #eef0f4);
+  --jvc-border: var(--studio-border, #c9ced8);
+  --jvc-text: var(--studio-text, #1b1f27);
+  --jvc-muted: var(--studio-text-muted, #4f5868);
+  --jvc-accent: var(--studio-accent, #0b5fd1);
+  --jvc-accent-text: var(--studio-accent-text, #ffffff);
+  --jvc-danger: var(--studio-danger, #b3261e);
+  --jvc-ok: var(--studio-success, #146c2e);
+  --jvc-warn: var(--studio-warning, #8a5a00);
+  --jvc-add-bg: var(--studio-diff-add-bg, #dff5e3);
+  --jvc-del-bg: var(--studio-diff-del-bg, #fbe0de);
+  --jvc-sel: var(--studio-selection, #b9d6fb);
+  --jvc-tok-kw: var(--studio-syntax-keyword, #7a2fb8);
+  --jvc-tok-str: var(--studio-syntax-string, #0a6b3a);
+  --jvc-tok-num: var(--studio-syntax-number, #a14a00);
+  --jvc-tok-com: var(--studio-syntax-comment, #5d6678);
+  --jvc-tok-fn: var(--studio-syntax-function, #0b5fd1);
+  --jvc-tok-tp: var(--studio-syntax-type, #8a3a73);
+  --jvc-tok-key: var(--studio-syntax-key, #0b5fd1);
+  --jvc-font: var(--studio-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+  --jvc-mono: var(--studio-font-mono, ui-monospace, 'Cascadia Code', Consolas, Menlo, monospace);
+  --jvc-radius: var(--studio-radius, 6px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .jvc {
+    --jvc-bg: var(--studio-bg, #12151b);
+    --jvc-surface: var(--studio-surface, #1a1e26);
+    --jvc-surface-2: var(--studio-surface-2, #232834);
+    --jvc-border: var(--studio-border, #3a4252);
+    --jvc-text: var(--studio-text, #e6e9ef);
+    --jvc-muted: var(--studio-text-muted, #a4adbd);
+    --jvc-accent: var(--studio-accent, #6aa8ff);
+    --jvc-accent-text: var(--studio-accent-text, #0a1220);
+    --jvc-danger: var(--studio-danger, #ff8a80);
+    --jvc-ok: var(--studio-success, #6fd58a);
+    --jvc-warn: var(--studio-warning, #f0c25a);
+    --jvc-add-bg: var(--studio-diff-add-bg, #16341f);
+    --jvc-del-bg: var(--studio-diff-del-bg, #44201d);
+    --jvc-sel: var(--studio-selection, #2c4a78);
+    --jvc-tok-kw: var(--studio-syntax-keyword, #c9a0ff);
+    --jvc-tok-str: var(--studio-syntax-string, #86d9a3);
+    --jvc-tok-num: var(--studio-syntax-number, #ffb870);
+    --jvc-tok-com: var(--studio-syntax-comment, #8e99ae);
+    --jvc-tok-fn: var(--studio-syntax-function, #8ec1ff);
+    --jvc-tok-tp: var(--studio-syntax-type, #f0a6d6);
+    --jvc-tok-key: var(--studio-syntax-key, #8ec1ff);
+  }
+}
+:root[data-theme='dark'] .jvc {
+  --jvc-bg: var(--studio-bg, #12151b);
+  --jvc-surface: var(--studio-surface, #1a1e26);
+  --jvc-surface-2: var(--studio-surface-2, #232834);
+  --jvc-border: var(--studio-border, #3a4252);
+  --jvc-text: var(--studio-text, #e6e9ef);
+  --jvc-muted: var(--studio-text-muted, #a4adbd);
+  --jvc-accent: var(--studio-accent, #6aa8ff);
+  --jvc-accent-text: var(--studio-accent-text, #0a1220);
+  --jvc-danger: var(--studio-danger, #ff8a80);
+  --jvc-ok: var(--studio-success, #6fd58a);
+  --jvc-warn: var(--studio-warning, #f0c25a);
+  --jvc-add-bg: var(--studio-diff-add-bg, #16341f);
+  --jvc-del-bg: var(--studio-diff-del-bg, #44201d);
+  --jvc-sel: var(--studio-selection, #2c4a78);
+  --jvc-tok-kw: var(--studio-syntax-keyword, #c9a0ff);
+  --jvc-tok-str: var(--studio-syntax-string, #86d9a3);
+  --jvc-tok-num: var(--studio-syntax-number, #ffb870);
+  --jvc-tok-com: var(--studio-syntax-comment, #8e99ae);
+  --jvc-tok-fn: var(--studio-syntax-function, #8ec1ff);
+  --jvc-tok-tp: var(--studio-syntax-type, #f0a6d6);
+  --jvc-tok-key: var(--studio-syntax-key, #8ec1ff);
+}
+
+.jvc { box-sizing: border-box; display: flex; flex-direction: column; height: 100%; min-height: 420px; background: var(--jvc-bg); color: var(--jvc-text); font: 14px/1.4 var(--jvc-font); }
+.jvc *, .jvc *::before, .jvc *::after { box-sizing: border-box; }
+.jvc button, .jvc input, .jvc select, .jvc textarea { font: inherit; color: inherit; }
+.jvc :focus-visible { outline: 2px solid var(--jvc-accent); outline-offset: 1px; }
+.jvc .jvc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.jvc-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--jvc-surface); border-bottom: 1px solid var(--jvc-border); }
+.jvc-top label { color: var(--jvc-muted); font-size: 12px; }
+.jvc-spacer { flex: 1; }
+.jvc-model { font-size: 12px; color: var(--jvc-muted); }
+.jvc-model[data-ok='true']::before { content: '\25CF  '; color: var(--jvc-ok); }
+.jvc-model[data-ok='false']::before { content: '\25CB  '; color: var(--jvc-warn); }
+
+.jvc-btn { cursor: pointer; background: var(--jvc-surface-2); border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); padding: 5px 10px; min-height: 30px; }
+.jvc-btn:hover:not(:disabled) { border-color: var(--jvc-accent); }
+.jvc-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.jvc-btn.primary { background: var(--jvc-accent); color: var(--jvc-accent-text); border-color: var(--jvc-accent); }
+.jvc-btn.danger { color: var(--jvc-danger); }
+.jvc-input, .jvc-select { background: var(--jvc-surface); border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); padding: 5px 8px; min-height: 30px; }
+
+.jvc-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(180px, 250px) minmax(0, 1fr) minmax(260px, 340px); }
+.jvc-side, .jvc-helper { background: var(--jvc-surface); min-height: 0; display: flex; flex-direction: column; }
+.jvc-side { border-right: 1px solid var(--jvc-border); }
+.jvc-helper { border-left: 1px solid var(--jvc-border); }
+.jvc-center { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.jvc-h { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--jvc-muted); border-bottom: 1px solid var(--jvc-border); display: flex; align-items: center; gap: 6px; }
+.jvc-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--jvc-border); }
+.jvc-tools .jvc-btn { padding: 2px 8px; min-height: 26px; font-size: 12px; }
+.jvc-search { padding: 6px 8px; border-bottom: 1px solid var(--jvc-border); display: flex; gap: 4px; }
+.jvc-search .jvc-input { flex: 1; min-width: 0; }
+
+.jvc-tree { flex: 1; overflow: auto; padding: 4px 0; margin: 0; list-style: none; }
+.jvc-tree ul { list-style: none; margin: 0; padding-left: 14px; }
+.jvc-tree li { margin: 0; padding: 0; }
+.jvc-row { display: flex; align-items: center; gap: 4px; padding: 2px 8px; cursor: pointer; white-space: nowrap; border-radius: 3px; }
+.jvc-row:hover { background: var(--jvc-surface-2); }
+.jvc-row[aria-selected='true'] { background: var(--jvc-sel); }
+.jvc-row .ic { width: 14px; text-align: center; color: var(--jvc-muted); }
+.jvc-results { overflow: auto; flex: 1; padding: 4px 0; }
+.jvc-hit { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 3px 10px; cursor: pointer; }
+.jvc-hit:hover { background: var(--jvc-surface-2); }
+.jvc-hit small { display: block; color: var(--jvc-muted); font-family: var(--jvc-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jvc-empty { padding: 12px; color: var(--jvc-muted); }
+
+.jvc-tabs { display: flex; overflow-x: auto; background: var(--jvc-surface-2); border-bottom: 1px solid var(--jvc-border); min-height: 34px; }
+.jvc-tab { display: flex; align-items: center; gap: 4px; padding: 0 4px 0 10px; border-right: 1px solid var(--jvc-border); background: transparent; cursor: pointer; white-space: nowrap; }
+.jvc-tab[data-active='true'] { background: var(--jvc-surface); box-shadow: inset 0 2px 0 var(--jvc-accent); }
+.jvc-tab .dirty { color: var(--jvc-warn); }
+.jvc-tab .x { background: none; border: 0; cursor: pointer; padding: 2px 6px; border-radius: 3px; color: var(--jvc-muted); }
+.jvc-tab .x:hover { background: var(--jvc-border); }
+
+.jvc-findbar { display: flex; gap: 4px; align-items: center; padding: 4px 8px; background: var(--jvc-surface-2); border-bottom: 1px solid var(--jvc-border); }
+.jvc-findbar[hidden] { display: none; }
+.jvc-findcount { color: var(--jvc-muted); font-size: 12px; min-width: 64px; }
+
+.jvc-ed { flex: 1; min-height: 0; display: flex; background: var(--jvc-surface); font-family: var(--jvc-mono); font-size: 13px; line-height: 20px; }
+.jvc-gutter { margin: 0; padding: 8px 8px 8px 10px; overflow: hidden; text-align: right; color: var(--jvc-muted); background: var(--jvc-surface-2); user-select: none; border-right: 1px solid var(--jvc-border); min-width: 44px; font: inherit; white-space: pre; }
+.jvc-stack { position: relative; flex: 1; min-width: 0; }
+.jvc-hl, .jvc-ta { position: absolute; inset: 0; margin: 0; padding: 8px 12px; font: inherit; white-space: pre; tab-size: 2; letter-spacing: 0; word-spacing: 0; border: 0; }
+.jvc-hl { overflow: hidden; pointer-events: none; color: var(--jvc-text); }
+.jvc-ta { overflow: auto; background: transparent; color: transparent; caret-color: var(--jvc-text); resize: none; outline: none; -webkit-text-fill-color: transparent; }
+.jvc-ta::selection { background: var(--jvc-sel); -webkit-text-fill-color: transparent; }
+.jvc-ta:focus-visible { outline: 2px solid var(--jvc-accent); outline-offset: -2px; }
+.jvc-ta[data-plain='true'] { color: var(--jvc-text); -webkit-text-fill-color: var(--jvc-text); }
+.jvc-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--jvc-muted); padding: 24px; text-align: center; }
+
+.jvc .t-kw { color: var(--jvc-tok-kw); }
+.jvc .t-str { color: var(--jvc-tok-str); }
+.jvc .t-num { color: var(--jvc-tok-num); }
+.jvc .t-com { color: var(--jvc-tok-com); font-style: italic; }
+.jvc .t-fn { color: var(--jvc-tok-fn); }
+.jvc .t-tp { color: var(--jvc-tok-tp); }
+.jvc .t-key { color: var(--jvc-tok-key); }
+.jvc .t-hd { color: var(--jvc-tok-kw); font-weight: 600; }
+
+.jvc-status { display: flex; gap: 12px; padding: 4px 10px; font-size: 12px; color: var(--jvc-muted); background: var(--jvc-surface); border-top: 1px solid var(--jvc-border); min-height: 26px; flex-wrap: wrap; }
+.jvc-status [data-kind='bad'] { color: var(--jvc-danger); }
+.jvc-status [data-kind='ok'] { color: var(--jvc-ok); }
+.jvc-status [data-kind='warn'] { color: var(--jvc-warn); }
+
+.jvc-ctx { padding: 6px 10px; font-size: 12px; color: var(--jvc-muted); border-bottom: 1px solid var(--jvc-border); overflow-wrap: anywhere; }
+.jvc-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--jvc-border); }
+.jvc-chips .jvc-btn { padding: 2px 8px; min-height: 26px; font-size: 12px; }
+.jvc-chat { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 80px; }
+.jvc-msg { border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--jvc-bg); }
+.jvc-msg.user { background: var(--jvc-surface-2); }
+.jvc-msg .who { display: block; font-size: 11px; text-transform: uppercase; color: var(--jvc-muted); margin-bottom: 2px; }
+.jvc-msg.err { border-color: var(--jvc-danger); color: var(--jvc-danger); }
+.jvc-compose { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--jvc-border); }
+.jvc-compose textarea { width: 100%; min-height: 58px; resize: vertical; background: var(--jvc-surface); border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); padding: 6px 8px; }
+.jvc-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.jvc-run { padding: 8px; border-top: 1px solid var(--jvc-border); display: flex; flex-direction: column; gap: 6px; }
+.jvc-run pre { margin: 0; max-height: 140px; overflow: auto; font: 12px/1.35 var(--jvc-mono); background: var(--jvc-bg); border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); padding: 6px; white-space: pre-wrap; }
+
+.jvc-diff { font: 12px/1.45 var(--jvc-mono); border: 1px solid var(--jvc-border); border-radius: var(--jvc-radius); overflow: auto; max-height: 48vh; background: var(--jvc-surface); }
+.jvc-dl { display: flex; white-space: pre; padding: 0 8px; }
+.jvc-dl .m { width: 1.6em; flex: none; user-select: none; color: var(--jvc-muted); }
+.jvc-dl.add { background: var(--jvc-add-bg); }
+.jvc-dl.del { background: var(--jvc-del-bg); }
+.jvc-dl.hunk { color: var(--jvc-accent); background: var(--jvc-surface-2); }
+.jvc-dl.file { font-weight: 600; background: var(--jvc-surface-2); }
+
+.jvc-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.jvc-dialog { background: var(--jvc-surface); color: var(--jvc-text); border: 1px solid var(--jvc-border); border-radius: 10px; width: min(760px, 100%); max-height: 90vh; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; font: 14px/1.4 var(--jvc-font); }
+.jvc-dialog h2 { margin: 0; font-size: 16px; }
+.jvc-dialog p { margin: 0; color: var(--jvc-muted); }
+.jvc-dialog label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--jvc-muted); }
+.jvc-dialog .jvc-input { color: var(--jvc-text); }
+.jvc-dialog .jvc-row-actions { justify-content: flex-end; }
+
+@media (max-width: 980px) {
+  .jvc-main { grid-template-columns: 1fr; grid-auto-rows: minmax(220px, auto); }
+  .jvc-side, .jvc-helper { border: 0; border-top: 1px solid var(--jvc-border); }
+  .jvc-center { min-height: 360px; }
+}
+@media (prefers-reduced-motion: reduce) { .jvc * { transition: none !important; animation: none !important; } }
+@media (forced-colors: active) {
+  .jvc-row[aria-selected='true'], .jvc-tab[data-active='true'] { outline: 2px solid Highlight; }
+  .jvc-dl.add .m, .jvc-dl.del .m { forced-color-adjust: none; }
+}
+.jvc [hidden], .jvc-overlay [hidden] { display: none !important; }

@@ -1,4 +1,5 @@
 import { DEVELOPER_OPERATIONS } from '../developer/operations.js';
+import { WORKSPACE_OPERATIONS } from '../workspace/operations.js';
 import { planDeveloperRequest } from '../developer/developerPlanner.js';
 import { WORKFLOW_OPERATIONS } from '../workflows/operations.js';
 import { GATEWAY_SITE_OPERATIONS } from '../gateway/siteAdminOperations.js';
@@ -114,6 +115,7 @@ export class LocalHeuristicPlanner implements IAIPlannerProvider {
     'comms:handoff_email',
     'comms:unsupported',
     ...DEVELOPER_OPERATIONS,
+    ...WORKSPACE_OPERATIONS,
     ...WORKFLOW_OPERATIONS,
     ...GATEWAY_SITE_OPERATIONS,
     // JARVIS Studio local persona model; only submitted explicitly by the owner's Studio, never planned from text.

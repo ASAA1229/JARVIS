@@ -833,6 +833,6 @@ function bind() {
   $('text-dialog-form').addEventListener('submit', (event) => { event.preventDefault(); $('text-dialog').close('ok'); });
 }
 
-window.JarvisStudio = Object.freeze({ registerView, api: (path, options) => api(path, options), version: 1 });
+window.JarvisStudio = Object.freeze({ registerView, api: (path, options) => api(path, options), stepUpPost: (path, body) => stepUpPost(path, body), version: 1 });
 bind();
 signIn();
