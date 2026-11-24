@@ -43,6 +43,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { WorkingMemory } from '../memory/workingMemory.js';
 import { CommunicationsAdapter } from '../adapters/communications.js';
 import { TaskJournal } from './taskJournal.js';
+import { buildLocalModel } from '../studio/modelBuilder.js';
 import { TaskCoordinator } from './taskCoordinator.js';
 import { EventBus } from '../events/eventBus.js';
 import type { DeviceRevokeReason, IntegrationEventSink } from '../integration/asaaEvents.js';
@@ -1125,6 +1126,8 @@ export class JarvisCoreService {
         case 'gateway:site_list': case 'gateway:site_create': case 'gateway:site_update': case 'gateway:site_revoke':
           if (!isGatewaySiteOperation(opRequest.operation)) throw new Error('Unknown gateway operation');
           return this.gatewaySites.execute(opRequest.operation, parameters, taskRecord.deviceId);
+        case 'ai:model_build':
+          return buildLocalModel(parameters);
         default:
           throw new Error(`Execution adapter not found for ${opRequest.operation}`);
       }

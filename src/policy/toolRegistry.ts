@@ -151,6 +151,8 @@ export const TOOL_REGISTRY: ReadonlyMap<string, PolicyRule> = new Map<string, Po
     ['gateway:site_create', RiskTier.HIGH, true, ['name', 'limits', 'allowedProfiles']],
     ['gateway:site_update', RiskTier.MEDIUM, true, ['id', 'limits', 'allowedProfiles']],
     ['gateway:site_revoke', RiskTier.LOW, false, ['id']],
+    // JARVIS Studio: build the local persona model (`ollama create jarvis-personal`). Owner approval required.
+    ['ai:model_build', RiskTier.HIGH, true, ['baseModel', 'persona']],
   ] as Array<[string, RiskTier, boolean, string[]]>).map(([operation, riskTier, requiresApproval, allowedParameters]) => [operation, {
     operation,
     requiredPermission: Permission.DEVICE_MANAGE,

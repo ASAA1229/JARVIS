@@ -230,7 +230,7 @@
         } },
         { label: 'Approve', primary: true, onClick: function (button, close) {
           button.disabled = true; busy.textContent = 'Approving...';
-          api('/api/approval/approve', 'POST', { approvalId: result.approvalId }).then(function (final) { close({ final: final }); },
+          approvePost(result.approvalId).then(function (final) { close({ final: final }); },
             function (error) { busy.textContent = 'Approval failed: ' + error.message; button.disabled = false; });
         } }
       ]).then(function (outcome) {
@@ -240,6 +240,12 @@
         status('Approval is still pending in the HUD; nothing has changed.', 'warn');
         return null;
       });
+    }
+    // Approvals use the shell's authenticator step-up when available: with TOTP enabled the server requires a fresh code.
+    function approvePost(approvalId) {
+      var shell = window.JarvisStudio;
+      if (shell && typeof shell.stepUpPost === 'function') return shell.stepUpPost('/api/approval/approve', { approvalId: approvalId });
+      return api('/api/approval/approve', 'POST', { approvalId: approvalId });
     }
     function succeeded(result) { return Boolean(result) && result.state === 'COMPLETED'; }
     function describe(result) { return result ? String(result.message || result.state || 'No result') : 'Cancelled'; }
