@@ -38,6 +38,9 @@ import { handleOwnerPanelRoute, OWNER_PANEL_PATHS } from './ownerPanelRoutes.js'
 import { handleLearningRoute, LEARNING_PREFIX, LEARNING_COLLECTION } from './learningIngestRoutes.js';
 import { EpisodeStore } from '../learning/episodeStore.js';
 import { IngestKeyStore } from '../learning/ingestKeys.js';
+import { BrowserKeyStore } from '../browser/browserKeys.js';
+import { BrowserStore, BROWSING_COLLECTION } from '../browser/browserStore.js';
+import { BrowserRoutes, BROWSER_PREFIX } from './browserRoutes.js';
 import { handleWorkspaceRoute, isWorkspaceRoute } from './workspaceRoutes.js';
 import { isStudioApiPath, isStudioStaticPath, serveStudioStatic, StudioRoutes, type StudioDeps } from './studioRoutes.js';
 import { StudioStore } from '../studio/studioStore.js';
@@ -83,6 +86,8 @@ export class JarvisServer {
   private readonly documentRag?: DocumentRagStore;
   private readonly episodeStore?: EpisodeStore;
   private readonly ingestKeys: IngestKeyStore;
+  /** JARVIS browser extension API (/api/browser/*): browser keys, pending pages, sessions. */
+  private readonly browser: BrowserRoutes;
   /** Present only when JARVIS_KNOWLEDGE_SOURCES_ENFORCED=1: retrieval is limited to owner-approved collections. */
   private readonly knowledgeSources?: KnowledgeSourceRegistry;
   private readonly documentParser = new DocumentParser();
@@ -117,6 +122,20 @@ export class JarvisServer {
     }
     this.ingestKeys = new IngestKeyStore(process.env.JARVIS_INGEST_KEYS_PATH || (statePath ? statePath + '.ingest-keys.json' : './data/ingest-keys.json'));
     if (this.ownerControlToken) this.episodeStore = new EpisodeStore(process.env.JARVIS_EPISODES_PATH || (statePath ? statePath + '.episodes' : './data/learning-episodes.enc'), this.ownerControlToken);
+    this.browser = new BrowserRoutes({
+      store: this.ownerControlToken ? new BrowserStore(process.env.JARVIS_BROWSER_STORE_PATH || (statePath ? statePath + '.browser' : './data/browser.enc'), this.ownerControlToken) : undefined,
+      keys: new BrowserKeyStore(process.env.JARVIS_BROWSER_KEYS_PATH || (statePath ? statePath + '.browser-keys.json' : './data/browser-keys.json')),
+      audit: { record: (...args) => this.jarvis.audit.record(...args) },
+      readJsonBody: (request, maxBytes) => this.readJsonBody(request, maxBytes),
+      authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+      json: (response, status, data) => this.jsonResponse(response, status, data),
+      indexPage: (deviceId, stored, text) => this.documentRag?.ingest({
+        ownerDeviceId: deviceId, sourceName: `page-${stored.id}.txt`, title: (stored.title || stored.url).slice(0, 80),
+        collection: BROWSING_COLLECTION, replace: true, content: text,
+      }).documentId,
+      removeDocuments: (deviceId, ids) => { for (const id of ids) this.documentRag?.delete(deviceId, id); },
+      searchKnowledge: async (deviceId, query, limit) => (this.documentRag ? await this.documentRag.search(deviceId, query, limit, undefined, BROWSING_COLLECTION) : []),
+    });
     this.jarvis = new JarvisCoreService(new LocalHeuristicPlanner(), logPath, statePath, this.ownerControlToken);
     // Revocation isolates per-device voice state immediately (wake window, audio budget).
     this.jarvis.events.subscribe((event) => {
@@ -295,6 +314,7 @@ export class JarvisServer {
   /** Test seam: replace the Studio chat provider (the default is the router's local Ollama). */
   public setStudioProviderFactory(factory: StudioDeps['providerFactory']): void {
     this.studio?.setProviderFactory(factory);
+    this.browser.setProviderFactory(factory ? () => factory() : undefined);
   }
 
   public getService(): JarvisCoreService {
@@ -339,6 +359,8 @@ export class JarvisServer {
           removeDocuments: (deviceId, ids) => { for (const id of ids) this.documentRag?.delete(deviceId, id); },
         });
       }
+      // Browser extension API: browser key (/ext) or owner session (/admin); loopback only.
+      if (url.pathname.startsWith(BROWSER_PREFIX)) return this.browser.handle(req, res, url);
       // Capability metadata is descriptive only; it does not grant action permissions.
       if (req.method === 'GET' && url.pathname === '/api/capabilities') {
         const requestedPlatform = url.searchParams.get('platform');

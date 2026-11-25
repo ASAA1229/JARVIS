@@ -686,6 +686,63 @@ async function mountLearning() {
     }
   } catch (error) { failure(episodesCard, error); }
 
+  // Browsing knowledge from the JARVIS browser extension (E3:D4.21)
+  const browserCard = section('From the browser (JARVIS Browser)', h('p', { class: 'muted', text: 'Pages you read with the browser extension arrive here redacted and pending. Only pages you approve become searchable knowledge (collection "browsing"). Sessions and research history stay in JARVIS.' }));
+  try {
+    const [{ pages }, { pages: approvedPages }, { keys: browserKeys }, { sessions }] = await Promise.all([
+      api('/api/browser/admin/pages?status=pending'), api('/api/browser/admin/pages?status=approved'), api('/api/browser/admin/keys'), api('/api/browser/admin/sessions'),
+    ]);
+    browserCard.append(h('div', { class: 'stat-grid' }, [stat('Pending pages', String(pages.length)), stat('Approved pages', String(approvedPages.length)), stat('Research sessions', String(sessions.length)), stat('Active browser keys', String(browserKeys.filter((key) => !key.revokedAt).length))]));
+    if (!pages.length) browserCard.append(h('p', { class: 'muted', text: 'Nothing waiting. Install the browser extension and set its browser key to start.' }));
+    for (const page of pages.slice(0, 25)) {
+      const decide = async (decision) => {
+        try { await api(`/api/browser/admin/pages/${decision}`, { method: 'POST', body: { id: page.id } }); mountLearning(); } catch (error) { notice(error.message, 'error'); }
+      };
+      browserCard.append(h('div', { class: 'stack' }, [
+        h('details', {}, [
+          h('summary', { text: `${page.title || page.url} · ${fmtDate(Date.parse(page.receivedAt))}` }),
+          h('p', { class: 'muted small', text: page.url }),
+          h('p', { text: page.text.slice(0, 600) + (page.text.length > 600 ? '…' : '') }),
+        ]),
+        h('div', { class: 'row' }, [
+          h('button', { type: 'button', class: 'btn small primary', text: 'Approve', onclick: () => decide('approve') }),
+          h('button', { type: 'button', class: 'btn small', text: 'Reject', onclick: () => decide('reject') }),
+        ]),
+      ]));
+    }
+    for (const session of sessions) {
+      browserCard.append(h('div', { class: 'row' }, [
+        h('strong', { text: session.name }), h('span', { class: 'muted small', text: `${session.tabs.length} tab(s) · updated ${fmtDate(Date.parse(session.updatedAt))}` }),
+        h('span', { class: 'topbar-spacer' }),
+        h('button', { type: 'button', class: 'btn small', text: 'Delete session', onclick: async () => {
+          if (!await confirmAction('Delete research session?', `"${session.name}" and its tab links are removed.`, 'Delete')) return;
+          try { await api('/api/browser/admin/sessions/delete', { method: 'POST', body: { id: session.id } }); mountLearning(); } catch (error) { notice(error.message, 'error'); }
+        } }),
+      ]));
+    }
+    // Browser keys: scoped only to /api/browser/ext/*; shown once.
+    const browserKeyOut = h('div', { role: 'status', 'aria-live': 'polite' });
+    const browserKeyName = h('input', { type: 'text', id: 'browser-key-name', placeholder: 'chrome-laptop', 'aria-label': 'Browser key name' });
+    const createBrowserKey = h('button', { type: 'button', class: 'btn', text: 'Create browser key', onclick: async () => {
+      try {
+        const done = await api('/api/browser/admin/keys/create', { method: 'POST', body: { name: browserKeyName.value.trim() } });
+        browserKeyOut.replaceChildren(h('p', { text: 'Paste this key into the browser extension settings. It is shown once.' }), h('pre', {}, [h('code', { text: done.browserKey })]),
+          h('button', { type: 'button', class: 'btn small', text: 'Copy', onclick: () => navigator.clipboard?.writeText(done.browserKey).then(() => notice('Copied.', 'ok')) }));
+      } catch (error) { browserKeyOut.replaceChildren(h('p', { class: 'muted', text: error.message })); }
+    } });
+    browserCard.append(h('label', { for: 'browser-key-name', text: 'New browser key name (lowercase letters, digits, hyphens)' }), h('div', { class: 'row' }, [browserKeyName, createBrowserKey]), browserKeyOut);
+    for (const key of browserKeys.filter((k) => !k.revokedAt)) {
+      browserCard.append(h('div', { class: 'row' }, [
+        h('strong', { text: key.name }), h('span', { class: 'muted small', text: `created ${fmtDate(Date.parse(key.createdAt))} · ${key.usage.accepted} accepted${key.usage.lastUsedAt ? ' · last used ' + fmtDate(Date.parse(key.usage.lastUsedAt)) : ''}` }),
+        h('span', { class: 'topbar-spacer' }),
+        h('button', { type: 'button', class: 'btn small', text: 'Revoke', onclick: async () => {
+          if (!await confirmAction('Revoke browser key?', `The extension using "${key.name}" stops working.`, 'Revoke')) return;
+          try { await api('/api/browser/admin/keys/revoke', { method: 'POST', body: { id: key.id } }); mountLearning(); } catch (error) { notice(error.message, 'error'); }
+        } }),
+      ]));
+    }
+  } catch (error) { failure(browserCard, error); }
+
   // Knowledge sources
   const sourcesCard = section('Approved knowledge sources', h('p', { class: 'muted', text: 'JARVIS learns new knowledge only from sources you approve. It never learns from the internet automatically.' }));
   try {
