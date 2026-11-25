@@ -197,12 +197,18 @@ export function episodeToText(stored: StoredEpisode): string {
   const lines = [`How I did this (${episode.source}, ${episode.startedAt.slice(0, 10)})`];
   if (episode.workspace) lines.push(`Project: ${episode.workspace}`);
   if (episode.prompt) lines.push(`Prompt: ${episode.prompt}`);
+  const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max) + ' ...' : text);
   for (const s of episode.steps) {
-    if (s.command) lines.push(`Command [${s.commandClass ?? 'other'}]: ${s.command}${s.exitCode !== undefined ? ` (exit ${s.exitCode})` : ''}`);
-    else if (s.path) lines.push(`${s.kind}: ${s.path}${s.summary ? ' - ' + s.summary : ''}`);
-    else if (s.summary) lines.push(`${s.kind}: ${s.summary}`);
+    if (s.command) {
+      lines.push(`Command [${s.commandClass ?? 'other'}]: ${s.command}${s.exitCode !== undefined ? ` (exit ${s.exitCode})` : ''}`);
+      // The error a failing command printed is what a later "why did it fail" question needs.
+      if (s.exitCode !== undefined && s.exitCode !== 0 && s.outputTail) lines.push(`  Error output: ${clip(s.outputTail.trim().split(/\r?\n/).slice(-4).join(' | '), 400)}`);
+    } else if (s.path) lines.push(`${s.kind}: ${s.path}${s.summary ? ' - ' + s.summary : ''}`);
+    else if (s.summary) lines.push(`${s.kind}: ${clip(s.summary, 600)}`);
+    if (s.diff && (s.kind === 'edit' || s.kind === 'write' || s.kind === 'commit')) lines.push(`  Change: ${clip(s.diff, s.kind === 'commit' ? 1200 : 500)}`);
     if (s.diagnostics) lines.push(`Diagnostics ${s.diagnostics.before ?? '?'} -> ${s.diagnostics.after ?? '?'}: ${(s.diagnostics.messages ?? []).join('; ')}`);
   }
+  if (episode.assistantSummary) lines.push(`Summary: ${clip(episode.assistantSummary, 600)}`);
   if (episode.outcome) lines.push(`Outcome: ${episode.outcome.status}${episode.outcome.summary ? ' - ' + episode.outcome.summary : ''}`);
   return lines.join('\n');
 }
