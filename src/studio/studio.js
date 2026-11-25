@@ -748,7 +748,7 @@ async function mountLearning() {
 }
 
 // ---------- views ----------
-const VIEW_TITLES = { chat: 'Chat', code: 'Code', keys: 'API keys', learning: 'Learning' };
+const VIEW_TITLES = { chat: 'Chat', code: 'Code', keys: 'API keys', learning: 'Learning', models: 'Models' };
 const registeredViews = new Map();
 const mountedViews = new Set();
 
@@ -756,6 +756,7 @@ function registerView(name, mountFn) {
   if (typeof name !== 'string' || typeof mountFn !== 'function') throw new TypeError('registerView(name, mountFn) needs a name and a function');
   registeredViews.set(name, mountFn);
   if (name === 'code' && state.view === 'code') mountRegistered('code');
+  if (name === 'models' && state.view === 'models') mountRegistered('models');
 }
 
 async function mountRegistered(name) {
@@ -782,9 +783,22 @@ function loadCodeScript() {
   return undefined;
 }
 
+/** Load /studio/models.js once; it calls JarvisStudio.registerView('models', mountFn). */
+function loadModelsScript() {
+  if (registeredViews.has('models')) return mountRegistered('models');
+  const container = $('models-view');
+  if (container.dataset.loading) return undefined;
+  container.dataset.loading = '1';
+  const script = document.createElement('script');
+  script.src = '/studio/models.js';
+  script.onerror = () => { delete container.dataset.loading; container.replaceChildren(h('div', { class: 'notice' }, 'The Models view could not be loaded.')); };
+  document.head.append(script);
+  return undefined;
+}
+
 function setView(name) {
   state.view = name;
-  for (const view of ['chat', 'code', 'keys', 'learning']) $(view + '-view').hidden = view !== name;
+  for (const view of ['chat', 'code', 'keys', 'learning', 'models']) $(view + '-view').hidden = view !== name;
   document.querySelectorAll('.nav-item').forEach((button) => {
     if (button.dataset.view === name) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
@@ -794,6 +808,7 @@ function setView(name) {
   if (name === 'keys') mountKeys();
   else if (name === 'learning') mountLearning();
   else if (name === 'code') loadCodeScript();
+  else if (name === 'models') loadModelsScript();
   closeSidebar();
 }
 

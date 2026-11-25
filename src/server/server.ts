@@ -39,6 +39,7 @@ import { handleLearningRoute, LEARNING_PREFIX, LEARNING_COLLECTION } from './lea
 import { EpisodeStore } from '../learning/episodeStore.js';
 import { IngestKeyStore } from '../learning/ingestKeys.js';
 import { handleWorkspaceRoute, isWorkspaceRoute } from './workspaceRoutes.js';
+import { handleModelRoute, isModelRoute } from './modelRoutes.js';
 import { isStudioApiPath, isStudioStaticPath, serveStudioStatic, StudioRoutes, type StudioDeps } from './studioRoutes.js';
 import { StudioStore } from '../studio/studioStore.js';
 import { DuplicateMemoryError } from '../memory/memoryManager.js';
@@ -783,6 +784,16 @@ export class JarvisServer {
         return handleOwnerPanelRoute(req, res, url, {
           jarvis: this.jarvis,
           readJsonBody: (request) => this.readJsonBody(request),
+          authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
+          json: (response, status, data) => this.jsonResponse(response, status, data),
+        });
+      }
+
+      // JARVIS Studio Models view: providers, catalog, routing config, metrics (owner session only).
+      if (isModelRoute(url.pathname)) {
+        return handleModelRoute(req, res, url, {
+          jarvis: this.jarvis,
+          readJsonBody: (request, maxBytes) => this.readJsonBody(request, maxBytes),
           authorize: (request, sessionId, path, body) => this.authorizeSignedRequest(request, sessionId, path, body),
           json: (response, status, data) => this.jsonResponse(response, status, data),
         });

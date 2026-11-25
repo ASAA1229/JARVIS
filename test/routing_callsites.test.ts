@@ -30,8 +30,8 @@ test('E2:D4.7 browser speech (possible vendor cloud) is gated on the routing mod
   assert.equal(cloudRoutingAllowed({ JARVIS_ROUTING_MODE: 'garbage' } as NodeJS.ProcessEnv), false);
 });
 
-test('E2:D4.7 model endpoints are only called from the provider client, Ollama client, site gateway and embedder', () => {
-  const allowed = new Set(['ai/providerClient.ts', 'ai/ollamaProvider.ts', 'gateway/siteAiGateway.ts', 'memory/semanticIndex.ts', 'ai/providerRouter.ts'].map((p) => p.replaceAll('/', '\\')));
+test('E2:D4.7 model endpoints are only called from the provider client, Ollama client, LLM backends, site gateway and embedder', () => {
+  const allowed = new Set(['ai/providerClient.ts', 'ai/ollamaProvider.ts', 'gateway/siteAiGateway.ts', 'memory/semanticIndex.ts', 'ai/providerRouter.ts', 'ai/llmBackends.ts'].map((p) => p.replaceAll('/', '\\')));
   const allowedPosix = new Set([...allowed].map((p) => p.replaceAll('\\', '/')));
   const pattern = /\/api\/chat|\/api\/embed|\/chat\/completions|['"`]\/messages['"`]|\/api\/generate/;
   const offenders = sources('src').filter((file) => {
