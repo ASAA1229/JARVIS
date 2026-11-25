@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { classifyCommand, isTrivialCommand } from './classify';
 import { commandTouchesExcluded, head, lineDiffStat, matchesExclude, stableId, stripAnsi, tail, type Episode, type EpisodeStep } from './episodes';
 import { filterDiff, isAssistantCommit, parseGitShow } from './gitParse';
+import { repoRootFromHeadLog, repositoryRoots } from './gitRepos';
 import type { Pipeline } from './pipeline';
 import { isExcludedPath } from './redact';
 
@@ -56,12 +57,21 @@ export function startGitCapture(deps: CaptureDeps, subscriptions: vscode.Disposa
       await deps.pipeline.submit(episode);
     } catch (error) { deps.log(`git capture: ${error instanceof Error ? error.message : 'failed'}`); }
   };
+  // Watch the workspace folder's own repository and repositories one level inside it (for example a PROJECTS folder
+  // holding several repos). Only real .git directories are watched; worktrees and submodules (.git files) are skipped.
+  const timers = new Map<string, NodeJS.Timeout>();
   for (const folder of folders()) {
-    const root = folder.uri.fsPath;
-    void run(root, ['rev-parse', 'HEAD']).then((h) => known.set(root, h.trim())).catch(() => undefined);
-    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.git/logs/HEAD'));
-    let timer: NodeJS.Timeout | undefined;
-    const debounced = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => void handle(root), 1200); };
+    for (const root of repositoryRoots(folder.uri.fsPath)) {
+      void run(root, ['rev-parse', 'HEAD']).then((h) => known.set(root, h.trim())).catch(() => undefined);
+    }
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '{.git,*/.git}/logs/HEAD'));
+    const debounced = (uri: vscode.Uri) => {
+      const root = repoRootFromHeadLog(uri.fsPath);
+      if (!root) return;
+      const pending = timers.get(root);
+      if (pending) clearTimeout(pending);
+      timers.set(root, setTimeout(() => { timers.delete(root); void handle(root); }, 1200));
+    };
     subscriptions.push(watcher, watcher.onDidChange(debounced), watcher.onDidCreate(debounced));
   }
 }
