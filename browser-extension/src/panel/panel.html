@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JARVIS</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><strong>JARVIS</strong><span class="sub">ASAA browsing assistant</span></div>
+    <span id="status" class="status" role="status" aria-live="polite">Not connected</span>
+  </header>
+
+  <section class="card" aria-label="Current page">
+    <div id="pageTitle" class="page-title">No page read yet</div>
+    <div id="pageUrl" class="muted small"></div>
+    <div id="notice" class="notice" hidden role="alert"></div>
+    <p class="muted small">JARVIS reads a page only when you press a button, use the context menu or the shortcut (Alt+Shift+S).</p>
+  </section>
+
+  <section class="actions" aria-label="Actions">
+    <button type="button" data-action="summarize">Summarize</button>
+    <button type="button" data-action="explain" title="Explains your selection, or the whole page if nothing is selected">Explain</button>
+    <button type="button" data-action="extract">Extract data</button>
+    <button type="button" data-action="analyze-form" title="Describes fields and purpose. JARVIS never fills or submits forms.">Analyze form</button>
+  </section>
+
+  <section class="card" aria-label="Research session">
+    <div class="row">
+      <label for="sessionSelect" class="small">Research session</label>
+      <select id="sessionSelect"><option value="">None</option></select>
+    </div>
+    <div class="row">
+      <button type="button" id="sessionNew" class="small">New</button>
+      <button type="button" id="sessionAdd" class="small" title="Reads this tab and adds it to the session">Add this tab</button>
+      <button type="button" id="sessionDelete" class="small danger">Delete</button>
+    </div>
+    <div id="sessionNameRow" class="row" hidden>
+      <label for="sessionName" class="sr">Session name</label>
+      <input id="sessionName" type="text" maxlength="80" placeholder="Session name">
+      <button type="button" id="sessionCreate" class="small">Create</button>
+    </div>
+    <ul id="sessionTabs" class="tabs small"></ul>
+    <p class="muted small">Sessions are stored in JARVIS, not in this browser. To add another tab, switch to it and press Add this tab.</p>
+  </section>
+
+  <main id="log" class="log" role="log" aria-live="polite" aria-label="Conversation"></main>
+
+  <form id="askForm" class="ask">
+    <label for="askInput" class="sr">Ask about this page</label>
+    <textarea id="askInput" rows="2" maxlength="2000" placeholder="Ask about this page (and your research session)"></textarea>
+    <div class="row">
+      <button type="submit" id="askSend" class="primary">Ask</button>
+      <button type="button" id="askStop" hidden>Stop</button>
+      <button type="button" id="clearLog" class="small">Clear chat</button>
+    </div>
+  </form>
+
+  <details class="card" id="settings">
+    <summary>Settings and privacy</summary>
+    <label for="serverUrl" class="small">JARVIS address (loopback only)</label>
+    <input id="serverUrl" type="text" value="http://127.0.0.1:3000" spellcheck="false" autocomplete="off">
+    <label for="keyInput" class="small">Browser key</label>
+    <input id="keyInput" type="password" placeholder="jbk_..." spellcheck="false" autocomplete="off">
+    <label class="check small"><input id="rememberKey" type="checkbox"> Remember the key on this device (otherwise it is forgotten when the browser closes)</label>
+    <div class="row">
+      <button type="button" id="keySave">Save</button>
+      <button type="button" id="keyForget" class="danger">Forget key</button>
+      <button type="button" id="testConn">Test connection</button>
+    </div>
+    <label class="check small"><input id="saveVisited" type="checkbox" checked> Send pages I read to JARVIS as <em>pending</em> browsing knowledge (you approve or reject them in Studio; nothing is learned without approval)</label>
+    <label for="blocklist" class="small">Never read these sites (one per line; defaults cover banking, mail and health)</label>
+    <textarea id="blocklist" rows="6" spellcheck="false"></textarea>
+    <div class="row">
+      <button type="button" id="blocklistSave">Save blocklist</button>
+      <button type="button" id="blocklistReset">Reset to defaults</button>
+    </div>
+    <p class="muted small">Private/incognito windows are disabled. Password and payment fields are never read. Text is redacted (keys, tokens, emails, phone and card numbers) before it is sent.</p>
+    <div class="row">
+      <button type="button" id="historyLoad" class="small">Show recent research</button>
+      <button type="button" id="historyClear" class="small danger">Clear research history</button>
+    </div>
+    <ul id="history" class="history small"></ul>
+  </details>
+
+  <script src="../lib/redact.js"></script>
+  <script src="../lib/policy.js"></script>
+  <script src="../lib/api.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
