@@ -197,3 +197,14 @@ Source: `reports/epic-criteria.json` (commit 72965d7). Local verification only; 
 | 2.10 | 5 | 5 / 0 / 0 / 0 / 0 |
 
 Total 76 requirements: 63 complete and verified, 7 partially complete, 5 implemented not tested, 1 blocked by external dependency, 0 not implemented. Exceptions are listed per requirement in the JSON file with evidence and notes.
+
+
+## Owner decision update — 2026-11-27
+
+- Preserve the existing JARVIS implementation and progress; the owner has stated that most of the project is already developed. Do not restart or replace established foundations without evidence and authorization.
+- Target devices remain the MSI Windows 11 laptop and two Android phones. Android build support must use the existing Android Studio/SDK when available, install missing components using free local tooling, and support command-line builds.
+- Keep the hybrid local/cloud direction with ₹0 ongoing cost until investment. Do not continuously upload microphone/audio streams to cloud services.
+- Wake phrase: “Hey Jarvis”. Ready response: “Hi sir, I am ready to work”.
+- Keep per-device sessions, QR plus authenticator preference, high-impact action safeguards and payment apps excluded.
+- Jenkins is in use. Nexus is paid and intentionally paused; do not treat Nexus credentials/integration as a blocker.
+- Local-first operation and dummy/mock integrations remain the default where live credentials or paid services are unavailable.

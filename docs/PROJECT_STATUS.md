@@ -167,3 +167,10 @@ The 2026-11-14 record of four `e2e_recovery` failures from port 3899 collisions 
 A passing CI run on `new` is limited to the checks in that workflow. Physical Windows 11 laptop and Android device verification remains outstanding for wake-word activation, voice interaction, device pairing/QR-authenticator flow, offline/local-cloud behavior, privacy controls and session handling. Jenkins integration, artifact publishing/retrieval/recovery, and full end-to-end operational acceptance are not established by the current CI run.
 
 **Release status: NO-GO / NOT ACCEPTED.** Do not claim device verification, production readiness, or end-to-end acceptance until the relevant physical-device and integration evidence is attached to an exact commit.
+
+
+## Owner requirements reconciliation — 2026-11-27
+
+Confirmed owner constraints: preserve existing JARVIS progress; support MSI Windows 11 and two Android phones; use existing/free Android Studio and SDK tooling plus command-line builds; retain hybrid local/cloud with no continuous cloud audio upload; use the specified wake phrase and ready response; keep per-device sessions, QR/authenticator preference, safeguards and payment apps excluded.
+
+Jenkins is in use. Nexus is paid and intentionally paused, not a blocker. This update changes the requirements baseline only. It does not claim physical-device acceptance or change implementation/test/CI status. Re-verify current exact branch SHA and test evidence before changing status.

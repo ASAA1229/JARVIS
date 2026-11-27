@@ -43,3 +43,15 @@ Reconciliation rules:
 
 
 Project epic coverage: JAR-E01–E09 plus existing later epic/gap work. Apply the candidate domains as cross-cutting sub-epics/features where applicable; do not create duplicate epics or change existing development/testing/integration/acceptance values without new evidence.
+
+
+## Owner decision alignment — 2026-11-27
+
+Map the confirmed owner decisions into existing epics; do not create duplicates or reset epic progress:
+- Device and platform support: MSI Windows 11 plus two Android phones; Android Studio/SDK and free command-line build tooling.
+- Voice and interaction: “Hey Jarvis” wake phrase and “Hi sir, I am ready to work” ready response; no continuous cloud audio upload.
+- Identity and session security: per-device sessions; QR plus authenticator preference; safeguards for high-impact actions.
+- Automation safety: payment apps remain excluded; consequential actions require appropriate authorization.
+- CI/tooling: Jenkins in use; Nexus integration paused because it is paid.
+
+This is a requirements update only; existing development/test status requires current evidence before promotion.

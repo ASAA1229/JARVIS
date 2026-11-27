@@ -45,3 +45,10 @@ Re-run exact-head CI after DAG hardening; verify physical MSI Windows voice/micr
 | Release acceptance | Not accepted | Close P0 security, privacy, device, operations and owner gates |
 
 A green `new` CI run must not be generalized to other branches or physical devices. See [Project Status](PROJECT_STATUS.md) and [Pending Work](PENDING_WORK_REGISTER.md).
+
+
+## Owner decision update — 2026-11-27
+
+The owner decisions above are settled. Android tooling selection is also settled: use existing Android Studio/SDK, install missing free components locally, and support command-line builds.
+
+Do not classify Nexus as a blocker; it is intentionally paused due to cost. Jenkins remains in use. Physical-device acceptance on the MSI and two Android phones remains a validation activity to be performed when devices are available, not a reason to pause unrelated development. Preserve all existing epic status/evidence until a fresh exact-commit verification is recorded.
